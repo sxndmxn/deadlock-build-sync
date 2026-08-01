@@ -1,0 +1,183 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "deadlock-build-sync"
+version = "0.1.0"
+description = "Generate private Deadlock purchase-guide builds from deadlock-api.com analytics"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+keywords = [
+  "build-guide",
+  "cli",
+  "codex",
+  "deadlock",
+  "game-analytics",
+  "linux",
+  "steam",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Games/Entertainment",
+]
+dependencies = [
+  "keyvalues3>=0.7,<0.8",
+]
+
+[project.urls]
+Changelog = "https://github.com/sxndmxn/deadlock-build-sync/blob/main/CHANGELOG.md"
+Documentation = "https://github.com/sxndmxn/deadlock-build-sync#readme"
+Issues = "https://github.com/sxndmxn/deadlock-build-sync/issues"
+Repository = "https://github.com/sxndmxn/deadlock-build-sync"
+
+[project.optional-dependencies]
+test = [
+  "pytest>=8.3",
+]
+
+[project.scripts]
+deadlock-build-sync = "deadlock_build_sync.cli:main"
+
+[dependency-groups]
+dev = [
+  "deepeval==4.1.1",
+  "pytest>=8.3",
+  "ruff>=0.16.0",
+  "ty>=0.0.64",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/deadlock_build_sync", "scripts"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"schemas" = "schemas"
+
+[tool.pytest.ini_options]
+addopts = "-q"
+norecursedirs = ["tests/evals"]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.uv]
+index-strategy = "first-index"
+managed = true
+package = true
+prerelease = "if-necessary"
+required-version = ">=0.12,<0.13"
+resolution = "highest"
+
+[tool.uv.pip]
+strict = true
+
+[tool.ruff]
+fix = false
+line-length = 88
+preview = true
+show-fixes = true
+target-version = "py312"
+unsafe-fixes = false
+
+[tool.ruff.lint]
+allowed-confusables = ["–"]
+ignore = [
+  "any-type", # Dynamic API and KV3 payloads require explicit Any boundaries.
+  "f-string-in-exception", # Error messages intentionally include runtime context.
+  "incorrect-blank-line-before-class", # Conflicts with D211.
+  "line-too-long", # The formatter owns line wrapping.
+  "magic-value-comparison", # Protocol and game-domain constants are meaningful.
+  "missing-copyright-notice", # The project has no copyright-header policy.
+  "missing-trailing-comma", # Conflicts with the formatter.
+  "multi-line-summary-second-line", # Conflicts with D212.
+  "raise-vanilla-args", # Custom exceptions intentionally carry contextual messages.
+  "raw-string-in-exception", # Custom exceptions intentionally carry contextual messages.
+  "single-line-implicit-string-concatenation", # Conflicts with the formatter.
+  "undocumented-public-class",
+  "undocumented-public-function",
+  "undocumented-public-init",
+  "undocumented-public-method",
+  "undocumented-public-module",
+]
+select = ["ALL"]
+
+[tool.ruff.lint.per-file-ignores]
+"evals/metrics.py" = [
+  "bad-dunder-method-name", # DeepEval uses __name__ as the custom metric label API.
+  "complex-structure",
+  "too-many-locals",
+  "too-many-statements",
+]
+"scripts/*.py" = [
+  "complex-structure",
+  "print",
+  "raise-within-try",
+  "subprocess-without-shell-equals-true",
+  "suspicious-subprocess-import",
+  "too-many-branches",
+  "too-many-locals",
+  "too-many-statements",
+  "too-many-statements-in-try-clause",
+  "try-consider-else",
+]
+"src/deadlock_build_sync/api.py" = [
+  "suspicious-url-open-usage", # The constructor restricts requests to HTTP(S).
+]
+"src/deadlock_build_sync/cache.py" = [
+  "complex-structure",
+  "too-many-arguments",
+  "too-many-statements-in-try-clause",
+]
+"src/deadlock_build_sync/cli.py" = ["print"]
+"src/deadlock_build_sync/kv3_binary.py" = [
+  "complex-structure",
+  "float-equality-comparison",
+  "too-many-branches",
+]
+"src/deadlock_build_sync/protobuf.py" = ["too-many-arguments"]
+"src/deadlock_build_sync/purchase_guide.py" = [
+  "complex-structure",
+  "too-many-locals",
+]
+"tests/*.py" = [
+  "assert",
+  "float-equality-comparison",
+  "implicit-namespace-package",
+  "pytest-composite-assertion",
+]
+
+[tool.ruff.format]
+docstring-code-format = true
+indent-style = "space"
+line-ending = "lf"
+preview = true
+quote-style = "double"
+skip-magic-trailing-comma = false
+
+[tool.ty.analysis]
+respect-type-ignore-comments = false
+strict-equality-semantics = true
+
+[tool.ty.environment]
+python-platform = "all"
+python-version = "3.12"
+
+[tool.ty.rules]
+all = "error"
+
+[tool.ty.src]
+include = [
+  "evals",
+  "scripts",
+  "src",
+  "tests",
+]
+
+[tool.ty.terminal]
+error-on-warning = true

@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "hero_id": {
+      "type": "integer"
+    },
+    "kit_basis_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "primary_role": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 100
+    },
+    "combat_pattern": {
+      "type": "string",
+      "minLength": 40,
+      "maxLength": 500
+    },
+    "economy_tendencies": {
+      "type": "string",
+      "minLength": 40,
+      "maxLength": 400
+    },
+    "scaling_profile": {
+      "type": "string",
+      "minLength": 40,
+      "maxLength": 500
+    },
+    "ability_roles": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "properties": {
+          "ability_id": {
+            "type": "integer"
+          },
+          "ability": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "tactical_role": {
+            "type": "string",
+            "minLength": 20,
+            "maxLength": 300
+          },
+          "scaling_hooks": {
+            "type": "string",
+            "minLength": 20,
+            "maxLength": 350
+          }
+        },
+        "required": [
+          "ability_id",
+          "ability",
+          "tactical_role",
+          "scaling_hooks"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "synergies": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 6,
+      "items": {
+        "type": "string",
+        "minLength": 20,
+        "maxLength": 350
+      }
+    },
+    "uncertainties": {
+      "type": "array",
+      "maxItems": 4,
+      "items": {
+        "type": "string",
+        "minLength": 10,
+        "maxLength": 250
+      }
+    }
+  },
+  "required": [
+    "hero_id",
+    "kit_basis_sha256",
+    "primary_role",
+    "combat_pattern",
+    "economy_tendencies",
+    "scaling_profile",
+    "ability_roles",
+    "synergies",
+    "uncertainties"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+          python-version: "3.12"
+
+      - name: Verify lockfile
+        run: uv lock --check
+
+      - name: Install locked environment
+        run: uv sync --frozen
+
+      - name: Check formatting
+        run: uv run ruff format --check .
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Type-check
+        run: uv run ty check
+
+      - name: Test
+        run: uv run pytest
+
+      - name: Verify dependencies
+        run: uv pip check
+
+      - name: Build distributions
+        run: uv build
+
+      - name: Smoke-test wheel
+        run: |
+          uv venv /tmp/deadlock-build-sync-wheel
+          uv pip install --python /tmp/deadlock-build-sync-wheel/bin/python dist/*.whl
+          /tmp/deadlock-build-sync-wheel/bin/deadlock-build-sync --help

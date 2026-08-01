@@ -1,0 +1,50 @@
+name: Bug report
+description: Report reproducible incorrect or unsafe behavior.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Remove credentials, Steam account identifiers, cache contents, and generated artifacts before submitting.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Release tag or commit SHA.
+      placeholder: v0.1.0
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Linux distribution, Python version, Steam packaging, and Codex CLI version when relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Provide the smallest sequence that reproduces the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitized logs
+      description: Paste only logs reviewed for secrets and personal data.
+      render: shell
