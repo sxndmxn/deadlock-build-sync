@@ -157,6 +157,7 @@ def _generate_staged_response(
     model: str | None,
     kit_model: str | None,
     timeout_seconds: float,
+    max_attempts: int = 1,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     resolved_kit_model = kit_model or generate_narratives.DEFAULT_KIT_MODEL
     resolved_synthesis_model = model or generate_narratives.DEFAULT_SYNTHESIS_MODEL
@@ -170,17 +171,14 @@ def _generate_staged_response(
             identity_fields=("hero_id", "kit_basis_sha256"),
             validator=generate_narratives.validate_kit_response,
             label=f"kit analysis for {case.name}",
-            max_attempts=1,
+            max_attempts=max_attempts,
             timeout_seconds=timeout_seconds,
         ),
     )
-    synthesis_context = {
-        **case.hero,
-        "preliminary_kit_analysis": kit_profile,
-    }
+    synthesis_context = generate_narratives.synthesis_context(case.hero, kit_profile)
     response = generate_narratives.generate_validated_response(
         synthesis_context,
-        synthesis_context,
+        case.hero,
         generate_narratives.GenerationStage(
             schema_path=SCHEMA_PATH,
             model=resolved_synthesis_model,
@@ -192,7 +190,7 @@ def _generate_staged_response(
             ),
             validator=generate_narratives.validate_response,
             label=f"narrative synthesis for {case.name}",
-            max_attempts=1,
+            max_attempts=max_attempts,
             timeout_seconds=timeout_seconds,
             normalizer=generate_narratives.normalize_narrative_response,
         ),
@@ -228,6 +226,7 @@ def generate_reliability_test_case(
                 model=model,
                 kit_model=kit_model,
                 timeout_seconds=timeout_seconds,
+                max_attempts=generate_narratives.DEFAULT_GENERATION_ATTEMPTS,
             )
         except generate_narratives.GenerationError as error:
             samples.append({

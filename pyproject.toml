@@ -128,27 +128,63 @@ select = ["ALL"]
 ]
 "src/deadlock_build_sync/api.py" = [
   "suspicious-url-open-usage", # The constructor restricts requests to HTTP(S).
+  "too-many-arguments", # Snapshot identity is explicit at this I/O boundary.
+]
+"src/deadlock_build_sync/artifacts.py" = [
+  "complex-structure", # Sidecar admission reports every identity and coverage defect.
 ]
 "src/deadlock_build_sync/cache.py" = [
   "complex-structure",
   "too-many-arguments",
+  "too-many-branches", # The mutation boundary validates each durability/safety gate explicitly.
+  "too-many-locals", # Pre/post identities remain named for auditability.
+  "too-many-statements", # Install, validation, and recovery form one transaction.
   "too-many-statements-in-try-clause",
+  "raise-within-try", # Validation failures are recovered by the surrounding transaction.
 ]
 "src/deadlock_build_sync/cli.py" = ["print"]
+"src/deadlock_build_sync/evaluation.py" = [
+  "complex-structure", # Evaluation and rollback gates report each independent failure mode.
+  "too-many-branches", # Monitoring retains explicit rollback, refusal, and alert precedence.
+]
 "src/deadlock_build_sync/kv3_binary.py" = [
   "complex-structure",
   "float-equality-comparison",
   "too-many-branches",
+]
+"src/deadlock_build_sync/mechanics.py" = [
+  "complex-structure", # Mechanics validation enumerates currency and legal-state gates.
+]
+"src/deadlock_build_sync/narratives.py" = [
+  "complex-structure", # Artifact admission reports each identity and coverage failure explicitly.
+]
+"src/deadlock_build_sync/policy.py" = [
+  "complex-structure", # Graph, guard, and legal-state validation are exhaustive by design.
+  "too-many-return-statements", # Typed guard dispatch has one terminal per operator.
+  "too-many-statements-in-try-clause", # Mechanics errors are translated at one boundary.
 ]
 "src/deadlock_build_sync/protobuf.py" = ["too-many-arguments"]
 "src/deadlock_build_sync/purchase_guide.py" = [
   "complex-structure",
   "too-many-locals",
 ]
+"src/deadlock_build_sync/strategy_context.py" = [
+  "complex-structure", # Artifact admission checks every completeness/fingerprint gate.
+  "too-many-arguments", # Closed evidence packet inputs remain explicit at export.
+  "too-many-branches", # Validation reports exact malformed artifact conditions.
+]
+"src/deadlock_build_sync/service.py" = [
+  "complex-structure", # Cohort collection and policy construction enforce staged abstentions.
+  "too-many-arguments", # Structured skip reporting retains hero identity and reason.
+  "too-many-branches", # Policy construction keeps each mechanics-backed conditional gate explicit.
+  "too-many-locals", # Evidence identities stay named across collection and projection.
+  "too-many-statements", # One orchestration pass freezes and materializes a coherent snapshot.
+]
 "tests/*.py" = [
   "assert",
   "float-equality-comparison",
   "implicit-namespace-package",
+  "private-member-access", # Fault-injection tests exercise internal safety boundaries.
   "pytest-composite-assertion",
 ]
 

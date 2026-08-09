@@ -16,7 +16,9 @@ def test_wilson_interval_matches_known_value() -> None:
     assert high == pytest.approx(0.6439, abs=0.0001)
 
 
-def test_adaptive_increment_and_window_selection() -> None:
+def test_adaptive_increment_and_central_buyer_distribution_ignore_outcome_peaks() -> (
+    None
+):
     rows = [
         PurchaseBucketRow(0, 5, 2),
         PurchaseBucketRow(1000, 25, 14),
@@ -26,11 +28,21 @@ def test_adaptive_increment_and_window_selection() -> None:
     ]
     assert choose_adaptive_bucket_increment(rows, 100) == 1000
     windows = analyze_purchase_windows(rows, 100, 10_000)
-    assert windows
-    assert format_purchase_window(windows[0]).endswith("k")
+    shifted_outcomes = [
+        PurchaseBucketRow(row.bucket, row.matches, row.matches - row.wins)
+        for row in rows
+    ]
+    shifted = analyze_purchase_windows(shifted_outcomes, 100, 10_000)
+    assert [(window.bucket_start, window.bucket_end) for window in windows] == [
+        (1000, 4000)
+    ]
+    assert [(window.bucket_start, window.bucket_end) for window in shifted] == [
+        (1000, 4000)
+    ]
+    assert format_purchase_window(windows[0]) == "1–4k"
 
 
-def test_guide_excludes_missing_windows_sorts_and_caps() -> None:
+def test_guide_keeps_missing_timing_sorts_all_items_by_event_volume() -> None:
     assets = []
     overall = []
     buckets = []
@@ -65,7 +77,10 @@ def test_guide_excludes_missing_windows_sorts_and_caps() -> None:
         overall,
         buckets,
     )
-    assert len(guide.tiers[1]) == 8
-    assert [item.item_id for item in guide.tiers[1]] == list(range(1000, 1008))
-    assert not guide.tiers[2]
-    assert "Pick 100.0%" in guide.tiers[1][0].annotation
+    assert len(guide.tiers[1]) == 10
+    assert [item.item_id for item in guide.tiers[1]] == list(range(1000, 1010))
+    assert guide.tiers[2][0].item_id == 2000
+    assert not guide.tiers[2][0].windows
+    assert "unavailable from aggregate telemetry" in guide.tiers[2][0].annotation
+    assert "Relative event volume 100.0%" in guide.tiers[1][0].annotation
+    assert "observed outcome rate" in guide.tiers[1][0].annotation

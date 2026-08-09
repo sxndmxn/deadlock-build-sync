@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Privacy-bounded build-policy recommendation event",
+  "type": "object",
+  "properties": {
+    "schema_version": {"const": 1},
+    "decision_id": {"type": "string", "minLength": 1},
+    "snapshot_id": {"type": "string", "minLength": 1},
+    "policy_id": {"type": "string", "minLength": 1},
+    "recommendation_timestamp": {"type": "integer", "minimum": 0},
+    "feature_as_of_timestamp": {"type": "integer", "minimum": 0},
+    "candidate_order": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "exposed": {"type": "boolean"},
+    "recommendation": {"type": "string", "minLength": 1},
+    "adopted_action": {"type": ["string", "null"]},
+    "deviation_reason": {"type": ["string", "null"]},
+    "recalculation_node": {"type": ["string", "null"]},
+    "behavior_propensity": {
+      "type": ["number", "null"],
+      "exclusiveMinimum": 0,
+      "maximum": 1
+    },
+    "experiment_assignment": {"type": ["string", "null"]},
+    "intermediate_outcomes": {
+      "type": "object",
+      "additionalProperties": {"type": "number", "minimum": 0, "maximum": 1}
+    },
+    "final_outcome": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+    "retention_days": {"type": "integer", "minimum": 1, "maximum": 90}
+  },
+  "required": [
+    "schema_version",
+    "decision_id",
+    "snapshot_id",
+    "policy_id",
+    "recommendation_timestamp",
+    "feature_as_of_timestamp",
+    "candidate_order",
+    "exposed",
+    "recommendation",
+    "adopted_action",
+    "deviation_reason",
+    "recalculation_node",
+    "behavior_propensity",
+    "experiment_assignment",
+    "intermediate_outcomes",
+    "final_outcome",
+    "retention_days"
+  ],
+  "not": {
+    "anyOf": [
+      {"required": ["account_id"]},
+      {"required": ["steam_id"]},
+      {"required": ["player_id"]},
+      {"required": ["persona"]},
+      {"required": ["email"]},
+      {"required": ["ip_address"]}
+    ]
+  },
+  "additionalProperties": false
+}

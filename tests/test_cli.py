@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -14,8 +15,17 @@ from deadlock_build_sync.narratives import (
     NarrativeCatalog,
 )
 from deadlock_build_sync.purchase_guide import PurchaseGuide
-from deadlock_build_sync.ranks import DEFAULT_RANK_RANGE
+from deadlock_build_sync.ranks import DEFAULT_RANK_RANGE, RankCatalog
 from deadlock_build_sync.service import GeneratedGuides
+from deadlock_build_sync.snapshot import (
+    EpochBoundary,
+    EpochSet,
+    EvidenceRecord,
+    EvidenceUnit,
+    MatchMode,
+    OutcomePolicy,
+    SnapshotManifest,
+)
 
 
 def test_sync_defaults_to_every_eligible_hero_and_staged_models() -> None:
@@ -26,6 +36,37 @@ def test_sync_defaults_to_every_eligible_hero_and_staged_models() -> None:
     assert args.kit_model == DEFAULT_KIT_MODEL
     assert args.model == DEFAULT_SYNTHESIS_MODEL
     assert args.max_attempts == 3
+    assert args.match_mode == MatchMode.RANKED
+    assert args.client_version is None
+
+
+def snapshot() -> SnapshotManifest:
+    boundary = EpochBoundary("patch", 123)
+    return SnapshotManifest(
+        client_version=123,
+        as_of_timestamp=999,
+        created_at=datetime.now(UTC).isoformat(),
+        match_mode=MatchMode.RANKED,
+        game_mode="normal",
+        rank_range=DEFAULT_RANK_RANGE.as_dict(),
+        rank_labels_sha256="ranks",
+        patch={"identity": "patch"},
+        epochs=EpochSet(boundary, boundary, boundary, boundary),
+        outcome_policy=OutcomePolicy(),
+        outcome_policy_enforced=False,
+        records=(
+            EvidenceRecord(
+                "fixture",
+                {},
+                datetime.now(UTC).isoformat(),
+                "0" * 64,
+                1,
+                EvidenceUnit.ASSET,
+                "fixture",
+                "none",
+            ),
+        ),
+    )
 
 
 def test_sync_generates_artifacts_and_installs_without_extra_flags(
@@ -49,11 +90,17 @@ def test_sync_generates_artifacts_and_installs_without_extra_flags(
     }
     generated = GeneratedGuides(
         guides=[guide],
+        policies=[],
         contexts=[context],
         skipped_heroes=(),
+        exclusions=(),
+        eligible_hero_ids=frozenset({12}),
+        subset_selected=False,
         rank_range=DEFAULT_RANK_RANGE,
+        rank_catalog=RankCatalog({tier: f"Tier {tier}" for tier in range(1, 12)}),
         persona="Player",
         patch=Patch("Patch", 123, "2026-01-01T00:00:00Z"),
+        manifest=snapshot(),
     )
     calls: dict[str, Any] = {}
 
@@ -66,6 +113,18 @@ def test_sync_generates_artifacts_and_installs_without_extra_flags(
 
     monkeypatch.setattr(cli_module, "generate_guides", fake_generate)
 
+    def fake_write_context(path: Path, _generated: GeneratedGuides) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{}\n", encoding="utf-8")
+
+    monkeypatch.setattr(cli_module, "_write_strategy_context", fake_write_context)
+
+    def fake_write_policies(path: Path, _generated: GeneratedGuides) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{}\n", encoding="utf-8")
+
+    monkeypatch.setattr(cli_module, "_write_policy_artifact", fake_write_policies)
+
     def fake_narratives(argv: list[str] | None = None) -> int:
         calls["generation_args"] = argv
         return 0
@@ -74,7 +133,17 @@ def test_sync_generates_artifacts_and_installs_without_extra_flags(
     monkeypatch.setattr(
         cli_module,
         "load_narrative_catalog",
-        lambda _path: NarrativeCatalog("2026-01-01T00:00:00Z", {}),
+        lambda _path: NarrativeCatalog(
+            snapshot_id=generated.manifest.snapshot_id,
+            patch_identity=generated.patch.identity,
+            client_version=123,
+            match_mode="ranked",
+            game_mode="normal",
+            source_context_sha256="0" * 64,
+            requested_hero_ids=frozenset({12}),
+            exclusions={},
+            heroes={},
+        ),
     )
     monkeypatch.setattr(
         cli_module,
@@ -90,6 +159,8 @@ def test_sync_generates_artifacts_and_installs_without_extra_flags(
             updated=0,
             cache_path=cache_path,
             backup_directory=tmp_path / "backup",
+            snapshot_id=generated.manifest.snapshot_id,
+            policy_ids={12: "policy"},
         ),
     )
 
@@ -98,9 +169,10 @@ def test_sync_generates_artifacts_and_installs_without_extra_flags(
         "--artifacts",
         str(tmp_path / "artifacts"),
     ])
-    assert cli_module._run_sync(args) == 0  # ruff: ignore[private-member-access]
+    assert cli_module._run_sync(args) == 0
     assert calls["all_heroes"] is True
     assert (tmp_path / "artifacts/strategy-context.json").is_file()
+    assert (tmp_path / "artifacts/policies.json").is_file()
     generation_args = calls["generation_args"]
     assert isinstance(generation_args, list)
     assert "--kit-model" in generation_args

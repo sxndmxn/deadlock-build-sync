@@ -15,8 +15,6 @@ NORMAL_AVERAGE_SHARE = 0.10
 LOW_VOLUME_AVERAGE_SHARE = 0.15
 MIN_WINDOW_MATCHES = 20
 MIN_WINDOW_SHARE = 0.05
-WINDOW_SCORE_TOLERANCE = 0.07
-MAX_ITEMS_PER_TIER = 8
 
 
 @dataclass(frozen=True)
@@ -32,7 +30,7 @@ class GroupedPurchaseBucket:
     bucket_end: int
     matches: int
     wins: int
-    true_win_rate: float
+    observed_outcome_rate: float
     wilson_lower_bound: float
 
 
@@ -42,7 +40,7 @@ class PurchaseWindow:
     bucket_end: int
     matches: int
     wins: int
-    true_win_rate: float
+    observed_outcome_rate: float
     wilson_lower_bound: float
 
 
@@ -51,16 +49,38 @@ class GuideItem:
     item_id: int
     name: str
     tier: int
-    overall_matches: int
-    overall_win_rate: float
-    overall_wilson_lower_bound: float
-    relative_pick_rate: float
+    purchase_event_observations: int
+    observed_outcome_rate: float
+    observed_outcome_lower_bound: float
+    relative_purchase_event_volume: float
     windows: tuple[PurchaseWindow, ...]
+    required_flex_slots: int | None = None
+    sell_priority: int | None = None
+    imbue_target_ability_id: int | None = None
+    tactical_annotation: str = ""
 
     @property
     def annotation(self) -> str:
-        windows = " • ".join(format_purchase_window(window) for window in self.windows)
-        return f"{windows}\nPick {self.relative_pick_rate * 100:.1f}% | WR {self.overall_win_rate * 100:.1f}%"
+        if self.tactical_annotation:
+            return self.tactical_annotation
+        timing = (
+            " • ".join(format_purchase_window(window) for window in self.windows)
+            if self.windows
+            else "unavailable from aggregate telemetry"
+        )
+        return (
+            f"Observed buyer purchase-event NW distribution: {timing}\n"
+            f"Relative event volume {self.relative_purchase_event_volume * 100:.1f}% | "
+            f"observed outcome rate {self.observed_outcome_rate * 100:.1f}%"
+        )
+
+
+@dataclass(frozen=True)
+class GuideCategory:
+    name: str
+    items: tuple[GuideItem, ...]
+    description: str = ""
+    optional: bool = False
 
 
 @dataclass(frozen=True)
@@ -72,6 +92,12 @@ class PurchaseGuide:
     ability_path: AbilityPath | None = None
     summary: str = ""
     tier_summaries: dict[int, str] = field(default_factory=dict)
+    categories: tuple[GuideCategory, ...] = ()
+    snapshot_id: str = ""
+    policy_id: str = ""
+    client_version: int | None = None
+    match_mode: str = ""
+    rank_identity: str = ""
 
     @property
     def item_count(self) -> int:
@@ -79,9 +105,35 @@ class PurchaseGuide:
 
     @property
     def has_complete_item_coverage(self) -> bool:
-        return all(
-            len(self.tiers.get(tier, ())) == MAX_ITEMS_PER_TIER for tier in range(1, 5)
-        )
+        return all(self.tiers.get(tier) for tier in range(1, 5))
+
+    @property
+    def rendered_categories(self) -> tuple[GuideCategory, ...]:
+        if self.categories:
+            return self.categories
+        result: list[GuideCategory] = []
+        for tier in range(1, 5):
+            items = self.tiers.get(tier, ())
+            if not items:
+                continue
+            summary = self.tier_summaries.get(tier, "")
+            result.append(
+                GuideCategory(
+                    name=f"CORE {tier}",
+                    items=items[:1],
+                    description=summary,
+                )
+            )
+            if len(items) > 1:
+                result.append(
+                    GuideCategory(
+                        name=f"OPTIONS {tier}",
+                        items=items[1:],
+                        description="Situational alternatives; choose only when their trigger applies.",
+                        optional=True,
+                    )
+                )
+        return tuple(result)
 
 
 def wilson_score_interval(
@@ -121,7 +173,7 @@ def group_purchase_buckets(
                 bucket_end=key + increment,
                 matches=matches,
                 wins=wins,
-                true_win_rate=wins / matches,
+                observed_outcome_rate=wins / matches,
                 wilson_lower_bound=lower,
             )
         )
@@ -206,15 +258,8 @@ def _aggregate_window(
         bucket_end=selected[-1].bucket_end,
         matches=matches,
         wins=wins,
-        true_win_rate=wins / matches if matches else 0.0,
+        observed_outcome_rate=wins / matches if matches else 0.0,
         wilson_lower_bound=lower,
-    )
-
-
-def _ranges_overlap(first: PurchaseWindow, second: PurchaseWindow) -> bool:
-    return (
-        first.bucket_start < second.bucket_end
-        and second.bucket_start < first.bucket_end
     )
 
 
@@ -236,60 +281,27 @@ def select_purchase_windows(
     if not eligible:
         return []
 
-    peak_indexes: list[int] = []
+    # This is a descriptive central range among observed purchase events, not a
+    # recommended timing window. It deliberately ignores outcome peaks. True timing
+    # recommendations require first-purchase risk sets (telemetry.py).
+    total = sum(group.matches for group in eligible)
+    lower_target = total * 0.25
+    upper_target = total * 0.75
+    cumulative = 0
+    start_index = 0
+    end_index = len(eligible) - 1
     for index, group in enumerate(eligible):
-        previous = eligible[index - 1] if index > 0 else None
-        following = eligible[index + 1] if index + 1 < len(eligible) else None
-        previous_score = (
-            previous.wilson_lower_bound
-            if previous is not None and previous.bucket_end == group.bucket_start
-            else -math.inf
-        )
-        following_score = (
-            following.wilson_lower_bound
-            if following is not None and group.bucket_end == following.bucket_start
-            else -math.inf
-        )
-        if (
-            group.wilson_lower_bound >= previous_score
-            and group.wilson_lower_bound >= following_score
-        ):
-            peak_indexes.append(index)
-
-    candidates: dict[tuple[int, int], PurchaseWindow] = {}
-    for peak_index in peak_indexes:
-        peak = eligible[peak_index]
-        floor = peak.wilson_lower_bound - WINDOW_SCORE_TOLERANCE
-        start_index = peak_index
-        end_index = peak_index
-        while (
-            start_index > 0
-            and eligible[start_index - 1].bucket_end
-            == eligible[start_index].bucket_start
-            and eligible[start_index - 1].wilson_lower_bound >= floor
-        ):
-            start_index -= 1
-        while (
-            end_index < len(eligible) - 1
-            and eligible[end_index].bucket_end == eligible[end_index + 1].bucket_start
-            and eligible[end_index + 1].wilson_lower_bound >= floor
-        ):
-            end_index += 1
-        candidate = _aggregate_window(eligible, start_index, end_index)
-        candidates[candidate.bucket_start, candidate.bucket_end] = candidate
-
-    selected: list[PurchaseWindow] = []
-    ordered = sorted(
-        candidates.values(),
-        key=lambda window: (-window.wilson_lower_bound, -window.matches),
-    )
-    for candidate in ordered:
-        if any(_ranges_overlap(window, candidate) for window in selected):
-            continue
-        selected.append(candidate)
-        if len(selected) == 2:
+        cumulative += group.matches
+        if cumulative >= lower_target:
+            start_index = index
             break
-    return sorted(selected, key=lambda window: window.bucket_start)
+    cumulative = 0
+    for index, group in enumerate(eligible):
+        cumulative += group.matches
+        if cumulative >= upper_target:
+            end_index = index
+            break
+    return [_aggregate_window(eligible, start_index, end_index)]
 
 
 def analyze_purchase_windows(
@@ -342,13 +354,6 @@ def build_purchase_guide(
             )
         )
 
-    horizons = calculate_tier_horizons(
-        (
-            int(asset["item_tier"]),
-            bucket_rows_by_item.get(int(asset["id"]), ()),
-        )
-        for asset in shopable_assets
-    )
     eligible_stats = [
         row
         for row in overall_stats
@@ -369,21 +374,19 @@ def build_purchase_guide(
             analyze_purchase_windows(
                 bucket_rows_by_item.get(item_id, ()),
                 matches,
-                horizons.get(tier, math.inf),
+                math.inf,
             )
         )
-        if not windows:
-            continue
         lower, _ = wilson_score_interval(wins, matches)
         guide_items.append(
             GuideItem(
                 item_id=item_id,
                 name=str(asset.get("name") or "Unknown Item"),
                 tier=tier,
-                overall_matches=matches,
-                overall_win_rate=wins / matches,
-                overall_wilson_lower_bound=lower,
-                relative_pick_rate=matches / max_matches,
+                purchase_event_observations=matches,
+                observed_outcome_rate=wins / matches,
+                observed_outcome_lower_bound=lower,
+                relative_purchase_event_volume=matches / max_matches,
                 windows=windows,
             )
         )
@@ -393,13 +396,13 @@ def build_purchase_guide(
         tier_items = sorted(
             (item for item in guide_items if item.tier == tier),
             key=lambda item: (
-                -item.relative_pick_rate,
-                -item.overall_wilson_lower_bound,
-                -item.overall_matches,
+                -item.relative_purchase_event_volume,
+                -item.observed_outcome_lower_bound,
+                -item.purchase_event_observations,
                 item.name.casefold(),
             ),
         )
-        tiers[tier] = tuple(tier_items[:MAX_ITEMS_PER_TIER])
+        tiers[tier] = tuple(tier_items)
 
     return PurchaseGuide(
         hero_id=int(hero["id"]),

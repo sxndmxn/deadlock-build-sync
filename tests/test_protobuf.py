@@ -48,7 +48,8 @@ def test_build_wrapper_and_metadata_round_trip() -> None:
     assert metadata.author_account_id == 146293212
     assert metadata.name == "XMLJDX | Kelvin | Test Patch"
     assert MANAGED_MARKER in (metadata.description or "")
-    assert "Filters: Standard, Phantom I–Eternus VI." in (metadata.description or "")
+    assert "Ranks: Phantom I–Eternus VI." in (metadata.description or "")
+    assert "ruleset: NORMAL" in (metadata.description or "")
     assert metadata.publish_timestamp is None
 
 
@@ -116,7 +117,9 @@ def test_encodes_native_ability_order_and_descriptions() -> None:
     assert first[1] == 10
     assert first[2] == 2
     assert first[3] == (1 << 64) - 1
-    assert first[4] == b"Path pick 40.0% | Raw WR 60.0% | 100 matches"
+    assert first[4] == (
+        b"State-conditioned projection | final support 100 | observed outcome rate 60.0%"
+    )
     assert second[1] == 10
     assert second[2] == 1
     assert second[3] == (1 << 64) - 1

@@ -1,159 +1,299 @@
-from argparse import Namespace
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+from deadlock_build_sync.narratives import NARRATIVE_PROMPT_VERSION
 from scripts import generate_narratives
 
 
-def _valid_context_and_response() -> tuple[dict[str, Any], dict[str, Any]]:
-    hero = {
+def packet_and_response() -> tuple[dict[str, Any], dict[str, Any]]:
+    packet: dict[str, Any] = {
         "hero_id": 12,
         "hero": "Kelvin",
-        "context_sha256": "a" * 64,
-        "kit_basis_sha256": "d" * 64,
-        "narrative_basis_sha256": "b" * 64,
-        "abilities": [
-            {
-                "ability_id": index,
-                "ability": f"Ability {quarter}",
-                "stats": [{"label": "Damage", "value": index * 10}],
-            }
-            for index, quarter in enumerate(generate_narratives.QUARTERS, start=1)
-        ],
-        "ability_path": {
-            "steps": [
-                {
-                    "quarter": index,
-                    "ability": f"Ability {quarter}",
-                    "upgrade": "UNLOCK",
-                }
-                for index, quarter in enumerate(generate_narratives.QUARTERS, start=1)
+        "snapshot_id": "1" * 64,
+        "policy_id": "2" * 64,
+        "context_sha256": "3" * 64,
+        "kit_basis_sha256": "4" * 64,
+        "narrative_basis_sha256": "5" * 64,
+        "hero_description": {"role": "Protect allies", "playstyle": "Control space"},
+        "hero_mechanics": {
+            "abilities": [
+                {"id": ability_id, "name": name, "description": {"desc": name}}
+                for ability_id, name in (
+                    (10, "Frost Grenade"),
+                    (20, "Arctic Beam"),
+                    (30, "Ice Path"),
+                    (40, "Frozen Shelter"),
+                )
             ]
         },
-        "tiers": {
-            quarter: [{"item": f"Item {quarter}"}]
-            for quarter in generate_narratives.QUARTERS
+        "ability_policy": {
+            "language_ceiling": "descriptive default projection, not a universal path",
+            "steps": [
+                {
+                    "position": index,
+                    "earliest_legal_level": index,
+                    "ability_id": ability_id,
+                    "ability": name,
+                    "action": "UNLOCK" if index <= 4 else "UPGRADE_1",
+                }
+                for index, (ability_id, name) in enumerate(
+                    (
+                        (10, "Frost Grenade"),
+                        (20, "Arctic Beam"),
+                        (30, "Ice Path"),
+                        (40, "Frozen Shelter"),
+                    ),
+                    start=1,
+                )
+            ],
         },
-        "duration_curve": {
-            "shape": "LATE_SCALING",
+        "ending_duration_profile": {
+            "estimand": "ending_duration_profile",
             "strongest_phase": "LATE (45m+)",
             "weakest_phase": "EARLY (<30m)",
         },
-    }
-    response = {
-        "hero_id": 12,
-        "context_sha256": "a" * 64,
-        "narrative_basis_sha256": "b" * 64,
-        "tactical_profile": {
-            "primary_role": "control support",
-            "fight_role": "Control a committed fight and protect allied pressure.",
-            "economy_plan": "Farm safely, then group for coordinated objectives.",
-            "power_spikes": [
-                {
-                    "quarter": "III",
-                    "trigger": "Item III with Ability III UNLOCK",
-                    "tactical_unlock": (
-                        "Repeated control permits coordinated objective pressure."
-                    ),
-                }
-            ],
-            "duration_plan": {
-                "shape": "LATE_SCALING",
-                "strongest_phase": "LATE (45m+)",
-                "weakest_phase": "EARLY (<30m)",
-                "macro_plan": "Scale safely and convert clean objectives.",
-                "late_build_response": "REINFORCE",
-                "response_reason": "Late items reinforce control and protection.",
+        "policy": {"policy_id": "2" * 64, "nodes": []},
+        "explainable_actions": [
+            {
+                "node_id": "core",
+                "kind": "purchase",
+                "action_id": 101,
+                "action": "Frost Core",
+                "evidence_ref": "item/101/purchase-events",
+                "claim_class": "descriptive",
+                "language_ceiling": ["observed"],
+                "mechanics_refs": ["item/101"],
+                "annotation": "",
             },
-        },
-        "build_summary": "Control fights, protect allies, and convert objectives.",
-        "quarters": {
-            "I": (
-                "TIER I: Use Item I with Ability I when trading, then hold a safe "
-                "position."
-            ),
-            "II": (
-                "TIER II: Rotate with Item II and Ability II when allies group for "
-                "a fight."
-            ),
-            "III": (
-                "TIER III: POWER SPIKE — Item III with Ability III UNLOCK "
-                "permits objective pressure when allies group; preserve economy "
-                "between attempts."
-            ),
-            "IV": (
-                "TIER IV: CURVE RESPONSE — REINFORCE. Use Item IV with Ability IV "
-                "and close after a won fight."
-            ),
-        },
-    }
-    return hero, response
-
-
-def test_kit_context_contains_only_ability_evidence() -> None:
-    hero, _ = _valid_context_and_response()
-
-    context = generate_narratives.kit_context(hero)
-
-    assert context["kit_basis_sha256"] == "d" * 64
-    assert len(context["abilities"]) == 4
-    assert "tiers" not in context
-    assert "duration_curve" not in context
-
-
-def test_binds_model_identity_to_the_invocation_context() -> None:
-    response = {
-        "hero_id": 99,
-        "kit_basis_sha256": "0" * 64,
-        "combat_pattern": "Keep this model-authored field.",
-    }
-    source = {"hero_id": 12, "kit_basis_sha256": "d" * 64}
-
-    bound = generate_narratives.bind_response_identity(
-        response,
-        source,
-        ("hero_id", "kit_basis_sha256"),
-    )
-
-    assert bound["hero_id"] == 12
-    assert bound["kit_basis_sha256"] == "d" * 64
-    assert bound["combat_pattern"] == "Keep this model-authored field."
-
-
-def test_normalizes_presentation_only_sentence_endings() -> None:
-    response = {
-        "quarters": {"I": "TIER I: Hold lane", "II": "TIER II: Rotate!"},
-        "tactical_profile": {
-            "power_spikes": [
+            {
+                "node_id": "counter",
+                "kind": "purchase",
+                "action_id": 102,
+                "action": "Reactive Barrier",
+                "evidence_ref": "item/102/purchase-events",
+                "claim_class": "descriptive",
+                "language_ceiling": ["observed"],
+                "mechanics_refs": ["item/102"],
+                "annotation": (
+                    "If burst is material, choose Reactive Barrier instead of Frost Core; "
+                    "use before committing; skip unless burst is observed."
+                ),
+            },
+        ],
+        "projection": {
+            "categories": [
                 {
-                    "quarter": "II",
-                    "trigger": "An item and ability",
-                    "tactical_unlock": "Commit after the setup lands",
-                }
+                    "name": "CORE — DEFAULT QUEUE",
+                    "optional": False,
+                    "items": [{"item_id": 101, "item": "Frost Core"}],
+                },
+                {
+                    "name": "IF BURST",
+                    "optional": True,
+                    "items": [{"item_id": 102, "item": "Reactive Barrier"}],
+                },
             ]
         },
     }
+    response: dict[str, Any] = {
+        "hero_id": 12,
+        "snapshot_id": "1" * 64,
+        "policy_id": "2" * 64,
+        "context_sha256": "3" * 64,
+        "narrative_basis_sha256": "5" * 64,
+        "tactical_profile": {
+            "primary_role": "control support",
+            "fight_role": "Protect allied pressure and control committed enemies.",
+            "economy_plan": "Take safe income, then group when allied pressure is ready.",
+            "ending_duration_interpretation": {
+                "estimand": "ending_duration_profile",
+                "strongest_phase": "LATE (45m+)",
+                "weakest_phase": "EARLY (<30m)",
+                "plan": "Convert clean openings now while retaining options if play runs late.",
+            },
+        },
+        "build_summary": (
+            "Control committed fights around a compact default path, protect allied "
+            "pressure, and recalculate when an observable defensive trigger appears."
+        ),
+        "action_explanations": [
+            {
+                "node_id": "core",
+                "evidence_ref": "item/101/purchase-events",
+                "instruction": "Use Frost Core as the coherent default purchase.",
+            },
+            {
+                "node_id": "counter",
+                "evidence_ref": "item/102/purchase-events",
+                "instruction": (
+                    "If burst is observed, choose Reactive Barrier before committing; "
+                    "skip it unless that threat is material."
+                ),
+            },
+        ],
+        "category_summaries": [
+            {
+                "category": "CORE — DEFAULT QUEUE",
+                "summary": "Follow Frost Core as the minimal coherent default path.",
+            },
+            {
+                "category": "IF BURST",
+                "summary": (
+                    "When burst is material, choose Reactive Barrier as a conditional "
+                    "replacement rather than an automatic purchase."
+                ),
+            },
+        ],
+    }
+    return packet, response
+
+
+def test_generator_uses_installer_prompt_version() -> None:
+    assert generate_narratives.PROMPT_VERSION == NARRATIVE_PROMPT_VERSION == 18
+
+
+def test_kit_context_excludes_items_outcomes_and_policy() -> None:
+    packet, _ = packet_and_response()
+
+    context = generate_narratives.kit_context(packet)
+
+    assert context["kit_basis_sha256"] == "4" * 64
+    assert len(context["abilities"]) == 4
+    assert "projection" not in context
+    assert "ending_duration_profile" not in context
+    assert "policy" not in context
+
+
+def test_synthesis_context_contains_only_selected_policy_evidence() -> None:
+    source, _ = packet_and_response()
+    source["policy"]["variant"] = "control"
+    source["tiers"] = {
+        "TIER 1": [
+            {"item_id": 101, "item": "Frost Core", "mechanics": {"cost": 500}},
+            {"item_id": 999, "item": "Unused", "mechanics": {"cost": 999}},
+        ]
+    }
+
+    context = generate_narratives.synthesis_context(
+        source,
+        {"hero_id": 12, "kit_basis_sha256": "4" * 64},
+    )
+
+    assert "tiers" not in context
+    assert "matchups" not in context
+    assert "policy" not in context
+    assert [item["item_id"] for item in context["selected_action_mechanics"]] == [101]
+    assert context["policy_summary"]["variant"] == "control"
+
+
+def test_rejects_legacy_ability_quarter() -> None:
+    packet, _ = packet_and_response()
+    packet["ability_policy"]["steps"][0]["quarter"] = 1
+
+    with pytest.raises(
+        generate_narratives.GenerationError, match="legal ability timeline"
+    ):
+        generate_narratives.validate_hero_context(packet)
+
+
+def test_validates_closed_policy_explanation() -> None:
+    packet, response = packet_and_response()
+
+    validated = generate_narratives.validate_response(response, packet)
+
+    assert validated["prompt_version"] == 18
+    assert [row["node_id"] for row in validated["action_explanations"]] == [
+        "core",
+        "counter",
+    ]
+
+
+def test_rejects_changed_snapshot_or_policy() -> None:
+    packet, response = packet_and_response()
+    response["policy_id"] = "9" * 64
+
+    with pytest.raises(generate_narratives.GenerationError, match="changed policy_id"):
+        generate_narratives.validate_response(response, packet)
+
+
+def test_rejects_missing_or_reordered_action() -> None:
+    packet, response = packet_and_response()
+    response["action_explanations"].reverse()
+
+    with pytest.raises(generate_narratives.GenerationError, match="closed action set"):
+        generate_narratives.validate_response(response, packet)
+
+
+def test_rejects_cross_category_item() -> None:
+    packet, response = packet_and_response()
+    response["category_summaries"][0]["summary"] += " Buy Reactive Barrier too."
+
+    with pytest.raises(generate_narratives.GenerationError, match="cross-category"):
+        generate_narratives.validate_response(response, packet)
+
+
+def test_allows_exact_annotated_replacement_in_optional_summary() -> None:
+    packet, response = packet_and_response()
+    response["category_summaries"][1]["summary"] = (
+        "When burst is material, choose Reactive Barrier instead of Frost Core as "
+        "a conditional replacement, not an automatic Queue purchase."
+    )
+
+    validated = generate_narratives.validate_response(response, packet)
+
+    assert "instead of Frost Core" in validated["category_summaries"][1]["summary"]
+
+
+def test_rejects_optional_category_without_observable_condition() -> None:
+    packet, response = packet_and_response()
+    response["category_summaries"][1]["summary"] = (
+        "Reactive Barrier is a conditional replacement and is never automatic."
+    )
+
+    with pytest.raises(generate_narratives.GenerationError, match="optional trigger"):
+        generate_narratives.validate_response(response, packet)
+
+
+@pytest.mark.parametrize("phrase", ["improves win rate", "purchase-event volume"])
+def test_rejects_causal_or_analytic_language(phrase: str) -> None:
+    packet, response = packet_and_response()
+    response["build_summary"] += f" It {phrase}."
+
+    with pytest.raises(
+        generate_narratives.GenerationError, match=r"claim|analytic-unit"
+    ):
+        generate_narratives.validate_response(response, packet)
+
+
+def test_rejects_changed_ending_duration_estimand() -> None:
+    packet, response = packet_and_response()
+    response["tactical_profile"]["ending_duration_interpretation"][
+        "strongest_phase"
+    ] = "MID (30–45m)"
+
+    with pytest.raises(generate_narratives.GenerationError, match="strongest_phase"):
+        generate_narratives.validate_response(response, packet)
+
+
+def test_normalizes_only_sentence_endings() -> None:
+    _, response = packet_and_response()
+    response["build_summary"] = "A complete default plan"
+    response["action_explanations"][0]["instruction"] = "Use Frost Core"
 
     normalized = generate_narratives.normalize_narrative_response(response)
 
-    assert normalized["quarters"] == {
-        "I": "TIER I: Hold lane.",
-        "II": "TIER II: Rotate!",
-    }
-    assert (
-        normalized["tactical_profile"]["power_spikes"][0]["tactical_unlock"]
-        == "Commit after the setup lands."
-    )
-    assert response["quarters"]["I"] == "TIER I: Hold lane"
+    assert normalized["build_summary"] == "A complete default plan."
+    assert normalized["action_explanations"][0]["instruction"] == "Use Frost Core."
+    assert response["build_summary"] == "A complete default plan"
 
 
-def test_generation_retries_a_semantic_validation_failure(
+def test_generation_retries_semantic_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    hero, response = _valid_context_and_response()
+    packet, response = packet_and_response()
     attempts = 0
 
     def fake_run_codex(*_args: object, **_kwargs: object) -> dict[str, Any]:
@@ -166,434 +306,68 @@ def test_generation_retries_a_semantic_validation_failure(
         _context: dict[str, Any],
     ) -> dict[str, Any]:
         if attempts == 1:
-            raise generate_narratives.GenerationError("missing active instruction")
+            raise generate_narratives.GenerationError("invalid first response")
         return candidate
 
     monkeypatch.setattr(generate_narratives, "run_codex", fake_run_codex)
-
     validated = generate_narratives.generate_validated_response(
-        hero,
-        hero,
+        packet,
+        packet,
         generate_narratives.GenerationStage(
             schema_path=tmp_path / "schema.json",
             model="test-model",
-            prompt="test prompt",
-            identity_fields=(
-                "hero_id",
-                "context_sha256",
-                "narrative_basis_sha256",
-            ),
+            prompt="prompt",
+            identity_fields=("hero_id", "snapshot_id", "policy_id"),
             validator=validate,
-            label="test narrative",
+            label="test",
             max_attempts=2,
         ),
     )
 
     assert attempts == 2
-    assert validated["hero_id"] == hero["hero_id"]
+    assert validated["hero_id"] == 12
 
 
-def test_validates_grounded_kit_profile() -> None:
-    hero, _ = _valid_context_and_response()
+def test_kit_validator_preserves_exact_abilities() -> None:
+    packet, _ = packet_and_response()
     response = {
         "hero_id": 12,
-        "kit_basis_sha256": "d" * 64,
-        "primary_role": "mobile control initiator",
-        "combat_pattern": "Enter after setup, control a target, and reset safely.",
-        "economy_tendencies": "Prioritize safe income until the ordered control tools unlock.",
-        "scaling_profile": "Later upgrades deepen control and improve repeated fight access.",
+        "kit_basis_sha256": "4" * 64,
+        "primary_role": "control support",
+        "combat_pattern": "Control committed enemies while protecting allied pressure.",
+        "economy_tendencies": "Take safe income before grouping around allied pressure.",
+        "scaling_profile": "Use the supplied legal upgrades to deepen control options.",
         "ability_roles": [
             {
-                "ability_id": index,
-                "ability": f"Ability {quarter}",
-                "tactical_role": "Creates a supplied and explicitly grounded fight option.",
-                "scaling_hooks": "Its labeled damage and ordered upgrades define its scaling.",
+                "ability_id": ability["id"],
+                "ability": ability["name"],
+                "tactical_role": "Use this supplied ability in the documented fight role.",
+                "scaling_hooks": "Follow only its supplied properties and legal upgrades.",
             }
-            for index, quarter in enumerate(generate_narratives.QUARTERS, start=1)
+            for ability in packet["hero_mechanics"]["abilities"]
         ],
         "synergies": [
-            "Ability I creates the setup that Ability II can safely convert."
+            "Frost Grenade can precede Arctic Beam using supplied mechanics."
         ],
         "uncertainties": [],
     }
 
-    validated = generate_narratives.validate_kit_response(response, hero)
+    validated = generate_narratives.validate_kit_response(response, packet)
 
-    assert validated["prompt_version"] == generate_narratives.KIT_PROMPT_VERSION
-    assert validated["ability_roles"][3]["ability_id"] == 4
-
-
-def test_rejects_kit_profile_that_changes_an_ability() -> None:
-    hero, _ = _valid_context_and_response()
-    response = {
-        "hero_id": 12,
-        "kit_basis_sha256": "d" * 64,
-        "primary_role": "control",
-        "combat_pattern": "Use the supplied abilities to control committed fights.",
-        "economy_tendencies": "Use safe income windows before taking coordinated fights.",
-        "scaling_profile": "The supplied upgrade order adds later tactical options.",
-        "ability_roles": [
-            {
-                "ability_id": index,
-                "ability": "Invented" if index == 4 else f"Ability {quarter}",
-                "tactical_role": "Creates one explicitly supplied tactical option.",
-                "scaling_hooks": "Uses only the supplied description and labeled stats.",
-            }
-            for index, quarter in enumerate(generate_narratives.QUARTERS, start=1)
-        ],
-        "synergies": ["Ability I sets up Ability II using supplied mechanics."],
-        "uncertainties": [],
-    }
-
-    with pytest.raises(generate_narratives.GenerationError, match="changed an ability"):
-        generate_narratives.validate_kit_response(response, hero)
+    assert validated["ability_roles"][3]["ability_id"] == 40
 
 
-def test_supplied_name_match_allows_possessive_suffix() -> None:
-    assert generate_narratives._mentions_item(  # ruff: ignore[private-member-access]
-        "Rabbit Hex's final upgrade",
-        "Rabbit Hex",
+def test_reuse_requires_exact_context_snapshot_and_policy() -> None:
+    packet, response = packet_and_response()
+    response = generate_narratives.validate_response(response, packet)
+
+    assert generate_narratives.validated_reusable_entries(
+        {12: response},
+        {12: packet},
+    ) == {12: response}
+
+    changed = {**packet, "context_sha256": "8" * 64}
+    assert not generate_narratives.validated_reusable_entries(
+        {12: response},
+        {12: changed},
     )
-
-
-@pytest.mark.parametrize(
-    ("trigger", "error"),
-    [
-        (
-            "Ability III UNLOCK",
-            "exactly one top-three same-tier item",
-        ),
-        (
-            "Item IV with Ability III UNLOCK",
-            "exactly one top-three same-tier item",
-        ),
-        (
-            "Item III with Ability IV UNLOCK",
-            "one real same-tier ability milestone",
-        ),
-    ],
-)
-def test_rejects_ungrounded_power_spike_trigger(trigger: str, error: str) -> None:
-    hero, response = _valid_context_and_response()
-    response["tactical_profile"]["power_spikes"][0]["trigger"] = trigger
-
-    with pytest.raises(generate_narratives.GenerationError, match=error):
-        generate_narratives.validate_response(response, hero)
-
-
-def test_rejects_truncated_power_spike_unlock() -> None:
-    hero, response = _valid_context_and_response()
-    response["tactical_profile"]["power_spikes"][0]["tactical_unlock"] = (
-        "Repeated control permits coordinated objective pressure"
-    )
-
-    with pytest.raises(
-        generate_narratives.GenerationError,
-        match="did not finish its tactical unlock",
-    ):
-        generate_narratives.validate_response(response, hero)
-
-
-def test_rejects_ability_before_its_first_path_unlock() -> None:
-    hero, response = _valid_context_and_response()
-    response["quarters"]["I"] += " Do not use Ability II yet."
-
-    with pytest.raises(generate_narratives.GenerationError, match="future ability"):
-        generate_narratives.validate_response(response, hero)
-
-
-def test_rejects_tier_without_decision_condition() -> None:
-    hero, response = _valid_context_and_response()
-    response["quarters"]["IV"] = (
-        "TIER IV: CURVE RESPONSE — REINFORCE. Use Item IV and close the game."
-    )
-
-    with pytest.raises(
-        generate_narratives.GenerationError,
-        match="omitted a decision condition in tier IV",
-    ):
-        generate_narratives.validate_response(response, hero)
-
-
-def test_rejects_late_scaling_tier_without_economy_priority() -> None:
-    hero, response = _valid_context_and_response()
-    response["quarters"]["III"] = (
-        "TIER III: POWER SPIKE — Item III with Ability III UNLOCK improves Spirit "
-        "scaling and permits objective pressure when allies group."
-    )
-
-    with pytest.raises(
-        generate_narratives.GenerationError,
-        match="did not preserve economy in tier III",
-    ):
-        generate_narratives.validate_response(response, hero)
-
-
-def test_rejects_tier_without_same_quarter_ability() -> None:
-    hero, response = _valid_context_and_response()
-    response["quarters"]["II"] = (
-        "TIER II: Rotate with Item II when allies group for a fight."
-    )
-
-    with pytest.raises(
-        generate_narratives.GenerationError,
-        match="omitted a tier II ability-path ability",
-    ):
-        generate_narratives.validate_response(response, hero)
-
-
-def test_rejects_charge_item_for_non_charge_ability() -> None:
-    hero, response = _valid_context_and_response()
-    hero["tiers"]["III"][0]["stats"] = [
-        {"label": "Bonus Ability Charges"},
-        {"label": "Cooldown Reduction For Charged Abilities"},
-    ]
-
-    with pytest.raises(
-        generate_narratives.GenerationError,
-        match="charge-specific item",
-    ):
-        generate_narratives.validate_response(response, hero)
-
-
-def test_accepts_charge_item_for_charge_ability() -> None:
-    hero, response = _valid_context_and_response()
-    hero["tiers"]["III"][0]["stats"] = [
-        {"label": "Bonus Ability Charges"},
-        {"label": "Cooldown Reduction For Charged Abilities"},
-    ]
-    hero["abilities"][2]["stats"] = [{"label": "Ability Charges", "value": 1}]
-
-    validated = generate_narratives.validate_response(response, hero)
-
-    assert validated["tactical_profile"] == response["tactical_profile"]
-
-
-def test_accepts_charge_item_when_an_upgrade_allows_charges() -> None:
-    hero, response = _valid_context_and_response()
-    hero["tiers"]["III"][0]["stats"] = [
-        {"label": "Bonus Ability Charges"},
-        {"label": "Cooldown Reduction For Charged Abilities"},
-    ]
-    hero["abilities"][2]["description"] = {"t3_desc": "Allow Charges"}
-
-    validated = generate_narratives.validate_response(response, hero)
-
-    assert validated["tactical_profile"] == response["tactical_profile"]
-
-
-def test_does_not_treat_charges_up_as_ability_charges() -> None:
-    hero, response = _valid_context_and_response()
-    hero["tiers"]["III"][0]["description"] = {
-        "desc": "The imbued ability charges up over time with bonus damage."
-    }
-
-    validated = generate_narratives.validate_response(response, hero)
-
-    assert validated["tactical_profile"] == response["tactical_profile"]
-
-
-def test_rejects_hero_context_without_complete_ability_path() -> None:
-    hero, _ = _valid_context_and_response()
-    hero["ability_path"] = None
-
-    with pytest.raises(
-        generate_narratives.GenerationError,
-        match="complete ability path",
-    ):
-        generate_narratives.validate_hero_context(hero)
-
-
-def test_main_rewrites_artifact_when_all_narratives_are_reused(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    schema = tmp_path / "schema.json"
-    schema.write_text("{}", encoding="utf-8")
-    output = tmp_path / "narratives.json"
-    hero = {"hero_id": 12, "hero": "Kelvin"}
-    entry = {"hero_id": 12, "hero": "Kelvin"}
-    source = {
-        "schema_version": 3,
-        "source_context_sha256": "a" * 64,
-        "patch": {"published_at": "2026-01-01T00:00:00Z"},
-        "heroes": [hero],
-    }
-    writes: list[dict[str, Any]] = []
-
-    monkeypatch.setattr(
-        generate_narratives,
-        "parse_args",
-        lambda: Namespace(
-            input=tmp_path / "context.json",
-            output=output,
-            schema=schema,
-            hero=None,
-            model=None,
-            force=False,
-        ),
-    )
-    monkeypatch.setattr(generate_narratives, "_load_object", lambda _path: source)
-    monkeypatch.setattr(
-        generate_narratives,
-        "validate_strategy_context_document",
-        lambda _source: None,
-    )
-    monkeypatch.setattr(
-        generate_narratives,
-        "validate_hero_context",
-        lambda _hero: None,
-    )
-    monkeypatch.setattr(
-        generate_narratives,
-        "_existing_entries",
-        lambda _path: {12: entry},
-    )
-    monkeypatch.setattr(
-        generate_narratives,
-        "validated_reusable_entries",
-        lambda _existing, _heroes: {12: entry},
-    )
-    monkeypatch.setattr(
-        generate_narratives,
-        "_write_artifact",
-        lambda _path, document: writes.append(document),
-    )
-
-    assert generate_narratives.main() == 0
-    assert len(writes) == 1
-    assert writes[0]["heroes"] == [entry]
-    assert writes[0]["patch"] == source["patch"]
-
-
-def test_reuses_valid_narrative_when_only_full_context_changes(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    entry = {
-        "hero_id": 12,
-        "prompt_version": generate_narratives.PROMPT_VERSION,
-        "context_sha256": "a" * 64,
-        "narrative_basis_sha256": "b" * 64,
-    }
-    hero = {
-        "hero_id": 12,
-        "context_sha256": "c" * 64,
-        "narrative_basis_sha256": "b" * 64,
-    }
-
-    def validate(
-        response: dict[str, Any],
-        live_hero: dict[str, Any],
-        *,
-        require_context_match: bool = True,
-    ) -> dict[str, Any]:
-        assert response is entry
-        assert live_hero is hero
-        assert not require_context_match
-        return response
-
-    monkeypatch.setattr(generate_narratives, "validate_response", validate)
-
-    reusable = generate_narratives.validated_reusable_entries(
-        {12: entry},
-        {12: hero},
-    )
-
-    assert reusable == {12: entry}
-
-
-def test_does_not_reuse_narrative_when_basis_changes(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    entry = {
-        "hero_id": 12,
-        "prompt_version": generate_narratives.PROMPT_VERSION,
-        "context_sha256": "a" * 64,
-        "narrative_basis_sha256": "b" * 64,
-    }
-    hero = {
-        "hero_id": 12,
-        "context_sha256": "c" * 64,
-        "narrative_basis_sha256": "d" * 64,
-    }
-
-    def reject_validation(*_args: object, **_kwargs: object) -> dict[str, Any]:
-        pytest.fail("a mismatched basis must be rejected before validation")
-
-    monkeypatch.setattr(
-        generate_narratives,
-        "validate_response",
-        reject_validation,
-    )
-
-    reusable = generate_narratives.validated_reusable_entries(
-        {12: entry},
-        {12: hero},
-    )
-
-    assert not reusable
-
-
-def test_does_not_reuse_invalid_existing_entry(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    entry = {
-        "hero_id": 12,
-        "prompt_version": generate_narratives.PROMPT_VERSION,
-        "context_sha256": "a" * 64,
-        "narrative_basis_sha256": "b" * 64,
-    }
-    hero = {
-        "hero_id": 12,
-        "context_sha256": "c" * 64,
-        "narrative_basis_sha256": "b" * 64,
-    }
-
-    def reject_validation(*_args: object, **_kwargs: object) -> dict[str, Any]:
-        raise generate_narratives.GenerationError("invalid existing entry")
-
-    monkeypatch.setattr(
-        generate_narratives,
-        "validate_response",
-        reject_validation,
-    )
-
-    reusable = generate_narratives.validated_reusable_entries(
-        {12: entry},
-        {12: hero},
-    )
-
-    assert not reusable
-
-
-def test_migrates_previous_prompt_output_only_after_current_validation(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    entry = {
-        "hero_id": 12,
-        "prompt_version": 14,
-        "narrative_basis_sha256": "b" * 64,
-    }
-    hero = {
-        "hero_id": 12,
-        "narrative_basis_sha256": "b" * 64,
-    }
-
-    def validate(
-        candidate: dict[str, Any],
-        _hero: dict[str, Any],
-        *,
-        require_context_match: bool,
-    ) -> dict[str, Any]:
-        assert candidate is entry
-        assert not require_context_match
-        return {**candidate, "prompt_version": generate_narratives.PROMPT_VERSION}
-
-    monkeypatch.setattr(generate_narratives, "validate_response", validate)
-
-    reusable = generate_narratives.validated_reusable_entries(
-        {12: entry},
-        {12: hero},
-    )
-
-    assert reusable[12]["prompt_version"] == generate_narratives.PROMPT_VERSION

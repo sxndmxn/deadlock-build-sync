@@ -9,7 +9,7 @@ from .ranks import DEFAULT_RANK_RANGE, RankRange
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from .purchase_guide import PurchaseGuide
+    from .purchase_guide import GuideCategory, GuideItem, PurchaseGuide
 
 MANAGED_MARKER = "[deadlock-build-sync:v1]"
 CATEGORY_LABELS = {1: "I", 2: "II", 3: "III", 4: "IV"}
@@ -174,23 +174,27 @@ def hero_build_metadata(result_blob: bytes) -> HeroBuildMetadata:
     )
 
 
-def _encode_mod(item_id: int, annotation: str) -> bytes:
-    return varint_field(1, item_id) + string_field(2, annotation)
+def _encode_mod(item: GuideItem) -> bytes:
+    return (
+        varint_field(1, item.item_id)
+        + string_field(2, item.annotation)
+        + varint_field(3, item.required_flex_slots)
+        + varint_field(4, item.sell_priority)
+        + varint_field(5, item.imbue_target_ability_id)
+    )
 
 
 def _encode_category(
-    name: str,
-    items: list[tuple[int, str]],
-    description: str,
+    category: GuideCategory,
 ) -> bytes:
     output = bytearray()
-    for item_id, annotation in items:
-        output += message_field(1, _encode_mod(item_id, annotation))
-    output += string_field(2, name)
-    output += string_field(3, description)
+    for item in category.items:
+        output += message_field(1, _encode_mod(item))
+    output += string_field(2, category.name)
+    output += string_field(3, category.description)
     output += float_field(4, 760.0)
     output += float_field(5, 164.0)
-    output += bool_field(6, value=False)
+    output += bool_field(6, value=category.optional)
     return bytes(output)
 
 
@@ -263,24 +267,21 @@ def encode_hero_build(
     rank_range: RankRange = DEFAULT_RANK_RANGE,
 ) -> bytes:
     details = bytearray()
-    for tier in range(1, 5):
-        items = [(item.item_id, item.annotation) for item in guide.tiers[tier]]
-        details += message_field(
-            1,
-            _encode_category(
-                CATEGORY_LABELS[tier],
-                items,
-                guide.tier_summaries.get(tier, ""),
-            ),
-        )
+    for category in guide.rendered_categories:
+        details += message_field(1, _encode_category(category))
     details += message_field(2, _encode_ability_order(guide))
 
     build_name = _build_name(persona, guide.hero_name, patch_title)
     description_lines = [
         MANAGED_MARKER,
-        "Private analytics guide generated from deadlock-api.com.",
+        "Private evidence-grounded guide generated from deadlock-api.com.",
         f"Patch: {patch_title} ({patch_published_at})",
-        f"Filters: Standard, {rank_range.label}.",
+        f"Client: {guide.client_version or 'UNRESOLVED'}.",
+        f"Matchmaking: {guide.match_mode.upper() if guide.match_mode else 'UNRESOLVED'}; ruleset: NORMAL.",
+        f"Ranks: {guide.rank_identity or rank_range.label}.",
+        f"Snapshot: {guide.snapshot_id or 'UNRESOLVED'}.",
+        f"Policy: {guide.policy_id or 'UNRESOLVED'}.",
+        "Claim limit: observational associations are not item effects or causation.",
     ]
     if guide.summary:
         description_lines.append(guide.summary)
@@ -290,7 +291,7 @@ def encode_hero_build(
             "(20+ matches)."
         )
     description_lines.append(
-        "Item picks are independently ranked options, not a mandate to buy every item."
+        "Queue contains only the default core; optional categories are conditional menus."
     )
     description = "\n".join(description_lines)
 
@@ -335,6 +336,11 @@ def describe_guide(guide: PurchaseGuide) -> dict[str, Any]:
         "hero_id": guide.hero_id,
         "hero_name": guide.hero_name,
         "item_count": guide.item_count,
+        "snapshot_id": guide.snapshot_id,
+        "policy_id": guide.policy_id,
+        "client_version": guide.client_version,
+        "match_mode": guide.match_mode,
+        "rank_identity": guide.rank_identity,
         "summary": guide.summary,
         "ability_path": (
             {
@@ -350,19 +356,24 @@ def describe_guide(guide: PurchaseGuide) -> dict[str, Any]:
             if ability_path is not None
             else None
         ),
-        "tiers": {
-            CATEGORY_LABELS[tier]: {
-                "summary": guide.tier_summaries.get(tier, ""),
+        "categories": [
+            {
+                "name": category.name,
+                "description": category.description,
+                "optional": category.optional,
                 "items": [
                     {
                         "item_id": item.item_id,
                         "name": item.name,
                         "annotation": item.annotation,
-                        "matches": item.overall_matches,
+                        "purchase_event_observations": item.purchase_event_observations,
+                        "required_flex_slots": item.required_flex_slots,
+                        "sell_priority": item.sell_priority,
+                        "imbue_target_ability_id": item.imbue_target_ability_id,
                     }
-                    for item in guide.tiers[tier]
+                    for item in category.items
                 ],
             }
-            for tier in range(1, 5)
-        },
+            for category in guide.rendered_categories
+        ],
     }

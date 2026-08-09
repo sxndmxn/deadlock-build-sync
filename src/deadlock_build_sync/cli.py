@@ -15,6 +15,7 @@ from scripts.generate_narratives import (
 from scripts.generate_narratives import main as generate_narratives_main
 
 from .api import DEFAULT_API_BASE_URL, ApiError, DeadlockApi
+from .artifacts import atomic_write_json, build_policy_artifact
 from .cache import (
     CacheError,
     CacheLocation,
@@ -34,6 +35,7 @@ from .narratives import (
 from .protobuf import describe_guide
 from .ranks import DEFAULT_RANK_RANGE, Rank, RankRange
 from .service import GuideError, generate_guides
+from .snapshot import EpochBoundary, EpochSet, MatchMode
 from .strategy_context import build_strategy_context_document
 
 if TYPE_CHECKING:
@@ -98,6 +100,46 @@ def _rank_arguments(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _epoch_boundary(value: str) -> EpochBoundary:
+    identity, separator, raw_timestamp = value.rpartition("@")
+    if not separator or not identity.strip():
+        raise argparse.ArgumentTypeError("epoch must use IDENTITY@UNIX_TIMESTAMP")
+    try:
+        timestamp = int(raw_timestamp)
+        return EpochBoundary(identity.strip(), timestamp)
+    except (ValueError, TypeError) as error:
+        raise argparse.ArgumentTypeError(
+            "epoch must use IDENTITY@UNIX_TIMESTAMP"
+        ) from error
+
+
+def _snapshot_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--match-mode",
+        type=MatchMode.parse,
+        choices=tuple(MatchMode),
+        default=MatchMode.RANKED,
+        help="matchmaking population (default: ranked)",
+    )
+    parser.add_argument(
+        "--client-version",
+        type=positive_int,
+        help="explicit available asset version (default: latest resolved once)",
+    )
+    parser.add_argument(
+        "--as-of-timestamp",
+        type=positive_int,
+        help="immutable analytics upper cutoff (default: captured at startup)",
+    )
+    for name in ("mechanics", "matchmaking", "map-objectives", "telemetry"):
+        parser.add_argument(
+            f"--{name}-epoch",
+            type=_epoch_boundary,
+            metavar="IDENTITY@UNIX_TIMESTAMP",
+            help="override one independent evidence-regime boundary",
+        )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="deadlock-build-sync",
@@ -122,6 +164,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="sync every active hero with complete reliable analytics (default)",
     )
     _rank_arguments(sync)
+    _snapshot_arguments(sync)
     sync.add_argument(
         "--artifacts",
         type=Path,
@@ -159,6 +202,7 @@ def build_parser() -> argparse.ArgumentParser:
     _common_location_arguments(preview)
     _hero_arguments(preview)
     _rank_arguments(preview)
+    _snapshot_arguments(preview)
     _narrative_argument(preview)
 
     install = subparsers.add_parser(
@@ -167,6 +211,7 @@ def build_parser() -> argparse.ArgumentParser:
     _common_location_arguments(install)
     _hero_arguments(install)
     _rank_arguments(install)
+    _snapshot_arguments(install)
     _narrative_argument(install)
 
     export_context = subparsers.add_parser(
@@ -176,7 +221,13 @@ def build_parser() -> argparse.ArgumentParser:
     _common_location_arguments(export_context)
     _hero_arguments(export_context)
     _rank_arguments(export_context)
+    _snapshot_arguments(export_context)
     export_context.add_argument("--output", type=Path, required=True)
+    export_context.add_argument(
+        "--policy-output",
+        type=Path,
+        help="rich policy sidecar (default: policies.json beside --output)",
+    )
 
     restore = subparsers.add_parser("restore", help="restore a backed-up build cache")
     _common_location_arguments(restore)
@@ -196,6 +247,32 @@ def _rank_range(args: argparse.Namespace) -> RankRange:
     return RankRange(args.min_rank, args.max_rank)
 
 
+def _epochs(args: argparse.Namespace) -> EpochSet | None:
+    values = (
+        args.mechanics_epoch,
+        args.matchmaking_epoch,
+        args.map_objectives_epoch,
+        args.telemetry_epoch,
+    )
+    if not any(values):
+        return None
+    if not all(isinstance(value, EpochBoundary) for value in values):
+        raise ValueError("provide all four epoch overrides together")
+    mechanics, matchmaking, map_objectives, telemetry = values
+    return EpochSet(mechanics, matchmaking, map_objectives, telemetry)
+
+
+def _api(args: argparse.Namespace) -> DeadlockApi:
+    return DeadlockApi(
+        args.api_base_url,
+        rank_range=_rank_range(args),
+        match_mode=args.match_mode,
+        client_version=args.client_version,
+        as_of_timestamp=args.as_of_timestamp,
+        epochs=_epochs(args),
+    )
+
+
 def _report_skipped(generated: GeneratedGuides) -> None:
     if generated.skipped_heroes:
         print(
@@ -203,6 +280,13 @@ def _report_skipped(generated: GeneratedGuides) -> None:
             + ", ".join(generated.skipped_heroes),
             file=sys.stderr,
         )
+    for policy in generated.policies:
+        for abstention in policy.abstentions:
+            print(
+                f"Abstained claim for hero {policy.hero_id} "
+                f"({abstention.reason.value}): {abstention.detail}",
+                file=sys.stderr,
+            )
 
 
 def _sync_artifact_directory(configured: Path | None) -> Path:
@@ -217,13 +301,27 @@ def _write_strategy_context(path: Path, generated: GeneratedGuides) -> None:
     document = build_strategy_context_document(
         generated.patch,
         generated.contexts,
-        generated.rank_range,
+        manifest=generated.manifest,
+        requested_hero_ids=_requested_hero_ids(generated),
+        exclusions=generated.exclusions,
     )
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(document, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
+    atomic_write_json(path, document)
+
+
+def _requested_hero_ids(generated: GeneratedGuides) -> set[int]:
+    if generated.subset_selected:
+        return {guide.hero_id for guide in generated.guides}
+    return set(generated.eligible_hero_ids)
+
+
+def _write_policy_artifact(path: Path, generated: GeneratedGuides) -> None:
+    document = build_policy_artifact(
+        generated.policies,
+        snapshot_manifest=generated.manifest.as_dict(),
+        requested_hero_ids=_requested_hero_ids(generated),
+        exclusions=generated.exclusions,
     )
+    atomic_write_json(path, document)
 
 
 def _run_sync(args: argparse.Namespace) -> int:
@@ -232,7 +330,7 @@ def _run_sync(args: argparse.Namespace) -> int:
         raise CacheError("Deadlock is running; close it before syncing private builds")
 
     generated = generate_guides(
-        DeadlockApi(args.api_base_url, rank_range=_rank_range(args)),
+        _api(args),
         account_id=location.account_id,
         hero_query=args.hero,
         all_heroes=args.all or args.hero is None,
@@ -240,12 +338,19 @@ def _run_sync(args: argparse.Namespace) -> int:
     _report_skipped(generated)
     if not generated.guides:
         raise GuideError("no heroes had complete reliable analytics")
+    if not generated.subset_selected and generated.exclusions:
+        raise GuideError(
+            "all-hero sync requires complete roster coverage; exclusions: "
+            + ", ".join(generated.skipped_heroes)
+        )
 
     artifact_directory = _sync_artifact_directory(args.artifacts)
     context_path = artifact_directory / "strategy-context.json"
+    policy_path = artifact_directory / "policies.json"
     kit_path = artifact_directory / "kit-profiles.json"
     narrative_path = artifact_directory / "narratives.json"
     _write_strategy_context(context_path, generated)
+    _write_policy_artifact(policy_path, generated)
 
     generation_args = [
         "--input",
@@ -279,6 +384,9 @@ def _run_sync(args: argparse.Namespace) -> int:
         patch_title=generated.patch.title,
         patch_published_at=generated.patch.published_at,
         rank_range=generated.rank_range,
+        snapshot_manifest=generated.manifest.as_dict(),
+        expected_hero_ids=set(generated.eligible_hero_ids),
+        allow_subset=generated.subset_selected,
     )
     print(
         f"Synced {len(result.build_ids)} private guide(s): "
@@ -287,6 +395,18 @@ def _run_sync(args: argparse.Namespace) -> int:
     print(f"Artifacts: {artifact_directory}")
     print(f"Cache: {result.cache_path}")
     print(f"Backup: {result.backup_directory}")
+    print(f"Snapshot: {result.snapshot_id}")
+    print(
+        "Policies: "
+        + ", ".join(
+            f"{hero_id}={policy_id}"
+            for hero_id, policy_id in sorted(result.policy_ids.items())
+        )
+    )
+    print(
+        f"Cohort: {generated.manifest.match_mode.value}, client "
+        f"{generated.manifest.client_version}, as-of {generated.manifest.as_of_timestamp}"
+    )
     print("Launch Deadlock, open a hero's build browser, and check My Builds.")
     return 0
 
@@ -294,7 +414,7 @@ def _run_sync(args: argparse.Namespace) -> int:
 def _run_preview(args: argparse.Namespace) -> int:
     location = _location(args)
     generated = generate_guides(
-        DeadlockApi(args.api_base_url, rank_range=_rank_range(args)),
+        _api(args),
         account_id=location.account_id,
         hero_query=args.hero,
         all_heroes=args.all,
@@ -304,12 +424,19 @@ def _run_preview(args: argparse.Namespace) -> int:
     payload = {
         "account_id": location.account_id,
         "persona": generated.persona,
-        "patch": {
-            "title": generated.patch.title,
-            "published_at": generated.patch.published_at,
-            "start_timestamp": generated.patch.start_timestamp,
+        "snapshot_manifest": generated.manifest.as_dict(),
+        "patch": generated.patch.as_dict(),
+        "rank_range": generated.manifest.rank_range,
+        "exclusions": [
+            {"hero_id": hero_id, "reason": reason}
+            for hero_id, reason in generated.exclusions
+        ],
+        "artifacts": {
+            "context": None,
+            "policy": "inline:policies",
+            "narrative": str(args.narratives) if args.narratives else None,
         },
-        "rank_range": generated.rank_range.as_dict(),
+        "policies": [policy.as_dict() for policy in generated.policies],
         "guides": [describe_guide(guide) for guide in generated.guides],
     }
     print(json.dumps(payload, indent=2, ensure_ascii=False))
@@ -323,7 +450,7 @@ def _run_install(args: argparse.Namespace) -> int:
             "Deadlock is running; close it before installing private builds"
         )
     generated = generate_guides(
-        DeadlockApi(args.api_base_url, rank_range=_rank_range(args)),
+        _api(args),
         account_id=location.account_id,
         hero_query=args.hero,
         all_heroes=args.all,
@@ -338,6 +465,9 @@ def _run_install(args: argparse.Namespace) -> int:
         patch_title=generated.patch.title,
         patch_published_at=generated.patch.published_at,
         rank_range=generated.rank_range,
+        snapshot_manifest=generated.manifest.as_dict(),
+        expected_hero_ids=set(generated.eligible_hero_ids),
+        allow_subset=generated.subset_selected,
     )
     print(
         f"Installed {len(result.build_ids)} private guide(s): "
@@ -345,6 +475,20 @@ def _run_install(args: argparse.Namespace) -> int:
     )
     print(f"Cache: {result.cache_path}")
     print(f"Backup: {result.backup_directory}")
+    print(f"Narrative artifact: {args.narratives or 'disabled'}")
+    print(f"Snapshot: {result.snapshot_id}")
+    print(
+        "Policies: "
+        + ", ".join(
+            f"{hero_id}={policy_id}"
+            for hero_id, policy_id in sorted(result.policy_ids.items())
+        )
+    )
+    print(
+        f"Cohort: {generated.manifest.match_mode.value}, client "
+        f"{generated.manifest.client_version}, as-of "
+        f"{generated.manifest.as_of_timestamp}"
+    )
     print("Launch Deadlock, open the hero's build browser, and check My Builds.")
     return 0
 
@@ -352,7 +496,7 @@ def _run_install(args: argparse.Namespace) -> int:
 def _run_export_context(args: argparse.Namespace) -> int:
     location = _location(args)
     generated = generate_guides(
-        DeadlockApi(args.api_base_url, rank_range=_rank_range(args)),
+        _api(args),
         account_id=location.account_id,
         hero_query=args.hero,
         all_heroes=args.all,
@@ -361,14 +505,16 @@ def _run_export_context(args: argparse.Namespace) -> int:
     document = build_strategy_context_document(
         generated.patch,
         generated.contexts,
-        generated.rank_range,
+        manifest=generated.manifest,
+        requested_hero_ids=_requested_hero_ids(generated),
+        exclusions=generated.exclusions,
     )
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(
-        json.dumps(document, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
+    atomic_write_json(args.output, document)
+    policy_output = args.policy_output or args.output.with_name("policies.json")
+    _write_policy_artifact(policy_output, generated)
     print(f"Exported {len(generated.contexts)} hero context(s): {args.output}")
+    print(f"Policies: {policy_output}")
+    print(f"Snapshot: {generated.manifest.snapshot_id}")
     return 0
 
 

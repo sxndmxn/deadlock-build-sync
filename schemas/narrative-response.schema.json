@@ -2,13 +2,10 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "properties": {
-    "hero_id": {
-      "type": "integer"
-    },
-    "context_sha256": {
-      "type": "string",
-      "pattern": "^[a-f0-9]{64}$"
-    },
+    "hero_id": {"type": "integer"},
+    "snapshot_id": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "policy_id": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "context_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
     "narrative_basis_sha256": {
       "type": "string",
       "pattern": "^[a-f0-9]{64}$"
@@ -16,75 +13,23 @@
     "tactical_profile": {
       "type": "object",
       "properties": {
-        "primary_role": {
-          "type": "string",
-          "minLength": 3,
-          "maxLength": 100
-        },
-        "fight_role": {
-          "type": "string",
-          "minLength": 20,
-          "maxLength": 350
-        },
-        "economy_plan": {
-          "type": "string",
-          "minLength": 20,
-          "maxLength": 350
-        },
-        "power_spikes": {
-          "type": "array",
-          "minItems": 1,
-          "maxItems": 2,
-          "items": {
-            "type": "object",
-            "properties": {
-              "quarter": {
-                "type": "string",
-                "enum": [
-                  "I",
-                  "II",
-                  "III",
-                  "IV"
-                ]
-              },
-              "trigger": {
-                "type": "string",
-                "minLength": 20,
-                "maxLength": 220
-              },
-              "tactical_unlock": {
-                "type": "string",
-                "minLength": 30,
-                "maxLength": 400
-              }
-            },
-            "required": [
-              "quarter",
-              "trigger",
-              "tactical_unlock"
-            ],
-            "additionalProperties": false
-          }
-        },
-        "duration_plan": {
+        "primary_role": {"type": "string", "minLength": 3, "maxLength": 100},
+        "fight_role": {"type": "string", "minLength": 20, "maxLength": 350},
+        "economy_plan": {"type": "string", "minLength": 20, "maxLength": 350},
+        "ending_duration_interpretation": {
           "type": "object",
           "properties": {
-            "shape": {
+            "estimand": {
               "type": "string",
-              "enum": [
-                "EARLY_CLOSER",
-                "MIDGAME_PEAK",
-                "LATE_SCALING",
-                "STABLE",
-                "MIXED"
-              ]
+              "const": "ending_duration_profile"
             },
             "strongest_phase": {
               "type": "string",
               "enum": [
                 "EARLY (<30m)",
                 "MID (30–45m)",
-                "LATE (45m+)"
+                "LATE (45m+)",
+                "UNAVAILABLE"
               ]
             },
             "weakest_phase": {
@@ -92,36 +37,13 @@
               "enum": [
                 "EARLY (<30m)",
                 "MID (30–45m)",
-                "LATE (45m+)"
+                "LATE (45m+)",
+                "UNAVAILABLE"
               ]
             },
-            "macro_plan": {
-              "type": "string",
-              "minLength": 30,
-              "maxLength": 350
-            },
-            "late_build_response": {
-              "type": "string",
-              "enum": [
-                "REINFORCE",
-                "COMPENSATE",
-                "MIXED"
-              ]
-            },
-            "response_reason": {
-              "type": "string",
-              "minLength": 40,
-              "maxLength": 400
-            }
+            "plan": {"type": "string", "minLength": 30, "maxLength": 350}
           },
-          "required": [
-            "shape",
-            "strongest_phase",
-            "weakest_phase",
-            "macro_plan",
-            "late_build_response",
-            "response_reason"
-          ],
+          "required": ["estimand", "strongest_phase", "weakest_phase", "plan"],
           "additionalProperties": false
         }
       },
@@ -129,56 +51,49 @@
         "primary_role",
         "fight_role",
         "economy_plan",
-        "power_spikes",
-        "duration_plan"
+        "ending_duration_interpretation"
       ],
       "additionalProperties": false
     },
-    "build_summary": {
-      "type": "string",
-      "minLength": 80,
-      "maxLength": 700
+    "build_summary": {"type": "string", "minLength": 80, "maxLength": 700},
+    "action_explanations": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "properties": {
+          "node_id": {"type": "string", "minLength": 1},
+          "evidence_ref": {"type": "string", "minLength": 1},
+          "instruction": {"type": "string", "minLength": 20, "maxLength": 400}
+        },
+        "required": ["node_id", "evidence_ref", "instruction"],
+        "additionalProperties": false
+      }
     },
-    "quarters": {
-      "type": "object",
-      "properties": {
-        "I": {
-          "type": "string",
-          "minLength": 60,
-          "maxLength": 600
+    "category_summaries": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "properties": {
+          "category": {"type": "string", "minLength": 1, "maxLength": 100},
+          "summary": {"type": "string", "minLength": 30, "maxLength": 600}
         },
-        "II": {
-          "type": "string",
-          "minLength": 60,
-          "maxLength": 600
-        },
-        "III": {
-          "type": "string",
-          "minLength": 60,
-          "maxLength": 600
-        },
-        "IV": {
-          "type": "string",
-          "minLength": 60,
-          "maxLength": 600
-        }
-      },
-      "required": [
-        "I",
-        "II",
-        "III",
-        "IV"
-      ],
-      "additionalProperties": false
+        "required": ["category", "summary"],
+        "additionalProperties": false
+      }
     }
   },
   "required": [
     "hero_id",
+    "snapshot_id",
+    "policy_id",
     "context_sha256",
     "narrative_basis_sha256",
     "tactical_profile",
     "build_summary",
-    "quarters"
+    "action_explanations",
+    "category_summaries"
   ],
   "additionalProperties": false
 }
