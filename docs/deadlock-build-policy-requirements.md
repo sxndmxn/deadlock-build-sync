@@ -1107,7 +1107,7 @@ The key words **MUST**, **MUST NOT**, **REQUIRED**, **SHOULD**, **SHOULD NOT**, 
 ### REQ-OPS-006 — Deliver through an unmerged feature PR
 
 - **Priority/stage:** `P0`
-- **Status:** `Partial`
+- **Status:** `Verified`
 - **Requirement:** All work **MUST** remain on `feat/evidence-grounded-build-policy` (or a
   clearly superseding feature branch), be committed and pushed, and be presented in an
   open pull request targeting `main`. The agent **MUST NOT** merge the PR.
@@ -1132,7 +1132,7 @@ considered complete:
 - [x] `REQ-RND-001` through `REQ-RND-005` and `REQ-RND-007`
 - [x] `REQ-ART-001` through `REQ-ART-005`
 - [x] `REQ-SAF-001` through `REQ-SAF-007`
-- [ ] `REQ-OPS-001` through `REQ-OPS-006`
+- [x] `REQ-OPS-001` through `REQ-OPS-006`
 
 ### 12.2 P1 conditional-policy gate
 
@@ -1205,7 +1205,7 @@ requirements_verified:
   - REQ-ART-001..005
   - REQ-SAF-001..007
   - REQ-EVA-001..009
-  - REQ-OPS-001..005
+  - REQ-OPS-001..006
 deterministic_gate:
   uv_lock_check: passed
   ruff_format: passed
@@ -1226,7 +1226,7 @@ wheel_smoke:
   environment: /tmp/deadlock-build-sync-wheel.5DfPNY
   checks: [wheel-contents, installed-import, cli-help, fixture-preview, schema-lookup]
 live_steam_sync: not-authorized-and-not-run
-pull_request: pending
+pull_request: https://github.com/sxndmxn/deadlock-build-sync/pull/2
 ```
 
 The final completion audit must inspect current files, decoded artifacts, test scope,
