@@ -1193,7 +1193,7 @@ The status fields above must be updated only in the same change that adds or ins
 named proof. At each delivery gate, record:
 
 ```yaml
-commit: bc5544b400b99f5aef1a6a276fe3d434e24cd033
+commit: dec57e8bf8dd1ddd70c423ff45fae214b6084f50
 snapshot_fixture: f89b7120f99797a972a6185ab8c2ca78aac2af90c78295c9dea4372a691694a3
 verified_rank_cohort: Emissary-I--Eternus-V
 requirements_verified:
