@@ -204,6 +204,6 @@ class RankRange:
 
 
 DEFAULT_RANK_RANGE = RankRange(
-    minimum=Rank(RankTier.PHANTOM, RankDivision.ONE),
-    maximum=Rank(RankTier.ETERNUS, RankDivision.SIX),
+    minimum=Rank(RankTier.EMISSARY, RankDivision.ONE),
+    maximum=Rank(RankTier.ETERNUS, RankDivision.FIVE),
 )

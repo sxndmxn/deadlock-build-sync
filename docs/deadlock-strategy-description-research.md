@@ -315,7 +315,12 @@ Rank numbers are part of the data contract; labels are versioned presentation da
 | 10 | Ascendant |
 | 11 | Eternus |
 
-The repository hard-codes obsolete labels for tiers 3–7. Its default numeric Phantom–Eternus range remains correct, but symbolic overrides can select the intended number under the wrong name. Always derive labels from the pinned ranks asset and fingerprint that mapping.
+The repository originally hard-coded obsolete labels for tiers 3–7 and used a
+Phantom I–Eternus VI default. The July 30 Ranked rollout introduced a fresh
+calibration population, so the operational default is now Emissary I–Eternus V;
+the broader lower bound avoids starving post-reset evidence while excluding
+Eternus VI's especially sparse tail. Always derive labels from the pinned ranks
+asset and fingerprint that mapping.
 
 ### Analytic grain
 
@@ -1483,7 +1488,11 @@ Assets are fetched in separate unversioned calls; patch discovery and many analy
 
 #### F-03 — Stale rank labels (`P0`)
 
-`ranks.py` uses obsolete tier names for numeric tiers 3–7. Numeric default Phantom–Eternus remains correct, but symbolic overrides and labels can be wrong. A local cached artifact labelled numeric 61 as Emissary I; the frozen current mapping calls it Ritualist I.
+At audit time, `ranks.py` used obsolete tier names for numeric tiers 3–7 and a
+Phantom I–Eternus VI default. Symbolic overrides and labels could therefore be
+wrong; a local cached artifact labelled numeric 61 as Emissary I while the frozen
+mapping called it Ritualist I. The later Ranked calibration reset also made the
+old default too narrow, so the implemented operational range is Emissary I–Eternus V.
 
 **Required change:** resolve name ↔ badge IDs from versioned rank assets; retain numeric IDs as identity.
 

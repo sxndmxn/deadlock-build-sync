@@ -1194,7 +1194,8 @@ named proof. At each delivery gate, record:
 
 ```yaml
 commit: bc5544b400b99f5aef1a6a276fe3d434e24cd033
-snapshot_fixture: c1967d3cad12a6766b1cfa0c9e13820b303f611618fb1217378f757c08af2b67
+snapshot_fixture: f89b7120f99797a972a6185ab8c2ca78aac2af90c78295c9dea4372a691694a3
+verified_rank_cohort: Emissary-I--Eternus-V
 requirements_verified:
   - REQ-SRC-001..006
   - REQ-COH-001..007

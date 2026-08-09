@@ -48,7 +48,7 @@ def test_build_wrapper_and_metadata_round_trip() -> None:
     assert metadata.author_account_id == 146293212
     assert metadata.name == "XMLJDX | Kelvin | Test Patch"
     assert MANAGED_MARKER in (metadata.description or "")
-    assert "Ranks: Phantom I–Eternus VI." in (metadata.description or "")
+    assert "Ranks: Emissary I–Eternus V." in (metadata.description or "")
     assert "ruleset: NORMAL" in (metadata.description or "")
     assert metadata.publish_timestamp is None
 

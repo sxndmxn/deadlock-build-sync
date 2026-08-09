@@ -182,8 +182,9 @@ validation still apply.
 
 ## Rank cohorts
 
-Every analytics endpoint uses one validated rank range. The default is
-`phantom-i` through `eternus-vi`. Override either boundary with symbolic
+Every analytics endpoint uses one validated rank range. Following the current
+Ranked calibration reset, the default is `emissary-i` through `eternus-v`.
+Override either boundary with symbolic
 rank names:
 
 ```bash

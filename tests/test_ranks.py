@@ -9,20 +9,20 @@ from deadlock_build_sync.ranks import (
 )
 
 
-def test_default_range_is_phantom_one_through_eternus_six() -> None:
+def test_default_range_is_emissary_one_through_eternus_five() -> None:
     assert DEFAULT_RANK_RANGE.minimum == Rank(
-        RankTier.PHANTOM,
+        RankTier.EMISSARY,
         RankDivision.ONE,
     )
     assert DEFAULT_RANK_RANGE.maximum == Rank(
         RankTier.ETERNUS,
-        RankDivision.SIX,
+        RankDivision.FIVE,
     )
     assert DEFAULT_RANK_RANGE.api_parameters == {
-        "min_average_badge": 91,
-        "max_average_badge": 116,
+        "min_average_badge": 71,
+        "max_average_badge": 115,
     }
-    assert DEFAULT_RANK_RANGE.label == "Phantom I–Eternus VI"
+    assert DEFAULT_RANK_RANGE.label == "Emissary I–Eternus V"
 
 
 @pytest.mark.parametrize(
