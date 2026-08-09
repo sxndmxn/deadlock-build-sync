@@ -1193,7 +1193,7 @@ The status fields above must be updated only in the same change that adds or ins
 named proof. At each delivery gate, record:
 
 ```yaml
-commit: pending-first-delivery-commit
+commit: bc5544b400b99f5aef1a6a276fe3d434e24cd033
 snapshot_fixture: c1967d3cad12a6766b1cfa0c9e13820b303f611618fb1217378f757c08af2b67
 requirements_verified:
   - REQ-SRC-001..006
