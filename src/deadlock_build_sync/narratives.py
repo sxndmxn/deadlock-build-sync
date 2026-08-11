@@ -4,6 +4,8 @@ import json
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any
 
+from .purchase_guide import standard_category_description
+
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -11,7 +13,7 @@ if TYPE_CHECKING:
     from .purchase_guide import PurchaseGuide
 
 NARRATIVE_SCHEMA_VERSION = 4
-NARRATIVE_PROMPT_VERSION = 18
+NARRATIVE_PROMPT_VERSION = 19
 DEFAULT_KIT_MODEL = "gpt-5.6-luna"
 DEFAULT_SYNTHESIS_MODEL = "gpt-5.6-sol"
 
@@ -222,7 +224,12 @@ def apply_narrative(
             f"narrative for {guide.hero_name} changed the projection categories"
         )
     categories = tuple(
-        replace(category, description=summaries[category.name])
+        replace(
+            category,
+            description=(
+                standard_category_description(category.name) or summaries[category.name]
+            ),
+        )
         for category in guide.rendered_categories
     )
     return replace(guide, summary=summary.strip(), categories=categories)

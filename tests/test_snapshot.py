@@ -112,6 +112,31 @@ def test_patch_identity_uses_guid_and_content_not_title(
     assert len(patch.content_sha256) == 64
 
 
+def test_patch_identity_ignores_steam_cdn_route_but_not_note_changes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    api = DeadlockApi()
+    row = {
+        "title": "Patch",
+        "source": "steam",
+        "guid": "stable-guid",
+        "pub_date": "2026-08-02T00:00:00Z",
+        "link": "https://store.steampowered.com/news/stable-guid",
+        "content": (
+            '<img src="https://clan.akamai.steamstatic.com/images/x.png">Notes'
+        ),
+    }
+    monkeypatch.setattr(api, "get_json", lambda _path: [row])
+    akamai = api.current_patch()
+    row["content"] = str(row["content"]).replace("akamai", "fastly")
+    fastly = api.current_patch()
+    row["content"] = str(row["content"]).replace("Notes", "Changed notes")
+    changed = api.current_patch()
+
+    assert akamai.identity == fastly.identity
+    assert changed.identity != fastly.identity
+
+
 def test_manifest_rejects_cutoff_before_independent_epoch() -> None:
     rank_catalog = RankCatalog({tier: f"Tier {tier}" for tier in range(1, 12)})
     assert rank_catalog.sha256

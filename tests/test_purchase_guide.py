@@ -1,6 +1,7 @@
 import pytest
 
 from deadlock_build_sync.purchase_guide import (
+    GuideItem,
     PurchaseBucketRow,
     analyze_purchase_windows,
     build_purchase_guide,
@@ -8,6 +9,43 @@ from deadlock_build_sync.purchase_guide import (
     format_purchase_window,
     wilson_score_interval,
 )
+
+
+def evidence_item(
+    *,
+    q25: float | None = 3_935,
+    q75: float | None = 13_724.25,
+) -> GuideItem:
+    return GuideItem(
+        item_id=1,
+        name="Mystic Expansion",
+        tier=1,
+        purchase_event_observations=12_611,
+        observed_outcome_rate=0.4901276663,
+        observed_outcome_lower_bound=0.0,
+        relative_purchase_event_volume=0.8063814822,
+        windows=(),
+        eligible_player_matches=15_639,
+        adopter_matches=12_611,
+        purchase_adoption=0.8063814822,
+        buy_net_worth_q25=q25,
+        buy_net_worth_q75=q75,
+    )
+
+
+def test_evidence_item_annotation_is_compact_player_facing_copy() -> None:
+    assert evidence_item().annotation == (
+        "Purchase window: 4k–14k souls\nWin rate: 49.0%\nPick rate: 80.6%"
+    )
+
+
+def test_collapsed_and_missing_purchase_windows_remain_readable() -> None:
+    assert evidence_item(q25=1_553, q75=2_449).annotation.startswith(
+        "Purchase window: about 2k souls\n"
+    )
+    assert evidence_item(q25=None, q75=None).annotation.startswith(
+        "Purchase window: unavailable\n"
+    )
 
 
 def test_wilson_interval_matches_known_value() -> None:

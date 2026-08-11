@@ -84,7 +84,9 @@ The key words **MUST**, **MUST NOT**, **REQUIRED**, **SHOULD**, **SHOULD NOT**, 
 - **Status:** `Verified`
 - **Requirement:** Patch discovery **MUST** use the unified v2 feed and identify entries
   by source, GUID, publication timestamp, link, and normalized-content SHA-256. Title
-  alone **MUST NOT** define freshness or artifact compatibility.
+  alone **MUST NOT** define freshness or artifact compatibility. Interchangeable Steam
+  CDN routing hosts **MUST** normalize to one identity while actual note text changes
+  **MUST** invalidate compatibility.
 - **Research basis:** [Patch identity](deadlock-strategy-description-research.md#patch-identity), F-02.
 - **Acceptance:** Two entries with equal titles but different GUID/content produce
   different patch identities and invalidate affected evidence.
@@ -526,6 +528,38 @@ The key words **MUST**, **MUST NOT**, **REQUIRED**, **SHOULD**, **SHOULD NOT**, 
 - **Proof:** Feature-availability and leakage tests.
 - **Dependencies:** REQ-ANA-003.
 
+### REQ-ANA-015 — Admit a patch-compatible player-match evidence artifact
+
+- **Priority/stage:** `P0`
+- **Status:** `Verified`
+- **Requirement:** Production build selection **MUST** consume a self-fingerprinted compact
+  artifact produced from reconstructed player-match purchases. Admission **MUST** reject
+  mismatched patch, client, as-of cutoff, match/game mode, rank range, rank-label map,
+  epoch set, hero roster, or item assets. It **MUST NOT** substitute aggregate API
+  purchase-event rankings when the artifact is absent or incompatible.
+- **Acceptance:** Byte/content tampering and each incompatible identity fail closed; the
+  exact admitted bytes participate in the snapshot fingerprint.
+- **Proof:** Build-evidence loader/compatibility tests and snapshot record inspection.
+- **Dependencies:** REQ-SRC-002, REQ-COH-001–005.
+
+### REQ-ANA-016 — Select the deterministic core and tier reference menus
+
+- **Priority/stage:** `P0`
+- **Status:** `Verified`
+- **Requirement:** For each hero, production **MUST** choose the highest-joint-support
+  legal eight-item reconstructed final-inventory candidate whose catalog investment does
+  not exceed the hero's cohort median final net worth. The core **MUST** be ordered by
+  median first-ownership time. Each Tier I–IV menu **MUST** contain the ten items with
+  highest unique player-match adoption, then display them left to right by median valid
+  pre-purchase net worth, median time, and item ID, with missing net worth last. Outcome
+  rate **MUST NOT** select or order items. Core duplication in a native tier menu is
+  intentional.
+- **Acceptance:** Fixtures prove exact 8/10/10/10/10 cardinality, budget fallback,
+  deterministic ties, net-worth ordering, missing-value placement, and outcome
+  independence.
+- **Proof:** Build-evidence selection, service projection, and renderer tests.
+- **Dependencies:** REQ-ANA-001, REQ-ANA-004, REQ-ANA-005, REQ-MEC-004, REQ-MEC-007.
+
 ## 6. Build-policy model and claim control
 
 ### REQ-POL-001 — Use a typed policy IR
@@ -667,9 +701,11 @@ The key words **MUST**, **MUST NOT**, **REQUIRED**, **SHOULD**, **SHOULD NOT**, 
 
 - **Priority/stage:** `P0`
 - **Status:** `Verified`
-- **Requirement:** Only the minimal coherent default path **MUST** be in non-optional
-  categories. Alternatives/counters **MUST** be in named optional categories and **MUST
-  NOT** all enter Queue. Prose such as “choose one” is not an executable substitute.
+- **Requirement:** `CORE ITEMS` **MUST** be the first and only non-optional category and
+  contain exactly the eight-item coherent default path. `TIER 1` through `TIER 4`
+  **MUST** follow in order, each marked optional and containing exactly ten adoption
+  reference items. Reference items **MUST NOT** all enter Queue. Prose such as “choose
+  one” is not an executable substitute.
 - **Research basis:** [Machine semantics before prose](deadlock-strategy-description-research.md#machine-semantics-before-prose), F-09.
 - **Acceptance:** Decoded output shows optional flags and a default Queue that does not
   contain all alternatives.
@@ -731,13 +767,19 @@ The key words **MUST**, **MUST NOT**, **REQUIRED**, **SHOULD**, **SHOULD NOT**, 
 
 - **Priority/stage:** `P1`
 - **Status:** `Verified`
-- **Requirement:** Optional-item annotations **MUST** name trigger, choice/replacement,
-  proactive/reactive execution where relevant, and failure condition within Valve UI
-  limits. Statistical caveats belong in the guide description/sidecar, not duplicated on
-  every tile.
+- **Requirement:** Executable optional policy-action annotations **MUST** name trigger,
+  choice/replacement, proactive/reactive execution where relevant, and failure condition
+  within Valve UI limits. Optional tier reference menus **MUST** instead identify their
+  non-automatic reference semantics and **MUST NOT** invent a trigger from adoption.
+  Evidence-backed standard-layout tiles **MUST** show only the observed 25th–75th
+  percentile first-ownership net-worth window rounded to the nearest 1,000 souls, the
+  observed outcome rate among adopters, and first-ownership adoption among eligible
+  player-matches. Denominators, coverage, medians, and statistical caveats belong in the
+  evidence artifact and guide description/sidecar, not duplicated on every tile.
 - **Research basis:** [Keep the menu small and actionable](deadlock-strategy-description-research.md#keep-the-menu-small-and-actionable).
-- **Acceptance:** Golden annotations fit length/encoding limits and preserve required
-  tactical fields.
+- **Acceptance:** Golden annotations fit length/encoding limits, standard item tiles use
+  the three-line `Purchase window` / `Win rate` / `Pick rate` presentation, and
+  executable policy branches preserve their required tactical fields.
 - **Proof:** Renderer snapshot and Unicode/length tests.
 - **Dependencies:** REQ-ANA-012.
 

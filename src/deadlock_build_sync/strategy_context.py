@@ -8,17 +8,18 @@ from typing import TYPE_CHECKING, Any
 from .artifacts import FingerprintLayers
 from .mechanics import build_hero_mechanics, extract_asset_mechanics
 from .power_curve import summarize_ending_duration_profile
-from .purchase_guide import PurchaseGuide, format_purchase_window
+from .purchase_guide import format_purchase_window
 
 if TYPE_CHECKING:
     from .api import HeroDurationStat, Patch
     from .mechanics import AbilityTimelineStep
     from .policy import BuildPolicy
+    from .purchase_guide import PurchaseGuide
     from .snapshot import SnapshotManifest
 
-CONTEXT_SCHEMA_VERSION = 6
+CONTEXT_SCHEMA_VERSION = 7
 KIT_BASIS_SCHEMA_VERSION = 2
-NARRATIVE_BASIS_SCHEMA_VERSION = 4
+NARRATIVE_BASIS_SCHEMA_VERSION = 5
 TIER_LABELS = {1: "I", 2: "II", 3: "III", 4: "IV"}
 
 
@@ -45,6 +46,7 @@ def _narrative_basis(context: dict[str, Any]) -> dict[str, Any]:
         "hero_mechanics": context.get("hero_mechanics"),
         "ability_policy": context.get("ability_policy"),
         "ending_duration_profile": context.get("ending_duration_profile"),
+        "core": context.get("core"),
         "tiers": context.get("tiers"),
         "policy": context.get("policy"),
         "explainable_actions": context.get("explainable_actions"),
@@ -289,27 +291,46 @@ def build_hero_strategy_context(
         tier_items = []
         for rank, item in enumerate(guide.tiers.get(tier, ()), start=1):
             asset = assets_by_id.get(item.item_id, {})
-            tier_items.append({
-                "rank_by_purchase_event_volume": rank,
+            item_context = {
                 "item_id": item.item_id,
                 "item": item.name,
                 "slot": str(asset.get("item_slot_type") or "unknown").upper(),
                 "is_active_item": bool(asset.get("is_active_item")),
                 "mechanics": extract_asset_mechanics(asset) if asset else {},
-                "observed_purchase_event_net_worth_ranges": [
-                    {
-                        "label": format_purchase_window(window),
-                        "observed_outcome_rate": window.observed_outcome_rate,
-                        "purchase_event_observations": window.matches,
-                    }
-                    for window in item.windows
-                ],
-                "relative_purchase_event_volume": item.relative_purchase_event_volume,
-                "observed_outcome_rate": item.observed_outcome_rate,
-                "purchase_event_observations": item.purchase_event_observations,
-                "unit": "purchase_event",
                 "claim_class": "descriptive",
-            })
+            }
+            if item.eligible_player_matches:
+                item_context.update({
+                    "rank_by_first_ownership_net_worth": rank,
+                    "purchase_adoption": item.purchase_adoption,
+                    "adopter_matches": item.adopter_matches,
+                    "eligible_player_matches": item.eligible_player_matches,
+                    "purchase_events": item.purchase_events,
+                    "observed_outcome_rate_among_adopters": item.observed_outcome_rate,
+                    "median_first_ownership_time_s": item.median_buy_time_s,
+                    "median_valid_first_ownership_net_worth": item.median_valid_buy_net_worth,
+                    "first_ownership_net_worth_q25": item.buy_net_worth_q25,
+                    "first_ownership_net_worth_q75": item.buy_net_worth_q75,
+                    "valid_first_ownership_net_worth_share": item.valid_buy_net_worth_share,
+                    "unit": "eligible_player_appearance",
+                })
+            else:
+                item_context.update({
+                    "rank_by_purchase_event_volume": rank,
+                    "observed_purchase_event_net_worth_ranges": [
+                        {
+                            "label": format_purchase_window(window),
+                            "observed_outcome_rate": window.observed_outcome_rate,
+                            "purchase_event_observations": window.matches,
+                        }
+                        for window in item.windows
+                    ],
+                    "relative_purchase_event_volume": item.relative_purchase_event_volume,
+                    "observed_outcome_rate": item.observed_outcome_rate,
+                    "purchase_event_observations": item.purchase_event_observations,
+                    "unit": "purchase_event",
+                })
+            tier_items.append(item_context)
         tiers[TIER_LABELS[tier]] = tier_items
 
     ending_profile = _ending_duration_evidence(duration_curve, duration_distribution)
@@ -358,8 +379,8 @@ def build_hero_strategy_context(
             for category in projected.rendered_categories
         ],
         "semantics": (
-            "Only the non-optional core category enters Queue; optional categories "
-            "are conditional menus and never automatic purchases."
+            "CORE ITEMS is the only non-optional Queue row. TIER 1–4 are optional "
+            "adoption reference menus and never automatic purchases."
         ),
     }
     context: dict[str, Any] = {
@@ -372,17 +393,48 @@ def build_hero_strategy_context(
         "abilities": kit.get("abilities"),
         "ability_policy": _ability_policy(guide, kit, ability_timeline),
         "ending_duration_profile": ending_profile,
+        "core": {
+            "selection": "highest joint-support legal eight-item final inventory within median final net worth",
+            "item_ids_in_observed_acquisition_order": [
+                item.item_id for item in guide.core_items
+            ],
+            "joint_player_matches": guide.core_joint_matches,
+            "joint_share": guide.core_joint_share,
+            "eligible_player_matches": (
+                guide.core_items[0].eligible_player_matches if guide.core_items else 0
+            ),
+            "median_final_net_worth": guide.median_final_net_worth,
+            "core_target_cost": guide.core_target_cost,
+            "items": [
+                {
+                    "item_id": item.item_id,
+                    "item": item.name,
+                    "mechanics": (
+                        extract_asset_mechanics(assets_by_id[item.item_id])
+                        if item.item_id in assets_by_id
+                        else {}
+                    ),
+                    "purchase_adoption": item.purchase_adoption,
+                    "adopter_matches": item.adopter_matches,
+                    "eligible_player_matches": item.eligible_player_matches,
+                    "observed_outcome_rate_among_adopters": item.observed_outcome_rate,
+                    "median_first_ownership_time_s": item.median_buy_time_s,
+                    "median_valid_first_ownership_net_worth": item.median_valid_buy_net_worth,
+                }
+                for item in guide.core_items
+            ],
+        },
         "tiers": tiers,
         "matchups": matchups or {"same_lane": [], "whole_enemy_team": []},
         "policy": policy.as_dict() if policy is not None else None,
         "explainable_actions": explainable_actions,
         "projection": projection_context,
         "interpretation_constraints": [
-            "Purchase-event volume is not item adoption or pick rate.",
-            "Observed item outcomes and ending-duration profiles are descriptive associations, not item effects or live power curves.",
+            "Tier membership is player-match first-ownership adoption; left-to-right display order is observed net-worth timing, not outcome rate.",
+            "Observed adopter outcomes and ending-duration profiles are descriptive associations, not item effects or live power curves.",
             "Ability actions use reached-state support and exact legal levels; price tiers are not ability quarters.",
             "Only mechanics-backed, state-observable policy branches may be explained.",
-            "The default Queue and optional categories must retain the policy's executable semantics.",
+            "CORE ITEMS is the only automatic Queue; TIER 1–4 are optional reference menus and do not prove a situational trigger.",
             "Do not invent mechanics, numeric effects, threats, combos, or matchups absent from this packet.",
         ],
     }
@@ -391,6 +443,7 @@ def build_hero_strategy_context(
         analytics={
             "ability_policy": context["ability_policy"],
             "ending_duration_profile": context["ending_duration_profile"],
+            "core": context["core"],
             "tiers": tiers,
             "matchups": context["matchups"],
         },

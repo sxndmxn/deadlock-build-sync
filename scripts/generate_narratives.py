@@ -39,6 +39,12 @@ CONDITION_PATTERN = re.compile(
     r"|rather than|as soon as",
     re.IGNORECASE,
 )
+REFERENCE_MENU_PATTERN = re.compile(
+    r"\b(?:adapt|menu|option|reference|situational)\w*\b", re.IGNORECASE
+)
+BUY_ALL_PATTERN = re.compile(
+    r"\b(?:buy|get|purchase|take)\s+(?:all|every)\b", re.IGNORECASE
+)
 CAUSAL_PATTERN = re.compile(
     r"\b(?:causes?|guarantees?|adds? win rate|improves? win rate|"
     r"increases? (?:your )?chance|item impact)\b",
@@ -91,8 +97,9 @@ tactical_profile:
   acknowledge the explicit unavailable state without inventing a phase.
 
 build_summary:
-- In 80–700 plain-text characters, describe the invariant role, default path,
-  and when to recalculate. Do not dump stats or analytics language.
+- In 80–700 plain-text characters, describe the invariant role, eight-item CORE
+  path, and the purpose of the four tier reference menus. Do not dump stats or
+  analytics language.
 
 action_explanations:
 - Return every supplied explainable action exactly once, in supplied order.
@@ -103,10 +110,12 @@ action_explanations:
 
 category_summaries:
 - Return every supplied projection category exactly once, in supplied order.
-- Copy the category name. Mention items in that category; an optional summary may
-  also name only the exact default replacement stated in its supplied annotation.
-- State that optional categories are conditional choices, not automatic Queue
-  purchases, and give an observable condition. Do not imply buying all options.
+- Copy the category name and mention only items in that category.
+- CORE ITEMS is the automatic Queue. TIER 1–4 are optional reference menus:
+  describe candidates conservatively, say to choose situationally, and never
+  imply buying all options or claim adoption proves a counter/trigger.
+- For any other optional policy branch, retain its supplied observable condition
+  and exact replacement. Never invent an unsupplied condition.
 - Finish every player-facing field with a complete sentence. No Markdown lists.
 """.strip()
 
@@ -481,6 +490,20 @@ def synthesis_context(
                 for item in tier_items
                 if isinstance(item, dict) and item.get("item_id") in action_ids
             )
+    core = hero.get("core")
+    if isinstance(core, dict) and isinstance(core.get("items"), list):
+        selected_mechanics.extend(
+            item
+            for item in core["items"]
+            if isinstance(item, dict) and item.get("item_id") in action_ids
+        )
+    selected_mechanics = list(
+        {
+            int(item["item_id"]): item
+            for item in selected_mechanics
+            if isinstance(item.get("item_id"), int)
+        }.values()
+    )
     policy = hero.get("policy")
     policy_summary = None
     if isinstance(policy, dict):
@@ -505,6 +528,7 @@ def synthesis_context(
             "hero_description",
             "ability_policy",
             "ending_duration_profile",
+            "core",
             "explainable_actions",
             "projection",
             "interpretation_constraints",
@@ -869,10 +893,21 @@ def validate_response(
             raise GenerationError(
                 f"Codex used missing or cross-category items in {source_category.get('name')}"
             )
-        if source_category.get("optional") and CONDITION_PATTERN.search(text) is None:
-            raise GenerationError(
-                f"Codex removed the optional trigger for {source_category.get('name')}"
-            )
+        if source_category.get("optional"):
+            category_name = str(source_category.get("name") or "")
+            if BUY_ALL_PATTERN.search(text) is not None:
+                raise GenerationError(
+                    f"Codex made {category_name} an automatic all-item purchase"
+                )
+            if category_name.startswith("TIER "):
+                if REFERENCE_MENU_PATTERN.search(text) is None:
+                    raise GenerationError(
+                        f"Codex removed reference-menu semantics for {category_name}"
+                    )
+            elif CONDITION_PATTERN.search(text) is None:
+                raise GenerationError(
+                    f"Codex removed the optional trigger for {category_name}"
+                )
         _validate_prose_ceiling(text, hero_name)
         normalized_categories.append({
             "category": str(category.get("category")),

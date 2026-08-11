@@ -133,6 +133,13 @@ select = ["ALL"]
 "src/deadlock_build_sync/artifacts.py" = [
   "complex-structure", # Sidecar admission reports every identity and coverage defect.
 ]
+"src/deadlock_build_sync/build_evidence.py" = [
+  "complex-structure", # Artifact admission checks every identity, count, and layout invariant.
+  "too-many-arguments", # Compatibility inputs stay explicit at the artifact boundary.
+  "too-many-boolean-expressions", # Malformed evidence is rejected field by field.
+  "too-many-branches", # Hero admission reports each malformed count and layout invariant precisely.
+  "too-many-locals", # Admission retains named identity fields for precise incompatibility errors.
+]
 "src/deadlock_build_sync/cache.py" = [
   "complex-structure",
   "too-many-arguments",

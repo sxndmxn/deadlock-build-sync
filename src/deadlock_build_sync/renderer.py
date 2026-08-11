@@ -12,7 +12,13 @@ from .policy import (
     ValidationContext,
     validate_policy,
 )
-from .purchase_guide import GuideCategory, GuideItem, PurchaseGuide
+from .purchase_guide import (
+    CORE_CATEGORY_DESCRIPTION,
+    TIER_CATEGORY_DESCRIPTION,
+    GuideCategory,
+    GuideItem,
+    PurchaseGuide,
+)
 from .snapshot import sha256_json
 
 MAX_ANNOTATION_BYTES = 240
@@ -158,6 +164,7 @@ def project_policy_to_guide(
     *,
     assets: list[dict[str, Any]],
     identity: ProjectionIdentity,
+    layout_source: PurchaseGuide | None = None,
 ) -> PurchaseGuide:
     """Validate a rich policy and create its compact executable Steam projection.
 
@@ -174,6 +181,59 @@ def project_policy_to_guide(
         int(asset["id"]): asset for asset in assets if isinstance(asset.get("id"), int)
     }
     default_path = _linear_projection(nodes, policy.entry)
+    if layout_source is not None:
+        policy_core_ids = tuple(
+            node.item_id
+            for node in default_path
+            if node.kind == NodeKind.PURCHASE and node.item_id is not None
+        )
+        source_core_ids = tuple(item.item_id for item in layout_source.core_items)
+        if len(source_core_ids) != 8 or policy_core_ids != source_core_ids:
+            raise PolicyError(
+                "policy default path does not match the eight-item evidence core"
+            )
+        if any(len(layout_source.tiers.get(tier, ())) != 10 for tier in range(1, 5)):
+            raise PolicyError("evidence projection requires ten items in every tier")
+        core_items = _apply_sell_priorities(layout_source.core_items, policy.nodes)
+        categories = (
+            GuideCategory(
+                "CORE ITEMS",
+                core_items,
+                CORE_CATEGORY_DESCRIPTION,
+            ),
+            *(
+                GuideCategory(
+                    f"TIER {tier}",
+                    layout_source.tiers[tier],
+                    TIER_CATEGORY_DESCRIPTION,
+                    optional=True,
+                )
+                for tier in range(1, 5)
+            ),
+        )
+        return PurchaseGuide(
+            hero_id=policy.hero_id,
+            hero_name=identity.hero_name,
+            hero_class_name=identity.hero_class_name,
+            tiers=dict(layout_source.tiers),
+            summary=(
+                f"{policy.strategic_role}; coherent eight-item core observed in "
+                f"{layout_source.core_joint_matches:,} player-matches "
+                f"({layout_source.core_joint_share * 100:.2f}%). Tier rows are "
+                "ten-item adoption reference menus, not automatic purchases."
+            ),
+            categories=categories,
+            snapshot_id=policy.snapshot_id,
+            policy_id=policy.policy_id,
+            client_version=identity.client_version,
+            match_mode=identity.match_mode,
+            rank_identity=identity.rank_identity,
+            core_items=core_items,
+            core_joint_matches=layout_source.core_joint_matches,
+            core_joint_share=layout_source.core_joint_share,
+            median_final_net_worth=layout_source.median_final_net_worth,
+            core_target_cost=layout_source.core_target_cost,
+        )
     core_items = tuple(
         _guide_item(node, assets_by_id, policy, optional=False)
         for node in default_path

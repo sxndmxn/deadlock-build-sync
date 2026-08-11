@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import operator
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -26,6 +27,10 @@ from .snapshot import (
 
 DEFAULT_API_BASE_URL = "https://api.deadlock-api.com"
 GAME_MODE = "normal"
+_STEAM_CDN_HOST_PATTERN = re.compile(
+    r"(?<=://)(clan|shared)\.(?:akamai|fastly)\.steamstatic\.com",
+    re.IGNORECASE,
+)
 
 
 class ApiError(RuntimeError):
@@ -107,6 +112,28 @@ def _patch_guid(value: object) -> str:
     if isinstance(value, (dict, list)):
         return canonical_json(value).decode()
     return "unknown"
+
+
+def _normalize_patch_content(value: Any) -> Any:
+    if isinstance(value, str):
+        return _STEAM_CDN_HOST_PATTERN.sub(r"\1.cdn.steamstatic.com", value)
+    if isinstance(value, list):
+        return [_normalize_patch_content(nested) for nested in value]
+    if isinstance(value, dict):
+        return {
+            str(key): _normalize_patch_content(nested) for key, nested in value.items()
+        }
+    return value
+
+
+def patch_content_sha256(value: Any) -> str:
+    """Hash patch content after removing Steam CDN routing volatility.
+
+    Returns:
+        A semantic digest that still changes when the patch notes themselves change.
+
+    """
+    return hashlib.sha256(canonical_json(_normalize_patch_content(value))).hexdigest()
 
 
 class DeadlockApi:
@@ -298,7 +325,7 @@ class DeadlockApi:
             source=str(latest.get("source") or "unknown"),
             guid=_patch_guid(latest.get("guid")),
             link=str(latest.get("link") or ""),
-            content_sha256=hashlib.sha256(canonical_json(content)).hexdigest(),
+            content_sha256=patch_content_sha256(content),
         )
 
     def steam_persona(self, account_id: int) -> str:

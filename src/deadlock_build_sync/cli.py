@@ -15,7 +15,9 @@ from scripts.generate_narratives import (
 from scripts.generate_narratives import main as generate_narratives_main
 
 from .api import DEFAULT_API_BASE_URL, ApiError, DeadlockApi
+from .artifact_bundle import load_artifact_guide_bundle
 from .artifacts import atomic_write_json, build_policy_artifact
+from .build_evidence import BuildEvidenceCatalog, load_build_evidence
 from .cache import (
     CacheError,
     CacheLocation,
@@ -114,6 +116,14 @@ def _epoch_boundary(value: str) -> EpochBoundary:
 
 
 def _snapshot_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--build-evidence",
+        type=Path,
+        help=(
+            "validated player-match build evidence "
+            "(default: build-evidence.json in the artifact directory)"
+        ),
+    )
     parser.add_argument(
         "--match-mode",
         type=MatchMode.parse,
@@ -214,6 +224,24 @@ def build_parser() -> argparse.ArgumentParser:
     _snapshot_arguments(install)
     _narrative_argument(install)
 
+    install_artifacts = subparsers.add_parser(
+        "install-artifacts",
+        help="install one reviewed artifact bundle without refetching analytics",
+    )
+    _common_location_arguments(install_artifacts)
+    install_artifacts.add_argument(
+        "--artifacts",
+        type=Path,
+        help=(
+            "directory containing build-evidence.json, strategy-context.json, "
+            "policies.json, and narratives.json"
+        ),
+    )
+    install_artifacts.add_argument(
+        "--persona",
+        help="name prefix shown on installed builds (default: local user name)",
+    )
+
     export_context = subparsers.add_parser(
         "export-context",
         help="export structured item and ability context for the Codex sidecar",
@@ -262,14 +290,14 @@ def _epochs(args: argparse.Namespace) -> EpochSet | None:
     return EpochSet(mechanics, matchmaking, map_objectives, telemetry)
 
 
-def _api(args: argparse.Namespace) -> DeadlockApi:
+def _api(args: argparse.Namespace, evidence: BuildEvidenceCatalog) -> DeadlockApi:
     return DeadlockApi(
         args.api_base_url,
         rank_range=_rank_range(args),
         match_mode=args.match_mode,
-        client_version=args.client_version,
-        as_of_timestamp=args.as_of_timestamp,
-        epochs=_epochs(args),
+        client_version=args.client_version or evidence.client_version,
+        as_of_timestamp=args.as_of_timestamp or evidence.as_of_timestamp,
+        epochs=_epochs(args) or evidence.epochs,
     )
 
 
@@ -295,6 +323,18 @@ def _sync_artifact_directory(configured: Path | None) -> Path:
     state_home = os.environ.get("XDG_STATE_HOME")
     root = Path(state_home).expanduser() if state_home else Path.home() / ".local/state"
     return root / "deadlock-build-sync/artifacts"
+
+
+def _build_evidence_path(args: argparse.Namespace) -> Path:
+    if args.build_evidence is not None:
+        return args.build_evidence.expanduser().resolve()
+    configured = args.artifacts if args.command == "sync" else None
+    return _sync_artifact_directory(configured) / "build-evidence.json"
+
+
+def _build_evidence(args: argparse.Namespace) -> tuple[Path, BuildEvidenceCatalog]:
+    path = _build_evidence_path(args)
+    return path, load_build_evidence(path)
 
 
 def _write_strategy_context(path: Path, generated: GeneratedGuides) -> None:
@@ -329,8 +369,10 @@ def _run_sync(args: argparse.Namespace) -> int:
     if deadlock_is_running():
         raise CacheError("Deadlock is running; close it before syncing private builds")
 
+    evidence_path, evidence = _build_evidence(args)
     generated = generate_guides(
-        _api(args),
+        _api(args, evidence),
+        build_evidence=evidence,
         account_id=location.account_id,
         hero_query=args.hero,
         all_heroes=args.all or args.hero is None,
@@ -393,6 +435,7 @@ def _run_sync(args: argparse.Namespace) -> int:
         f"{result.created} created, {result.updated} updated."
     )
     print(f"Artifacts: {artifact_directory}")
+    print(f"Build evidence: {evidence_path} ({evidence.artifact_id})")
     print(f"Cache: {result.cache_path}")
     print(f"Backup: {result.backup_directory}")
     print(f"Snapshot: {result.snapshot_id}")
@@ -413,8 +456,10 @@ def _run_sync(args: argparse.Namespace) -> int:
 
 def _run_preview(args: argparse.Namespace) -> int:
     location = _location(args)
+    evidence_path, evidence = _build_evidence(args)
     generated = generate_guides(
-        _api(args),
+        _api(args, evidence),
+        build_evidence=evidence,
         account_id=location.account_id,
         hero_query=args.hero,
         all_heroes=args.all,
@@ -432,6 +477,8 @@ def _run_preview(args: argparse.Namespace) -> int:
             for hero_id, reason in generated.exclusions
         ],
         "artifacts": {
+            "build_evidence": str(evidence_path),
+            "build_evidence_id": evidence.artifact_id,
             "context": None,
             "policy": "inline:policies",
             "narrative": str(args.narratives) if args.narratives else None,
@@ -449,8 +496,10 @@ def _run_install(args: argparse.Namespace) -> int:
         raise CacheError(
             "Deadlock is running; close it before installing private builds"
         )
+    evidence_path, evidence = _build_evidence(args)
     generated = generate_guides(
-        _api(args),
+        _api(args, evidence),
+        build_evidence=evidence,
         account_id=location.account_id,
         hero_query=args.hero,
         all_heroes=args.all,
@@ -476,6 +525,7 @@ def _run_install(args: argparse.Namespace) -> int:
     print(f"Cache: {result.cache_path}")
     print(f"Backup: {result.backup_directory}")
     print(f"Narrative artifact: {args.narratives or 'disabled'}")
+    print(f"Build evidence: {evidence_path} ({evidence.artifact_id})")
     print(f"Snapshot: {result.snapshot_id}")
     print(
         "Policies: "
@@ -493,10 +543,71 @@ def _run_install(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_install_artifacts(args: argparse.Namespace) -> int:
+    location = _location(args)
+    if deadlock_is_running():
+        raise CacheError(
+            "Deadlock is running; close it before installing private builds"
+        )
+    artifact_directory = _sync_artifact_directory(args.artifacts)
+    context_path = artifact_directory / "strategy-context.json"
+    policy_path = artifact_directory / "policies.json"
+    narrative_path = artifact_directory / "narratives.json"
+    build_evidence_path = artifact_directory / "build-evidence.json"
+    bundle = load_artifact_guide_bundle(
+        context_path,
+        policy_path,
+        narrative_path,
+        build_evidence_path,
+    )
+    for hero_id, reason in bundle.exclusions:
+        print(f"Skipped hero {hero_id}: {reason}", file=sys.stderr)
+    result = install_guides(
+        location,
+        bundle.guides,
+        persona=args.persona or os.environ.get("USER") or "Deadlock Build Sync",
+        timestamp=int(time.time()),
+        patch_title=bundle.patch.title,
+        patch_published_at=bundle.patch.published_at,
+        rank_range=bundle.rank_range,
+        snapshot_manifest=bundle.snapshot_manifest,
+        expected_hero_ids=set(bundle.expected_hero_ids),
+        allow_subset=False,
+    )
+    print(
+        f"Installed {len(result.build_ids)} reviewed private guide(s): "
+        f"{result.created} created, {result.updated} updated."
+    )
+    print(f"Artifacts: {artifact_directory}")
+    print(f"Build evidence: {build_evidence_path}")
+    print(f"Strategy context: {context_path}")
+    print(f"Policies: {policy_path}")
+    print(f"Narratives: {narrative_path}")
+    print(f"Cache: {result.cache_path}")
+    print(f"Backup: {result.backup_directory}")
+    print(f"Snapshot: {result.snapshot_id}")
+    print(
+        "Policies: "
+        + ", ".join(
+            f"{hero_id}={policy_id}"
+            for hero_id, policy_id in sorted(result.policy_ids.items())
+        )
+    )
+    print(
+        f"Cohort: {bundle.snapshot_manifest['match_mode']}, client "
+        f"{bundle.snapshot_manifest['client_version']}, as-of "
+        f"{bundle.snapshot_manifest['as_of_timestamp']}"
+    )
+    print("Launch Deadlock, open a hero's build browser, and check My Builds.")
+    return 0
+
+
 def _run_export_context(args: argparse.Namespace) -> int:
     location = _location(args)
+    evidence_path, evidence = _build_evidence(args)
     generated = generate_guides(
-        _api(args),
+        _api(args, evidence),
+        build_evidence=evidence,
         account_id=location.account_id,
         hero_query=args.hero,
         all_heroes=args.all,
@@ -514,6 +625,7 @@ def _run_export_context(args: argparse.Namespace) -> int:
     _write_policy_artifact(policy_output, generated)
     print(f"Exported {len(generated.contexts)} hero context(s): {args.output}")
     print(f"Policies: {policy_output}")
+    print(f"Build evidence: {evidence_path} ({evidence.artifact_id})")
     print(f"Snapshot: {generated.manifest.snapshot_id}")
     return 0
 
@@ -533,6 +645,7 @@ def main(argv: list[str] | None = None) -> int:
         "sync": _run_sync,
         "preview": _run_preview,
         "install": _run_install,
+        "install-artifacts": _run_install_artifacts,
         "export-context": _run_export_context,
         "restore": _run_restore,
     }

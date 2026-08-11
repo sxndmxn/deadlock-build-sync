@@ -9,6 +9,12 @@ from deadlock_build_sync.api import (
     HeroDurationStat,
     Patch,
 )
+from deadlock_build_sync.build_evidence import (
+    BuildEvidenceCatalog,
+    CoreCandidate,
+    HeroBuildEvidence,
+    ItemEvidence,
+)
 from deadlock_build_sync.ranks import RankCatalog
 from deadlock_build_sync.service import GuideError, generate_guides
 from deadlock_build_sync.snapshot import (
@@ -19,6 +25,7 @@ from deadlock_build_sync.snapshot import (
     MatchMode,
     OutcomePolicy,
     SnapshotManifest,
+    sha256_json,
 )
 
 
@@ -70,7 +77,7 @@ class FakeApi(DeadlockApi):
                 "shop_image_webp": "https://example.invalid/item.webp",
             }
             for tier in range(1, 5)
-            for index in range(8)
+            for index in range(10)
         ] + [
             {
                 "id": slot * 10,
@@ -226,12 +233,71 @@ def duration_points() -> tuple[HeroDurationStat, ...]:
     )
 
 
+def build_evidence(api: FakeApi) -> BuildEvidenceCatalog:
+    eligible = 100
+    item_rows = tuple(
+        ItemEvidence(
+            item_id=int(asset["id"]),
+            item=str(asset["name"]),
+            tier=int(asset["item_tier"]),
+            cost=int(asset["cost"]),
+            slot=str(asset["item_slot_type"]),
+            active=False,
+            adopter_matches=90 - int(asset["id"]) % 100,
+            eligible_player_matches=eligible,
+            purchase_events=100,
+            wins=50,
+            adoption=(90 - int(asset["id"]) % 100) / eligible,
+            observed_outcome_rate=50 / (90 - int(asset["id"]) % 100),
+            median_buy_time_s=float(asset["id"]),
+            median_valid_buy_net_worth=float(asset["id"] * 10),
+            buy_net_worth_q25=float(asset["id"] * 9),
+            buy_net_worth_q75=float(asset["id"] * 11),
+            valid_buy_net_worth_share=0.9,
+        )
+        for asset in api.items()
+        if asset.get("shopable")
+    )
+    hero = HeroBuildEvidence(
+        hero_id=12,
+        hero="Kelvin",
+        eligible_player_matches=eligible,
+        median_final_net_worth=20_000,
+        core_candidates=(CoreCandidate((100, 101, 200, 201, 300, 301, 400, 401), 40),),
+        items=item_rows,
+    )
+    patch = api.current_patch()
+    catalog = api.rank_catalog()
+    heroes = api.active_heroes()
+    assets = api.items()
+    return BuildEvidenceCatalog(
+        artifact_id="a" * 64,
+        client_version=123,
+        patch={"identity": patch.identity},
+        cohort={
+            "as_of": datetime.fromtimestamp(api.as_of_timestamp, UTC).isoformat(),
+            "match_mode": "ranked",
+            "game_mode": "normal",
+            "minimum_badge": 71,
+            "maximum_badge": 115,
+        },
+        epochs=api.epochs_for_patch(patch),
+        rank_labels_sha256=catalog.sha256,
+        heroes_sha256=sha256_json(heroes),
+        items_sha256=sha256_json(assets),
+        requested_hero_ids=frozenset({12}),
+        heroes={12: hero},
+        raw_bytes=b"fixture-build-evidence",
+    )
+
+
 def test_rejects_selected_hero_without_complete_ability_path() -> None:
     api = FakeApi(ability_rows=[], duration_points=duration_points())
 
     with pytest.raises(GuideError, match="reached-state ability projection"):
         generate_guides(
             api,
+            build_evidence=build_evidence(api),
             account_id=123,
             hero_query="Kelvin",
             all_heroes=False,
@@ -246,6 +312,7 @@ def test_incomplete_duration_curve_abstains_without_discarding_policy() -> None:
 
     generated = generate_guides(
         api,
+        build_evidence=build_evidence(api),
         account_id=123,
         hero_query=None,
         all_heroes=True,
@@ -263,8 +330,10 @@ def test_incomplete_duration_curve_abstains_without_discarding_policy() -> None:
 
 
 def test_generated_guide_is_snapshot_bound_policy_projection() -> None:
+    api = FakeApi(ability_rows=ability_rows(), duration_points=duration_points())
     generated = generate_guides(
-        FakeApi(ability_rows=ability_rows(), duration_points=duration_points()),
+        api,
+        build_evidence=build_evidence(api),
         account_id=123,
         hero_query="Kelvin",
         all_heroes=False,
@@ -283,7 +352,15 @@ def test_generated_guide_is_snapshot_bound_policy_projection() -> None:
         "telemetry_failure",
         "unclear_threat",
     }
-    assert guide.categories[0].name == "CORE — DEFAULT QUEUE"
+    assert [category.name for category in guide.categories] == [
+        "CORE ITEMS",
+        "TIER 1",
+        "TIER 2",
+        "TIER 3",
+        "TIER 4",
+    ]
+    assert [len(category.items) for category in guide.categories] == [8, 10, 10, 10, 10]
+    assert guide.item_count == 48
     assert not guide.categories[0].optional
     assert generated.contexts[0]["ending_duration_profile"]["estimand"] == (
         "ending_duration_profile"

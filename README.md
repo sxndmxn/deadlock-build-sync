@@ -23,21 +23,28 @@ The rich output is a typed, snapshot-bound policy graph:
 - A mechanically legal level/AP ability timeline selected from equivalent reached
   legal states, with support reported at each decision. Price tiers are never treated
   as equal “quarters” of that timeline.
-- A minimal coherent default purchase path plus observable conditional branches,
-  recalculation points, sells, flex-slot gates, and imbue targets.
-- Evidence objects that name their actual unit and claim class. Current aggregate
-  item rates are labeled descriptive purchase-event associations—not adoption,
-  item effects, or causal win-rate improvements.
+- A coherent eight-item final-inventory path selected by joint player-match support,
+  ordered by observed acquisition time, and kept within the hero's median final net
+  worth.
+- Four ten-item price-tier reference menus selected by true player-match adoption and
+  ordered left to right by observed first-ownership net worth. Outcome rate is
+  descriptive only and never selects or orders an item.
+- Evidence objects that name their actual unit and claim class. Item adoption uses
+  unique first ownership over eligible player-matches; adopter outcome rate remains
+  descriptive—not an item effect or causal win-rate improvement.
 - Lane and whole-enemy-team matchup scopes kept separate, with mechanics-first
   counters and structured abstention when support or mechanics are inadequate.
 - An ending-duration profile that describes games ending in each phase. It is not
   a live power curve and never justifies stalling an available close.
 
-Steam receives a compact projection of that policy. Only the core category enters
-the default Queue; situational categories are marked optional and carry bounded
-trigger, choice, execution, and failure instructions. Deterministic code validates
-every reachable path against components, slots, active bindings, flex unlocks,
-ability currency, and current item/ability qualifiers before serialization.
+Steam receives five rows in a fixed order: `CORE ITEMS`, `TIER 1`, `TIER 2`,
+`TIER 3`, and `TIER 4`. Only the eight-item core enters Queue. Each tier row is an
+optional ten-item reference menu, not a claim that all ten items should be bought or
+that popularity proves a situational counter. Standard row descriptions stay short,
+and each evidence-backed item shows only its observed purchase window, adopter win
+rate, and player-match pick rate. Deterministic code validates the core against
+components, slots, active bindings, flex unlocks, ability currency, and current
+item/ability qualifiers before serialization.
 
 Codex writes explanations only after those decisions are closed. The narrative
 artifact must copy the exact snapshot, policy, action, evidence, and projection
@@ -69,6 +76,14 @@ deadlock-build-sync sync
 To upgrade after pulling a newer release, run `uv tool install --force .`.
 The separate `codex` CLI must already be authenticated. Close Deadlock before
 running `sync`; the command refuses to write while the game is open.
+
+`sync` also requires a validated `build-evidence.json` from the offline
+player-match analysis pipeline. Its default location is
+`$XDG_STATE_HOME/deadlock-build-sync/artifacts/build-evidence.json` (or
+`~/.local/state/deadlock-build-sync/artifacts/build-evidence.json`). Use
+`--build-evidence PATH` to review another artifact. The CLI rejects edited or
+incompatible patch, client, asset, rank-label, rank-range, mode, epoch, cutoff, or
+roster identities; it never falls back to aggregate purchase-event rankings.
 
 Steam discovery supports native (`~/.local/share/Steam`), legacy
 (`~/.steam/steam` and `~/.steam/root`), Flatpak, and Snap installations. A
@@ -140,9 +155,9 @@ bound with `--max-attempts N`.
 
 ### What is cached
 
-`sync` keeps four reviewable artifacts: the exact evidence context, the rich typed
-policy sidecar, the kit profiles, and the final explanations. Every artifact carries
-the source manifest or snapshot identity. A narrative is reusable only when its
+`sync` consumes five reviewable artifacts: the deterministic build evidence, exact
+strategy context, rich typed policy sidecar, kit profiles, and final explanations.
+Every artifact carries the source manifest or snapshot identity. A narrative is reusable only when its
 snapshot, policy, context, narrative basis, prompt, and model contract are exactly
 compatible. Changed or malformed entries regenerate; `--force-narratives` bypasses
 model-output reuse.
@@ -152,11 +167,20 @@ This artifact cache is separate from Steam's
 used as an AI cache: it is discovered only after generation, backed up, updated
 through a validated temporary file, and atomically replaced.
 
+When reviewed full-roster build evidence, context, policy sidecar, and narratives
+already exist in the artifact directory, `install-artifacts` installs that exact
+bundle without refetching mutable analytics or invoking a model. It reconstructs
+player-facing item statistics from the fingerprinted `build-evidence.json` and
+recomputes every file, snapshot, policy, projection, cohort, patch, and coverage
+fingerprint before entering the same guarded Steam backup and atomic-replacement
+boundary.
+
 The individual commands remain available for review and debugging:
 
 ```bash
 # 1. Export the exact evidence context and rich policies Codex may explain
 uv run deadlock-build-sync export-context --all \
+  --build-evidence ~/.local/state/deadlock-build-sync/artifacts/build-evidence.json \
   --output generated/strategy-context.json
 
 # 2. Generate a reviewable, schema-constrained narrative artifact.
@@ -170,6 +194,9 @@ uv run deadlock-build-sync preview --hero kelvin
 
 # 4. Install all private builds after closing Deadlock
 uv run deadlock-build-sync install --all
+
+# Or install the exact already-reviewed state artifact bundle without a refetch
+uv run deadlock-build-sync install-artifacts
 
 # Restore the most recent cache backup
 uv run deadlock-build-sync restore --latest
@@ -185,7 +212,7 @@ validation still apply.
 Every analytics endpoint uses one validated rank range. Following the current
 Ranked calibration reset, the default is `emissary-i` through `eternus-v`.
 Override either boundary with symbolic
-rank names:
+rank names only when the build-evidence artifact was exported for the same range:
 
 ```bash
 uv run deadlock-build-sync preview --all \
@@ -206,18 +233,20 @@ in-game description.
   item properties, component relationships, and category-investment breakpoints.
 - A legal ability timeline with earliest level, currency cost/balance, and
   reached-state support for every projected action—without a `quarter` field.
-- Descriptive item purchase-event observations with their real unit, interval, and
-  language ceiling. Purchase-event volume is never labeled adoption or pick rate.
+- True first-ownership adoption with eligible player-match denominators, raw event
+  counts kept separately, observed acquisition time/net-worth distributions, and
+  descriptive adopter outcome rates.
 - Separate lane and whole-team matchup rows, an ending-duration estimand, the typed
   policy graph, the compact projection contract, and interpretation constraints.
 - Layered mechanics, analytics, policy, narrative, projection, and whole-document
   fingerprints bound to the complete source manifest.
 
-There is no fixed eight-item requirement. A hero must have at least one supported,
-mechanically legal action for each required price tier plus complete current
-mechanics, ability projection, a duration estimate or explicit duration abstention,
-and policy validation. Every omission receives a structured exclusion; all-hero
-installation fails on any exclusion rather than silently shipping a partial roster.
+Every hero requires a supported, mechanically legal eight-item core at or below its
+median final net worth, ten adoption-ranked items in each price tier, complete current
+mechanics, a complete ability projection, a duration estimate or explicit duration
+abstention, and policy validation. Core items may intentionally reappear in their
+native tier row. Every omission receives a structured exclusion; all-hero installation
+fails on any exclusion rather than silently shipping a partial roster.
 
 The Codex response is constrained by
 [`schemas/narrative-response.schema.json`](schemas/narrative-response.schema.json).

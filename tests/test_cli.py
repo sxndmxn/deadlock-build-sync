@@ -7,7 +7,7 @@ import pytest
 
 import deadlock_build_sync.cli as cli_module
 from deadlock_build_sync.api import Patch
-from deadlock_build_sync.cache import CacheLocation
+from deadlock_build_sync.cache import CacheError, CacheLocation
 from deadlock_build_sync.cli import DEFAULT_NARRATIVE_PATH, build_parser
 from deadlock_build_sync.narratives import (
     DEFAULT_KIT_MODEL,
@@ -38,6 +38,93 @@ def test_sync_defaults_to_every_eligible_hero_and_staged_models() -> None:
     assert args.max_attempts == 3
     assert args.match_mode == MatchMode.RANKED
     assert args.client_version is None
+
+
+def test_install_artifacts_defaults_to_the_state_artifact_directory() -> None:
+    args = build_parser().parse_args(["install-artifacts"])
+
+    assert args.artifacts is None
+    assert args.persona is None
+
+
+def test_install_artifacts_refuses_before_loading_when_deadlock_is_running(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    location = CacheLocation(123, tmp_path / "cached_hero_builds.kv3", tmp_path)
+    monkeypatch.setattr(cli_module, "_location", lambda _args: location)
+    monkeypatch.setattr(cli_module, "deadlock_is_running", lambda: True)
+    monkeypatch.setattr(
+        cli_module,
+        "load_artifact_guide_bundle",
+        lambda *_args: pytest.fail("bundle must not load while Deadlock is running"),
+    )
+
+    with pytest.raises(CacheError, match="Deadlock is running"):
+        cli_module._run_install_artifacts(
+            build_parser().parse_args(["install-artifacts"])
+        )
+
+
+def test_install_artifacts_loads_frozen_build_evidence_from_the_bundle(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    artifact_directory = tmp_path / "artifacts"
+    cache_path = tmp_path / "cached_hero_builds.kv3"
+    location = CacheLocation(123, cache_path, tmp_path)
+    patch = Patch("Patch", 123, "2026-01-01T00:00:00Z")
+    seen: dict[str, object] = {}
+    monkeypatch.setattr(cli_module, "_location", lambda _args: location)
+    monkeypatch.setattr(cli_module, "deadlock_is_running", lambda: False)
+
+    def load_bundle(*paths: Path) -> SimpleNamespace:
+        seen["paths"] = paths
+        return SimpleNamespace(
+            guides=[],
+            exclusions=(),
+            patch=patch,
+            rank_range=DEFAULT_RANK_RANGE,
+            snapshot_manifest={
+                "snapshot_id": "s" * 64,
+                "match_mode": "ranked",
+                "client_version": 123,
+                "as_of_timestamp": 999,
+            },
+            expected_hero_ids=frozenset(),
+        )
+
+    monkeypatch.setattr(cli_module, "load_artifact_guide_bundle", load_bundle)
+    monkeypatch.setattr(
+        cli_module,
+        "install_guides",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            build_ids={},
+            created=0,
+            updated=0,
+            cache_path=cache_path,
+            backup_directory=tmp_path / "backup",
+            snapshot_id="s" * 64,
+            policy_ids={},
+        ),
+    )
+
+    assert (
+        cli_module._run_install_artifacts(
+            build_parser().parse_args([
+                "install-artifacts",
+                "--artifacts",
+                str(artifact_directory),
+            ])
+        )
+        == 0
+    )
+    assert seen["paths"] == (
+        artifact_directory / "strategy-context.json",
+        artifact_directory / "policies.json",
+        artifact_directory / "narratives.json",
+        artifact_directory / "build-evidence.json",
+    )
 
 
 def snapshot() -> SnapshotManifest:
@@ -106,6 +193,15 @@ def test_sync_generates_artifacts_and_installs_without_extra_flags(
 
     monkeypatch.setattr(cli_module, "_location", lambda _args: location)
     monkeypatch.setattr(cli_module, "deadlock_is_running", lambda: False)
+    monkeypatch.setattr(
+        cli_module,
+        "_build_evidence",
+        lambda _args: (
+            tmp_path / "artifacts/build-evidence.json",
+            SimpleNamespace(artifact_id="e" * 64),
+        ),
+    )
+    monkeypatch.setattr(cli_module, "_api", lambda *_args: object())
 
     def fake_generate(*_args: object, **kwargs: object) -> GeneratedGuides:
         calls["all_heroes"] = kwargs["all_heroes"]

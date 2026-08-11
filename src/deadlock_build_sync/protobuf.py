@@ -291,7 +291,7 @@ def encode_hero_build(
             "(20+ matches)."
         )
     description_lines.append(
-        "Queue contains only the default core; optional categories are conditional menus."
+        "CORE ITEMS is the only Queue row; TIER 1–4 are optional reference menus."
     )
     description = "\n".join(description_lines)
 
@@ -342,6 +342,13 @@ def describe_guide(guide: PurchaseGuide) -> dict[str, Any]:
         "match_mode": guide.match_mode,
         "rank_identity": guide.rank_identity,
         "summary": guide.summary,
+        "core": {
+            "item_count": len(guide.core_items),
+            "joint_player_matches": guide.core_joint_matches,
+            "joint_share": guide.core_joint_share,
+            "median_final_net_worth": guide.median_final_net_worth,
+            "target_cost": guide.core_target_cost,
+        },
         "ability_path": (
             {
                 "abilities": list(ability_path.ability_ids),
@@ -367,6 +374,11 @@ def describe_guide(guide: PurchaseGuide) -> dict[str, Any]:
                         "name": item.name,
                         "annotation": item.annotation,
                         "purchase_event_observations": item.purchase_event_observations,
+                        "purchase_adoption": item.purchase_adoption,
+                        "adopter_matches": item.adopter_matches,
+                        "eligible_player_matches": item.eligible_player_matches,
+                        "median_first_ownership_time_s": item.median_buy_time_s,
+                        "median_valid_first_ownership_net_worth": item.median_valid_buy_net_worth,
                         "required_flex_slots": item.required_flex_slots,
                         "sell_priority": item.sell_priority,
                         "imbue_target_ability_id": item.imbue_target_ability_id,

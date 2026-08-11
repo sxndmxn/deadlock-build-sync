@@ -8,6 +8,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from .ability_order import AbilityPath
+    from .build_evidence import ItemEvidence, SelectedHeroBuild
 
 PURCHASE_BUCKET_INCREMENTS = (1000, 2000, 3000, 5000, 7000, 10000)
 LOW_VOLUME_MATCHES = 200
@@ -15,6 +16,10 @@ NORMAL_AVERAGE_SHARE = 0.10
 LOW_VOLUME_AVERAGE_SHARE = 0.15
 MIN_WINDOW_MATCHES = 20
 MIN_WINDOW_SHARE = 0.05
+CORE_CATEGORY_DESCRIPTION = "Automatic eight-item Queue, purchased left to right."
+TIER_CATEGORY_DESCRIPTION = (
+    "Optional choices, ordered left to right by observed purchase window."
+)
 
 
 @dataclass(frozen=True)
@@ -58,11 +63,27 @@ class GuideItem:
     sell_priority: int | None = None
     imbue_target_ability_id: int | None = None
     tactical_annotation: str = ""
+    eligible_player_matches: int = 0
+    adopter_matches: int = 0
+    purchase_adoption: float = 0.0
+    purchase_events: int = 0
+    median_buy_time_s: float | None = None
+    median_valid_buy_net_worth: float | None = None
+    buy_net_worth_q25: float | None = None
+    buy_net_worth_q75: float | None = None
+    valid_buy_net_worth_share: float = 0.0
 
     @property
     def annotation(self) -> str:
         if self.tactical_annotation:
             return self.tactical_annotation
+        if self.eligible_player_matches:
+            return (
+                "Purchase window: "
+                f"{_format_observed_purchase_window(self.buy_net_worth_q25, self.buy_net_worth_q75)}\n"
+                f"Win rate: {self.observed_outcome_rate * 100:.1f}%\n"
+                f"Pick rate: {self.purchase_adoption * 100:.1f}%"
+            )
         timing = (
             " • ".join(format_purchase_window(window) for window in self.windows)
             if self.windows
@@ -98,10 +119,17 @@ class PurchaseGuide:
     client_version: int | None = None
     match_mode: str = ""
     rank_identity: str = ""
+    core_items: tuple[GuideItem, ...] = ()
+    core_joint_matches: int = 0
+    core_joint_share: float = 0.0
+    median_final_net_worth: int = 0
+    core_target_cost: int = 0
 
     @property
     def item_count(self) -> int:
-        return sum(len(items) for items in self.tiers.values())
+        if self.categories:
+            return sum(len(category.items) for category in self.categories)
+        return len(self.core_items) + sum(len(items) for items in self.tiers.values())
 
     @property
     def has_complete_item_coverage(self) -> bool:
@@ -111,6 +139,23 @@ class PurchaseGuide:
     def rendered_categories(self) -> tuple[GuideCategory, ...]:
         if self.categories:
             return self.categories
+        if self.core_items:
+            return (
+                GuideCategory(
+                    name="CORE ITEMS",
+                    items=self.core_items,
+                    description=CORE_CATEGORY_DESCRIPTION,
+                ),
+                *(
+                    GuideCategory(
+                        name=f"TIER {tier}",
+                        items=self.tiers.get(tier, ()),
+                        description=TIER_CATEGORY_DESCRIPTION,
+                        optional=True,
+                    )
+                    for tier in range(1, 5)
+                ),
+            )
         result: list[GuideCategory] = []
         for tier in range(1, 5):
             items = self.tiers.get(tier, ())
@@ -134,6 +179,92 @@ class PurchaseGuide:
                     )
                 )
         return tuple(result)
+
+
+def standard_category_description(name: str) -> str | None:
+    """Return fixed player-facing copy for the standard five-row layout.
+
+    Returns:
+        The fixed description, or ``None`` for a nonstandard policy category.
+
+    """
+    if name == "CORE ITEMS":
+        return CORE_CATEGORY_DESCRIPTION
+    if name in {f"TIER {tier}" for tier in range(1, 5)}:
+        return TIER_CATEGORY_DESCRIPTION
+    return None
+
+
+def _nearest_thousand(value: float) -> int:
+    return math.floor(value / 1000 + 0.5)
+
+
+def _format_observed_purchase_window(q25: float | None, q75: float | None) -> str:
+    if q25 is None or q75 is None:
+        return "unavailable"
+    lower = _nearest_thousand(q25)
+    upper = _nearest_thousand(q75)
+    if lower == upper:
+        return f"about {lower}k souls"
+    return f"{lower}k–{upper}k souls"
+
+
+def guide_item_from_evidence(item: ItemEvidence) -> GuideItem:
+    return GuideItem(
+        item_id=item.item_id,
+        name=item.item,
+        tier=item.tier,
+        purchase_event_observations=item.purchase_events,
+        observed_outcome_rate=item.observed_outcome_rate,
+        observed_outcome_lower_bound=0.0,
+        relative_purchase_event_volume=item.adoption,
+        windows=(),
+        eligible_player_matches=item.eligible_player_matches,
+        adopter_matches=item.adopter_matches,
+        purchase_adoption=item.adoption,
+        purchase_events=item.purchase_events,
+        median_buy_time_s=item.median_buy_time_s,
+        median_valid_buy_net_worth=item.median_valid_buy_net_worth,
+        buy_net_worth_q25=item.buy_net_worth_q25,
+        buy_net_worth_q75=item.buy_net_worth_q75,
+        valid_buy_net_worth_share=item.valid_buy_net_worth_share,
+    )
+
+
+def build_purchase_guide_from_evidence(
+    hero: dict[str, Any],
+    selected: SelectedHeroBuild,
+    *,
+    ability_path: AbilityPath | None = None,
+) -> PurchaseGuide:
+    """Project validated player-match evidence into the analytic guide model.
+
+    Returns:
+        An eight-item coherent core and four ten-item adoption menus.
+
+    """
+    by_id = {
+        item.item_id: guide_item_from_evidence(item)
+        for items in selected.tiers.values()
+        for item in items
+    }
+    for item in selected.core:
+        by_id.setdefault(item.item_id, guide_item_from_evidence(item))
+    return PurchaseGuide(
+        hero_id=int(hero["id"]),
+        hero_name=str(hero.get("name") or f"Hero {hero['id']}"),
+        hero_class_name=str(hero.get("class_name") or ""),
+        tiers={
+            tier: tuple(by_id[item.item_id] for item in items)
+            for tier, items in selected.tiers.items()
+        },
+        ability_path=ability_path,
+        core_items=tuple(by_id[item.item_id] for item in selected.core),
+        core_joint_matches=selected.core_joint_matches,
+        core_joint_share=selected.core_joint_share,
+        median_final_net_worth=selected.median_final_net_worth,
+        core_target_cost=selected.core_target_cost,
+    )
 
 
 def wilson_score_interval(

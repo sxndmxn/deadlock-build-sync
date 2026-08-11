@@ -151,7 +151,7 @@ def packet_and_response() -> tuple[dict[str, Any], dict[str, Any]]:
 
 
 def test_generator_uses_installer_prompt_version() -> None:
-    assert generate_narratives.PROMPT_VERSION == NARRATIVE_PROMPT_VERSION == 18
+    assert generate_narratives.PROMPT_VERSION == NARRATIVE_PROMPT_VERSION == 19
 
 
 def test_kit_context_excludes_items_outcomes_and_policy() -> None:
@@ -203,7 +203,7 @@ def test_validates_closed_policy_explanation() -> None:
 
     validated = generate_narratives.validate_response(response, packet)
 
-    assert validated["prompt_version"] == 18
+    assert validated["prompt_version"] == 19
     assert [row["node_id"] for row in validated["action_explanations"]] == [
         "core",
         "counter",
@@ -253,6 +253,34 @@ def test_rejects_optional_category_without_observable_condition() -> None:
     )
 
     with pytest.raises(generate_narratives.GenerationError, match="optional trigger"):
+        generate_narratives.validate_response(response, packet)
+
+
+def test_tier_reference_menu_does_not_require_invented_trigger() -> None:
+    packet, response = packet_and_response()
+    packet["projection"]["categories"][1]["name"] = "TIER 1"
+    response["category_summaries"][1] = {
+        "category": "TIER 1",
+        "summary": (
+            "Reactive Barrier is a situational reference option, not an automatic "
+            "purchase."
+        ),
+    }
+
+    validated = generate_narratives.validate_response(response, packet)
+
+    assert validated["category_summaries"][1]["category"] == "TIER 1"
+
+
+def test_tier_reference_menu_rejects_buying_all_items() -> None:
+    packet, response = packet_and_response()
+    packet["projection"]["categories"][1]["name"] = "TIER 1"
+    response["category_summaries"][1] = {
+        "category": "TIER 1",
+        "summary": "Buy all Reactive Barrier options from this situational menu.",
+    }
+
+    with pytest.raises(generate_narratives.GenerationError, match="all-item"):
         generate_narratives.validate_response(response, packet)
 
 
