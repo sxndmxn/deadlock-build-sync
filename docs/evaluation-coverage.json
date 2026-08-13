@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "scenarios": {
+    "early_archetype": ["tests/evals/test_narrative_prompt.py::Abrams"],
+    "midgame_archetype": ["tests/evals/test_narrative_prompt.py::Lash"],
+    "late_archetype": ["tests/evals/test_narrative_prompt.py::Haze"],
+    "weapon_variant": ["tests/evals/test_narrative_prompt.py::Vindicta"],
+    "spirit_variant": ["tests/evals/test_narrative_prompt.py::Dynamo"],
+    "vitality_variant": ["tests/evals/test_narrative_prompt.py::Abrams"],
+    "hybrid_variant": ["tests/evals/test_narrative_prompt.py::Kelvin"],
+    "support_variant": ["tests/evals/test_narrative_prompt.py::Dynamo"],
+    "active_item_variant": ["tests/test_mechanics.py::test_inventory_enforces_slots_actives_sells_and_flex"],
+    "ahead_even_behind": ["tests/test_policy.py::test_relative_economy_guard_is_observable"],
+    "major_threat_classes": ["tests/test_mechanics.py::test_threat_classes_require_explicit_item_mechanics"],
+    "sparse_cohort": ["tests/test_telemetry.py::test_sparse_cohort_widens_monotonically_without_crossing_regime"],
+    "out_of_distribution_patch_or_hero": ["tests/test_evaluation.py::test_patch_forward_split_is_chronological_group_safe_and_has_baseline"],
+    "component_event": ["tests/test_mechanics.py::test_item_graph_handles_branches_cost_credit_and_component_consumption"],
+    "equal_time_event": ["tests/test_telemetry.py::test_equal_time_upgrade_credit_precedes_consumption_event"],
+    "deviation": ["tests/test_policy.py::test_recalculation_skips_owned_and_handles_missed_timing"],
+    "missed_timing": ["tests/test_policy.py::test_recalculation_skips_owned_and_handles_missed_timing"],
+    "no_overlap_abstention": ["tests/test_evaluation.py::test_off_policy_evaluation_abstains_outside_logged_support"],
+    "slot_pressure": ["tests/test_policy.py::test_all_path_validation_finds_slot_error_hidden_in_one_branch"],
+    "active_binding_pressure": ["tests/test_mechanics.py::test_inventory_enforces_slots_actives_sells_and_flex"],
+    "flex_pressure": ["tests/test_renderer.py::test_protobuf_preserves_optional_sell_flex_and_omission_semantics"],
+    "incomplete_assets": ["tests/test_mechanics.py::test_item_graph_rejects_missing_references_and_cycles"],
+    "future_leakage": ["tests/test_evaluation.py::test_temporal_example_rejects_future_features"],
+    "calibration_failure": ["tests/test_evaluation.py::test_monitoring_hard_failures_trigger_rollback"],
+    "preservation_failure": ["tests/test_cache.py::test_out_of_scope_corruption_is_detected_and_restored"]
+  }
+}

@@ -3,20 +3,29 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from enum import IntEnum
+from typing import Any
+
+from .snapshot import sha256_json
 
 
 class RankTier(IntEnum):
     INITIATE = 1
     SEEKER = 2
-    ALCHEMIST = 3
-    ARCANIST = 4
-    RITUALIST = 5
-    EMISSARY = 6
-    ARCHON = 7
+    ACOLYTE = 3
+    SENTINEL = 4
+    MYSTIC = 5
+    RITUALIST = 6
+    EMISSARY = 7
     ORACLE = 8
     PHANTOM = 9
     ASCENDANT = 10
     ETERNUS = 11
+
+    # Parse aliases for artifacts and command lines produced before the
+    # 2026-07-30 rank rename. Numeric badge identity always wins.
+    ALCHEMIST = ACOLYTE
+    ARCANIST = SENTINEL
+    ARCHON = EMISSARY
 
     @property
     def label(self) -> str:
@@ -44,6 +53,74 @@ class RankDivision(IntEnum):
             return cls[normalized]
         roman_divisions = ("I", "II", "III", "IV", "V", "VI")
         return cls(roman_divisions.index(normalized) + 1)
+
+
+@dataclass(frozen=True)
+class RankCatalog:
+    """Versioned numeric-tier labels from the assets response."""
+
+    labels: dict[int, str]
+
+    @classmethod
+    def from_assets(cls, rows: list[dict[str, Any]]) -> RankCatalog:
+        labels: dict[int, str] = {}
+        for row in rows:
+            tier = row.get("tier")
+            name = row.get("name")
+            if isinstance(tier, int) and isinstance(name, str) and name.strip():
+                labels[tier] = name.strip()
+        required = {int(tier) for tier in RankTier}
+        missing = required - set(labels)
+        if missing:
+            formatted = ", ".join(str(tier) for tier in sorted(missing))
+            raise ValueError(f"rank assets are missing tiers: {formatted}")
+        return cls(labels)
+
+    @property
+    def sha256(self) -> str:
+        return sha256_json(self.labels)
+
+    def label(self, rank: Rank) -> str:
+        tier = self.labels.get(int(rank.tier), rank.tier.label)
+        return f"{tier} {rank.division.label}"
+
+    def range_dict(self, rank_range: RankRange) -> dict[str, object]:
+        minimum = rank_range.minimum
+        maximum = rank_range.maximum
+        label = (
+            self.label(rank_range.minimum)
+            if rank_range.minimum == rank_range.maximum
+            else f"{self.label(rank_range.minimum)}–{self.label(rank_range.maximum)}"
+        )
+        return {
+            "minimum": {
+                "tier": self.labels[int(minimum.tier)].upper(),
+                "division": minimum.division.label,
+                "badge_id": minimum.badge_id,
+                "label": self.label(minimum),
+            },
+            "maximum": {
+                "tier": self.labels[int(maximum.tier)].upper(),
+                "division": maximum.division.label,
+                "badge_id": maximum.badge_id,
+                "label": self.label(maximum),
+            },
+            "label": label,
+            "labels_sha256": self.sha256,
+        }
+
+    def validate_range(self, rank_range: RankRange) -> None:
+        """Ensure both numeric tier identities exist in this pinned catalog.
+
+        Raises:
+            ValueError: If either numeric rank tier is absent.
+
+        """
+        for rank in (rank_range.minimum, rank_range.maximum):
+            if int(rank.tier) not in self.labels:
+                raise ValueError(
+                    f"rank tier {int(rank.tier)} is absent from pinned assets"
+                )
 
 
 @dataclass(frozen=True)
@@ -127,6 +204,6 @@ class RankRange:
 
 
 DEFAULT_RANK_RANGE = RankRange(
-    minimum=Rank(RankTier.PHANTOM, RankDivision.ONE),
-    maximum=Rank(RankTier.ETERNUS, RankDivision.SIX),
+    minimum=Rank(RankTier.EMISSARY, RankDivision.ONE),
+    maximum=Rank(RankTier.ETERNUS, RankDivision.FIVE),
 )

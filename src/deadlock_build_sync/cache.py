@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import os
@@ -14,6 +15,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 import keyvalues3
 
+from .artifacts import atomic_write_json
 from .kv3_binary import encode_binary_v4
 from .protobuf import (
     MANAGED_MARKER,
@@ -23,6 +25,7 @@ from .protobuf import (
     wrap_hero_build,
 )
 from .ranks import DEFAULT_RANK_RANGE
+from .renderer import projection_fingerprint
 
 if TYPE_CHECKING:
     from .purchase_guide import PurchaseGuide
@@ -61,6 +64,8 @@ class InstallResult:
     build_ids: dict[int, int]
     created: int
     updated: int
+    snapshot_id: str
+    policy_ids: dict[int, str]
 
 
 def steam_roots(*, home: Path | None = None) -> tuple[Path, ...]:
@@ -325,7 +330,86 @@ def _create_backup(location: CacheLocation, *, root: Path | None = None) -> Path
     shutil.copy2(location.cache_path, backup / "cached_hero_builds.kv3")
     if location.remote_cache_path.is_file():
         shutil.copy2(location.remote_cache_path, backup / "remotecache.vdf")
+    for path in backup.iterdir():
+        if path.is_file():
+            with path.open("rb") as copied:
+                os.fsync(copied.fileno())
+    _fsync_directory(backup)
+    _fsync_directory(parent)
     return backup
+
+
+def _fsync_directory(path: Path) -> None:
+    descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _stable_cache_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            str(key): _stable_cache_value(nested)
+            for key, nested in sorted(value.items(), key=lambda pair: str(pair[0]))
+        }
+    if isinstance(value, list):
+        return [_stable_cache_value(nested) for nested in value]
+    if isinstance(value, (bytes, bytearray)):
+        return {"bytes_sha256": hashlib.sha256(bytes(value)).hexdigest()}
+    return value
+
+
+def _is_target_managed_blob(
+    value: object,
+    *,
+    account_id: int,
+    target_hero_ids: set[int],
+) -> bool:
+    if not isinstance(value, (bytes, bytearray)):
+        return False
+    try:
+        metadata = hero_build_metadata(bytes(value))
+    except ValueError:
+        return False
+    return (
+        metadata.author_account_id == account_id
+        and metadata.hero_id in target_hero_ids
+        and metadata.description is not None
+        and MANAGED_MARKER in metadata.description
+    )
+
+
+def _out_of_scope_fingerprint(
+    root: dict[str, Any],
+    *,
+    account_id: int,
+    target_hero_ids: set[int],
+) -> str:
+    projection = {
+        key: (
+            [
+                value
+                for value in nested
+                if not _is_target_managed_blob(
+                    value,
+                    account_id=account_id,
+                    target_hero_ids=target_hero_ids,
+                )
+            ]
+            if key == "Unpublished" and isinstance(nested, list)
+            else nested
+        )
+        for key, nested in root.items()
+    }
+    normalized = _stable_cache_value(projection)
+    encoded = json.dumps(
+        normalized,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode()
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def _validate_managed_entries(
@@ -333,6 +417,7 @@ def _validate_managed_entries(
     expected: dict[int, int],
     *,
     account_id: int,
+    identities: dict[int, tuple[str, str]] | None = None,
 ) -> None:
     found: dict[int, int] = {}
     for blob in root.get("Unpublished", []):
@@ -358,11 +443,46 @@ def _validate_managed_entries(
                 raise CacheError(
                     f"replacement cache managed hero {hero_id} has no build ID"
                 )
+            expected_identity = (identities or {}).get(hero_id)
+            if expected_identity is not None:
+                snapshot_id, policy_id = expected_identity
+                description = metadata.description or ""
+                if (
+                    f"Snapshot: {snapshot_id}." not in description
+                    or f"Policy: {policy_id}." not in description
+                ):
+                    raise CacheError(
+                        f"replacement cache managed hero {hero_id} has stale identity"
+                    )
             found[hero_id] = metadata.build_id
     if found != expected:
         raise CacheError(
             f"replacement cache validation failed: expected {expected}, found {found}"
         )
+
+
+def _restore_cache_file(source: Path, destination: Path) -> None:
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            prefix=".cached_hero_builds.restore.",
+            suffix=".tmp",
+            dir=destination.parent,
+            delete=False,
+        ) as output:
+            temporary = Path(output.name)
+            with source.open("rb") as backup:
+                shutil.copyfileobj(backup, output)
+            output.flush()
+            os.fsync(output.fileno())
+        read_cache(temporary)
+        temporary.replace(destination)
+        temporary = None
+        _fsync_directory(destination.parent)
+        read_cache(destination)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def install_guides(
@@ -375,6 +495,9 @@ def install_guides(
     patch_published_at: str,
     rank_range: RankRange = DEFAULT_RANK_RANGE,
     backup_root: Path | None = None,
+    snapshot_manifest: dict[str, Any] | None = None,
+    expected_hero_ids: set[int] | None = None,
+    allow_subset: bool = False,
 ) -> InstallResult:
     if deadlock_is_running():
         raise CacheError(
@@ -383,15 +506,49 @@ def install_guides(
     if not guides:
         raise CacheError("no guides were generated")
     incomplete = [
-        guide.hero_name for guide in guides if not guide.has_complete_item_coverage
+        guide.hero_name
+        for guide in guides
+        if not guide.rendered_categories
+        or not any(not category.optional for category in guide.rendered_categories)
+        or not guide.snapshot_id
+        or not guide.policy_id
+        or guide.client_version is None
+        or not guide.match_mode
+        or not guide.rank_identity
     ]
     if incomplete:
         raise CacheError(
-            "refusing to install guides with incomplete item coverage: "
+            "refusing to install guides with incomplete policy identity/projection: "
             + ", ".join(incomplete)
         )
+    guide_hero_ids = {guide.hero_id for guide in guides}
+    if len(guide_hero_ids) != len(guides):
+        raise CacheError("refusing to install duplicate hero guides")
+    if expected_hero_ids is not None and not allow_subset:
+        missing = expected_hero_ids - guide_hero_ids
+        extra = guide_hero_ids - expected_hero_ids
+        if missing or extra:
+            raise CacheError(
+                "all-hero installation coverage mismatch; missing "
+                f"{sorted(missing)}, extra {sorted(extra)}"
+            )
+    snapshot_ids = {guide.snapshot_id for guide in guides}
+    if len(snapshot_ids) != 1:
+        raise CacheError("all installed guides must use one snapshot")
+    snapshot_id = next(iter(snapshot_ids))
+    if snapshot_manifest is None or snapshot_manifest.get("snapshot_id") != snapshot_id:
+        raise CacheError("install snapshot manifest is missing or incompatible")
+    policy_ids = {guide.hero_id: guide.policy_id for guide in guides}
+    identities = {
+        guide.hero_id: (guide.snapshot_id, guide.policy_id) for guide in guides
+    }
 
     original = read_cache(location.cache_path)
+    original_out_of_scope = _out_of_scope_fingerprint(
+        original,
+        account_id=location.account_id,
+        target_hero_ids=guide_hero_ids,
+    )
     replacement, build_ids, created, updated = update_managed_builds(
         original,
         guides,
@@ -411,11 +568,15 @@ def install_guides(
         "created_at": datetime.now(UTC).isoformat(),
         "build_ids": build_ids,
         "rank_range": rank_range.as_dict(),
+        "snapshot": snapshot_manifest,
+        "snapshot_id": snapshot_id,
+        "policy_ids": policy_ids,
+        "projection_fingerprints": {
+            guide.hero_id: projection_fingerprint(guide) for guide in guides
+        },
+        "out_of_scope_sha256": original_out_of_scope,
     }
-    (backup / "manifest.json").write_text(
-        json.dumps(manifest, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    atomic_write_json(backup / "manifest.json", manifest)
 
     temporary_path: Path | None = None
     try:
@@ -425,21 +586,57 @@ def install_guides(
             dir=location.cache_path.parent,
             delete=False,
         ) as temporary:
+            temporary_path = Path(temporary.name)
             temporary.write(encoded)
             temporary.flush()
             os.fsync(temporary.fileno())
-            temporary_path = Path(temporary.name)
         candidate = read_cache(temporary_path)
-        _validate_managed_entries(candidate, build_ids, account_id=location.account_id)
+        _validate_managed_entries(
+            candidate,
+            build_ids,
+            account_id=location.account_id,
+            identities=identities,
+        )
+        if (
+            _out_of_scope_fingerprint(
+                candidate,
+                account_id=location.account_id,
+                target_hero_ids=guide_hero_ids,
+            )
+            != original_out_of_scope
+        ):
+            raise CacheError("replacement cache changed out-of-scope Steam data")
+        if deadlock_is_running():
+            raise CacheError(
+                "Deadlock started before replacement; refusing to change the cache"
+            )
         temporary_path.replace(location.cache_path)
         temporary_path = None
+        _fsync_directory(location.cache_path.parent)
         installed = read_cache(location.cache_path)
-        _validate_managed_entries(installed, build_ids, account_id=location.account_id)
+        _validate_managed_entries(
+            installed,
+            build_ids,
+            account_id=location.account_id,
+            identities=identities,
+        )
+        if (
+            _out_of_scope_fingerprint(
+                installed,
+                account_id=location.account_id,
+                target_hero_ids=guide_hero_ids,
+            )
+            != original_out_of_scope
+        ):
+            raise CacheError("installed cache changed out-of-scope Steam data")
     except Exception as error:
         if temporary_path is not None:
             temporary_path.unlink(missing_ok=True)
         try:
-            shutil.copy2(backup / "cached_hero_builds.kv3", location.cache_path)
+            _restore_cache_file(
+                backup / "cached_hero_builds.kv3",
+                location.cache_path,
+            )
         except Exception as restore_error:
             raise CacheError(
                 f"installation failed ({error}) and automatic restore failed ({restore_error}); "
@@ -451,7 +648,15 @@ def install_guides(
             f"installation failed and the original cache was restored: {error}"
         ) from error
 
-    return InstallResult(location.cache_path, backup, build_ids, created, updated)
+    return InstallResult(
+        location.cache_path,
+        backup,
+        build_ids,
+        created,
+        updated,
+        snapshot_id,
+        policy_ids,
+    )
 
 
 def restore_latest(
@@ -484,11 +689,5 @@ def restore_latest(
         raise CacheError(f"no cache backups found for account {location.account_id}")
     source = backups[0] / "cached_hero_builds.kv3"
     read_cache(source)
-    temporary = location.cache_path.with_name(".cached_hero_builds.restore.tmp")
-    shutil.copy2(source, temporary)
-    try:
-        read_cache(temporary)
-        temporary.replace(location.cache_path)
-    finally:
-        temporary.unlink(missing_ok=True)
+    _restore_cache_file(source, location.cache_path)
     return backups[0]

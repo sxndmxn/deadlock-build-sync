@@ -1,1659 +1,2016 @@
-# Research specification: generating tactical Deadlock build descriptions
+---
+title: "Designing Evidence-Grounded MOBA Hero Builds"
+subtitle: "A Deadlock-first research report and implementation specification for deadlock-build-sync"
+date: 2026-08-08
+status: research-complete
+research_duration: 4h 30m
+repository_commit: 14076610aa4d2103df14a307ed195efc19d04ba5
+deadlock_api_commit: eb23bec2517e0d481688d7c4b387ac6729f19d37
+---
 
-**Status:** research and implementation specification
+# Designing evidence-grounded MOBA hero builds
 
-**As of:** 2026-07-26
+> [!IMPORTANT]
+> A high-quality build is **not a ranked shopping list**. It is a patch-specific, cohort-specific, state-conditioned policy: given this hero, kit, inventory, economy, allies, enemies, objectives, and game state, recommend the next legal action—or explicitly abstain.
 
-**Primary data source:** [Deadlock API](https://api.deadlock-api.com/docs) and the
-[deadlock-api repository](https://github.com/deadlock-api/deadlock-api)
+This report answers what a build author or build-generation system should examine when creating a hero build, with particular attention to Deadlock: item win rates, situational and counter items, hero matchups, counter picks, net-worth buy windows, ability scaling and upgrade order, duration-conditioned performance, power spikes, inventory pressure, and safe installation. It also audits the present `deadlock-build-sync` implementation and translates the research into a concrete architecture and roadmap.
 
-**Current reference cohort:** normal-mode matches from the patch beginning
-2026-07-09, Ascendant VI and above (`min_average_badge=106`)
+Implementation is governed by the companion [build-policy requirements](deadlock-build-policy-requirements.md), which translate this rationale into stable, testable obligations and verification evidence.
 
-## 1. Purpose
+The repository was updated with `git pull --ff-only` before research. It was already current at commit [`14076610`](https://github.com/sxndmxn/deadlock-build-sync/tree/14076610aa4d2103df14a307ed195efc19d04ba5). No live Steam sync was run. Four pre-existing working-tree modifications in narrative-generation code and tests were treated as user work and left untouched.
 
-This document defines the data and reasoning needed to generate useful build
-descriptions with four headings:
+## Table of contents
 
-- **I** — how to play around the Tier I purchases in this build;
-- **II** — how the Tier II purchases change the job;
-- **III** — how to exploit the Tier III power spike;
-- **IV** — how to convert or stabilize with Tier IV purchases.
+- [Executive conclusions](#executive-conclusions)
+- [Research method and evidence record](#research-method-and-evidence-record)
+- [The right abstraction: a build is a policy](#the-right-abstraction-a-build-is-a-policy)
+- [Claim classes and evidence hierarchy](#claim-classes-and-evidence-hierarchy)
+- [Freeze patch, client, queue, cohort, and analytic grain](#freeze-patch-client-queue-cohort-and-analytic-grain)
+- [Deadlock mechanics every build must encode](#deadlock-mechanics-every-build-must-encode)
+- [Model the hero kit before choosing items](#model-the-hero-kit-before-choosing-items)
+- [How to reason about items](#how-to-reason-about-items)
+- [Item win rates: useful signal, dangerous ranking](#item-win-rates-useful-signal-dangerous-ranking)
+- [Purchase timing and net-worth windows](#purchase-timing-and-net-worth-windows)
+- [Power spikes and game-time performance](#power-spikes-and-game-time-performance)
+- [Ability order and ability scaling](#ability-order-and-ability-scaling)
+- [Hero matchups, counter picks, and team composition](#hero-matchups-counter-picks-and-team-composition)
+- [Counter purchases and situational branches](#counter-purchases-and-situational-branches)
+- [Lessons from Dota 2, League of Legends, and research](#lessons-from-dota-2-league-of-legends-and-research)
+- [A statistically defensible analysis design](#a-statistically-defensible-analysis-design)
+- [The build policy intermediate representation](#the-build-policy-intermediate-representation)
+- [Guide rendering and Steam schema semantics](#guide-rendering-and-steam-schema-semantics)
+- [Evaluation and monitoring](#evaluation-and-monitoring)
+- [Audit of the current repository](#audit-of-the-current-repository)
+- [Recommended implementation roadmap](#recommended-implementation-roadmap)
+- [Worked examples](#worked-examples)
+- [Authoring and release checklists](#authoring-and-release-checklists)
+- [Reproducibility record](#reproducibility-record)
+- [Source index](#source-index)
+- [Glossary](#glossary)
 
-The desired output is tactical. It should tell a player where to stand, what
-pressure to create, whom to target, how to sequence abilities and active items,
-when to farm or rotate, and when to commit, reset, or disengage. Item and
-ability descriptions are evidence supplied to the model, not text to copy into
-the published summary.
+## Executive conclusions
 
-This is a research specification, not a code change. It does not prescribe one
-universal build or claim that observed win rates prove causation.
+The research supports the following decisions.
 
-## 2. Executive conclusions
+| Priority | Finding | Consequence for a build system |
+|---:|---|---|
+| P0 | A build is a conditional sequence, not 32 independently popular items. | Represent core actions, choices, replacements, sells, waits, and counter branches before rendering a Steam guide. |
+| P0 | Patch title alone does not identify a coherent data regime. | Pin client version and asset hashes; record mechanics, matchmaking, map/objective, and telemetry epochs separately. |
+| P0 | Standard and Ranked are different populations. Omitted `match_mode` mixes them. | Never label mixed data as one queue. Produce queue-specific policies or an explicitly weighted pooled policy. |
+| P0 | Raw item win rate is dominated by who can buy an item, when they buy it, and what state preceded the purchase. | Use it as descriptive evidence and a hypothesis generator, not a causal item score. |
+| P0 | Current pre-180-second purchase net worth is empirically corrupted in sampled telemetry. | Quarantine it; use clock time or a validated last-observation-before-buy value. Never substitute final net worth. |
+| P0 | Price tiers are not early/mid/late quarters. | Build a legal level/AP timeline and an economy timeline. Do not pair “Tier III” items with the third quarter of an ability path. |
+| P0 | Deadlock’s build schema has executable semantics: optional categories, sell priority, imbue target, and flex-slot gates. | Encode them. Prose cannot correct a Quickbuy queue that contains every alternative. |
+| P0 | Current asset payloads contain substantial mechanics that the exported context drops. | Preserve scaling functions, stat coefficients, upgrade/component graph, total investment, and structured hero descriptions. |
+| P1 | Exact complete ability paths discard most observations and hide branch points. | Estimate state-conditioned next upgrades from prefixes; validate unlock levels and AP legality. |
+| P1 | Matchup rates are pair observations, usually lane-scoped, and heavily confounded by skill and composition. | Shrink interactions and separate lane, whole-team, draft, and counter-item questions. |
+| P1 | Counter items need a threat trigger, legal timing, opportunity cost, and replacement/sell instruction. | Render a small annotated optional menu, not a generic “situational” bucket. |
+| P1 | Ending-duration win rate is not a live power curve. | Use landmark estimates among games still running and tie spikes to observable acquisitions or unlocks. |
+| P1 | Components, upgrades, slot caps, and four active bindings make paths non-additive. | Validate every reachable path, not just each listed item independently. |
+| P2 | Historical imitation reproduces exposure, popularity, and old recommendations. | Evaluate temporal generalization, calibration, coverage, legality, and expert utility; reserve a randomized holdout where ethical. |
+| Safety | The repository’s Steam write boundary is already strong. | Preserve process refusal, backup, temporary validation, atomic replacement, and restoration; add parent-directory durability and stronger preservation checks. |
 
-1. **An item tier is a price class, not a game phase.** The current shop prices
-   are 800, 1,600, 3,200, and 6,400 souls for Tiers I–IV. A player can buy an
-   800-soul item at 40 minutes before a decisive fight. Therefore, a heading
-   named `I` must not automatically say “early game.”
-2. **Use each item's purchase distribution to infer its role in this build.**
-   A Tier I item bought by most players near the opening is foundational. A
-   Tier I item whose meaningful purchase window is late is a cheap tactical
-   fill, countermeasure, or last-minute active—not evidence that the game is
-   still in “quarter one.”
-3. **A power spike is a state change, not merely a high win-rate point.** It can
-   come from an item, an investment threshold, an ability unlock or upgrade,
-   an inventory slot, a cooldown combination, a matchup, or a temporary map
-   objective. It is useful only if the description names the action it enables.
-4. **Win rate must be contextualized.** Compare an item/path to the same hero,
-   patch, rank, mode, and duration cohort. Use volume and uncertainty. Do not
-   compare every observed item win rate to 50%.
-5. **The public website's “pick rate” is a relative popularity index.** In the
-   current item table and purchase guide, the most-used item is shown as 100%
-   and other items are scaled against its match count. That is useful for
-   sorting but is not the percentage of hero games in which an item was bought.
-6. **Current high-rank matches are concentrated around 30–40 minutes.** In the
-   reference snapshot, roughly 58.6% ended in that interval, while only about
-   1.4% reached 50 minutes. Tier IV prose should optimize for the common
-   30–45-minute state while still including a short contingency for exceptional
-   50-minute games.
-7. **The first three minutes need a net-worth data guardrail.** Raw matches can
-   lack a timeline sample before 180 seconds. In at least one validated match,
-   purchases before that first sample inherited final net worth. For purchases
-   before 180 seconds, game time is trustworthy for timing but
-   `net_worth_at_buy` must be treated as missing unless independently derived.
-8. **The best generator is evidence-first and patch-bound.** Fetch current
-   assets, the build, ability path, hero baselines and duration curve, item
-   timing/flow, match-duration distribution, and objective rules; assemble a
-   compact structured evidence packet; then ask Codex for four tactical
-   paragraphs under strict output and evidence rules.
+The shortest practical authoring rule is:
 
-## 3. The central model: price tiers are not chronological quarters
+> **Describe what the hero is trying to do; identify the next constraint; recommend the cheapest legal action that removes that constraint or compounds the plan; state when the recommendation changes; and never claim more than the evidence supports.**
 
-The interface should use the visual order `I`, `II`, `III`, `IV`, because those
-are the actual item-price tiers. The prose underneath each heading may often
-progress from setup to completion, but chronology must be inferred rather than
-hard-coded.
+## Research method and evidence record
 
-For every item, classify its observed purchase behavior:
+Research ran for the requested four hours and thirty minutes before composition. It combined five evidence layers:
 
-| Timing class | Evidence | How the prose should treat it |
+1. A read-only audit of the local repository and its tests.
+2. A fresh pull and source inspection of the upstream [`deadlock-api`](https://github.com/deadlock-api/deadlock-api) repository.
+3. Fresh versioned and unversioned API snapshots, match/mode samples, build-schema samples, and synthetic statistical checks.
+4. Current installed-client assets and schema behavior, inspected read-only.
+5. Primary Valve/Riot documentation and peer-reviewed or archival recommender/causal-inference literature.
+
+### Research snapshot
+
+| Evidence | Frozen identity | Notes |
 |---|---|---|
-| Opening foundation | Most supported buys cluster in the opening; item is normally retained | Establish lane/trade/farm pattern |
-| Bridge purchase | Bought while saving for a larger threshold or solving a temporary weakness | Explain what it lets the player do until the next spike |
-| Core completion | High-volume purchase window aligns with an ability or investment breakpoint | Name the new engage, damage, control, or sustain pattern |
-| Situational counter | Timing and pick frequency vary strongly with enemy lineup or game state | Use conditional language: “against…,” “when…,” “if…” |
-| Late cheap fill | Low-tier item is bought at high game time or high *valid* net worth | Treat as efficient pre-fight utility, not an early-game item |
-| Replacement/respec | Appears after sell events or a saturated inventory | Explain the tradeoff and what is being replaced |
+| `deadlock-build-sync` | `14076610aa4d2103df14a307ed195efc19d04ba5` | Repository was already up to date; local user modifications were preserved. |
+| `deadlock-api` | `eb23bec2517e0d481688d7c4b387ac6729f19d37` | Fresh upstream clone on 2026-08-08. |
+| Current client | version `6672`, source revision `10895058` | Client build timestamp reported 2026-08-08 10:10:36 local. |
+| Active heroes | 38 | Fresh asset calculation, excluding disabled/in-development heroes. |
+| Standard shop items | 156 | Tier I: 23; II: 43; III: 46; IV: 44. Weapon: 53; Vitality: 54; Spirit: 49. |
+| Public guides | 500-guide research sample | Used to study schema/authoring behavior, not to define truth. |
+| Match telemetry | Ranked and Unranked samples plus patch-window aggregates | Used to test mode, outcome, abandonment, timing, and unit assumptions. |
 
-This prevents two opposite errors:
+### Asset fingerprints
 
-- forcing every Tier I item into an “early game” paragraph; and
-- discarding legitimate late Tier I purchases merely because their price is
-  low.
-
-The actual anomaly to filter is narrower: **an early timestamp combined with
-final-game net worth because no early economy snapshot existed.** A genuine
-late timestamp plus high net worth is valid evidence.
-
-## 4. Evidence hierarchy and freshness
-
-Deadlock changes quickly. Every generated description should carry a patch
-identifier and an `as_of` timestamp. When sources conflict, use this order:
-
-1. current API assets and generic data;
-2. current official patch data or Valve-published notes;
-3. raw match metadata/timelines from the same patch;
-4. aggregated Deadlock API analytics from the same cohort;
-5. the current website implementation, for understanding displayed metrics;
-6. reputable community mechanics pages, clearly marked as secondary;
-7. older guides, wikis, and prose only as hypotheses to verify.
-
-For example, community pages can lag changes to neutral spawn times or the
-Rejuvenator duration. Current generic data and recent patch notes take
-precedence. The [2026-06-30 update](https://steamcommunity.com/games/1422450/announcements/detail/688635449342692004)
-changed several relevant values, including Guardian and Walker bounties and
-Rejuvenator duration. The [2026-05-22 update](https://steamcommunity.com/games/1422450/announcements/detail/670617878982034053)
-changed neutral/breakable timing and structure rules. A generator must not
-silently blend observations from before and after those changes.
-
-### 4.1 Cohort contract
-
-Every analytic input should repeat the same explicit cohort:
+The following SHA-256 digests make the mechanical snapshot reproducible:
 
 ```text
-patch_id / patch_title
-patch_start
-patch_end (or now)
-game_mode
-rank_min / rank_max
-hero_id
-region, if intentionally restricted
-match_duration bounds
-final_net_worth bounds, if used
-account filters, if used
-minimum sample threshold
-retrieved_at
+heroes.json       4d6439a899df9dbb6dfbe8297e44fa45e945204a8235e22aba92b3e8e234a5cd
+items.json        45034cb52a4f378d87d362537ea8e65101f80ed62e39107d777eedc177493cf8
+ranks.json        23491d81b54d949d9a02a37f6bb044bca0d310ef4fbbbaefc2c6cca1cb1d556e
+generic-data.json a5d8d2cbe4a93c727abbaccf3804781e1e918b15f501b2027dd87d7acf0a0009
+v2-patches.json   360ccd0cecd8c8540989e3e6d53bba1c9fc3eee0cfaf754ea299891381bfc568
 ```
 
-`min_average_badge=106` means **Ascendant VI and above** under the API's
-`tier × 10 + subrank` encoding. It should not be labeled “Phantom+.”
+> [!NOTE]
+> Numbers in this document labelled **research computation** were derived during this audit from these frozen responses or from explicitly described API samples. They are descriptive snapshots, not permanent facts about a live-service game.
 
-When comparing two metrics, reject the comparison if mode, patch, rank, hero,
-or duration selection differs without an explicit reason.
+### Limits
 
-## 5. What the Deadlock API makes available
+- The API is an observational data source, not a randomized experiment.
+- Some endpoints route between materialized views and base tables depending on filters; route choice can change temporal grain and population.
+- Public guides measure what authors publish and users are exposed to, not necessarily optimal play.
+- Demo telemetry is richer than the project’s current ingestion, but some desired decision-state variables remain unavailable or inconsistently populated.
+- Deadlock is actively patched. Exact mechanic values must be regenerated from the pinned client version at build time.
 
-The public surface is broader than the fields needed for build prose. This
-section maps the whole API by domain, then identifies the strategically useful
-parts.
+## The right abstraction: a build is a policy
 
-### 5.1 Assets: what heroes, abilities, items, ranks, and the map are
+Let the decision state immediately before a purchase or upgrade be
 
-| Endpoint/domain | Available information | Use in description generation |
-|---|---|---|
-| `/v1/assets/heroes` | Hero names, role/playstyle text, abilities, scaling, statistics, ability/item references, level information, purchase and investment bonuses | Ground the hero job, ability sequencing, range, scaling, and breakpoints |
-| `/v1/assets/items` | Item/upgrade identity, tier, cost, category/slot, active/passive status, description, properties, component/upgrades | Understand what a purchase enables and identify actives that demand explicit instructions |
-| `/v1/assets/generic-data` | Global prices, progression rules, objective values, Rejuvenator parameters, and other tuning constants | Resolve shop tiers, objective incentives, shared progression, and patch-sensitive mechanics |
-| `/v1/assets/map` | Objective positions/types, lane/zipline geometry, images and map metadata | Translate a spike into lane pressure, rotations, and objective conversion |
-| `/v1/assets/npc-units` | Troopers, neutral units, structures, boss-like units and their properties | Explain farming, wave pressure, structure damage, and neutral priorities |
-| `/v1/assets/misc-entities` | Powerups, breakables, objective/helper entities and timers | Add map-economy actions without relying on stale guide text |
-| `/v1/assets/ranks` | Rank IDs, subranks, names, colors/images | Correctly label a cohort |
-| Other asset routes | Accolades, build tags, client versions, colors, loot tables, Steam information, and the asset index | Useful for presentation, versioning, discovery, and build metadata; usually not tactical evidence |
+\[
+s_t = (h, k_t, I_t, u_t, g_t, n_t, \ell_t, A_t, E_t, O_t, q, p),
+\]
 
-The assets response may include disabled or development heroes/items. Filter on
-current selectability/shop availability rather than assuming every asset is
-playable. At the reference date, the asset list is larger than the current
-selectable hero roster.
+where:
 
-### 5.2 Analytics: what happened in matches
+- \(h\) is the hero and current mechanical kit;
+- \(k_t\) is learned ability state, charges, cooldowns, and ability points;
+- \(I_t\) is inventory, components, open slots, and active bindings;
+- \(u_t\) is liquid currency and shop access;
+- \(g_t\) is game clock and current phase;
+- \(n_t\) is personal and team-relative net worth;
+- \(\ell_t\) is lane/map position and local pressure;
+- \(A_t\) and \(E_t\) are allied and enemy compositions, items, and threat states;
+- \(O_t\) is objective state and the next conversion opportunity;
+- \(q\) is queue/mode and rank/mastery cohort;
+- \(p\) is the frozen patch/client/telemetry regime.
 
-| Endpoint | Unit and major fields | Strategic question it can answer | Important limitation |
+A build is a policy \(\pi(a \mid s_t)\) over actions such as:
+
+- buy an item or component;
+- upgrade one branch rather than another;
+- sell or retain an item;
+- allocate an ability point;
+- wait for a breakpoint instead of spending;
+- choose a situational response;
+- abstain because evidence or overlap is inadequate.
+
+```mermaid
+flowchart TD
+    S[Observe pre-decision state] --> V{Snapshot and mechanics valid?}
+    V -- no --> X[Abstain and explain why]
+    V -- yes --> C[Generate legal candidate actions]
+    C --> T{Immediate threat overrides plan?}
+    T -- yes --> R[Evaluate response branch]
+    T -- no --> P[Evaluate core progression]
+    R --> L[Check price, slots, actives, components, imbue, flex]
+    P --> L
+    L --> U{Adequate evidence and overlap?}
+    U -- no --> D[Use conservative default or abstain]
+    U -- yes --> A[Recommend action with trigger and confidence]
+    A --> O[State conversion objective and failure condition]
+    O --> S
+```
+
+This abstraction resolves several common errors:
+
+- A popular item can be a candidate without being mandatory.
+- Two items can both be good but mutually exclusive because of role, slot, active-binding, or upgrade-path constraints.
+- The optimal action can be to save for a breakpoint.
+- An “early item” is defined by a risk-set purchase distribution and access state, not its catalog tier.
+- A counter item is good only when its trigger is present and its opportunity cost is acceptable.
+- A recommended path can branch and later rejoin.
+
+### What the player-facing guide must answer
+
+At each meaningful decision, a guide should answer six questions:
+
+1. **Action:** What do I buy, upgrade, sell, or wait for?
+2. **Prerequisite:** What must already be true?
+3. **Trigger:** Which observed state makes this branch preferable?
+4. **Timing:** By clock, level, ability points, item investment, or relative economy, when is it useful?
+5. **Conversion:** What should the player do with the resulting power?
+6. **Failure/counterplay:** When should the player stop following this branch?
+
+## Claim classes and evidence hierarchy
+
+No model, prompt, or polished prose may promote a claim into a stronger class than its evidence.
+
+| Claim class | Example | Minimum support | Allowed language |
 |---|---|---|---|
-| `/v1/analytics/item-stats` | Item × requested bucket; wins, losses, matches, players, average buy/sell times | How often and when was this item bought, and what outcomes co-occurred? | Observational; purchase rows can differ from distinct hero-match adoption |
-| `/v1/analytics/item-flow-stats` | Stage nodes/edges, stage baseline, reached population, adjusted/raw outcomes | Which item transitions are common, and how does a path evolve across stages? | Fixed stages, survivorship, and wealth/choice confounding; not causal |
-| `/v1/analytics/item-permutation-stats` | Unordered item combinations/sets | Which completed groups coexist successfully? | No purchase order |
-| `/v1/analytics/ability-order-stats` | Ordered ability/upgrade ID vector, matches, players, wins/losses, K/D/A | Which ability paths have enough evidence and how do outcomes differ? | The chosen path is still correlated with matchup, player skill, and game state |
-| `/v1/analytics/hero-stats` | Hero wins/losses/matches plus K/D/A, net worth, last hits/denies, player/objective/neutral damage, healing and other aggregates | What is the hero baseline for the exact cohort? | Aggregate endpoints do not explain why |
-| `/v1/analytics/game-stats` | Match count, duration, economy/combat averages, ending level, first Mid Boss/objective timing, boss rates | What game states and durations are common enough to optimize for? | Cohort averages can hide multimodal games |
-| `/v1/analytics/player-performance-curve` | Absolute or normalized time series for net worth, combat, and economy sources | When does a typical hero accumulate resources or change pace? | Absolute samples begin at 180 seconds in the current implementation |
-| `/v1/analytics/hero-build-stats/{hero_id}` | First database build selected at match start and outcome aggregates | Which published build was initially selected? | Does not capture later build switching; coverage starts in 2026-03 |
-| `/v1/analytics/build-item-stats` | How often items appear in public builds | What guide authors recommend | This is publication frequency, not match performance or purchase order |
-| Hero counters/synergies/combinations | Matchup and team-composition outcomes | Does the tactical job change with allies/enemies? | Composition correlations are not item effects |
-| Scoreboards, kill/death, bans, badge distribution, player metrics | Population, combat, draft, rank, and player summaries | Supplementary cohort and playstyle checks | Often the wrong unit for an item-path claim |
+| Mechanical | “This item can be imbued on a non-ultimate ability.” | Pinned current assets/schema; validated target | *grants, scales, requires, can target* |
+| Descriptive | “Among eligible purchases in this cohort, this item was common.” | Exact numerator, denominator, unit, cohort, interval | *observed, associated, selected, common* |
+| Predictive | “This policy is calibrated for next-item prediction on a later patch window.” | Temporal holdout, calibration, risk/coverage, legal candidates | *predicts, ranks, forecasts* |
+| Causal | “Buying A rather than B at this decision improves outcome Y.” | Target-trial emulation or experiment with overlap and sensitivity analysis | *causes, improves because of, effect* |
 
-`item-stats` supports unusually rich filtering: hero(s), enemy hero(s), any/all
-enemy matching, enemy final net worth, same-lane matchups, patch timestamps,
-duration, final net worth, rank/badge, included/excluded items, accounts,
-purchase time bounds, and item-order constraints. Its buckets include absolute
-game time, normalized game time, multiple net-worth increments, and calendar
-time. This makes it the main aggregate source for per-item purchase windows.
+### Evidence hierarchy
 
-The item-order filters are constraints, not a complete sequence model. If both
-specified items are present, the requested order is enforced; a match missing
-one of them can still satisfy the broader query. Use raw match data when an
-exact, complete ordered path is required.
+From strongest for build authoring to weakest:
 
-### 5.3 Matches and demos: the raw evidence layer
+1. **Current deterministic mechanics** from a pinned client/assets snapshot.
+2. **Legal-state validation** against inventory, components, ability points, and schema.
+3. **Within-state comparative evidence** from a defined decision risk set.
+4. **Shrunk descriptive evidence** with uncertainty and a correct denominator.
+5. **Patch-forward predictive evidence** with calibration and abstention.
+6. **Expert review** of tactical coherence and failure cases.
+7. **Raw aggregate popularity or win rate.**
+8. **Unversioned prose, old guides, anecdotes, or model memory.**
 
-The match domain exposes:
+> [!WARNING]
+> A language model can explain supplied evidence, but it cannot repair missing mechanics, identify an unobserved confounder, or convert correlation into causation. Deterministic code owns collection, legality, fingerprints, and installation.
 
-- match metadata and bulk metadata;
-- active matches, recently fetched matches, salts, and fetch queues;
-- demo download, submission, processing status, schemas, formatting, live
-  queries, and event/table extraction;
-- live URLs and custom-match lifecycle routes.
+## Freeze patch, client, queue, cohort, and analytic grain
 
-For this project, bulk metadata is the crucial validation source. It includes
-match information, player/hero records, purchases and sell events, statistics
-timelines, final statistics, deaths, objectives, and Mid Boss events. It can be
-used to:
+“Current patch” is not a sufficient cohort definition. A coherent evidence packet needs several independent epochs.
 
-- count distinct hero appearances;
-- count distinct buyers rather than purchase rows;
-- reconstruct exact order, rebuy, sell, and replacement behavior;
-- validate whether a net-worth-at-buy value is plausible;
-- condition a recommendation on the state immediately before a purchase.
+### Patch identity
 
-The bulk endpoint is rate-limited more tightly than ordinary analytics and
-returns at most a bounded batch, so it should validate or enrich aggregates,
-not replace every aggregate query. The current documentation should be checked
-for live limits before running a production collector.
-
-### 5.4 Builds, players, leaderboards, patches, GraphQL, SQL, and service data
-
-| Domain | What is exposed | Relevance |
-|---|---|---|
-| Builds | Search/query, details, item sections, tags and related build data | Retrieve the exact guide being summarized and its tier membership |
-| Players | Match history, account/hero/enemy/mate statistics, cards, MMR history/distribution, rank prediction and Steam lookup | Personalization and mastery analysis, subject to privacy and consent |
-| Leaderboards | Ranked population and leaderboard records | Cohort context, not a direct tactical signal |
-| Patches | Patch feed and major-patch days (including v2 feed) | Bind every result to the correct ruleset and detect invalidation |
-| GraphQL | Projected asset/analytic querying and filters | Efficient custom data selection when REST overfetches |
-| SQL | Controlled query surface | Advanced research only; keep queries bounded and audited |
-| Info/servers | Health, API information, server lists/status/metrics | Operational monitoring, not build prose |
-| Auth/patron/privacy | Patreon and account association, privacy controls | Access and user rights; never treat private identity as free analytic data |
-| Commands/variables | Game/server command metadata | Research and tooling support; generally outside build prose |
-
-The public docs advertise shared analytic rate limits and endpoint-specific
-caching. A production pipeline should record response timestamps, respect
-`Retry-After`, cache immutable asset versions locally, and never assume a fresh
-HTTP response means fresh underlying match data.
-
-## 6. How the current Item Stats and Purchase Analysis work
-
-The implementation inspected for this document is the website at commit
-`e7bd075b558548745fdf9700cee425572264963f`.
-
-### 6.1 Item Stats table
-
-The table fetches aggregated item statistics for the selected filters and lets
-the user inspect wins, losses, match volume, buy timing, and related values.
-The displayed **Pick rate** is currently:
-
-```text
-item.matches / maximum_item_matches_in_the_current_table
-```
-
-Consequently, one item is always 100% within the current result set. This is a
-relative popularity index. It is suitable for ordering icons by observed
-frequency, but it must not be described as “bought in 73% of hero games.”
-
-An exact hero-game adoption rate should instead use:
-
-```text
-distinct (match_id, account_id) hero players who bought the item
-----------------------------------------------------------------
-distinct (match_id, account_id) hero players in the same cohort
-```
-
-The numerator must deduplicate rebuys. The denominator can come from hero
-appearances in raw metadata or an exactly aligned hero-stat cohort.
-
-### 6.2 Per-item Purchase Analysis
-
-The chart supports three views:
-
-- net worth at purchase, bucketed by souls;
-- absolute game time in minutes;
-- normalized game time as a percentage of total match duration.
-
-The default visual score is a Wilson lower confidence bound, called a
-conservative estimate in the interface. Raw win rate remains available in the
-tooltip. The chart adaptively combines sparse buckets, applies a moving average
-for visual readability, and uses a minimum sample requirement that rises with
-the number of observations.
-
-Each view answers a different question:
-
-- **Net worth:** at what economy state did buyers tend to succeed?
-- **Absolute time:** when on the clock was the purchase made?
-- **Normalized time:** how far through that particular match was it made?
-
-None is a causal treatment effect. Net worth is especially confounded: players
-who are ahead can buy expensive items earlier, and winners may survive long
-enough to make purchases that losers never reach. Normalized time is useful for
-comparing games of different length but leaks final duration into the bucket
-definition, so it is unsuitable for a live in-game predictor unless duration is
-estimated rather than known.
-
-### 6.3 Tiered Purchase Guide
-
-The purchase-guide helper:
-
-1. groups shop items into Tiers I–IV;
-2. computes adaptive net-worth buckets using candidate increments of 1k, 2k,
-   3k, 5k, 7k, and 10k;
-3. requires a window to have at least 20 purchase observations and at least 5%
-   of that item's purchase observations across the relevant buckets;
-4. finds local peaks by Wilson lower bound;
-5. expands contiguous buckets whose scores stay within 0.07 of the peak;
-6. keeps up to two non-overlapping windows;
-7. computes a tier horizon as twice the weighted median purchase net worth for
-   items in that tier, rounded up to 1k;
-8. presents up to eight items per tier.
-
-The UI can sort by:
-
-- relative popularity (`item.matches / max item.matches`); or
-- the strongest detected purchase window, then volume.
-
-That is an excellent *discovery view*, but it is not yet a sufficient tactical
-description. A generator must add hero abilities, path order, item function,
-map state, duration exposure, and the difference between a core and a
-situational purchase.
-
-### 6.4 Pre-180-second net-worth caveat
-
-A raw validation of match `95781377` found:
-
-- a Kelvin purchase at 68 seconds;
-- `net_worth_at_buy=33469`, equal to the player's final net worth;
-- the first timeline economy sample at 180 seconds, with net worth 2017;
-- later purchases mapping sensibly to the most recent timeline sample.
-
-The player-performance-curve implementation also starts absolute samples at
-180 seconds. The practical rule is:
-
-```text
-if purchase_time < first_available_economy_sample:
-    keep purchase_time
-    set net_worth_at_buy to unknown
-    do not place it in a net-worth purchase bucket
-```
-
-If raw stats make independent reconstruction possible, derive an early economy
-value and mark it `derived`; otherwise do not guess. This caveat can distort
-the first fixed stage of item-flow analytics and Tier I net-worth windows. It
-does **not** invalidate genuine low-tier purchases late in a match.
-
-### 6.5 Item Flow stages and adjusted win rate
-
-Normal-mode Item Flow currently uses four fixed purchase columns:
-
-```text
-0–9 minutes | 9–20 minutes | 20–30 minutes | 30+ minutes
-```
-
-Its response exposes item nodes, transitions between nodes, a stage baseline,
-and how many players reached each column. `reached_per_column` is essential:
-the population able to make a 30+ minute purchase is a selected subset of the
-opening population.
-
-The endpoint also reports an adjusted win rate. For normal mode, it
-standardizes each item's result to the stage-wide distribution of net worth at
-purchase in 5k buckets. This is more useful than raw win rate for reducing
-simple wealth imbalance inside a stage, but it remains observational. It does
-not control every pre-purchase difference, player skill, composition, reason
-for buying, or later exposure.
-
-Use Item Flow to describe a *common transition*, such as “utility bridge into
-damage completion,” not to claim that following an edge causes a win. The
-pre-180-second attribution caveat is especially relevant to column zero:
-exclude or flag impossible opening net-worth values before trusting its
-wealth-adjusted result.
-
-## 7. Match duration: optimize for the games that actually occur
-
-The following live snapshot used non-overlapping duration buckets for normal
-mode, the current reference patch, and Ascendant VI+:
-
-| Ending duration | Matches | Share |
-|---:|---:|---:|
-| Under 25 min | 1,325 | 6.66% |
-| 25–30 min | 3,345 | 16.81% |
-| 30–35 min | 6,475 | 32.53% |
-| 35–40 min | 5,186 | 26.06% |
-| 40–45 min | 2,465 | 12.38% |
-| 45–50 min | 821 | 4.13% |
-| 50+ min | 287 | 1.44% |
-| **Total** | **19,904** | **100%** |
-
-Small differences in totals can occur as cached endpoints refresh; a second
-bulk snapshot contained 19,869 matches with essentially the same shares. The
-important shape is stable:
-
-- about 58.6% ended from 30–40 minutes;
-- about 5.6% reached 45 minutes;
-- about 1.4% reached 50 minutes.
-
-The 50+ subset averaged roughly 53:21 duration, 67.7k final net worth, level
-35.99, 65.0k player damage, and 58.7 neutral kills. It is a nearly max-level,
-slot-saturated tail, not the default Tier IV state. It still matters as a
-contingency: replace obsolete efficiency items, preserve buyable utility,
-protect the highest-value player, control lanes before committing, and avoid
-coin-flip fights without a conversion plan.
-
-### 7.1 Hero curves are not interchangeable
-
-Observed win rate by *ending-duration bucket* differed materially by hero in
-the same reference cohort:
-
-| Hero | Under 25 min | 30–35 min | 45–50 min | 50+ min |
-|---|---:|---:|---:|---:|
-| Lady Geist | 56.45% (372) | — | 42.59% (216) | 36.36% (77) |
-| Abrams | 42.69% (424) | — | 55.79% (285) | 53.93% (89) |
-| Wraith | 43.41% (668) | — | 53.44% (320) | 49.49% (99) |
-| Kelvin | 49.07% (216) | 55.05% (1,090) | 57.38% (122) | 56.00% (50) |
-| Haze | 46.38% (787) | — | 52.40% (479) | 51.88% (160) |
-| Warden | 55.59% (331) | — | 46.33% (177) | 40.98% (61) |
-
-These values are descriptive snapshots, not permanent hero identities. The
-50+ samples are small. Most importantly, “win rate among games that ended at
-minute 50+” is **not** “the hero's chance to win once the clock reaches minute
-50.” Ending buckets include closeout ability, stomps, composition, player
-mastery, and survivor selection.
-
-Use the curve to form a tactical hypothesis:
-
-- a hero declining in long-ending games may need to force objectives while a
-  Tier III spike is live or use Tier IV durability/utility to remain relevant;
-- a hero improving in longer games may need to farm safely, avoid low-value
-  deaths, and fight only around completed thresholds;
-- a build may deliberately compensate for the hero's natural curve.
-
-Then verify that hypothesis against item function, actual purchase timing,
-ability path, and sufficient volume.
-
-## 8. Statistical guardrails
-
-### 8.1 Compare against the correct baseline
-
-For item \(i\), hero \(h\), and cohort \(c\):
-
-```text
-observed lift = WR(item i | hero h, cohort c) - WR(hero h | cohort c)
-```
-
-The hero baseline should be exposure-aligned when possible. An item available
-only after a late stage should not be compared naively with all hero games,
-including matches that ended before anyone could buy it. Useful alternatives
-include:
-
-- the population that reached the same flow column;
-- hero games lasting at least the item's typical purchase time;
-- matched wealth/time bands;
-- a model controlling for pre-purchase state.
-
-### 8.2 Use uncertainty, volume, and shrinkage
-
-Wilson lower bounds are appropriate for conservative ranking because they
-penalize tiny samples. They do not remove confounding. Store at least:
-
-```text
-wins, losses, matches, distinct_players, distinct_matches,
-raw_win_rate, Wilson_interval, hero_baseline, observed_lift
-```
-
-Recommended publication gates:
-
-- reject a window below both an absolute volume floor and a cohort-share floor;
-- flag a path dominated by very few distinct players;
-- shrink small-sample estimates toward the hero/cohort baseline;
-- display or log the sample behind every generated claim;
-- prefer a stable conclusion across adjacent buckets over a one-bucket spike.
-
-### 8.3 Keep analytic units separate
-
-There are at least four possible units:
-
-1. match;
-2. hero-player in a match;
-3. purchase event;
-4. published build.
-
-“2,000 matches,” “2,000 buyers,” “2,000 purchases,” and “2,000 public builds”
-are different facts. Every feature must name its unit. Rebuys and duplicate
-purchase rows must not inflate adoption rate.
-
-### 8.4 Confounders to carry into interpretation
-
-- **Wealth:** winning players buy earlier/more.
-- **Survivorship/exposure:** only long games can contain late purchases.
-- **Choice:** better players may choose an item in the right situation.
-- **Reverse causation:** the player bought defense because they were already
-  being focused; the item's raw outcome can look worse despite being correct.
-- **Composition and matchup:** damage type, control, range, and lane opponent
-  change item value.
-- **Mastery:** hero experience changes performance independently of the build.
-- **Patch drift:** costs, abilities, objectives, and player adaptation change.
-- **Duration selection:** buckets based on ending duration select different
-  kinds of games.
-- **Multiple comparisons:** searching hundreds of items/buckets will create
-  impressive-looking peaks by chance.
-- **Guide selection:** a selected public build is not necessarily followed.
-
-The API has `min_hero_matches` support in some hero/player contexts, but not
-every item/ability aggregate exposes the same mastery control. Record that gap
-instead of pretending it is solved.
-
-### 8.5 Language rules for observational data
+The fresh `/v2/patches` response includes `source`, `title`, `pub_date`, `link`, `guid`, and `content`. During research, an entry titled `06-30-2026 Update` had a July 28 publication date. Title matching alone is therefore unsafe.
 
 Use:
 
-- “is associated with”;
-- “appears most often”;
-- “the supported purchase window is”;
-- “this suggests using the spike to…”;
-- “conditional on reaching this state.”
-
-Avoid:
-
-- “causes a 7% win-rate increase”;
-- “always buy at 18k”;
-- “the best item” based on raw win rate alone;
-- “late-game win probability” when the metric is an ending-duration bucket.
-
-## 9. Deadlock systems that change how a build should be played
-
-### 9.1 Shop prices and investment breakpoints
-
-Current generic data gives the shop prices:
-
-| Item tier | Price |
-|---:|---:|
-| I | 800 souls |
-| II | 1,600 souls |
-| III | 3,200 souls |
-| IV | 6,400 souls |
-
-Each purchase also supplies a category bonus whose size depends on item tier.
-The current shared hero assets encode these Tier I–IV bonuses:
-
-| Category | I | II | III | IV |
-|---|---:|---:|---:|---:|
-| Weapon damage | 4% | 8% | 13% | 18% |
-| Base health | 7% | 8% | 9% | 10% |
-| Spirit Power | 4 | 7 | 10 | 13 |
-
-Items additionally contribute to cumulative category investment. Current hero
-assets share investment thresholds at 800, 1,600, 2,400, 3,200, 4,800, 6,400,
-8,000, 11,200, 16,000, 22,400, and 28,800 category spend. The jump at 4,800 is
-especially important: a purchase can be valuable for its own mechanics, its
-tier/category purchase bonus, and the investment threshold it crosses.
-
-For the current shared curves, representative cumulative bonuses are:
-
-| Category | Bonuses across the thresholds |
-|---|---|
-| Weapon | 9, 12, 15, 18, 46, 54, 62, 74, 86, 100, 115% |
-| Vitality | 9, 12, 15, 20, 38, 42, 46, 50, 54, 60, 66% |
-| Spirit | 7, 11, 15, 19, 38, 45, 52, 59, 66, 75, 100 Spirit Power |
-
-The generator should calculate:
-
-```text
-category_spend_before
-category_spend_after
-thresholds_crossed
-incremental_shared_bonus
+```yaml
+patch_identity:
+  source: forum-or-steam
+  guid: source-stable-identifier
+  published_at: RFC-3339
+  content_sha256: sha256-of-normalized-content
+epochs:
+  mechanics: client-version-or-breaking-patch
+  matchmaking: queue-rules-launch-or-change
+  map_objectives: relevant-rules-change
+  telemetry: parser-or-ingestion-contract-change
 ```
 
-That enables useful prose such as “take the next fight after this purchase
-because it crosses the 4.8k Spirit investment threshold,” rather than merely
-restating the item passive. These values are patch-sensitive and must be read
-from assets, not embedded forever.
+The analytic start time is the latest applicable epoch boundary, not merely the latest balance-note title. Allow explicit pooled windows only when a model includes regime indicators and the report labels them.
 
-### 9.2 Ability and level breakpoints
+### Client and assets
 
-Hero assets expose ability unlock/progression data and scaling. Current shared
-level information places ability unlock currency at levels 1, 3, 5, and 8,
-with ability points at other milestones. Standard level progression also adds
-health and damage-related boons. Souls required rise through the level curve,
-reaching level 36 at roughly 48.6k total souls in the reference assets.
+The assets API supports historical client versions. Omitting the version returns latest data without embedding the resolved version in every payload. A robust run must:
 
-For every ability path, derive:
+1. list available client versions;
+2. select and record one version;
+3. fetch all asset families for that version;
+4. hash raw responses;
+5. refuse to combine assets from different resolved versions;
+6. retain the manifest beside generated artifacts.
 
-- first access to each ability;
-- ability-point upgrade milestones;
-- a meaningful cooldown, duration, charge, radius, damage, or scaling change;
-- synergy between that upgrade and the next item purchase;
-- whether the build delays a defensive or mobility tool;
-- whether an ultimate/active combination is ready for the next objective.
+This matters because analytics from an older window interpreted with newer item mechanics can produce mechanically impossible prose.
 
-The ability path's aggregate win rate and match count are supporting evidence,
-not a substitute for reading the ability properties.
+### Queue and mode
 
-### 9.3 Inventory pressure and slot unlocks
+`game_mode=normal` identifies the ruleset; it does **not** distinguish Standard from Ranked matchmaking. In the API, an omitted `match_mode` covers Ranked and Unranked. These queues now have materially different entry requirements, party rules, hero-selection behavior, and population.
 
-The current UI/localization indicates an initial extra slot and additional
-slots unlocked after the team destroys one, two, and three enemy Walkers.
-Therefore, structure pressure has build value beyond the direct bounty:
+Valve’s July 30 matchmaking update describes Standard as lower-stakes with broad party and skill access, while Ranked requires prior Standard wins, hero experience across choices, calibration games, solo/duo constraints, and bans. The same update also changed loss handling around abandonment. Those are selection and outcome-definition changes, not cosmetic filters.
 
-- a slot unlock can complete a combination without selling an efficient item;
-- a team behind on Walkers may have a theoretically strong list that cannot
-  fit cleanly;
-- a late cheap item may be a correct fill when a slot has just opened;
-- a saturated inventory changes the value of an 800-soul purchase and sell
-  loss.
+A high-rank research query spanning July 28–August 8 contained 859 Ranked and 12,443 Unranked games; 93.5% of that pooled window was Unranked. Restricting to the post–July 30 matchmaking regime produced a radically different composition. That is direct evidence that a single broad “patch” window can straddle incompatible populations.
 
-The description should mention structure pressure when the next meaningful
-power spike is slot-constrained.
-
-### 9.4 Lanes and structure chain
-
-The current map has three lane/zipline paths. The strategic structure chain is:
-
-```text
-Guardian → Walker → Base Guardians → Shrines → Patron
-```
-
-Current objective tuning includes:
-
-| Objective | Configured kill bounty in current generic data |
-|---|---:|
-| Guardian | 1,250 |
-| Walker | 3,500 |
-| Base Guardian | 1,000 each |
-| Shrine | 2,000 |
-
-A nearby-player share is also part of the bounty logic. Guardian resistance
-scales from stronger to weaker over the opening 12 minutes, so “can hit a
-Guardian” and “should force a Guardian now” are not identical.
-
-Translate item spikes into concrete lane actions:
-
-- shove one lane before grouping so the enemy must answer;
-- pressure a weakened Guardian/Walker when the purchase adds safe structure
-  damage or sustain;
-- attack the opposite side only if the team can cross-map without surrendering
-  a more valuable objective;
-- do not chase kills past the conversion window;
-- after winning a fight, name the structure, urn/rift action, boss, or reset
-  that spends the advantage.
-
-### 9.5 Troopers, neutrals, breakables, and powerups
-
-Lane troopers are both income and map pressure. Neutral camps let a hero convert
-safe time into the next item/level threshold, but farming them can concede lane
-priority or an objective window. Breakables and timed powerups add smaller,
-repeatable economy opportunities.
-
-The May 22 patch moved medium neutral spawn earlier and changed breakable timing
-while also changing shrine vulnerability rules. Community timer summaries can
-therefore be stale. The generator should obtain current timers and values from
-assets/patch data and use community mechanics references only to explain
-concepts. Helpful secondary references include
-[neutral camps](https://deadlock.io/en/articles/mechanics/neutral-camps) and
-[lanes/troopers](https://deadlock.io/articles/mechanics/lanes-and-troopers).
-
-Tactical prose should distinguish:
-
-- **farm to a named threshold:** clear the closest safe wave/camp and avoid a
-  premature fight;
-- **farm while preserving priority:** take a camp only after the wave is
-  pushed and return before the objective;
-- **stop farming and convert:** the item/ability spike is complete and a
-  temporary window is open;
-- **deny enemy recovery:** invade or take contested neutrals with lane vision
-  and an escape route, not as an isolated coin flip.
-
-### 9.6 Urn, Unstable Rift, and comeback economy
-
-The June 30 rules made Unstable Rift timing variable around a seven-minute
-interval, with advance visual/global warning. Rift creates a wave-pressure
-event rather than direct souls; comeback effects scale with team net-worth
-deficit. The Urn begins later, respawns on a schedule, loses pickup value if
-left too long, pays the carrier plus released soul orbs, grants permanent
-carrier bonuses, and can be dropped through combat events.
-
-This matters for build prose:
-
-- mobility, escort, displacement, and area control can create an Urn window;
-- a hero carrying should not use an engage pattern that predictably drops it;
-- the team should push lanes before committing to the route;
-- a trailing team may use comeback-scaled events to recover rather than force a
-  low-probability base fight;
-- a fresh active/control spike should be held for the announced contest when
-  its cooldown allows.
-
-Exact values belong in the structured evidence packet, not in evergreen prose,
-unless the published description is regenerated every patch.
-
-### 9.7 Mid Boss and Rejuvenator
-
-Current generic data gives the Rejuvenator buff a three-minute duration and
-includes stronger troopers plus reduced respawn time. In the reference
-high-rank cohort, the average first Mid Boss event was around 21:41, but an
-average is not a spawn rule.
-
-A Mid Boss call needs:
-
-- lane priority or enough enemy deaths to prevent a collapse;
-- damage and sustain to finish before the contest arrives;
-- control/vision on entrances;
-- a plan for securing the Rejuvenator;
-- lanes prepared to exploit the temporary buff afterward.
-
-The item description should not say “take boss” merely because the build deals
-damage. It should say what must be true first and how the hero contributes:
-zone an entrance, burst the boss, hold a disable for the steal attempt, protect
-the securing teammate, or push the lane that converts the buff. See the
-secondary [Mid Boss and Rejuvenator overview](https://deadlock.io/en/articles/mechanics/mid-boss-and-rejuvenator),
-then verify all live values against assets.
-
-## 10. Detecting power spikes
-
-A useful spike detector combines deterministic game rules with observed match
-behavior.
-
-### 10.1 Deterministic spikes
-
-These are mechanically verifiable:
-
-- completing an item or active;
-- crossing a category-investment threshold;
-- unlocking or upgrading an ability;
-- gaining a charge/cooldown/range/duration breakpoint;
-- opening an inventory slot;
-- completing a two-item or item-plus-ability interaction;
-- reaching enough survivability to channel, dive, or hold an area;
-- obtaining a mobility/dispel/anti-heal/control answer to a specific opponent.
-
-### 10.2 Observed spikes
-
-These are hypotheses supported by data:
-
-- a high-volume item purchase window with a stable conservative outcome;
-- a common item-flow transition;
-- a build/ability path that performs above the aligned hero baseline;
-- a change in hero economy, damage, or kill participation along a performance
-  curve;
-- a duration range in which the hero/build closes games more or less often;
-- a composition-specific item advantage;
-- a raw-match pattern where purchases are quickly followed by objectives,
-  fights, or economy acceleration.
-
-### 10.3 A practical spike score
-
-Do not reduce the final prose to a single opaque score, but a ranking score can
-prioritize evidence:
-
-```text
-spike_score =
-    evidence_reliability
-  × sample_confidence
-  × adoption_weight
-  × mechanical_synergy
-  × timing_stability
-  × actionable_map_window
-```
-
-Where:
-
-- `evidence_reliability` penalizes stale/misaligned sources and invalid early
-  net-worth samples;
-- `sample_confidence` can use Wilson or empirical-Bayes shrinkage;
-- `adoption_weight` distinguishes core purchases from rare counters;
-- `mechanical_synergy` comes from item/ability properties and investment
-  crossings;
-- `timing_stability` rewards adjacent-bucket and patch stability;
-- `actionable_map_window` is high when a purchase coincides with an objective,
-  slot unlock, or enemy vulnerability the hero can exploit.
-
-The model should see the components, not only the aggregate score.
-
-### 10.4 Reinforcement versus compensation
-
-A build can do either:
-
-- **reinforce** a natural strength—more burst on an assassin during its best
-  closeout window; or
-- **compensate** for a weakness—durability, mobility, control, or cleansing
-  after damage is already sufficient.
-
-The common pattern “Tier III damage, Tier IV defense” may mean:
-
-1. Tier III creates the actual kill/pressure breakpoint;
-2. later opponents have enough damage/control to punish the same engage;
-3. Tier IV protects the hero's bounty, channel, uptime, or escape;
-4. the goal changes from finding solo kills to surviving coordinated
-   objective fights.
-
-That interpretation is valid only when the Tier IV item properties, purchase
-timing, and hero curve support it. A defensive item's raw win rate may be
-depressed because it is often purchased from behind. Conversely, a luxury
-damage item can look strong because only already-winning players reach it.
-
-## 11. Transferable lessons from League of Legends and Dota
-
-Cross-game research is useful for reasoning patterns, not for importing exact
-timers or item names.
-
-### 11.1 Dota: recommendations must update with state
-
-[Dota Plus](https://www.dota2.com/plus) describes real-time item and ability
-suggestions based on millions of recent matches, skill bracket, lane, lineup,
-and current inventory. Recommendations recalculate when the player deviates.
-The transferable lesson is decisive: a build description should not be one
-unconditional script.
-
-Deadlock equivalents include:
-
-- rank and patch;
-- lane opponent and enemy composition;
-- current inventory and category investment;
-- whether the team is ahead/even/behind;
-- open slots and destroyed Walkers;
-- current ability path;
-- objective availability and lane pressure.
-
-The four tier paragraphs can describe the default line, but each should include
-the one conditional branch most likely to change the hero's job.
-
-### 11.2 Dota: level/talent milestones are real spikes
-
-Dota's official [7.00 gameplay overview](https://www.dota2.com/700/gameplay?l=english)
-illustrates the general idea that level/talent milestones create deterministic
-power changes and adaptation choices. Deadlock ability unlocks, upgrades, and
-shared level/investment bonuses deserve the same weight as item completion.
-A description that reads item text but ignores the selected ability order will
-miss the reason a build is played differently.
-
-### 11.3 League: a spike matters when it can be converted
-
-Riot's [2026 Season 1 patch notes](https://www.leagueoflegends.com/en-us/news/game-updates/patch-26-1-notes/)
-show the broader MOBA pattern: objective rewards can create temporary map
-power, lane priority changes the value of those rewards, and some objectives
-exist primarily to help end a game. The Deadlock translation is:
-
-```text
-purchase/ability spike
-→ establish lane priority
-→ force or secure a fight/objective
-→ convert before the temporary advantage expires
-→ reset before the opponent's response
-```
-
-“You are strong now” is incomplete. The prose must name the conversion.
-
-### 11.4 League: access timing changes item meaning
-
-Patch examples such as [14.3](https://www.leagueoflegends.com/en-us/news/game-updates/patch-14-3-notes/)
-demonstrate that cost, build access, and whether an item supports or replaces a
-kit all change its power spike. In Deadlock, price alone is even less complete
-because category investment and inventory-slot pressure add additional
-breakpoints.
-
-### 11.5 League: mastery is a confounder
-
-Riot's discussion of [balancing new champions](https://www.leagueoflegends.com/en-us/news/dev/dev-balancing-new-champions/)
-shows why early observed win rate can differ from learned strength: performance
-changes across many games of experience. Deadlock descriptions built from all
-players should not assume a difficult hero/path is weak merely because novice
-results are low. When mastery controls are unavailable, state that limitation
-and prefer high-volume, stable mechanical conclusions.
-
-## 12. Data extraction and reasoning pipeline
-
-### Step 1: Freeze a patch and cohort
-
-Resolve the patch ID/title and boundaries from the patch feed, then select mode,
-rank, hero, and minimum volume. Save the exact query and retrieval time. The
-same patch title/version can be placed in generated guide metadata so a player
-can see which ruleset the description represents.
-
-### Step 2: Fetch current assets
-
-Fetch heroes, items, ranks, generic data, map, NPC units, and relevant misc
-entities. Filter disabled/test assets. Retain the full ability and item
-properties for reasoning, plus a compact normalized feature set.
-
-### Step 3: Retrieve the exact build
-
-Preserve:
-
-- guide/build ID and revision;
-- author/account only where authorized;
-- hero and patch;
-- item groups in intended display order;
-- Tier I–IV membership;
-- situational/optional labels;
-- ability path and any annotations.
-
-Do not infer purchase order solely from the visual order of a public build
-unless the build format guarantees it.
-
-### Step 4: Build the hero baseline
-
-For the exact cohort, fetch hero stats, game stats, player performance curves,
-ending-duration buckets, counters/synergies when relevant, and ability-order
-statistics. Calculate volume and confidence.
-
-### Step 5: Build per-item evidence
-
-For every build item:
-
-1. fetch item stats by absolute time;
-2. fetch by normalized time for retrospective comparison;
-3. fetch by net worth, excluding or marking invalid pre-sample purchases;
-4. retrieve item-flow nodes/edges;
-5. compare outcome to an exposure-aligned hero baseline;
-6. calculate exact adoption from raw metadata when practical;
-7. detect rebuy/sell/replacement patterns;
-8. split core versus situational behavior.
-
-Allow multiple supported purchase windows. A counter item can have a different
-window from a core item in the same tier.
-
-### Step 6: Derive mechanical breakpoints
-
-Walk the intended item list and ability path:
-
-- cumulative spend by category;
-- crossed investment thresholds;
-- active-item availability and cooldown role;
-- ability/item interactions;
-- inventory pressure and likely sell decisions;
-- next resource requirement;
-- likely map objectives when the spike occurs.
-
-### Step 7: Build a compact evidence packet
-
-The model needs rich context without an unfiltered dump. A suitable conceptual
-contract is:
+Recommended cohort contract:
 
 ```json
 {
-  "schema_version": "deadlock-tactical-build-context/v1",
-  "as_of": "2026-07-26T00:00:00Z",
-  "cohort": {
-    "patch_id": "…",
-    "patch_title": "…",
-    "patch_start": 1783625258,
-    "mode": "normal",
-    "min_average_badge": 106,
-    "hero_id": 12
+  "game_mode": "normal",
+  "match_mode": "Ranked",
+  "client_version": 6672,
+  "epoch_start": "2026-07-30T00:00:00Z",
+  "epoch_end": "2026-08-08T23:59:59Z",
+  "rank_badge_min": 91,
+  "rank_badge_max": 116,
+  "rank_labels_sha256": "...",
+  "outcome_policy": {
+    "exclude_not_scored": true,
+    "exclude_penalized": true,
+    "exclude_abandoned": true,
+    "exclude_low_priority": true
   },
-  "hero": {
-    "name": "…",
-    "role_hints": ["…"],
-    "abilities": [
-      {
-        "id": 0,
-        "name": "…",
-        "mechanics_for_reasoning": "full current asset description",
-        "selected_upgrade_steps": [1, 2, 3],
-        "breakpoints": ["…"]
-      }
-    ],
-    "baseline": {
-      "matches": 0,
-      "win_rate": 0.0,
-      "duration_curve": []
-    }
-  },
-  "build": {
-    "id": "…",
-    "ability_order": [],
-    "ability_path_evidence": {
-      "matches": 0,
-      "players": 0,
-      "win_rate": 0.0
-    },
-    "tiers": [
-      {
-        "tier": 1,
-        "items": [
-          {
-            "item_id": 0,
-            "name": "…",
-            "category": "weapon|vitality|spirit",
-            "cost": 800,
-            "is_active": false,
-            "mechanics_for_reasoning": "full current item description",
-            "purchase_windows": [],
-            "adoption": {},
-            "outcome": {},
-            "investment_thresholds_crossed": [],
-            "timing_class": "opening_foundation",
-            "confidence": "high|medium|low",
-            "source_refs": []
-          }
-        ]
-      }
-    ]
-  },
-  "game_context": {
-    "duration_distribution": [],
-    "objective_rules": {},
-    "likely_objectives_by_window": [],
-    "inventory_slot_state": []
-  },
-  "data_quality": {
-    "warnings": [],
-    "unknowns": [],
-    "forbidden_inferences": []
-  }
+  "unit": "eligible_player_decision"
 }
 ```
 
-The full descriptions remain inside `mechanics_for_reasoning`. They are not
-published verbatim.
+### Outcome eligibility
 
-### Step 8: Generate with Codex
+The analytics `won` flag is derived from player team and winning team. Recent 1,000-match samples contained `NotScored`, `Penalized`, `PenalizedParty`, abandoned, unrewarded, low-priority, and new-player rows; some penalized rows belonged to the winning team. A build analysis must state whether each is excluded and why.
 
-Ask Codex to reason only from the packet and current general mechanics. Require
-it to distinguish facts, supported inferences, and unknowns. Reject invented
-cooldowns, exact timings, enemy items, or ability behavior.
+Use separate reports for:
 
-### Step 9: Validate
+- gameplay outcome among eligible, scored players;
+- recommendation adoption;
+- abandonment or penalty behavior;
+- data-quality monitoring.
 
-Programmatic validation should check:
+Do not silently treat every row with `won=true` as a comparable successful decision.
 
-- exactly four headings, in order: `I`, `II`, `III`, `IV`;
-- no `EARLY GAME`, `MIDGAME`, or `LATE GAME` headings;
-- every named item/ability exists in the packet;
-- no unsupported exact number;
-- sufficient match/player volume behind data-backed claims;
-- no causal wording for observational outcomes;
-- active items receive an actionable use instruction where relevant;
-- low-tier late purchases are not mislabeled as opening purchases;
-- each paragraph contains an action and a commit/disengage or conversion rule;
-- output fits the target build-description length limit.
+### Rank labels
 
-Human review should ask whether a player can alt-tab, read the four sections,
-and immediately know what to do differently.
+Rank numbers are part of the data contract; labels are versioned presentation data. The current snapshot reports tiers:
 
-## 13. Prompt specification for Codex
+| Numeric tier | Current label |
+|---:|---|
+| 0 | Obscurus |
+| 1 | Initiate |
+| 2 | Seeker |
+| 3 | Acolyte |
+| 4 | Sentinel |
+| 5 | Mystic |
+| 6 | Ritualist |
+| 7 | Emissary |
+| 8 | Oracle |
+| 9 | Phantom |
+| 10 | Ascendant |
+| 11 | Eternus |
 
-```text
-You are writing the tactical description for one current-patch Deadlock build.
-Use only the supplied evidence packet. The item and ability descriptions are
-private reasoning context; do not paraphrase them as a catalog.
+The repository originally hard-coded obsolete labels for tiers 3–7 and used a
+Phantom I–Eternus VI default. The July 30 Ranked rollout introduced a fresh
+calibration population, so the operational default is now Emissary I–Eternus V;
+the broader lower bound avoids starving post-reset evidence while excluding
+Eternus VI's especially sparse tail. Always derive labels from the pinned ranks
+asset and fingerprint that mapping.
 
-Return exactly four sections titled:
-I
-II
-III
-IV
+### Analytic grain
 
-Treat these as item-price tiers, not fixed clock phases. Infer the usual game
-state from the items' observed purchase windows. A low-tier item may be a late
-cheap pickup. If evidence shows both opening and late uses, distinguish them in
-one concise conditional sentence.
+Every metric must carry its unit. In the current upstream implementation:
 
-For each section, give concrete instructions:
-- positioning and lane/map location;
-- pressure, farming, rotation, or gank priority;
-- engage pattern and ability/active sequencing;
-- preferred targets and teamfight role;
-- the power spike or threshold being played around;
-- what objective or structure to convert after success;
-- when to commit, disengage, reset, or wait for the next completion.
-
-Item names are allowed when they explain WHY the plan changes. Name active
-items when the player needs to know when or on whom to use them. Do not list
-generic item descriptions, stats, or every purchase.
-
-Account for the selected ability order. Account for whether the build
-reinforces the hero's natural timing or compensates for a weakness. Optimize
-for the observed common match durations; give only a compact contingency for
-rare very-long games.
-
-Use decisive tactical verbs: shove, freeze, rotate, flank, escort, isolate,
-peel, zone, invade, burst, channel, reset, disengage, convert. Do not use vague
-advice such as "play safe," "be aggressive," or "use abilities wisely" unless
-you state the triggering condition and action.
-
-Never claim observational win rate is causal. Do not print win-rate numbers or
-sample sizes in the player-facing prose. If evidence is weak or contradictory,
-prefer a conditional instruction or omit the claim.
-
-Output only the four sections. Keep each section compact enough to scan during
-a match.
-```
-
-## 14. Tactical content rubric for each tier
-
-Each paragraph should answer these questions in this order:
-
-1. **Current job:** carry/farm, initiate, roam/gank, peel, split pressure,
-   objective damage, area denial, or hybrid.
-2. **Position:** with the wave, on a flank, behind the initiator, on high
-   ground, at an entrance, or near an ally who enables the combo.
-3. **Setup:** which wave/camp/angle/cooldown/target must be prepared?
-4. **Sequence:** which ability or active starts, layers, confirms, or ends the
-   action?
-5. **Target:** isolated carry, clustered backline, diver, structure, boss,
-   carrier, or whoever enters the controlled area.
-6. **Commit rule:** what facts make the full engage worthwhile?
-7. **Disengage/reset rule:** which missing cooldown, enemy response, or failed
-   condition means leave?
-8. **Conversion:** objective, lane, invade, Urn/Rift, Mid Boss, structure, or
-   shop reset.
-9. **Next threshold:** what should be farmed or preserved before the next tier?
-
-Not every sentence must explicitly answer all nine, but a section that lacks
-job, sequence, commit rule, and conversion is too generic.
-
-### 14.1 Item-name policy
-
-The earlier blanket prohibition on item names is too strict. Use this rule:
-
-- mention a **core item** when its completion changes the tactical pattern;
-- mention an **active item** when its timing/target is part of the sequence;
-- mention a **counter item** in a conditional branch;
-- omit names when several items merely reinforce the same already-explained
-  job;
-- never turn the summary into a list of descriptions.
-
-Good:
-
-> Use **[active item]** on the first diver, then hold Shelter until the enemy
-> commits enough damage that the dome can reset the fight.
-
-Bad:
-
-> [Item] gives Spirit, health, cooldown reduction, and a passive that…
-
-### 14.2 Ahead, even, and behind
-
-The evidence packet should derive one branch per tier:
-
-| State | Default tactical adjustment |
+| Endpoint family | Actual unit to preserve |
 |---|---|
-| Ahead | Convert quickly, invade with lane priority, deny recovery, avoid giving a large isolated death |
-| Even | Fight on completed thresholds and objective timing; do not force while saving |
-| Behind | Clear safely, trade cross-map, use comeback objectives, buy efficient counters, and avoid luxury completion without exposure |
+| Item win/loss | Purchase events after array expansion; not automatically unique hero appearances or adoption |
+| Item players | Unique accounts, not player-match decisions |
+| Hero counter | Hero–enemy pair rows; one player can contribute multiple pairs when not lane-scoped |
+| Ability order | Aggregated path rows; filtering to complete paths changes the denominator |
+| Duration stats | Hero appearances in games whose **final duration** falls in the bucket |
+| Item flow edge | Cross-products of distinct items in adjacent broad phases, not the next chronological purchase |
 
-The published paragraph need not repeat all three. Include the branch that
-materially changes the build's plan.
+Names such as `matches`, `pick_rate`, and `counter` should never appear without a definition.
 
-## 15. Archetype tests: the prompt must produce different heroes
+## Deadlock mechanics every build must encode
 
-These are acceptance tests, not permanent hero guides. Always load current
-assets because abilities can change.
+Mechanics define the legal action space. Statistics rank only actions that survive this layer.
 
-### 15.1 Kelvin: roaming control and fight stabilization
+### Inventory and slot pressure
 
-A good Kelvin result should discuss:
+The current system has nine base item slots and three flex slots, for twelve total. One flex slot is associated with each Walker objective. The current shop snapshot contains 156 Standard Tier I–IV items across Weapon, Vitality, and Spirit. Four active-item bindings create a second constraint independent of inventory capacity.
 
-- moving with allies or using mobility to create a numbers advantage;
-- layering slows/control instead of dumping every cooldown at once;
-- targeting an isolated or retreating enemy for a gank;
-- holding Frozen Shelter for a commit, save, objective secure, or fight reset;
-- using lane pressure before disappearing for a rotation;
-- converting control into an objective rather than chasing.
+A path validator must track:
 
-Representative tone:
+- base and unlocked flex capacity at every step;
+- occupied category slots if applicable;
+- four active bindings;
+- components consumed by upgrades;
+- duplicate/unique-item restrictions;
+- temporary ownership before a sell;
+- sell legality and value loss;
+- flex-gated entries;
+- imbue-target eligibility;
+- patch/mode availability.
 
-> Keep pace with allies, layer repeated control, and reserve Shelter for the
-> moment its dome, regeneration, and objective protection can stabilize the
-> fight.
+Listing 30–50 items can be useful as a human menu, but it is not a legal realized build. Validation must enumerate or symbolically check every branch.
 
-If the output tells Kelvin only to “farm and scale,” the prompt or evidence
-packet has lost the hero's roaming/control identity.
+### Components, branches, and investment bonuses
 
-### 15.2 Abrams: angle-based initiator and sustained brawler
+The frozen Standard item graph contained 64 parent-to-child edges involving 43 component items; 13 components branched to more than one child, with a maximum of four children. A component purchase therefore provides **option value**, not proof of a particular final item.
 
-A good Abrams result should differ sharply:
+Examples in the snapshot include branching from Grit, High-Velocity Mag, and Debuff Reducer. The last is especially important: a player who buys the shared component has not yet revealed whether the eventual response is Unstoppable, Spellbreaker, or another valid child.
 
-- prepare a wall or terrain angle for the charge;
-- force attention and sustain through close range;
-- choose whether the ultimate starts the fight or punishes an enemy already
-  committed;
-- avoid charging beyond allied follow-up;
-- pressure structures/areas where the enemy must enter his range;
-- use defensive purchases to preserve a second rotation, not to become a
-  passive backliner.
+For each candidate, compute:
 
-### 15.3 Haze: economy, isolation, and execution timing
+\[
+\text{incremental cost} = \text{child price} - \text{credited owned component value},
+\]
 
-A good Haze result should:
+and keep separate:
 
-- name when to take safe waves/camps to reach a real completion;
-- move from farming to pick pressure once the completion exists;
-- use concealment/angle and control to isolate a high-value target;
-- avoid telegraphing or channeling into ready interrupts;
-- recognize when grouped enemies or defensive responses make disengagement
-  better than a low-value ultimate;
-- convert picks before returning to the next farm cycle.
+- catalog price;
+- incremental cash required now;
+- total investment in the tree;
+- cumulative category spend after purchase;
+- bonus threshold crossed by that total investment.
 
-### 15.4 Wraith: ranged pressure and pick conversion
-
-A good Wraith result should resemble Haze only where both seek target access.
-It should still reflect Wraith's current asset-defined range, burst/control,
-mobility, and ability order rather than copying Haze's farm/channel pattern.
-This pair is a useful test for whether the generator recognizes related
-archetypes without collapsing them into identical prose.
-
-### 15.5 Curve-compensation tests
-
-Use heroes such as Warden and Lady Geist to test duration reasoning:
-
-- a hero whose ending-duration results fall should receive an earlier closeout
-  plan when the build supports it;
-- a late defensive/utility tier may compensate for lost relative damage or
-  increased enemy coordination;
-- the generator must not say the hero “automatically loses late” from a small
-  conditional sample;
-- the 50+ contingency should be short because very few matches reach it.
-
-## 16. Query cookbook
-
-Use the [interactive API documentation](https://api.deadlock-api.com/docs) to
-confirm live parameter names and schemas before execution. The patterns below
-describe the required queries; production code should serialize parameters
-rather than assemble URLs by hand.
-
-### 16.1 Static context
+Current spend thresholds observed in the asset mechanics were:
 
 ```text
-GET /v1/assets/heroes
-GET /v1/assets/items
-GET /v1/assets/generic-data
-GET /v1/assets/map
-GET /v1/assets/npc-units
-GET /v1/assets/misc-entities
-GET /v1/assets/ranks
-GET /v1/patches
+800, 1,600, 2,400, 3,200, 4,800, 6,400,
+8,000, 11,200, 16,000, 22,400, 28,800
 ```
 
-### 16.2 Hero and game baselines
+Weapon, Vitality, and Spirit award different bonuses at those thresholds. The asset payload contains both current `cost_bonuses` and legacy-looking purchase-bonus fields; extraction must identify the authoritative field rather than add both and double-count.
 
-```text
-GET /v1/analytics/hero-stats
-  ?hero_ids={hero}
-  &game_mode=normal
-  &min_average_badge=106
-  &min_unix_timestamp={patch_start}
+### Ability points and level gates
 
-GET /v1/analytics/game-stats
-  ?game_mode=normal
-  &min_average_badge=106
-  &min_unix_timestamp={patch_start}
-  &min_duration_s={lower}
-  &max_duration_s={upper}
+Signature abilities unlock at hero levels 1, 3, 5, and 8. The current level table reaches level 36, grants 32 ability points in total, and each ability consumes `1 + 2 + 5 = 8` points across unlock and upgrades.
 
-GET /v1/analytics/player-performance-curve
-  ?hero_ids={hero}
-  &game_mode=normal
-  &min_average_badge=106
-  &min_unix_timestamp={patch_start}
+The legal ability state is therefore a function of level and prior spend, not “four equal quarters.” A validator should simulate each level:
+
+```python
+for level in levels:
+    available_ap += ap_granted(level)
+    for requested_change in policy.at(level, state):
+        assert ability_is_unlocked_or_unlockable(requested_change, level)
+        assert upgrade_prerequisites_hold(requested_change, state)
+        assert requested_change.cost <= available_ap
+        apply(requested_change)
 ```
 
-Use non-overlapping duration queries. Verify whether maximum bounds are
-inclusive before summing buckets.
+### Objective access and conversion
 
-### 16.3 Item timing and flow
+Objectives are not just context for win prediction; they change the action space and the value of a spike.
 
-```text
-GET /v1/analytics/item-stats
-  ?hero_ids={hero}
-  &game_mode=normal
-  &min_average_badge=106
-  &min_unix_timestamp={patch_start}
-  &bucket=game_time_min
+- Walker destruction unlocks flex capacity.
+- Lane structures control map access and safe shopping/rotation patterns.
+- Mid Boss and Rejuvenator windows turn team-fight power into durable tempo.
+- Urn and other economy objectives change whether saving or fighting is rational.
+- A defensive spike can convert into surviving the next forced fight rather than taking an objective.
 
-GET /v1/analytics/item-stats
-  ...same cohort...
-  &bucket=game_time_normalized_percentage
+Every “power spike” description should name its conversion opportunity: push a structure, contest an objective, force a pick, accelerate farm, protect an ally, or survive an enemy timing.
 
-GET /v1/analytics/item-stats
-  ...same cohort...
-  &bucket=net_worth_by_1000
+### Steam build semantics are mechanics
 
-GET /v1/analytics/item-flow-stats
-  ?hero_ids={hero}
-  &game_mode=normal
-  &min_average_badge=106
-  &min_unix_timestamp={patch_start}
+Valve’s current hero-build schema includes item-level `required_flex_slots`, `sell_priority`, and `imbue_target_ability_id`, plus category-level `optional`. Official shop notes describe these fields as behavior, not decoration:
+
+- optional categories are excluded from the default Queue;
+- sell priorities help automatic selling under slot pressure;
+- suggested imbue targets can be selected by Quickbuy;
+- build authors can encode purchases, imbues, and sells.
+
+A sentence saying “choose one” does not prevent all choices from entering the Queue. Executable schema must match prose.
+
+## Model the hero kit before choosing items
+
+Item recommendations should follow from a structured kit model, not from global popularity.
+
+### Mechanical kit record
+
+For each hero and ability, retain:
+
+- localized name and structured description;
+- ability type, targeting, damage type, and shape;
+- base values by upgrade state;
+- cooldown, duration, charges, cast/channel timing, and range;
+- stat coefficients and scaling functions;
+- conditions such as charged, channeled, airborne, debuffed, or below-health thresholds;
+- upgrade effects and AP costs;
+- valid imbue relationships;
+- relevant hero-level scaling stats;
+- source client version and raw asset path.
+
+The current snapshot contained 152 signature abilities and 3,997 property records. Of these, 1,496 had non-empty scale functions, 231 carried stat coefficients, and 164 scaled from more than one stat. Eleven heroes exposed hero-level `scaling_stats`. Dropping those fields is not a minor formatting loss; it removes the basis for explaining why an item compounds the kit.
+
+### Scaling is multidimensional
+
+For an effect \(e\), think in terms of:
+
+\[
+e(l, r, x, c) = b_{l,r} + \sum_j \beta_{j,l,r} f_j(x_j) + \gamma(c),
+\]
+
+where \(l\) is hero level, \(r\) is ability rank, \(x_j\) are weapon/spirit/vitality or other stats, and \(c\) is the condition under which the effect applies. Damage alone is insufficient. Relevant scaling includes:
+
+- uptime from cooldown reduction, duration, and charges;
+- reliability from range, speed, area, debuff duration, or cast safety;
+- effective health and sustain;
+- movement and angle access;
+- ally amplification or protection;
+- farm/wave throughput;
+- objective damage;
+- active-item overlap and execution burden.
+
+A large coefficient on an unreliable ability can be less valuable than a smaller reliability improvement. A build should state the bottleneck it addresses.
+
+### Hero identity and build variants
+
+Separate three layers:
+
+1. **Invariant kit:** mechanics that remain regardless of build.
+2. **Strategic role:** what the hero is expected to provide in this composition.
+3. **Build variant:** which part of the kit is being compounded in this state.
+
+The same hero may have a control/utility branch, a weapon-scaling branch, or a burst-spirit branch. Do not average distinct variants into a mythical “best build.” Cluster or explicitly define variants, then compare within variant and decision state.
+
+### Kit-to-item reasoning template
+
+| Question | Example of an acceptable answer |
+|---|---|
+| What is the hero’s repeatable output? | Sustained gun pressure, repeated area control, pick burst, ally protection, or objective damage. |
+| What limits it now? | Cooldown, charge count, range, survivability during channel, reload, access, or slots. |
+| Which item mechanic changes that limit? | Name the supplied mechanic and qualification; do not infer absent effects. |
+| Is the mechanic additive or multiplicative with current state? | Explain interaction with cooldown/charges, component investment, or existing stats. |
+| What is displaced? | Currency, a slot, an active binding, another upgrade branch, or an objective timing. |
+| What changes in play? | Name the action the player can now take and the counterplay that still applies. |
+
+## How to reason about items
+
+An item has no single context-free value. Its value depends on mechanics, acquisition state, alternatives, and the player’s ability to convert it.
+
+### Classify the job before scoring the item
+
+Use functional tags that can overlap:
+
+| Job | Question |
+|---|---|
+| Enabler | Does it make the hero’s intended pattern possible or reliable? |
+| Multiplier | Does it compound an already functioning damage, control, sustain, or mobility loop? |
+| Accelerator | Does it increase farm, wave clear, rotation, or objective conversion enough to repay its opportunity cost? |
+| Stabilizer | Does it prevent the current state from becoming unrecoverable? |
+| Counter | Does it answer a specific observed enemy mechanic? |
+| Bridge/component | Does it provide useful immediate stats while preserving upgrade options? |
+| Slot-efficient capstone | Does it consolidate power when inventory pressure dominates? |
+| Luxury | Is it strong only after essential access, survival, and utility constraints are solved? |
+
+“Core” should mean the action is useful across a high proportion of *eligible states in a declared variant*, not simply that it is popular. “Situational” should mean a named state changes the recommendation.
+
+### Score actions, not catalog entries
+
+A useful conceptual score is:
+
+\[
+V(a,s) = M(a,s) + C(a,s) + F(a,s) - O(a,s) - R(a,s),
+\]
+
+where:
+
+- \(M\): verified mechanical contribution;
+- \(C\): conversion value before the next objective or opponent timing;
+- \(F\): future option value, including component branches and slot consolidation;
+- \(O\): opportunity cost versus buying another item or waiting;
+- \(R\): risk from execution difficulty, counterplay, poor overlap, or stale evidence.
+
+This need not become one opaque production score. A feature card with hard gates is more auditable:
+
+```yaml
+candidate: Rapid Recharge
+mechanics_gate: pass
+legal_path_gate: pass
+state:
+  owned_components: []
+  open_slots: 2
+  active_bindings_free: 1
+mechanical_job: charge-uptime
+conversion: repeat a verified charged ability during the next contest
+alternatives: [cooldown-option, defensive-option]
+evidence:
+  descriptive: supported
+  causal: unsupported
+confidence: medium
+failure_condition: charge access is not the current bottleneck
 ```
 
-For an opening item, prefer the absolute-time view and raw validation over
-net-worth buckets until a valid economy sample exists.
+### Ahead, even, and behind are states, not adjectives
 
-### 16.4 Ability path and combinations
+Do not infer “ahead” from eventual final net worth. Define it at the decision time using information available then, such as:
 
-```text
-GET /v1/analytics/ability-order-stats
-  ?hero_id={hero}
-  &game_mode=normal
-  &min_average_badge=106
-  &min_unix_timestamp={patch_start}
+\[
+\Delta NW_t = NW_{player,t} - \operatorname{median}(NW_{same\ role/team,t}),
+\]
 
-GET /v1/analytics/item-permutation-stats
-  ?hero_id={hero}
-  ...same cohort...
-```
+and team-relative economy, structures, flex slots, health, cooldowns, and map access.
 
-Filter or compare paths by exact prefix only when that is what the endpoint
-semantics guarantee.
+- **Ahead:** favor actions that safely convert a lead, deny opponent access, consolidate slots, or cover the throw condition. Avoid automatically maximizing greed.
+- **Even:** preserve the primary timing while buying the minimum response required by visible threats.
+- **Behind:** distinguish a high-variance comeback line from a stabilizing line. Cheap reliable utility can be better than waiting indefinitely for a luxury item.
 
-### 16.5 Raw validation
+Always include the comparator. “Buy defensive item X while behind” is incomplete if a cheaper component would preserve the same survival threshold without missing a team timing.
 
-```text
-GET /v1/matches/metadata
-  ?hero_ids={hero}
-  &min_average_badge=106
-  &min_unix_timestamp={patch_start}
-  ...bounded duration/item filters...
-```
+### Build diversity is not automatically quality
 
-The exact bulk route and limit should be taken from the current docs. Respect
-its tighter request quota. Extract no more player identity than the calculation
-requires.
+Public-guide analysis shows that real guides behave like policy menus. In a fresh 500-guide sample:
 
-## 17. Validation and rejection checklist
+- 21,279 item entries were observed;
+- 10,078 entries (47.4%) were in optional categories;
+- 10,039 entries carried annotations;
+- 6,785 entries contained a sell-priority field, although only 384 were positive;
+- 1,071 entries carried an imbue target;
+- no sampled entry used a positive flex-slot gate;
+- the median guide listed roughly 42 distinct items, far beyond a realized inventory.
 
-### Data contract
+This demonstrates how authors use the schema, not whether each guide is good. A complex guide is useful only if branches are searchable, mutually intelligible, and executable. The sample also showed many guides with more than four active items across their menus; an internal validator must check individual paths rather than reject the menu wholesale.
 
-- [ ] Patch start/end and retrieval time are present.
-- [ ] Mode, hero, and rank cohort match across every comparison.
-- [ ] `106` is labeled Ascendant VI+, not Phantom+.
-- [ ] Asset IDs resolve to current enabled/shopable records.
-- [ ] Purchase counts and distinct buyer counts are not conflated.
-- [ ] Rebuys/sells are handled.
-- [ ] Pre-180-second net worth is missing/derived, never silently final NW.
-- [ ] Duration buckets are non-overlapping.
-- [ ] 50+ conclusions disclose the small population.
-- [ ] Item outcomes use an aligned hero/exposure baseline.
-- [ ] Ability-path and item-flow samples pass volume/player gates.
+## Item win rates: useful signal, dangerous ranking
 
-### Tactical quality
+### What a raw item win rate estimates
 
-- [ ] Output has exactly I, II, III, IV in that order.
-- [ ] Tier is never equated automatically with early/mid/late.
-- [ ] Each tier states the hero's current job.
-- [ ] Each tier gives positioning or map-location guidance.
-- [ ] Ability order affects at least one meaningful instruction.
-- [ ] Relevant actives are named with timing and target.
-- [ ] Item names explain a change; item descriptions are not dumped.
-- [ ] A core spike has a conversion target.
-- [ ] A failed engage condition has a reset/disengage instruction.
-- [ ] Farming advice names the threshold or map condition it serves.
-- [ ] The build's reinforcement/compensation pattern is represented.
-- [ ] Very-long-game advice is a contingency, not the default.
-- [ ] Different archetypes produce genuinely different instructions.
+For buyers of item \(i\) in cohort \(C\), the familiar estimate is
 
-### Reject the generated result if
+\[
+\widehat p_i = \frac{\sum 1(W=1, B_i=1, C)}{\sum 1(B_i=1, C)}
+= P(W=1 \mid B_i=1,C).
+\]
 
-- it uses “play aggressive,” “play safe,” or “scale” without a trigger/action;
-- it prints raw win rates as proof;
-- it invents a cooldown, timer, item property, or matchup;
-- it recommends a map objective without lane/contest prerequisites;
-- it treats an 800-soul late purchase as early solely because it is Tier I;
-- it treats the pre-first-snapshot final-net-worth artifact as real;
-- it lists items instead of explaining play;
-- it gives every hero the same farm-fight-reset template;
-- it overfits a tiny 50+ sample;
-- it exposes a private account or player-level narrative.
+It does **not** estimate:
 
-## 18. Known gaps and future research
+\[
+P(W(\text{buy }i)=1)-P(W(\text{do not buy }i)=1).
+\]
 
-1. **Causal item value:** aggregate correlations cannot isolate what would have
-   happened had the same player chosen a different item. Propensity/matched
-   pre-purchase-state studies could improve this.
-2. **Exact adoption rate at scale:** the website's current relative popularity
-   is not exact pick rate. A deduplicated hero-player denominator should be
-   materialized.
-3. **Early economy attribution:** the first-sample gap should be fixed or
-   explicitly represented upstream so Tier I net-worth analytics cannot ingest
-   final net worth.
-4. **Build adherence:** selected-build statistics do not prove the player
-   followed the listed items or ability order.
-5. **Mastery control:** consistent hero-experience filters are not available in
-   every relevant aggregate.
-6. **Live-state recommendations:** normalized time uses eventual match duration
-   and cannot be known live. A live assistant would need current time, economy,
-   structures, inventory, cooldowns, and objective state.
-7. **Composition-conditional paths:** sample fragmentation grows rapidly when
-   filtering by enemies, lane, items, and rank. Hierarchical shrinkage is more
-   appropriate than independent tiny buckets.
-8. **Objective attribution:** future raw-event research could measure whether a
-   purchase is followed by a structure, Urn/Rift, boss, or fight conversion
-   within a defined window.
-9. **Patch adaptation:** an item can be mechanically unchanged while the meta
-   changes around it. Track both rule changes and rolling behavioral drift.
-10. **Steam description limits:** validate the current allowed length,
-    formatting, and update behavior before publishing generated prose.
+The first is an association among observed buyers. The second is a causal contrast requiring a defined decision, comparator, eligibility, and confounder strategy.
 
-### 18.1 Read-only audit of the current local pipeline
+### Why winners buy different items
 
-The existing `deadlock-build-sync` project was inspected without editing it.
-Several foundations are already strong:
+Raw item win rate can be elevated because:
 
-- asset descriptions are cleaned and supplied to a separate Codex process;
-- item tiers are arrays of objects with item, category, active flag, timing
-  windows, relative popularity, raw outcome, and volume;
-- the complete 16-step ability path and current patch metadata are exported;
-- narrative artifacts are schema-constrained, hashed, and rejected when stale;
-- Steam cache installation is separated from Codex generation and guarded by
-  backups/validation.
+- winning players reach the item’s price and game time more often;
+- the item is bought to finish already-winning games;
+- skilled or high-mastery players prefer it;
+- it belongs to a strong hero/build variant;
+- its buyers had more health, slots, objectives, or map access before purchase;
+- an earlier recommendation system exposed it to particular players;
+- losing games end before the item can be observed;
+- components and upgrades create duplicate or ambiguous purchase records.
 
-The research above exposes the following future changes:
+It can be depressed because:
 
-| Current local behavior | Why it is insufficient | Required future behavior |
+- it is a response to severe healing, crowd control, burst, or another losing state;
+- it is a comeback purchase;
+- its users delay it until after the threat has already produced damage;
+- the item requires more execution than alternatives;
+- it replaces a greedy item in hard matchups.
+
+Riot has made the same general point in its item-balancing discussion: timing and champion selection bias make aggregate item win rate treacherous; comparisons become more meaningful between mutually exclusive choices at similar price and access states.
+
+### Separate four item questions
+
+| Question | Estimand | Suitable display |
 |---|---|---|
-| Context labels badge range `[106,116]` as `PHANTOM` | `106` is Ascendant VI | Derive the display name from rank assets: `Ascendant VI+` |
-| Context and prompt force I–IV to mean establish/accelerate/pressure/close | Item tier is a price class; cheap purchases can occur late | Infer the state of each item from its purchase distributions and timing class |
-| Ability step `index // 4` assigns four upgrades to each “quarter” | Equal path chunks have no demonstrated alignment with item-price tiers or clock time | Export the ordered path and mechanical milestones; align them only through actual level/economy/timing evidence |
-| A power spike must combine an item with the ability assigned to the same quarter | The imposed quarter can fabricate a relationship | Detect mechanical synergy and temporal overlap independently; allow no declared spike when evidence is inadequate |
-| Schema requires at least one power spike | Ordinary growth can be forced into a “spike” label | Allow zero, one, or at most two meaningful spikes |
-| Ability-path `pick_rate` divides by matches across retained complete paths | It is conditional on qualifying complete paths, not all hero appearances | Label it “share of qualifying complete paths,” or calculate an all-hero-game denominator |
-| Item `relative_pick_rate` is used as popularity | It is relative to the top item, not adoption | Keep the internal name, label it “relative popularity,” and add exact distinct-buyer adoption |
-| Prompt requires a named top-three item and promotes leading actives | It can force an item mention even when the tactical connection is weak or situational | Mention a name only when mechanics and supported timing change the instruction; keep active instructions when genuinely core |
-| Duration is collapsed into EARLY/MID/LATE phase labels | Useful internally, but it can leak the rejected phase framing into tier prose | Retain duration as outcome-conditioned context while keeping player headings strictly I–IV |
-| Export lacks category-purchase bonuses and cumulative investment crossings | It misses deterministic power changes | Add category spend before/after, per-purchase bonus, thresholds crossed, and incremental shared bonus |
-| Export lacks item-flow reach, exact adoption, raw rebuy/sell, objective state, and the early-net-worth warning | The model cannot distinguish core, counter, replacement, or invalid timing evidence robustly | Add the evidence-packet fields and quality flags defined in Section 12 |
+| How often is it ever bought? | Adoption among eligible hero appearances | `34% of eligible appearances` |
+| When is it first bought? | Cause-specific first-purchase hazard or cumulative incidence | median/quantiles plus risk-set curve |
+| What is chosen at this decision? | Conditional choice probability among legal alternatives, including save | branch recommendation |
+| What happens after purchase? | Landmark outcome or causal contrast from just before purchase | conversion evidence with uncertainty |
 
-The desired implementation should preserve the existing safety boundary,
-schema validation, patch fingerprinting, and separate Codex stage while
-replacing the artificial quarter-to-time/ability alignment.
+Do not call purchase-event count divided by the maximum item-event count a “pick rate.” The current repository’s `relative_pick_rate` is exactly that normalization. It is useful for ordering event volume within one export, but it is neither adoption probability nor share of builds. Only the globally most frequent eligible item is forced to 100%.
 
-## 19. Recommended final architecture
+### Uncertainty and shrinkage
+
+Show intervals and shrink noisy rates toward a relevant baseline. The Wilson interval for a binomial proportion is a reasonable descriptive default. At \(p=0.5\), approximate 95% full widths are large:
+
+| Observations | Approximate interval width |
+|---:|---:|
+| 20 | 40 percentage points |
+| 50 | 26.7 pp |
+| 100 | 19.2 pp |
+| 250 | 12.3 pp |
+| 1,000 | 6.2 pp |
+
+A hard `min_matches=20` gate prevents the smallest cells but does not make them precise. Use hierarchical partial pooling across adjacent ranks, time windows, and related heroes/items while retaining queue and patch breaks. Report posterior or interval width and effective sample size.
+
+### Multiple comparisons and winner’s curse
+
+Scanning many items, buckets, bucket widths, and local maxima guarantees attractive noise. A research null simulation replicated the shape of the current purchase-window search:
 
 ```text
-Patch feed + current assets
-            │
-            ├── hero/ability mechanics
-            ├── item mechanics + investment thresholds
-            └── map/objective/economy rules
-            │
-Exact build ├── tier groups
-            └── ability order
-            │
-Analytics   ├── hero and game baselines
-            ├── duration distribution/curves
-            ├── item timing/flow/combinations
-            └── counters/synergies when supported
-            │
-Raw matches ├── exact adoption/order/rebuy/sell
-            └── validation and pre-purchase state
-            │
-            ▼
-Patch-bound evidence packet
-            │
-            ▼
-Codex tactical synthesis
-            │
-            ▼
-Schema/statistical/factual checks
-            │
-            ▼
-I / II / III / IV player-facing description
+seed:                 20260808
+replicates:           500
+true win probability: 0.500
+items:                156
+raw buckets:          30
+observations/bucket:  50
+selected windows:     78,000
 ```
 
-The key boundary is between **evidence assembly** and **language synthesis**.
-Deterministic extraction decides what the game data says. Codex decides how to
-express those facts as concise tactical instructions. Codex should never be
-asked to infer the API data from item names alone.
+Even though every cell had identical true win probability, the selected best-window mean was **54.07%**, its 95th percentile was **60.0%**, and the average among the top eight items by the overall ranking was **52.62%**. This is winner’s curse from selection, not item power.
 
-## 20. Source index
+Mitigations:
 
-### Primary Deadlock/API sources
+- pre-register bucket or hazard definitions;
+- use held-out data to estimate selected windows;
+- shrink item-by-time interactions;
+- control false discovery rate when publishing many claims;
+- show all candidate cells or selection history, not only winners;
+- prefer stable effects across adjacent windows and patches;
+- require material effect size as well as statistical evidence.
 
-- [Deadlock API interactive documentation](https://api.deadlock-api.com/docs)
-- [Deadlock API repository](https://github.com/deadlock-api/deadlock-api)
-- [Deadlock API hero assets](https://api.deadlock-api.com/v1/assets/heroes)
-- [Deadlock API item assets](https://api.deadlock-api.com/v1/assets/items)
-- [Deadlock API generic data](https://api.deadlock-api.com/v1/assets/generic-data)
-- [Deadlock API map data](https://api.deadlock-api.com/v1/assets/map)
-- [Deadlock API rank data](https://api.deadlock-api.com/v1/assets/ranks)
-- [Website Item Stats table implementation](https://github.com/sxndmxn/deadlock-api/blob/e7bd075b558548745fdf9700cee425572264963f/website/src/components/items-page/ItemStatsTable.tsx)
-- [Website Purchase Analysis chart implementation](https://github.com/sxndmxn/deadlock-api/blob/e7bd075b558548745fdf9700cee425572264963f/website/src/components/items-page/ItemBuyTimingChart.tsx)
-- [Tiered Purchase Guide UI](https://github.com/sxndmxn/deadlock-api/blob/e7bd075b558548745fdf9700cee425572264963f/website/src/components/purchase-guide/PurchaseGuide.tsx)
-- [Purchase-window algorithm](https://github.com/sxndmxn/deadlock-api/blob/e7bd075b558548745fdf9700cee425572264963f/website/src/lib/purchase-guide.ts)
-- [June 30, 2026 Deadlock patch](https://steamcommunity.com/games/1422450/announcements/detail/688635449342692004)
-- [May 22, 2026 Deadlock patch](https://steamcommunity.com/games/1422450/announcements/detail/670617878982034053)
+### Net-worth adjustment is useful but incomplete
 
-### Secondary Deadlock mechanics references
+The upstream item-flow endpoint standardizes each item’s win rate to a broad stage-level distribution of 5,000-net-worth-at-buy buckets. That can reduce one form of wealth imbalance. It does not isolate the item’s contribution because it omits health, inventory, components, liquid currency, game clock within phase, team economy, matchup, mastery, objective state, and other time-varying confounders. It may also condition on a post-treatment or mismeasured variable if the timestamp/value contract is wrong.
 
-- [Shop tiers and investments](https://deadlock.io/en/articles/mechanics/shop-tiers-and-investments)
-- [Neutral camps](https://deadlock.io/en/articles/mechanics/neutral-camps)
-- [Mid Boss and Rejuvenator](https://deadlock.io/en/articles/mechanics/mid-boss-and-rejuvenator)
-- [Patron](https://deadlock.io/en/articles/mechanics/patron)
-- [Lanes and troopers](https://deadlock.io/articles/mechanics/lanes-and-troopers)
+Label it **net-worth-standardized observed win rate**, never “item impact.”
 
-### Cross-MOBA primary sources
+## Purchase timing and net-worth windows
 
-- [Dota Plus real-time item and ability suggestions](https://www.dota2.com/plus)
-- [Dota 7.00 gameplay and level/talent milestones](https://www.dota2.com/700/gameplay?l=english)
-- [League of Legends 2026 Season 1 patch notes](https://www.leagueoflegends.com/en-us/news/game-updates/patch-26-1-notes/)
-- [League of Legends Patch 14.3](https://www.leagueoflegends.com/en-us/news/game-updates/patch-14-3-notes/)
-- [Riot on balancing new champions and mastery curves](https://www.leagueoflegends.com/en-us/news/dev/dev-balancing-new-champions/)
+### Use only information available immediately before purchase
 
-## 21. Public API route-family inventory
+For purchase event at time \(t\), store:
 
-This inventory prevents the strategy pipeline from mistaking “the endpoints
-used today” for “everything the API can expose.” It reflects the current
-repository route modules. The interactive OpenAPI document remains
-authoritative for methods, complete schemas, authentication, and live limits.
+```text
+clock time
+last observed personal net worth at t-
+age of that observation
+team-relative net worth at t-
+cumulative item investment at t-
+liquid currency at t-
+inventory/components/slots at t-
+health, death, position, and shop access at t-
+allied/enemy visible items at t-
+objective state at t-
+candidate slate and chosen action
+```
 
-### 21.1 Analytics routes
+Never use the final match snapshot as “net worth at buy.” That is outcome leakage.
 
-All are nested under `/v1/analytics`; scoreboards are nested one level further.
+### Critical telemetry finding: pre-180 net worth
 
-| Route | Primary unit/use |
+In the research sample of the newest 100 matches in each queue, all 3,078 purchases before 180 seconds had `net_worth_at_buy` equal to the player’s final net worth. This establishes corruption in the sampled field; the likely snapshot/fallback mechanism is an inference and should be investigated separately.
+
+Required policy:
+
+1. mark pre-180 purchase net worth invalid;
+2. leave it null unless a trustworthy preceding observation exists;
+3. use game clock for descriptive opening timing;
+4. add an ingestion assertion that rejects suspicious equality with final values;
+5. version the fix as a telemetry epoch;
+6. never let the narrative generator see corrupted values.
+
+After 180 seconds, curve observations are sparse steps rather than continuous state. Use last observation carried forward only with an explicit age/staleness value and a maximum tolerated gap. Do not interpolate through deaths or other discontinuities without justification.
+
+### First-purchase hazards
+
+Median buy time among buyers conditions on eventually buying the item. It excludes games where the item was never bought and games that ended first. A better description uses a cause-specific risk set:
+
+\[
+h_i(t \mid S_t)=P(\text{first buy }i\text{ in }[t,t+\Delta)\mid
+\text{eligible and game active at }t,S_t).
+\]
+
+Competing events include:
+
+- buying a substitute;
+- upgrading through another branch;
+- selling a prerequisite;
+- losing shop access;
+- game ending;
+- becoming mechanically ineligible.
+
+Display cumulative incidence, median only when it exists, and quantiles among the appropriate population. Include `save/wait` as a choice; otherwise a model is forced to recommend spending at every observation.
+
+### Recommended timing axes
+
+No single axis is sufficient:
+
+| Axis | What it captures | Main failure mode |
+|---|---|---|
+| Game clock | Objective and global tempo | Economy varies greatly by game |
+| True pre-buy net worth | Access and lead state | Measurement sparsity/corruption |
+| Cumulative item investment | Progress through build and bonus thresholds | Sells/upgrades must be reconstructed correctly |
+| Hero level/AP | Ability access | Does not imply liquid currency |
+| Team-relative net worth | Ahead/even/behind | Role and lane baselines matter |
+| Objective/flex state | Slot and conversion access | Endogenous to team strength |
+
+A player-facing window should combine them: “After the component is owned, usually around 8–11k item investment; finish before the next objective if the enemy control trigger is present.”
+
+### Upgrade and sell reconstruction
+
+Purchase logs can mark a component’s `sold_time` at the child purchase because its value was consumed. That is not a discretionary sell. Classify events using all three:
+
+- current component graph;
+- event flags;
+- time proximity between component disappearance and child purchase.
+
+The upstream website’s average-build prototype correctly recognizes the need for this distinction and uses frequency thresholds, substitute groups, Copeland-style precedence, clustering, and sell badges. It remains a prototype: a same-timestamp comparator comment says sells precede buys, while the implemented boolean sort puts buys first; component-to-child inference also needs a temporal/flag check. Reuse the ideas, not the bugs.
+
+### Purchase-window authoring rule
+
+A recommended buy window must state:
+
+1. the time axis and population;
+2. the risk set;
+3. center and dispersion, not only a selected peak;
+4. whether the item is a component, child, replacement, or luxury;
+5. the objective or enemy timing it is meant to beat;
+6. what to do if the window is missed.
+
+## Power spikes and game-time performance
+
+### A taxonomy of real spikes
+
+| Spike type | Evidence source | Example form |
+|---|---|---|
+| Ability unlock | Level/AP table | First access to mobility, control, or ultimate |
+| Ability upgrade | Current ability mechanics | Added charge, duration, condition, or lower cooldown |
+| Component | Item graph | Immediate stat/reliability gain plus branch option |
+| Completed item | Mechanics plus decision evidence | Enables a verified play pattern |
+| Investment threshold | Category spend table | Crosses a nonlinear Weapon/Vitality/Spirit bonus |
+| Slot/flex | Objective and inventory state | Can retain another high-value item |
+| Active combination | Binding and cooldown state | Creates engage, cleanse, escape, or protection sequence |
+| Team composition | Allied ability state | Multiple ultimates or peel tools come online together |
+| Objective | Map state | Rejuvenator or structure window amplifies the timing |
+| Counter completion | Enemy threat state | Response is ready before the next forced encounter |
+
+### Spike card
+
+Every reported spike should use a consistent card:
+
+```yaml
+name: "control-uptime spike"
+prerequisites:
+  - verified ability upgrade
+  - required item/component
+acquisition_state:
+  level: range
+  item_investment: range
+mechanical_delta: "what changes, from current assets"
+conversion_window: "objective or play to attempt"
+failure_conditions:
+  - enemy response already completed
+  - insufficient health/access to execute
+counterplay: "what still stops the pattern"
+evidence_class: mechanical-plus-descriptive
+confidence: medium
+```
+
+### Ending-duration win rate is not a power curve
+
+The current project’s duration statistic estimates:
+
+\[
+P(W=1 \mid T_{end}\in[a,b], H=h, C),
+\]
+
+not the hero’s chance to win while alive at minute \(t\). Conditioning on final game length selects on a variable affected by both teams’ strength, strategy, comeback, and inability to close. It also creates a survivor/competing-event problem.
+
+The present repository merges buckets into early, mid, and late phases, then labels shapes using fixed 1–2 percentage-point thresholds after only a 50-observation phase minimum. This is useful exploratory summarization, and its prose already warns about causality, but the labels lack uncertainty and should not drive tactical claims alone.
+
+### Better game-time estimands
+
+Use three complementary estimands:
+
+1. **Ending-duration description:** what kinds of games ended in each bucket?
+2. **Landmark prognosis:** among matches still active at minute \(t\), what is calibrated win probability from state \(S_t\)?
+3. **Acquisition contrast:** around a defined spike, how does the subsequent trajectory compare with overlapping alternatives from the same pre-spike state?
+
+At landmarks such as 10, 15, 20, 25, 30, 35, and 40 minutes, record the at-risk count, state distribution, estimate, uncertainty, and censoring. Do not duplicate games on inclusive adjacent endpoints; the upstream endpoint uses inclusive minimum and maximum filters, so exact boundaries can be counted twice. In one Unranked research distribution, 696 of 240,901 games (0.289%) lay on such boundaries.
+
+### Current duration context
+
+For a fixed July 31–August 8 research window:
+
+| Queue | Games | Mean duration | Mean net worth | Mean level | 50m+ share | Abandon rate |
+|---|---:|---:|---:|---:|---:|---:|
+| Ranked | 166,095 | 37.37m | 42.9k | 32.86 | 5.01% | 0.36% |
+| Unranked | 240,901 | 38.87m | 44.47k | 32.93 | 8.97% | 0.81% |
+
+These queue differences reinforce the need for separate policies. Very short buckets were more abandonment-contaminated, so they should not define an “early closer” archetype without exclusions.
+
+### Spike detection
+
+Do not declare a spike because a smoothed curve has a local maximum. Require:
+
+- a deterministic acquisition/unlock or a reproducible state transition;
+- sufficient overlapping pre-state observations;
+- stability across nearby bandwidths and temporal folds;
+- a material post-transition change in a named outcome;
+- a conversion story consistent with mechanics;
+- explicit counterfactual uncertainty.
+
+When causal support is absent, say “a common timing” or “a mechanically meaningful breakpoint,” not “this spike wins games.”
+
+## Ability order and ability scaling
+
+### Why exact complete paths waste evidence
+
+The current selector requests exactly 16 ability changes, retains paths with at least 20 observations, validates only that four IDs each appear four times, then chooses the most common complete path with raw win rate as a tie-breaker. This creates:
+
+- complete-case/survivor selection;
+- fragmentation across thousands of near-identical paths;
+- an unclear pick-rate denominator containing only retained complete paths;
+- no direct validation of level/AP legality;
+- hidden branch points;
+- loss of incomplete but informative prefixes.
+
+In a broad post-launch Kelvin sample:
+
+| Queue | Hero appearances | Exact-16 paths | Retained-path observations | Distinct paths | Top-path share of retained set |
+|---|---:|---:|---:|---:|---:|
+| Ranked | 34,342 | 7,757 (22.6%) | 3,299 (9.6% of appearances) | 2,761 | 7.05% |
+| Unranked | 43,526 | 12,438 (28.6%) | 6,239 (14.3%) | 4,028 | 8.14% |
+
+A “most common path” with a single-digit share is not a universal prescription.
+
+### Prefix/state-conditioned upgrade policy
+
+At each legal decision \(d\), estimate:
+
+\[
+P(A_d=a \mid \text{ability state},\text{level},\text{available AP},S_d,C).
+\]
+
+Show:
+
+- all hero appearances;
+- appearances reaching this upgrade decision;
+- observations with valid telemetry;
+- support per candidate action;
+- shrunken selection probability;
+- descriptive outcome and uncertainty;
+- state features that distinguish branches.
+
+For Kelvin, the first unlock was highly concentrated, but meaningful branching appeared by the fourth and sixth decisions. A prefix model preserves the strong opening while exposing later choices instead of forcing one exact sequence.
+
+### Real timeline, not quarters
+
+The current context labels path positions 1–4 as quarter I, 5–8 as quarter II, and so on. Actual level mappings vary by path. In sampled complete paths, the first four decisions corresponded to levels 1–4, but later groups spanned very different level ranges—e.g. roughly levels 5–13, 14–23, and 28–36 for one path. There is no defensible one-to-one relation between an item price tier and one such group.
+
+Render ability advice by:
+
+- exact legal level/AP state;
+- named upgrade effect;
+- branch trigger;
+- the item/ability interaction only if their timing distributions overlap;
+- a fallback if the player reaches the state out of order.
+
+### Ability validation checklist
+
+- [ ] Every ability ID belongs to the current hero.
+- [ ] Unlock level is legal.
+- [ ] AP balance never becomes negative.
+- [ ] Upgrade prerequisites hold.
+- [ ] Total changes do not exceed current cap.
+- [ ] Mechanics are read from the pinned version.
+- [ ] Scaling functions and conditional qualifiers are preserved.
+- [ ] Imbue targets are eligible and non-ultimate where required.
+- [ ] Branch annotations name a state trigger.
+- [ ] Statistical denominators include decision-reached and complete-case counts separately.
+
+## Hero matchups, counter picks, and team composition
+
+### Define matchup scope first
+
+“Hero A counters Hero B” can refer to at least four different questions:
+
+1. lane performance when assigned to the same lane;
+2. whole-match performance when both are anywhere on opposing teams;
+3. mechanical interaction between specific abilities;
+4. draft value after accounting for both teams and player competence.
+
+The API counter endpoint defaults to `same_lane_filter=true` and joins opponents on match and assigned lane. With the filter disabled, each focal player joins all six enemies. The resulting count is pair rows, not unique focal appearances. A whole-team count can therefore be about six times the focal-player count.
+
+### Model residual matchup interaction
+
+A defensible descriptive model begins with main effects and shrinks the interaction:
+
+\[
+\operatorname{logit}P(W=1)=
+\alpha_p+\beta_h+\gamma_e+\delta_{h,e}+X^\top\theta,
+\]
+
+where \(X\) includes side, queue, patch/epoch, rank, player hero mastery, party structure, lane assignment, and composition features. Cluster uncertainty by match. The quantity of interest is the shrunk residual \(\delta_{h,e}\), not raw pair win rate.
+
+Report lane and whole-team interactions separately. Add early landmarks—6, 9, and 12 minutes where data permits—to distinguish lane pressure from later composition effects.
+
+### Matchup does not imply counter purchase
+
+An unfavorable pair rate does not identify why the matchup is unfavorable, and therefore cannot identify the item response. The enemy may win through:
+
+- lane range and deny pressure;
+- burst damage;
+- sustained bullet or spirit damage;
+- hard control or silence;
+- mobility/access;
+- healing/sustain;
+- ally protection;
+- wave/objective pressure;
+- player-selection or mastery differences.
+
+Mechanically screen the threat first. Then test response-item alternatives within that matchup and pre-purchase state. A build can truthfully say “consider a control response when the enemy’s verified disable is preventing your channel”; it cannot say “buy X because this hero’s counter win rate is high” without the connecting evidence.
+
+### Counter picks in Deadlock’s queue
+
+Deadlock’s current Ranked selection rules are not a classic fully observed MOBA draft. Eligibility requires experience across multiple hero choices; the system includes bans and a limited hidden-response/switch process. Comfort and hero availability are therefore part of the decision.
+
+A hero recommendation should optimize:
+
+\[
+\text{utility} = f(\text{mastery},\text{team coverage},\text{enemy interaction},
+\text{queue feasibility},\text{uncertainty}),
+\]
+
+not raw counter rate. Research on personalized drafting reaches the same conclusion: preference/competence and team interaction both matter, and out-of-distribution lineups require caution.
+
+### Composition coverage matrix
+
+Evaluate a proposed hero pool or lineup across:
+
+| Dimension | Questions |
 |---|---|
-| `/ability-order-stats` | Ordered ability upgrades and outcomes |
-| `/badge-distribution` | Rank/badge population |
-| `/build-item-stats` | Item occurrence in published builds |
-| `/game-stats` | Match-level duration, combat, economy, level, and objective aggregates |
-| `/hero-ban-stats` | Draft/ban behavior |
-| `/hero-build-stats/{hero_id}` | Initially selected database build |
-| `/hero-comb-stats` | Multi-hero lineup combinations |
-| `/hero-counter-stats` | Enemy matchup outcomes |
-| `/hero-stats` | Hero performance baseline |
-| `/hero-synergy-stats` | Ally-pair outcomes |
-| `/item-flow-stats` | Stage-based item nodes and transitions |
-| `/item-permutation-stats` | Unordered item combinations |
-| `/item-stats` | Per-purchase item outcome/timing aggregates |
-| `/kill-death-stats` | Kill/death-event analysis |
-| `/player-performance-curve` | Absolute/normalized progression curves |
-| `/player-stats/metrics` | Available player-stat metric definitions/aggregates |
-| `/scoreboards/heroes` | Hero scoreboard |
-| `/scoreboards/players` | Player scoreboard |
+| Damage profile | Is damage too easily answered by one resistance type? |
+| Initiation | Who starts a favorable fight, from what range, with what reliability? |
+| Peel/protection | Who stops access to vulnerable damage or channeling heroes? |
+| Range/access | Can the team reach long-range threats or disengage? |
+| Wave and map pressure | Can it defend, shove, rotate, and threaten structures? |
+| Objective conversion | What turns a won fight into durable advantage? |
+| Sustain | Can it remain on map between encounters? |
+| Control and cleanse | Is there enough setup, interruption, and response? |
+| Economy shape | Do too many heroes need the same expensive timing? |
+| Execution burden | Is the plan realistic for the target cohort? |
 
-The current analytics router enforces 200 requests/minute per IP, 400/minute
-per API key, and 2,000/minute globally before any tighter endpoint-specific
-limit. Treat those as current implementation details and still honor response
-headers.
+Synergy and counter interactions should be partial-pooled and composition-aware. Pairwise tables cannot represent all higher-order combinations.
 
-### 21.2 Asset routes
+## Counter purchases and situational branches
 
-All are under `/v1/assets`:
+### Threat-first taxonomy
 
-```text
-/accolades
-/build-tags
-/client-versions
-/colors
-/generic-data
-/heroes
-/items
-/loot-tables
-/map
-/misc-entities
-/npc-units
-/ranks
-/steam-info
-/images
-/icons
-/sounds
-/fonts
+Counter-item authoring should start with an observed mechanism:
+
+| Threat | Candidate response class | Verification needed |
+|---|---|---|
+| Sustained bullet damage | mitigation, disarm/denial, spacing | damage mix and uptime |
+| Spirit burst | spirit mitigation, barrier, pre-emptive defense | burst window and cooldown |
+| Hard control/silence | reactive barrier, dispel, immunity | effect type, timing, targetability |
+| Mobility/access | slow, root, reveal, escape, peel | whether the response can connect |
+| Healing/sustain | healing reduction or burst coordination | healing source and uptime |
+| Ally protection | dispel, isolation, anti-barrier, target switch | exact protective mechanic |
+| Channel/ultimate | interrupt, immunity, displacement, line-of-sight | cast and counter windows |
+
+Current item examples may include Healbane, Toxic Bullets, Inhibitor, Crippling Headshot, Spirit Burn, Reactive Barrier, Spellbreaker, Metal Skin, Debuff Remover, Unstoppable, Divine Barrier, or Scourge. Names and effects change: the generator must validate every candidate against the pinned snapshot, and this list is illustrative rather than a timeless prescription.
+
+### Counter branch contract
+
+Each optional recommendation needs:
+
+```yaml
+trigger:
+  observed: "enemy healing exceeds threshold across recent fights"
+  scope: enemy-team
+mechanism: "verified healing reduction"
+eligibility:
+  - item available in current mode/version
+  - required component/path legal
+timing:
+  deadline: "before next forced objective"
+  minimum_state: "enough survivability to apply effect"
+replacement:
+  replaces: "lowest-priority multiplier"
+  sell_priority: 80
+execution:
+  proactive_or_reactive: proactive
+  target_or_activation: "verified item-specific instruction"
+failure_condition: "healing is not material or application is unreliable"
+evidence:
+  mechanical: pass
+  comparative: low-or-medium
 ```
 
-Several collections also support an ID/name lookup. Items additionally expose
-lookups by item type, hero ID, and slot type; heroes support ID/name lookup;
-ranks support tier lookup. The media indexes are presentation resources, not
-strategy evidence.
+### Counter-evidence ladder
 
-### 21.3 Match routes
+1. **Mechanics screen:** can the item affect the threat at all?
+2. **Adoption check:** is it purchased in the matchup/state, with a valid denominator?
+3. **Alternative comparison:** compare legal, similar-access responses at the same decision.
+4. **Effect modification:** does its post-purchase association differ when the threat is present?
+5. **Overlap check:** are buyers/non-buyers comparable enough to estimate anything?
+6. **Expert review:** is the action executable before the threat matters?
+7. **Causal/experimental validation:** only then use effect language.
 
-The `/v1/matches` family includes:
+An item’s low raw win rate can coexist with high counter value if it is selected in the hardest games. Conversely, a high raw win rate in a matchup can reflect late access by already-winning players.
 
-```text
-/active and /active/raw
-/metadata                         (bulk filtered metadata)
-/{match_id}/metadata
-/{match_id}/metadata/raw
-/{match_id}/salts
-/salts                            (ingest)
-/{match_id}/live/url
-/live/urls                        (read/ingest)
-/recently-fetched
-/to-fetch
-```
+### Keep the menu small and actionable
 
-`/v1/matches/demo` provides schema discovery, asynchronous query submission and
-status, plus live demo queries. `/v1/matches/custom` provides the create,
-ready/unready, start, leave, and match-ID lifecycle for custom lobbies.
-
-Demo/query/custom routes are operationally powerful but unnecessary for the
-first description generator. Add them only when aggregate and metadata evidence
-cannot answer a clearly defined question.
-
-### 21.4 Player routes
-
-The `/v1/players` family includes:
+A good optional category is organized by trigger, not by vague labels:
 
 ```text
-/{account_id}/account-stats
-/{account_id}/card
-/{account_id}/enemy-stats
-/{account_id}/mate-stats
-/{account_id}/match-history
-/{account_id}/mmr-history
-/{account_id}/mmr-history/{hero_id}
-/{account_id}/rank-predict
-/{account_id}/rank-predict/image
-/hero-stats
-/mmr
-/mmr/{hero_id}
-/mmr/distribution
-/mmr/distribution/{hero_id}
-/rank-predict/image
-/steam
-/steam-search
+VERSUS HEALING — choose one
+  Item A — earlier, cheaper application; replace opener X
+  Item B — later slot-efficient branch; choose if component Y is already owned
+
+VERSUS HARD CONTROL — choose one
+  Item C — reactive; requires activation timing and a free active binding
+  Item D — automatic; lower execution burden, different coverage
 ```
 
-Some routes are gated or protected. Personalized description generation should
-use account data only after explicit account authorization and should not
-publish player-level evidence in a public guide.
+Do not queue all options. Do not recommend more active counters than the player can bind. State when an automatic response is preferable for lower-mastery cohorts.
 
-### 21.5 Remaining route families
+## Lessons from Dota 2, League of Legends, and research
 
-| Prefix | Surface |
+Cross-MOBA evidence is valuable for design patterns, not numeric transfer. Item economies, maps, inventories, queues, and patch cadence differ.
+
+### Dota Plus: recalculate from current state
+
+[Dota Plus Assistant](https://www.dota2.com/plus) explicitly uses recent data from a player’s skill bracket, considers the lineup and current purchases, offers multiple sequences and a pool of other popular items, recalculates when the player deviates, and adapts ability suggestions. The transferable design principles are:
+
+- condition on player cohort;
+- use allied/enemy lineups;
+- recommend the next action from owned items rather than publish one immutable order;
+- expose multiple coherent sequences;
+- recover gracefully after deviations;
+- update as the game state changes.
+
+Deadlock adds flex unlocks, investment bonuses, item imbues, and Steam-build schema semantics, so direct Dota paths are not portable.
+
+### League: recommendations influence the data they learn from
+
+Riot’s shop work uses inventory and observable enemy signals such as recent damage, control, healing, and defenses. Riot has also reported that recommended-shop navigation captures a large share of purchasing while experienced players deviate more often. This implies two things:
+
+1. recommendations should react to in-game threats and inventory;
+2. historical popularity is partly an exposure outcome of previous recommendations.
+
+Item systems are intentionally patterned: items should have understandable purposes and tradeoffs. A build generator should preserve those patterns rather than rank every item on one win-rate scale.
+
+### Sequential recommendation research
+
+The paper [*Sequential Item Recommendation in the MOBA Game Dota 2*](https://arxiv.org/abs/2201.08724) introduced Dota-350k and found order-aware models substantially outperformed popularity baselines on next-item imitation. Reported Recall@3/NDCG for a GRU model were approximately 0.736/0.631 versus 0.294/0.219 for popularity in that one-day patch dataset.
+
+The result supports sequence modeling, but not optimality. The study’s primary session representation omitted much of team, enemy, time, and state context. Next-item recall measures how well a model imitates observed behavior, not whether the item improves play.
+
+[*Interpretable Contextual Team-aware Item Recommendation*](https://arxiv.org/abs/2007.15236) modeled champion, role, and team context in League. It reinforces the importance of team context and interpretable explanations, while its winning-team training restriction creates an important selection caveat. A small expert survey asked for sequence and counter information—exactly the features a static set recommendation lacks.
+
+### Draft recommendation research
+
+[*DraftRec*](https://arxiv.org/abs/2204.12750) combines individual champion preference with team interactions on League and Dota data. Its central transferable lesson is that competence/preference cannot be replaced by an aggregate counter table. Temporal evaluation and explicit out-of-distribution handling remain necessary when lineups or patches change.
+
+### What not to transfer
+
+- League item win-rate thresholds.
+- Dota inventory assumptions or purchase costs.
+- Classic-draft counterpick logic into Deadlock’s current selection flow.
+- A model trained only on winners.
+- Popularity as a reward.
+- Attention weights as proof of causality.
+- Recall/NDCG as proof of tactical benefit.
+
+## A statistically defensible analysis design
+
+### Start from a target-trial specification
+
+For a proposed item comparison, write the hypothetical trial before querying data.
+
+| Element | Required definition |
 |---|---|
-| `/v1/builds` | Search/retrieve public database builds with filters |
-| `/v1/leaderboard` | Regional and hero-specific normalized/raw leaderboards |
-| `/v1/patches` | Patch feed and major-patch days |
-| `/v2/patches` | Newer patch-feed version |
-| `/v1/graphql` | GraphQL asset/analytic projection |
-| `/v1/sql` | Query plus table/schema discovery |
-| `/v1/commands` | Variables, command resolution, and widget versions |
-| `/v1/info` | API information and health |
-| `/v1/servers` | Lists, Steam list, status, and metrics |
-| `/v1/auth` | Patreon login/callback/logout/webhook flow |
-| `/v1/patron` | Patron status/account association |
-| data-privacy handlers | Verified account protection/unprotection |
+| Eligibility | Hero, queue, patch, rank/mastery, game active, item not owned, candidates legal, valid pre-state |
+| Time zero | Immediately before a real shop opportunity/decision |
+| Treatments | Buy A, buy B, buy component C, or save during a fixed grace interval |
+| Assignment model | Propensity conditional on pre-time-zero state only |
+| Follow-up | Fixed horizon or named next landmark/objective |
+| Outcome | Survival, objective conversion, calibrated win probability change, or final win with caveats |
+| Censoring | Game end, abandonment, telemetry loss, ineligibility, or competing purchase |
+| Estimand | Overlap-population ATE, ATT, or state-specific contrast |
+| Sensitivity | Unmeasured-confounding bounds and alternative definitions |
 
-The build route is a retrieval/search surface; it should not be confused with
-an official Valve endpoint for publishing a guide to a player's account.
-Publishing still requires an authorized game-client/account workflow. The
-description generator can produce the text independently, then hand it to that
-separate publishing boundary.
+Repeated purchases are time-varying treatments. Prior items affect later net worth and eligibility; both also predict outcome. Standard regression that controls for post-treatment state can bias the estimate. Use longitudinal g-methods, marginal structural models, sequential doubly robust methods, or a clearly descriptive alternative.
 
-## 22. Final recommendation
+### Decision opportunity is part of the denominator
 
-Build the descriptions from a patch-bound evidence packet, not from item names
-or raw win rate alone. Sort items by exact adoption when available (otherwise
-label the current matches-based value as relative popularity), retain each
-item's supported purchase windows, and combine those windows with the hero's
-ability path, investment thresholds, duration curve, inventory constraints,
-and the map objectives likely to be available.
+A player cannot buy an item merely because the clock reached minute 15. Eligibility should reflect:
 
-Then let Codex write four compact tactical sections. The ideal result reads
-like a coach:
+- enough liquid currency or a declared saving choice;
+- access to a valid shop opportunity;
+- item not already owned and legal in mode;
+- necessary component/slot state;
+- game still active;
+- no invalid telemetry.
 
-- what to pressure now;
-- what ability or active starts the play;
-- which target or area matters;
-- what completion makes the commit worthwhile;
-- what to take after success;
-- and exactly when to leave.
+The ideal dataset logs the candidate slate and exposure at every actual shop interaction. Without that, model shop opportunity conservatively and label it inferred.
 
-That framework accommodates a late Tier I purchase, a damage-heavy Tier III
-spike, a compensating defensive Tier IV, a gank-heavy Kelvin, a close-range
-Abrams, and a farm-to-execution Haze without forcing any of them into the same
-generic “early/mid/late” script.
+### Control leakage
+
+Forbidden predictors include:
+
+- final net worth for an earlier purchase;
+- normalized position by final game duration;
+- “eventual item buyer” when predicting a pre-purchase state;
+- final outcome-derived labels embedded in state;
+- future enemy items;
+- a component marked upgraded using a child purchased much later without timing/flags;
+- features calculated from the full patch window when evaluating an earlier fold.
+
+Every feature should declare `available_at`, source event, and staleness.
+
+### Overlap, calibration, and abstention
+
+If buyers of A and B occupy disjoint states, no adjustment can manufacture a reliable comparison. Report propensity overlap, effective sample size, and excluded support. Prefer the overlap population rather than extrapolating to all players.
+
+A predictive recommender must be calibrated in its target cohort and allowed to abstain. Evaluate risk–coverage curves:
+
+\[
+\text{coverage}(\tau)=P(\text{confidence}\ge\tau), \quad
+\text{risk}(\tau)=E[L\mid\text{confidence}\ge\tau].
+\]
+
+Abstention reasons should be structured:
+
+- stale mechanics;
+- insufficient decision support;
+- no overlap;
+- contradictory evidence;
+- illegal path;
+- unclear threat trigger;
+- out-of-distribution composition;
+- telemetry failure.
+
+### Multiplicity and partial pooling
+
+The search space contains heroes × items × times × ranks × modes × matchups × variants. Use hierarchical models to share information without flattening meaningful differences. For published exploratory discoveries, control false discovery rate under dependency or validate in a separate temporal window.
+
+Prefer:
+
+- queue-specific main effects;
+- patch/epoch random effects or explicit breaks;
+- hero/item and hero/enemy partial pooling;
+- smooth time effects with predeclared complexity;
+- item-by-threat interactions only when mechanics support them;
+- match-clustered uncertainty;
+- temporal holdout estimates after selection.
+
+### Causal language rules
+
+| Evidence | Good sentence | Reject |
+|---|---|---|
+| Raw buyers | “Buyers won 55% of observed eligible appearances.” | “The item adds 5% win rate.” |
+| Adjusted observational | “After measured pre-state adjustment, A was associated with a higher outcome than B in the overlap population.” | “A is always better.” |
+| Mechanics | “The current asset grants the supplied effect under condition X.” | “The effect guarantees the fight.” |
+| Predictive | “The model ranked the held-out observed choice in its top three 70% of the time.” | “The recommendation is optimal.” |
+| Trial/strong emulation | “Under the stated assumptions, estimated effect was …” | Unqualified universal causation. |
+
+### Feedback loops
+
+Once a generated guide is used, it changes item exposure and the data collected next. Popularity can become self-reinforcing even if the initial advantage was noise. Record:
+
+- recommendation/version shown;
+- candidate list and order;
+- whether the player opened/used Queue;
+- accepted choice, deviation, and recalculation;
+- propensity or randomized exploration probability;
+- player outcome and intermediate conversions;
+- reason for override where voluntarily supplied.
+
+Reserve a safe randomized or rotating holdout for policy evaluation. Never randomize mechanically illegal or clearly harmful actions.
+
+## The build policy intermediate representation
+
+Steam’s schema cannot express arbitrary conditions, so the project needs a rich internal representation (IR) and a deterministic renderer.
+
+### Node types
+
+```text
+purchase       buy an exact item/component
+choice         choose exactly one child/action from alternatives
+sell           sell an owned item under a declared trigger
+ability        unlock or upgrade an ability
+wait           save currency until a breakpoint or deadline
+objective_gate branch on flex/objective/map state
+end            no further prescribed action
+```
+
+### State and guards
+
+Guards may reference only observable, versioned fields:
+
+- enemy heroes and verified threat capabilities;
+- observed enemy items and damage/control/healing summaries;
+- allied composition and missing team function;
+- current inventory, components, active bindings, and imbues;
+- clock, level, AP, liquid currency, true pre-decision net worth;
+- team-relative economy and structure/flex state;
+- objective timers and cooldown readiness;
+- queue, rank/mastery cohort, and patch epoch.
+
+Each `choice` needs a default or abstain branch, plus a mutual-exclusion contract.
+
+### Example IR
+
+```yaml
+schema_version: 1
+hero_id: 1
+variant: control-utility
+snapshot_id: sha256:...
+entry: opener
+nodes:
+  opener:
+    kind: choice
+    exactly_one: true
+    branches:
+      - when: enemy_lane.sustained_bullet_pressure == high
+        next: defensive_component
+      - when: default
+        next: core_component
+  core_component:
+    kind: purchase
+    item_id: 123
+    evidence_ref: claim/core-component
+    next: counter_check
+  counter_check:
+    kind: choice
+    branches:
+      - when: enemy_team.healing == material
+        next: anti_heal
+      - when: enemy_team.hard_control == material
+        next: control_response
+      - when: default
+        next: core_upgrade
+  control_response:
+    kind: purchase
+    item_id: 456
+    optional: true
+    replaces: lowest_priority_multiplier
+    next: end
+```
+
+### Path validation
+
+For every reachable path, verify:
+
+```text
+current client/mode item exists
+component prerequisites and credit are correct
+inventory <= 9 + unlocked flex <= 12
+active bindings <= 4
+sell target is owned at that point
+no forbidden duplicate/unique item
+imbue target is valid and learned
+flex gate is satisfiable
+ability level/AP state is legal
+all branches terminate; no accidental cycle
+every choice has default/abstain
+all claims resolve to current evidence
+```
+
+Property-based tests can sample states; a symbolic/SAT-style checker can prove bounded branch constraints. Validate the rendered Valve blob by decoding it and comparing semantics with the IR projection.
+
+### Evidence object
+
+Each action should point to a claim record rather than copy free-form statistics:
+
+```json
+{
+  "claim_id": "kelvin/control-response/6672/ranked",
+  "claim_class": "descriptive",
+  "snapshot_id": "sha256:...",
+  "query": {"route": "...", "parameters": {}},
+  "unit": "eligible-player-decision",
+  "numerator": 0,
+  "denominator": 0,
+  "estimate": null,
+  "interval": null,
+  "shrinkage": "hierarchical-logit-v1",
+  "multiplicity_family": "hero-item-threat",
+  "overlap": {"effective_sample_size": null},
+  "leakage_checks": ["pre-state-only"],
+  "mechanics_refs": ["asset:item:..."],
+  "language_ceiling": "associated"
+}
+```
+
+## Guide rendering and Steam schema semantics
+
+### Two products from one policy
+
+1. **Rich sidecar:** full conditions, evidence, uncertainty, and all legal branches for review/recalculation.
+2. **Steam guide:** a compact projection optimized for Queue behavior and in-game scanability.
+
+The renderer should not invent semantics the Steam format lacks. When a predicate cannot be encoded, use a clearly named optional category and concise annotation, and keep the richer logic in the sidecar.
+
+### Recommended category design
+
+```text
+START — default queued actions only
+CORE TIMING — minimal coherent path
+CHOOSE ONE: DAMAGE BRANCH — optional/exclusive alternatives
+VERSUS CONTROL — optional, annotated, not queued
+VERSUS HEALING — optional, annotated, not queued
+SELL ORDER — encoded on entries, summarized in description
+LATE SLOT CONSOLIDATION — gated by flex/slot state
+```
+
+Use item annotations for the smallest actionable instruction:
+
+```text
+Vs repeated control • choose instead of X • reactive active • sell opener Y first
+```
+
+Avoid stuffing statistical caveats into every item tile. Put cohort/snapshot and evidence-class caveats in the build description; put the tactical trigger on the item.
+
+### Public-guide schema findings
+
+The research sample confirms mature authors use optional categories, annotations, sells, and imbues extensively. One complex recent guide contained 16 categories and 116 entries, with most entries annotated and several positive sell orders/imbues. Treat such guides as UX and schema evidence—not strategic ground truth.
+
+### Machine semantics before prose
+
+The current project emits four non-optional categories of eight items each. It does not encode sell priority, imbue target, or flex gating. Therefore all 32 items can participate in Queue behavior even though the description says they are independent options. This is a P0 correctness issue: fix the protobuf projection before improving narrative elegance.
+
+## Evaluation and monitoring
+
+### Offline evaluation matrix
+
+| Layer | Metrics/tests | Split |
+|---|---|---|
+| Mechanics | exact asset references, qualifier coverage, no invented values | current pinned snapshot |
+| Legality | all reachable paths, slots, actives, components, AP, imbues, sells | property + fixture tests |
+| Next action imitation | Recall@k, NDCG, MRR, popularity baseline | patch-forward, player/group aware |
+| Probability quality | log loss, Brier score, calibration error/plots | patch-forward queue/cohort |
+| Selective prediction | risk–coverage, abstention-reason counts | OOD and sparse slices |
+| Comparative outcome | overlap, ESS, balance, interval, sensitivity | target-trial temporal holdout |
+| Tactical quality | expert rubric and blinded pairwise review | archetype/threat matrix |
+| Rendering | decode/round-trip and Queue-semantic fixtures | current client schema |
+| Preservation | untouched user sections byte/semantic comparison | cache mutation fixtures |
+
+Do not optimize only Recall@k. A popularity model can imitate exposure while offering no personalized value. Report legality and calibration before ranking quality.
+
+### Evaluation cases
+
+The suite should cover:
+
+- early-pressure, midgame-control, and late-scaling heroes;
+- weapon, spirit, vitality, hybrid, support, and active-heavy variants;
+- ahead/even/behind states;
+- heavy healing, bullet pressure, spirit burst, hard control, mobility, and ally-protection threats;
+- sparse new-patch/new-hero states;
+- component branch and same-timestamp upgrade events;
+- missed timing and deviation recovery;
+- no-overlap/abstain cases;
+- full active bindings and locked flex slots;
+- incomplete hero assets or ability paths;
+- mixed-mode input rejection.
+
+### Production monitoring
+
+Track:
+
+- mechanics/snapshot freshness and route fallback;
+- invalid or null pre-state rates;
+- recommendation exposure/adoption/deviation;
+- branch frequency and unhandled states;
+- calibration drift by queue, rank, hero, and patch;
+- policy concentration and popularity feedback;
+- invalid path or renderer rejection rate;
+- generated-artifact reuse reason;
+- user preservation and install/restore outcomes.
+
+Rollback on mechanics mismatch, material calibration failure, schema decode failure, or unexpected preservation changes—not merely on aggregate win-rate movement.
+
+## Audit of the current repository
+
+This section distinguishes strengths worth preserving from gaps that affect build correctness. It describes the working tree inspected on 2026-08-08; four user-owned narrative/test modifications were not changed as part of this report.
+
+### Current pipeline
+
+```mermaid
+flowchart LR
+    API[deadlock-api assets and analytics] --> A[Deterministic analytics]
+    A --> C[strategy-context.json]
+    C --> G[Staged Codex narrative generation]
+    G --> N[narratives.json]
+    N --> V[Artifact validation/admission]
+    V --> P[Protobuf + KV3 cache mutation]
+    P --> S[Steam My Builds]
+```
+
+The architecture correctly keeps model generation outside the Steam mutation boundary. Deterministic code owns API calls, ranking, fingerprints, artifact validation, serialization, backups, and installation.
+
+### Strengths to preserve
+
+| Area | Existing strength |
+|---|---|
+| User-data safety | Refuses install while Deadlock is running; creates timestamped recoverable backup. |
+| Replacement | Writes/flushes/fsyncs a temporary file in the target directory and replaces atomically. |
+| Recovery | Attempts automatic restoration after installation failure. |
+| Preservation intent | Updates only builds carrying a managed marker; tests cover favorites/saved/selected/unrelated sections. |
+| Completeness | Refuses guides without all four item tiers. |
+| Artifact boundary | Reviewable context and narrative artifacts; stale/malformed artifacts rejected. |
+| Fingerprints | Per-hero kit, narrative-basis, full-context, and document hashes. |
+| Idempotence | Stable managed-entry replacement and artifact reuse. |
+| Toolchain | Python 3.12, `uv`, Hatchling, Ruff with broad rules, strict `ty`, pytest, pinned CI and wheel smoke path. |
+| Prompt validation | Structured schema plus semantic checks and a separate model-backed evaluation suite. |
+
+### Analytics inventory
+
+Current deterministic modules provide:
+
+- `api.py`: assets, unconditioned item win/loss rows, net-worth bucket rows, exact-16 ability paths, ending-duration stats;
+- `purchase_guide.py`: item filtering, adaptive bucket grouping, window selection, and eight items per price tier;
+- `ability_order.py`: complete-path filtering and modal selection;
+- `power_curve.py`: duration-bucket aggregation and shape labels;
+- `strategy_context.py`: exported mechanical/analytic evidence and hashes.
+
+They do not yet own counter/synergy modeling, item-flow/permutation/adoption analysis, sell/upgrade reconstruction, objective landmarks, state-conditioned choice, or policy branching.
+
+### Finding register
+
+#### F-01 — Mixed matchmaking population (`P0`)
+
+The exported filters name `game_mode: STANDARD` but omit `match_mode`. The API default mixes Ranked and Unranked. Current queue rules and research distributions show these are incompatible cohorts.
+
+**Required change:** add a required queue enum end to end, separate artifact paths/fingerprints by queue, and reject unlabeled pooled analytics.
+
+#### F-02 — Snapshot incoherence (`P0`)
+
+Assets are fetched in separate unversioned calls; patch discovery and many analytics calls occur sequentially without one common snapshot/as-of cutoff. A patch, client, or ingestion update can land mid-run.
+
+**Required change:** create a run manifest first, pin asset version, capture epoch boundaries and per-route timestamps/hashes, and reject incoherent runs.
+
+#### F-03 — Stale rank labels (`P0`)
+
+At audit time, `ranks.py` used obsolete tier names for numeric tiers 3–7 and a
+Phantom I–Eternus VI default. Symbolic overrides and labels could therefore be
+wrong; a local cached artifact labelled numeric 61 as Emissary I while the frozen
+mapping called it Ritualist I. The later Ranked calibration reset also made the
+old default too narrow, so the implemented operational range is Emissary I–Eternus V.
+
+**Required change:** resolve name ↔ badge IDs from versioned rank assets; retain numeric IDs as identity.
+
+#### F-04 — Mechanics dropped from context (`P0`)
+
+`_clean_text` accepts only strings while the current hero description is structured, leaving all 37 local cached hero descriptions null. `_stat_properties` omits scale functions, coefficients, `scaling_stats`, item components/upgrades, and investment context. In the fresh Standard item snapshot, 536 nonzero labelled properties were omitted by the current export while 508 were retained; 461 omitted/nonzero properties involved scale functions.
+
+**Required change:** normalize structured localization and export a typed mechanics graph with exact qualifiers and source refs. Fail closed when a required mechanic cannot be represented.
+
+#### F-05 — Price-tier/ability-quarter conflation (`P0`)
+
+Ability steps are assigned `quarter = index // 4 + 1`, and the context tells the model to treat item tiers I–IV as strategic quarters “establish, accelerate, pressure, close.” Actual AP decisions occur at heterogeneous levels and price tiers are not time phases.
+
+**Required change:** remove quarters; export legal level/AP states and empirical acquisition distributions; prohibit joint item–ability timing claims without joint evidence.
+
+#### F-06 — Event volume mislabeled as pick rate (`P0`)
+
+`relative_pick_rate = item event matches / maximum item event matches`. The denominator is not eligible hero appearances. Item rows are purchase events after array expansion.
+
+**Required change:** rename current value to `relative_purchase_event_volume` and separately calculate adoption with a player-match denominator.
+
+#### F-07 — Selected outcome peaks presented as buy windows (`P0`)
+
+The window algorithm adaptively groups net-worth buckets, filters on support/share, locates local peaks of Wilson lower bounds, and may retain two windows. It finds high observed eventual-win regions, not normal purchase access. Searching many cells creates material optimism, as the null simulation demonstrated.
+
+**Required change:** use first-purchase cumulative incidence/hazards for timing, with predeclared bins and held-out comparison evidence.
+
+#### F-08 — Corrupted early net worth enters analysis (`P0`)
+
+Pre-180 values matched final net worth across every sampled early purchase. The current pipeline does not quarantine them.
+
+**Required change:** telemetry validation and epoching; null invalid values; clock-based openers until trustworthy pre-state exists. Add a regression fixture.
+
+#### F-09 — Steam Queue semantics contradict prose (`P0`)
+
+The protobuf encoder emits four categories of eight items, all effectively non-optional, and omits `sell_priority`, `imbue_target_ability_id`, and `required_flex_slots`. The description says options are independent, but the machine-readable Queue cannot enforce that statement.
+
+**Required change:** extend guide/domain types and protobuf encoder; make alternatives optional; encode choice-specific imbue/sell/flex behavior; decode-test exact field numbers and Queue semantics.
+
+#### F-10 — Complete-path selection bias (`P1`)
+
+Ability selection discards non-exact/incomplete paths and paths below 20 observations; `cohort_matches` is only the retained complete set. The validator checks four IDs × four occurrences but not level/AP legality.
+
+**Required change:** prefix decision model, explicit denominators, mechanics validator, temporal split, and conservative fallback.
+
+#### F-11 — Duration curve estimand mismatch (`P1`)
+
+`power_curve.py` labels ending-duration conditional win rates as curve shapes using fixed thresholds without intervals. Approximate game distribution is hero slots divided by 12, which undercounts if low-volume heroes are absent from the returned curves.
+
+**Required change:** call it ending-duration profile; compute game distribution directly; add landmark curves and uncertainty.
+
+#### F-12 — Missing matchup/counter evidence (`P1`)
+
+The context designates the first three items as core and the rest as “matchup alternatives” without matchup data. A model cannot ground a counter instruction from generic mechanics plus aggregate item rate.
+
+**Required change:** add threat taxonomy, lane/whole-team matchup models, and item-within-threat decision comparisons. Otherwise render “alternative,” not “counter.”
+
+#### F-13 — Fingerprint semantics are too narrow (`P1`)
+
+The narrative basis includes selected names/mechanics, path steps, duration shape/phase labels, and purchase-window labels, but omits raw rates, counts, window estimates, queue regime, and many full-context fields. Reuse can validate basis while `require_context_match=False`; analytics changes that leave selected menus/labels unchanged may evade invalidation.
+
+**Required change:** separate and hash `mechanics`, `analytics`, `policy_basis`, and `installation` manifests; require every narrative claim to reference an evidence ID; record reuse reason.
+
+#### F-14 — Duration endpoints can overlap (`P1`)
+
+Both minimum and maximum filters are inclusive. Adjacent exact endpoints can duplicate observations.
+
+**Required change:** use half-open intervals or subtract one second on integer-second upper bounds; add boundary regression tests.
+
+#### F-15 — Timestamp rounding expands exact-hour maximum (`P2/upstream`)
+
+The upstream `round_timestamps` implementation calculates `v + 3600 - v % 3600`; an already exact-hour maximum moves forward one hour.
+
+**Required change:** upstream fix to a true ceiling that preserves exact boundaries; record resolved query bounds in the manifest.
+
+#### F-16 — Directory durability after replace (`P1 safety hardening`)
+
+The temporary file itself is fsynced and renamed atomically, but the parent directory is not fsynced after replacement. On Linux, file fsync does not necessarily make the directory entry durable across power loss.
+
+**Required change:** open and fsync the containing directory after rename, with a platform-aware implementation and failure test. Preserve backup/restore behavior.
+
+#### F-17 — Preservation validation can be stronger (`P1 safety hardening`)
+
+Post-install validation confirms expected managed entries. Tests show intended preservation, but the installer does not compare semantic fingerprints for favorites, saved/selected fields, and unrelated builds before and after.
+
+**Required change:** calculate a projection hash of every out-of-scope branch before mutation and verify it after decoding the installed file.
+
+#### F-18 — Local artifact coverage/staleness (`P0 operational`)
+
+The cached strategy artifact held 37 heroes while the current snapshot had 38 active heroes; Lady Geist was absent. The artifact patch title/date and current queue/rank labels also showed ambiguity. This is exactly the kind of stale/incomplete state the mission says to reject.
+
+**Required change:** completeness is relative to the pinned hero roster and explicit exclusions, all fingerprinted. Report missing/skipped heroes and refuse “all” install when an eligible hero is absent.
+
+### Existing DeepEval coverage
+
+The model-backed suites are intentionally outside normal pytest recursion and exercise tactical/mechanical narrative quality. They are appropriate for prompt/validator changes, but no evaluation can compensate for confounded or incomplete input. This report changes documentation only, so no model-backed evaluation is required.
+
+## Recommended implementation roadmap
+
+```mermaid
+gantt
+    title Build-policy hardening sequence
+    dateFormat  YYYY-MM-DD
+    axisFormat  %b %d
+    section P0 evidence
+    Snapshot manifest and queue epochs :p0a, 2026-08-09, 5d
+    Mechanics graph and rank assets    :p0b, after p0a, 7d
+    Telemetry quarantine and units     :p0c, after p0a, 6d
+    section P0 rendering
+    Optional/sell/imbue/flex protobuf  :p0d, 2026-08-09, 7d
+    Legal AP/economy timeline           :p0e, after p0b, 6d
+    section P1 policy
+    Policy IR and path validator        :p1a, after p0d, 10d
+    Prefix abilities and buy hazards    :p1b, after p0c, 12d
+    Matchup and threat branches          :p1c, after p1b, 12d
+    section P2 learning
+    Demo decision logging and OPE        :p2a, after p1a, 20d
+```
+
+Dates illustrate dependency order, not a delivery commitment.
+
+### Phase 0 — Correct semantics before new intelligence
+
+- [ ] Add a snapshot manifest with client version, epoch set, raw hashes, exact parameters, cache/materialized-view provenance, and fetch timestamps.
+- [ ] Make `match_mode` required; generate separate Ranked and Unranked policies.
+- [ ] Load current rank labels from assets.
+- [ ] Quarantine corrupt pre-180 net worth and add unit-specific types/names.
+- [ ] Export complete typed hero/item mechanics, component graph, scaling, and investment bonuses.
+- [ ] Replace ability quarters with a legal level/AP timeline.
+- [ ] Encode optional categories, sells, imbues, and flex gates in domain types and protobuf.
+- [ ] Add current-roster completeness and artifact-manifest validation.
+- [ ] Hash mechanics, analytics, policy basis, and installation projection separately.
+
+**Exit criterion:** the generated guide is mechanically legal and its Queue behavior matches its prose, even if analytics remain simple.
+
+### Phase 1 — Build conditional evidence
+
+- [ ] Calculate true adoption using eligible hero appearances.
+- [ ] Reconstruct first-purchase, upgrade, and discretionary-sell events.
+- [ ] Estimate first-purchase hazards/cumulative incidence with competing events.
+- [ ] Replace exact-path selection with prefix/state-conditioned ability choices.
+- [ ] Build lane and whole-team matchup models with partial pooling.
+- [ ] Add a mechanics-first threat taxonomy and within-threat response comparisons.
+- [ ] Create the policy IR, default/abstain branches, and path validator.
+- [ ] Add landmark duration/state models and spike cards.
+- [ ] Render rich sidecar plus compact Valve projection.
+- [ ] Fsync parent directory and verify out-of-scope cache projections.
+
+**Exit criterion:** every recommendation states eligibility, trigger, timing, comparator, conversion, and evidence ceiling.
+
+### Phase 2 — Evaluate policy value
+
+- [ ] Parse decision opportunities from demos with source/staleness metadata.
+- [ ] Log exposure, candidate slate, adoption, deviation, and recalculation.
+- [ ] Build patch-forward prediction/calibration/risk–coverage evaluation.
+- [ ] Emulate predeclared target trials only where overlap permits.
+- [ ] Add doubly robust/off-policy evaluation for logged policies.
+- [ ] Reserve safe randomized exploration or rotating holdouts.
+- [ ] Monitor feedback loops, concentration, and cohort drift.
+
+**Exit criterion:** improvements are shown on later regimes with legality, calibration, coverage, expert utility, and uncertainty—not only historical win rate.
+
+### Suggested module boundaries
+
+```text
+snapshot.py           client/epoch manifest and coherent fetch
+mechanics.py          typed hero/item/component/AP graph
+telemetry.py          validated pre-state and event reconstruction
+estimands.py          units, cohorts, target-trial declarations
+item_policy.py        adoption, hazard, alternatives, counters
+ability_policy.py     prefix/state-conditioned upgrades
+matchups.py           lane/team interactions and threat features
+policy.py             branching IR and evidence references
+policy_validation.py  all-path mechanical/schema validation
+valve_renderer.py     IR -> Steam build projection
+cache.py              user-data mutation boundary only
+```
+
+Keep `scripts/generate_narratives.py` as an explanation layer over evidence-referenced policy nodes. It should not decide which analytics are causally valid.
+
+## Worked examples
+
+The following examples illustrate method, not timeless item prescriptions. Exact names/mechanics must be regenerated from the pinned client snapshot.
+
+### Example A — Kelvin: do not convert completion bias into a spike
+
+The local artifact selected a complete Kelvin path with 347 observations and a raw 74.93% win rate, while the hero’s ending-duration overall rate in the artifact was about 53.98% across 20,861 observations. The roughly 21-point difference does not mean the ability order causes 21 points of win probability. It selects players/games that completed one exact 16-step sequence and passed retention filters.
+
+The artifact narrative also paired a Tier III Rapid Recharge recommendation with a “third-quarter” Frost Grenade upgrade. The available data did not establish their joint acquisition timing, and price tier does not map to ability-decision quarter.
+
+Correct workflow:
+
+1. Read current Frost Grenade mechanics, upgrade effects, charge qualifiers, and Rapid Recharge mechanics.
+2. Validate that the ability satisfies any charged-ability condition.
+3. Place the ability upgrade at its legal level/AP decision.
+4. Estimate Rapid Recharge access from first-purchase risk sets using clock and valid pre-buy economy.
+5. Measure whether the two distributions overlap in the target queue/cohort.
+6. Describe the mechanical uptime interaction.
+7. If observational comparison is weak, call it a mechanically coherent option, not a proven winning spike.
+8. State conversion: repeated area control during a named contest/rotation.
+9. State failure: if survival or access is the binding constraint, buy the response first.
+
+Example annotation:
+
+> **Charge-uptime branch:** after the qualifying Grenade upgrade is learned, consider the current charge item when repeated Grenades—not survival or range—are limiting the next fight. This is a mechanical interaction; aggregate buyer win rate does not establish its causal value.
+
+### Example B — Haze: late-item win rate and survivor bias
+
+Suppose a costly Haze item shows a high buyer win rate and a late purchase window. Before calling it core:
+
+- calculate the number of Haze appearances still active and eligible at the decision;
+- compare players with similar pre-purchase net worth, inventory, health, team economy, and objective state;
+- include save and similar-cost alternatives;
+- separate weapon/spirit variants;
+- remove invalid/abandoned outcomes;
+- evaluate on a later patch fold;
+- check whether the item is a finisher bought mainly by teams already ahead.
+
+The guide may ultimately say:
+
+> **Ahead/slot-consolidation branch:** finish this only after the access and survival core is complete and a flex/slot constraint makes consolidation valuable. When even or behind, preserve the cheaper timing unless the next fight can be delayed.
+
+That is more useful than “high win-rate late item.”
+
+### Example C — A control counter branch
+
+Bad recommendation:
+
+> Buy Unstoppable against hero X; it has a 57% win rate.
+
+Better reasoning:
+
+1. Verify which enemy ability/effect is actually interrupting or disabling the focal hero.
+2. Check whether the current item version covers that effect and whether activation must be proactive.
+3. Confirm the player has a free active binding and can finish it before the next forced fight.
+4. Compare the shared component’s other child responses and a cheaper defensive alternative.
+5. Estimate within-threat adoption/outcomes from valid pre-state, with overlap.
+6. Encode the category optional and attach sell priority/replacement.
+
+Better annotation:
+
+> **Vs predictable hard control:** proactive immunity branch; activate before committing. Choose instead of the greedy multiplier when that disable is stopping your channel. Requires a free active binding; keep the automatic response branch for lower execution burden.
+
+### Example D — Missed purchase timing
+
+A static guide often tells a player to buy an early accelerator even at minute 25 while far behind. A policy asks whether the payoff horizon remains.
+
+```text
+if expected_payback_time > plausible_remaining_farm_window:
+    skip accelerator
+    buy minimum stabilizer or objective utility
+elif safe farm and no immediate threat:
+    retain accelerator branch
+else:
+    abstain and expose alternatives
+```
+
+The policy never predicts remaining game time from final duration. It uses current objective/map/economy state and reports uncertainty.
+
+## Authoring and release checklists
+
+### Hero-build research checklist
+
+#### Snapshot and cohort
+
+- [ ] Client version pinned and raw asset hashes recorded.
+- [ ] Mechanics, matchmaking, map/objective, and telemetry epochs recorded.
+- [ ] Ranked/Unranked selected explicitly.
+- [ ] Game mode, rank numeric IDs/current labels, time bounds, and outcome exclusions recorded.
+- [ ] Endpoint route, table/materialized-view fallback, temporal grain, and unit recorded.
+- [ ] All current eligible heroes present or explicitly skipped with reason.
+
+#### Kit and mechanics
+
+- [ ] Structured hero description preserved.
+- [ ] Every signature ability, upgrade, coefficient, scale function, and condition represented.
+- [ ] Hero-level scaling stats represented.
+- [ ] Component/upgrade graph and incremental/total investment correct.
+- [ ] Slot, flex, active-binding, uniqueness, sell, and imbue constraints correct.
+- [ ] Ability unlock/AP timeline validated.
+
+#### Analytics
+
+- [ ] Adoption denominator is eligible player appearances.
+- [ ] Purchase-event counts are not called matches/pick rate without qualification.
+- [ ] Pre-buy state contains no future/final values.
+- [ ] Pre-180 net worth is quarantined until fixed.
+- [ ] Purchase timing uses risk sets and competing events.
+- [ ] Raw/adjusted rates include intervals, shrinkage, and support.
+- [ ] Selected windows/items evaluated on held-out time.
+- [ ] Matchup scope and pair-row unit explicit.
+- [ ] Ending-duration profiles not called live strength.
+- [ ] Causal claims have a target-trial design; otherwise language remains descriptive.
+
+#### Policy and prose
+
+- [ ] Core path defines a coherent minimum plan.
+- [ ] Every branch has an observable trigger and default/abstain.
+- [ ] Counter branches name threat, mechanism, timing, replacement, and failure.
+- [ ] Ahead/even/behind uses pre-decision state.
+- [ ] Spike cards name prerequisite, delta, conversion, and counterplay.
+- [ ] Item–ability pair claims have mechanical qualification and timing overlap.
+- [ ] No invented mechanics, matchups, numeric effects, or causation.
+- [ ] All reachable paths pass mechanics validation.
+
+### Steam-rendering checklist
+
+- [ ] Alternative categories are `optional` and excluded from default Queue.
+- [ ] Mutually exclusive choices are visually named and not all queued.
+- [ ] Positive sell priorities match ownership and branch order.
+- [ ] Imbue targets are encoded and valid.
+- [ ] Flex gates are encoded where useful.
+- [ ] No realized path exceeds 12 items or four active bindings.
+- [ ] Protobuf decode round-trip preserves intended fields.
+- [ ] Build description identifies snapshot/cohort and observational limits.
+
+### Mutation-boundary checklist
+
+- [ ] Deadlock process checked immediately before mutation.
+- [ ] Original cache parsed and out-of-scope projection hashed.
+- [ ] Recoverable backup and manifest created.
+- [ ] Replacement written in target directory and file-fsynced.
+- [ ] Temporary replacement fully decoded and policy projection validated.
+- [ ] Atomic rename completed and parent directory fsynced.
+- [ ] Installed file decoded; managed entries and out-of-scope hashes verified.
+- [ ] Failure restores backup and reports its exact path.
+- [ ] Created/updated counts and skipped heroes reported.
+- [ ] Rerun produces no unintended changes.
+
+### Release gate
+
+```bash
+uv lock --check
+uv run ruff format --check .
+uv run ruff check .
+uv run ty check
+uv run pytest
+uv pip check
+uv build
+```
+
+For prompt or validator changes, also run the relevant model-backed DeepEval suite. For packaging changes, inspect and smoke-test the built wheel outside the checkout. Never run live Steam sync without explicit authorization.
+
+## Reproducibility record
+
+### Repository state
+
+```text
+workspace: /home/sandman/code/deadlock-build-sync
+origin:    https://github.com/sxndmxn/deadlock-build-sync.git
+HEAD:      14076610aa4d2103df14a307ed195efc19d04ba5
+pull:      git pull --ff-only -> Already up to date
+upstream:  https://github.com/deadlock-api/deadlock-api.git
+API HEAD:  eb23bec2517e0d481688d7c4b387ac6729f19d37
+date:      2026-08-08
+timezone:  America/Los_Angeles
+```
+
+Pre-existing working-tree modifications preserved:
+
+```text
+M scripts/generate_narratives.py
+M src/deadlock_build_sync/narratives.py
+M tests/test_generate_narratives.py
+M tests/test_narratives.py
+```
+
+### Local artifact audit
+
+The default artifact directory inspected read-only was:
+
+```text
+~/.local/state/deadlock-build-sync/artifacts
+```
+
+The context used schema version 4, held 37 heroes and four lists of eight items per retained hero, and produced zero non-null hero descriptions. The narrative artifact used schema version 2 and prompt version 15 in the user-modified working tree. Artifact observations are evidence about the current pipeline, not a recommendation to install them.
+
+### Research computations to reproduce
+
+<details>
+<summary>Core calculations</summary>
+
+1. Count current, enabled Standard Tier I–IV items by `item_tier` and `item_slot_type`.
+2. Parse component/child references and count graph edges, branching components, and maximum fan-out.
+3. Count signature ability properties, non-empty scale functions, coefficient-bearing and multi-stat records.
+4. Compare fields selected by `_stat_properties` with nonzero labelled asset properties.
+5. Fetch queue-specific outcome samples and cross-tab `match_result`, winning team, abandon, reward, low-priority, and new-player flags.
+6. Compare pre-180 `net_worth_at_buy` with final net worth.
+7. Calculate exact-16/retained/distinct ability-path shares from all hero appearances.
+8. Sample public builds and count optional, annotation, sell, imbue, flex, active, category, and distinct-item fields.
+9. Run the documented null simulation with seed `20260808` and selection logic matching the purchase-window shape.
+10. Verify adjacent duration boundary overlap using exact integer-second endpoints.
+
+</details>
+
+### Recommended future manifest
+
+```json
+{
+  "schema_version": 1,
+  "snapshot_id": "sha256:canonical-manifest",
+  "created_at": "RFC-3339",
+  "client": {"version": 6672, "source_revision": 10895058},
+  "epochs": {
+    "mechanics": "...",
+    "matchmaking": "...",
+    "map_objectives": "...",
+    "telemetry": "..."
+  },
+  "assets": [{"name": "items", "sha256": "...", "bytes": 0}],
+  "cohort": {
+    "game_mode": "normal",
+    "match_mode": "Ranked",
+    "rank_badges": [91, 116],
+    "time": ["...", "..."]
+  },
+  "queries": [{
+    "route": "...",
+    "parameters": {},
+    "resolved_bounds": {},
+    "backend_grain": "...",
+    "raw_sha256": "..."
+  }]
+}
+```
+
+## Source index
+
+### Primary Deadlock and API sources
+
+- [Deadlock API documentation](https://api.deadlock-api.com/docs)
+- [`deadlock-api` source repository](https://github.com/deadlock-api/deadlock-api), audited at `eb23bec2517e0d481688d7c4b387ac6729f19d37`
+- [Deadlock heroes asset route](https://api.deadlock-api.com/v1/assets/heroes)
+- [Deadlock items asset route](https://api.deadlock-api.com/v1/assets/items)
+- [Deadlock ranks asset route](https://api.deadlock-api.com/v1/assets/ranks)
+- [Deadlock generic-data route](https://api.deadlock-api.com/v1/assets/generic-data)
+- [Valve: Shop Rework, May 8, 2025](https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/1799088287841594)
+- [Valve: November 21 slot/level/economy update](https://steamstore-a.akamaihd.net/news/externalpost/steam_community_announcements/1816849002015766)
+- [Valve: July 28, 2026 update](https://store.steampowered.com/news/app/1422450/view/680756685198855508)
+- [Valve: July 30, 2026 matchmaking update](https://store.steampowered.com/news/app/1422450/view/680756685198854910)
+- Linux [`rename(2)`](https://man7.org/linux/man-pages/man2/rename.2.html) and [`fsync(2)`](https://man7.org/linux/man-pages/man2/fsync.2.html) semantics
+
+### Cross-MOBA primary/developer sources
+
+- [Dota Plus Assistant](https://www.dota2.com/plus)
+- [Dota 2 Hero Builds overview](https://www.dota2.com/workshop/builds/overview?l=english)
+- [Riot: Updated approach to item balancing](https://www.leagueoflegends.com/en-gb/news/dev/dev-updated-approach-to-item-balancing/)
+- [Riot: Preseason Item Shop Update](https://www.leagueoflegends.com/en-us/news/dev/preseason-item-shop-update/)
+- [Riot: Midseason and Mythics](https://www.leagueoflegends.com/en-us/news/dev/dev-midseason-and-mythics/)
+- [Riot: 2024 item changes](https://www.leagueoflegends.com/en-us/news/dev/dev-2024-item-changes/)
+- [Riot: Champion Balance Framework](https://www.leagueoflegends.com/en-us/news/dev/dev-champion-balance-framework/)
+- [Riot: Balancing new champions](https://www.leagueoflegends.com/en-us/news/dev/dev-balancing-new-champions/)
+
+### MOBA recommendation research
+
+- Dallmann et al., [*Sequential Item Recommendation in the MOBA Game Dota 2*](https://arxiv.org/abs/2201.08724), 2022.
+- Villa et al., [*Interpretable Contextual Team-aware Item Recommendation*](https://arxiv.org/abs/2007.15236), RecSys 2020.
+- Lee et al., [*DraftRec: Personalized Draft Recommendation for Winning in MOBA Games*](https://arxiv.org/abs/2204.12750), WWW 2022.
+- [MOBA expertise and skill acquisition research](https://arxiv.org/abs/1702.06253).
+
+### Causal inference, uncertainty, and policy evaluation
+
+- [Longitudinal g-methods for time-varying treatment/confounding](https://pmc.ncbi.nlm.nih.gov/articles/PMC5710813/)
+- [Target-trial emulation tutorial](https://pmc.ncbi.nlm.nih.gov/articles/PMC10400102/)
+- [Competing-risks interpretation](https://pmc.ncbi.nlm.nih.gov/articles/PMC4223609/)
+- [Immortal-time bias](https://pmc.ncbi.nlm.nih.gov/articles/PMC8087121/)
+- [Landmark analysis](https://onlinelibrary.wiley.com/doi/abs/10.1111/j.1467-9469.2006.00529.x)
+- [Overlap-weighted causal estimation](https://proceedings.mlr.press/v108/oberst20a.html)
+- [Sensitivity bounds under unmeasured confounding](https://proceedings.mlr.press/v235/khan24b.html)
+- [Selective classification with a reject option](https://proceedings.mlr.press/v97/geifman19a.html)
+- [Calibration evaluation](https://proceedings.mlr.press/v89/vaicenavicius19a.html)
+- [Off-policy evaluation](https://proceedings.mlr.press/v202/xu23x.html)
+- [False discovery control under dependency](https://doi.org/10.1214/aos/1013699998)
+- [Partial pooling for heterogeneous effects](https://doi.org/10.1080/19345747.2011.618213)
+- [Interpretable decision policies](https://proceedings.mlr.press/v54/lakkaraju17a.html)
+- [Performative prediction](https://proceedings.mlr.press/v119/perdomo20a.html)
+- [Leakage in machine-learning pipelines](https://arxiv.org/abs/2010.11060)
+
+## Glossary
+
+| Term | Meaning in this report |
+|---|---|
+| Adoption | Fraction of eligible player appearances that purchase an item at least once. |
+| AP | Ability points available/spent under the level progression table. |
+| Build | A conditional action policy plus its rendered guide, not merely an item set. |
+| Causal contrast | Difference between well-defined potential outcomes under alternative actions. |
+| Cohort | Explicit queue, game mode, ranks/mastery, patch/epochs, time bounds, and exclusions. |
+| Competing event | An action/outcome that prevents the event of interest, such as substitute purchase or game end. |
+| Conversion | The tactical action/objective through which a mechanical spike produces value. |
+| Counter item | An item branch justified by a specific observed enemy threat and legal timing. |
+| Effective sample size | Information remaining after weighting/overlap adjustment, often much smaller than raw rows. |
+| Ending-duration profile | Outcome distribution conditional on final game duration; not live hero strength. |
+| Epoch | A boundary after which mechanics, matchmaking, map, or telemetry semantics differ. |
+| Hazard | Conditional event probability/rate among states still eligible at that time. |
+| Imbue | Binding an eligible item effect to a specific ability where the current schema/mechanics permit. |
+| Landmark | A fixed game time at which only still-active games are evaluated from information available then. |
+| Mechanics gate | Deterministic validation that an action and its claimed effect exist in the pinned version. |
+| Overlap | States in which competing actions both have credible support. |
+| Policy IR | Internal branching representation from which a compact Steam guide is rendered. |
+| Power spike | A verified acquisition/unlock that materially changes available tactics; outcome benefit is a separate claim. |
+| Risk set | States still eligible to experience a purchase/action at a given decision time. |
+| Situational item | A branch whose trigger is named and observable, not merely a less-popular item. |
+| Snapshot | Versioned, hashed collection of assets, queries, epochs, and cohort metadata. |
+| Target trial | Explicit hypothetical experiment that an observational analysis attempts to emulate. |
+
+## Final specification
+
+The project should generate a hero build only when it can satisfy all of the following:
+
+1. **Current:** one coherent client and epoch manifest.
+2. **Comparable:** one explicit queue/cohort and correct analytic unit.
+3. **Mechanical:** complete kit/item/component/AP/schema evidence.
+4. **Conditional:** a legal policy with core, choice, counter, wait, and sell behavior.
+5. **Honest:** uncertainty, overlap, leakage, and claim class attached to every analytic statement.
+6. **Tactical:** each spike names its conversion and counterplay.
+7. **Executable:** optional/Queue, imbue, sell, flex, slot, and active semantics agree with prose.
+8. **Reviewable:** rich sidecar, evidence references, fingerprints, and abstention reasons.
+9. **Evaluated:** patch-forward legality, calibration, coverage, and expert review.
+10. **Safe:** no model inside the mutation boundary; backup, validation, atomic replacement, durability, preservation, and restore.
+
+If any hard condition fails, the correct output is not a weaker validator or invented narrative. It is a precise refusal explaining which hero, evidence record, mechanic, branch, or artifact is incomplete.

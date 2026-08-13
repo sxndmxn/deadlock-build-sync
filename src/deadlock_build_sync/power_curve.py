@@ -65,7 +65,7 @@ def summarize_duration_distribution(
     }
 
 
-def summarize_duration_curve(
+def summarize_ending_duration_profile(
     points: tuple[HeroDurationStat, ...],
     distribution: dict[str, dict[str, float | int]] | None = None,
 ) -> dict[str, Any] | None:
@@ -119,6 +119,7 @@ def summarize_duration_curve(
         distribution.get(DURATION_BUCKET_LABELS[-1], {}).get("tracked_game_share") or 0
     )
     return {
+        "estimand": "ending_duration_profile",
         "shape": shape,
         "strongest_phase": strongest_phase.label,
         "weakest_phase": weakest_phase.label,
@@ -160,3 +161,16 @@ def summarize_duration_curve(
             "that game length or an item causes the win rate."
         ),
     }
+
+
+def summarize_duration_curve(
+    points: tuple[HeroDurationStat, ...],
+    distribution: dict[str, dict[str, float | int]] | None = None,
+) -> dict[str, Any] | None:
+    """Compatibility alias for the correctly named ending-duration estimand.
+
+    Returns:
+        The ending-duration profile.
+
+    """
+    return summarize_ending_duration_profile(points, distribution)

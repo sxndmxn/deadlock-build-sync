@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "snapshot_id": "sample-snapshot-not-a-production-result",
+  "policy_ids": ["sample-policy"],
+  "split_identity": "sample-patch-forward-split",
+  "passed": false,
+  "hard_gates_passed": true,
+  "non_authoritative_minimum_score": 0.72,
+  "layers": [
+    {"name": "mechanics_fidelity", "passed": true, "hard_gate": true, "score": 1.0, "support": 20, "details": {}},
+    {"name": "path_legality", "passed": true, "hard_gate": true, "score": 1.0, "support": 100, "details": {}},
+    {"name": "next_action_imitation", "passed": true, "hard_gate": false, "score": 0.86, "support": 500, "details": {"baseline": "popularity"}},
+    {"name": "probability_calibration", "passed": false, "hard_gate": false, "score": 0.72, "support": 500, "details": {"reason": "illustrative calibration failure"}},
+    {"name": "selective_risk_coverage", "passed": true, "hard_gate": false, "score": 0.82, "support": 410, "details": {}},
+    {"name": "comparative_outcome_assumptions", "passed": true, "hard_gate": false, "score": 0.9, "support": 500, "details": {"claim_class": "descriptive"}},
+    {"name": "tactical_expert_review", "passed": true, "hard_gate": false, "score": 0.9, "support": 10, "details": {}},
+    {"name": "valve_round_trip", "passed": true, "hard_gate": true, "score": 1.0, "support": 20, "details": {}},
+    {"name": "user_data_preservation", "passed": true, "hard_gate": true, "score": 1.0, "support": 20, "details": {}}
+  ]
+}

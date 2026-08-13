@@ -7,42 +7,49 @@ A Linux CLI that creates private Deadlock hero builds from
 [deadlock-api.com](https://deadlock-api.com) analytics and installs them under
 **My Builds**.
 
-The generated guide has four item categories (`I`, `II`, `III`, `IV`). Items
-are sorted by purchase popularity, capped at eight per tier, and annotated with
-their statistically reliable purchase windows and overall win rate.
+Design evidence and implementation contracts:
 
-Each build also includes:
+- [Strategy-description research](docs/deadlock-strategy-description-research.md) — source evidence, analytical rationale, and build-policy findings.
+- [Build-policy requirements](docs/deadlock-build-policy-requirements.md) — staged normative requirements, acceptance criteria, and verification evidence.
 
-- The most-picked complete ability path for the current patch and cohort, with
-  raw win rate and match count used as ranking context.
-- A Codex-authored build profile and four-quarter game plan grounded in the
-  exported hero ability descriptions, ability order, core item descriptions,
-  item slots, purchase timing, pick rate, raw win rate, and match counts.
+Every run resolves one client version, freezes one as-of cutoff, and records
+Ranked or Unranked as an explicit cohort identity. Exact response bytes, patch
+identity, independent mechanics/matchmaking/map/telemetry epochs, rank-label
+mapping, route grain, and fallback behavior are captured in a reusable snapshot
+manifest.
 
-In-game tier descriptions contain short `TIER I`–`TIER IV` gameplay
-instructions. They name a few core items only to explain why those purchases
-change the hero's tactics. Core active items receive explicit instructions for
-their target, timing, sequence, or hold condition. The prose does not dump item
-descriptions, slots, stat lines, or analytics.
+The rich output is a typed, snapshot-bound policy graph:
 
-One primary power spike and at most one distinct secondary spike are identified
-from the intersection of a reliable core-item timing, an ability-path
-milestone, and a meaningful change in what the hero can safely force. Those
-tiers are labeled `POWER SPIKE` in the in-game instructions; ordinary stat
-growth is not labeled as a spike.
+- A mechanically legal level/AP ability timeline selected from equivalent reached
+  legal states, with support reported at each decision. Price tiers are never treated
+  as equal “quarters” of that timeline.
+- A coherent eight-item final-inventory path selected by joint player-match support,
+  ordered by observed acquisition time, and kept within the hero's median final net
+  worth.
+- Four ten-item price-tier reference menus selected by true player-match adoption and
+  ordered left to right by observed first-ownership net worth. Outcome rate is
+  descriptive only and never selects or orders an item.
+- Evidence objects that name their actual unit and claim class. Item adoption uses
+  unique first ownership over eligible player-matches; adopter outcome rate remains
+  descriptive—not an item effect or causal win-rate improvement.
+- Lane and whole-enemy-team matchup scopes kept separate, with mechanics-first
+  counters and structured abstention when support or mechanics are inadequate.
+- An ending-duration profile that describes games ending in each phase. It is not
+  a live power curve and never justifies stalling an available close.
 
-Hero win rate is also fetched across the website's seven match-duration
-buckets. The context classifies broad early, mid, and late direction, and Codex
-compares that natural curve with Tier III/IV item mechanics. Tier IV explicitly
-labels whether the build `REINFORCE`s a natural strength, `COMPENSATE`s for a
-weak phase, or has a `MIXED` response. Duration is treated as observational,
-outcome-conditioned evidence rather than a causal result.
-Because 45m+ games are a small population tail, late scaling never instructs
-the player to stall an available close.
+Steam receives five rows in a fixed order: `CORE ITEMS`, `TIER 1`, `TIER 2`,
+`TIER 3`, and `TIER 4`. Only the eight-item core enters Queue. Each tier row is an
+optional ten-item reference menu, not a claim that all ten items should be bought or
+that popularity proves a situational counter. Standard row descriptions stay short,
+and each evidence-backed item shows only its observed purchase window, adopter win
+rate, and player-match pick rate. Deterministic code validates the core against
+components, slots, active bindings, flex unlocks, ability currency, and current
+item/ability qualifiers before serialization.
 
-Item recommendations are independent analytics options rather than proof that
-all listed items were purchased together. The Codex prompt says this explicitly
-and treats lower-ranked items as matchup alternatives.
+Codex writes explanations only after those decisions are closed. The narrative
+artifact must copy the exact snapshot, policy, action, evidence, and projection
+category identities. It cannot add purchases, change guards, strengthen a claim,
+or redefine Queue behavior.
 
 ## Requirements
 
@@ -70,6 +77,14 @@ To upgrade after pulling a newer release, run `uv tool install --force .`.
 The separate `codex` CLI must already be authenticated. Close Deadlock before
 running `sync`; the command refuses to write while the game is open.
 
+`sync` also requires a validated `build-evidence.json` from the offline
+player-match analysis pipeline. Its default location is
+`$XDG_STATE_HOME/deadlock-build-sync/artifacts/build-evidence.json` (or
+`~/.local/state/deadlock-build-sync/artifacts/build-evidence.json`). Use
+`--build-evidence PATH` to review another artifact. The CLI rejects edited or
+incompatible patch, client, asset, rank-label, rank-range, mode, epoch, cutoff, or
+roster identities; it never falls back to aggregate purchase-event rankings.
+
 Steam discovery supports native (`~/.local/share/Steam`), legacy
 (`~/.steam/steam` and `~/.steam/root`), Flatpak, and Snap installations. A
 legacy symlink to the native installation is deduplicated. If more than one
@@ -88,14 +103,15 @@ uv run ruff check .
 uv run ty check
 uv run pytest
 uv pip check
+uv build
 ```
 
 ## Prompt evaluation
 
-DeepEval exercises the exact production Luna kit-analysis and Sol synthesis
-stages, Codex invocation, JSON schemas, and tactical response validator against
-ten representative heroes from the latest exported context. Run either one
-uncached pass or the three-pass reliability suite:
+DeepEval exercises the exact production kit-analysis and closed-policy explanation
+stages against representative heroes from the latest exported context. It reports
+the production contract, complete policy/category coverage, evidence-language
+ceiling, and repeated-generation structural stability separately:
 
 ```bash
 uv run deepeval test run tests/evals/test_narrative_prompt.py
@@ -105,19 +121,17 @@ uv run deepeval test run tests/evals/test_narrative_reliability.py
 Both commands require an authenticated `codex` CLI and a current
 `generated/strategy-context.json` from `export-context`. Set
 `DEADLOCK_BUILD_SYNC_EVAL_CONTEXT` to evaluate another exported context, such
-as the artifact produced by `sync`. The prompt suite makes twenty model calls;
-the three-pass reliability suite makes sixty. Every call has a two-minute timeout,
-and the suites do not enable DeepEval's optional cache, so results measure
-first-pass reliability. Evaluation results remain local unless the user
-explicitly configures Confident AI.
+as the artifact produced by `sync`. Every call has a two-minute timeout.
+Evaluation results remain local unless the user explicitly configures Confident AI.
 
-Repeated-generation scoring separates power-spike timing, tactical permission,
-item/ability mechanic grounding, outcome-evidence coverage, and exact identity.
-Adjacent timing and majority-supported tactical interpretations can agree even
-when wording or secondary selections differ; invented mechanics, wrong-tier or
-unsupported triggers, missing spikes, and duration-curve contradictions remain
-hard failures. Exact quarter/item/ability overlap and lexical plan overlap are
-reported as diagnostics instead of overriding strategically equivalent advice.
+The deterministic evaluation layer additionally implements patch-forward,
+player/match-group-safe splits; popularity baselines; Brier/log-loss/calibration
+and selective risk; predeclared target trials; IPS, self-normalized IPS, doubly
+robust OPE with support and clipping diagnostics; privacy-bounded recommendation
+events; and monitoring/rollback rules. See the
+[coverage manifest](docs/evaluation-coverage.json),
+[sample layer-separated report](docs/evaluation-sample-report.json), and
+[monitoring runbook](docs/monitoring-runbook.md).
 
 ## Patch workflow
 
@@ -127,10 +141,11 @@ The normal workflow is one command. Close Deadlock, then run:
 uv run deadlock-build-sync sync
 ```
 
-`sync` discovers the local Steam account, fetches every eligible hero, builds
-an ability-only kit profile with `gpt-5.6-luna`, synthesizes the final build
-narrative with `gpt-5.6-sol`, validates every artifact, backs up the cache, and
-installs the private builds. Reusable artifacts live under
+`sync` discovers the local Steam account, generates every eligible hero from one
+coherent snapshot, builds an ability-only kit profile with `gpt-5.6-luna`, explains
+the closed policy with `gpt-5.6-sol`, validates every artifact, backs up the cache,
+and installs the private builds. An all-hero run refuses installation if any pinned
+eligible hero lacks a complete policy. Reusable artifacts live under
 `$XDG_STATE_HOME/deadlock-build-sync/artifacts` (or
 `~/.local/state/deadlock-build-sync/artifacts`). Use `--hero NAME` for one hero,
 `--artifacts DIR` to select another artifact directory, or
@@ -140,23 +155,32 @@ bound with `--max-attempts N`.
 
 ### What is cached
 
-`sync` keeps three reviewable artifacts: the exact analytics context, the Luna
-kit profiles, and the final Sol narratives. Each hero is fingerprinted from the
-evidence that can affect its prose. On a later run, compatible kit profiles and
-narratives are reused, while changed or invalid entries are regenerated. This
-avoids paying for identical model work without allowing stale prose into a
-guide. `--force-narratives` bypasses this reuse.
+`sync` consumes five reviewable artifacts: the deterministic build evidence, exact
+strategy context, rich typed policy sidecar, kit profiles, and final explanations.
+Every artifact carries the source manifest or snapshot identity. A narrative is reusable only when its
+snapshot, policy, context, narrative basis, prompt, and model contract are exactly
+compatible. Changed or malformed entries regenerate; `--force-narratives` bypasses
+model-output reuse.
 
 This artifact cache is separate from Steam's
 `cached_hero_builds.kv3`, which is user-owned game data. The Steam file is never
 used as an AI cache: it is discovered only after generation, backed up, updated
 through a validated temporary file, and atomically replaced.
 
+When reviewed full-roster build evidence, context, policy sidecar, and narratives
+already exist in the artifact directory, `install-artifacts` installs that exact
+bundle without refetching mutable analytics or invoking a model. It reconstructs
+player-facing item statistics from the fingerprinted `build-evidence.json` and
+recomputes every file, snapshot, policy, projection, cohort, patch, and coverage
+fingerprint before entering the same guarded Steam backup and atomic-replacement
+boundary.
+
 The individual commands remain available for review and debugging:
 
 ```bash
-# 1. Fetch analytics and export the exact source context Codex may use
+# 1. Export the exact evidence context and rich policies Codex may explain
 uv run deadlock-build-sync export-context --all \
+  --build-evidence ~/.local/state/deadlock-build-sync/artifacts/build-evidence.json \
   --output generated/strategy-context.json
 
 # 2. Generate a reviewable, schema-constrained narrative artifact.
@@ -165,27 +189,30 @@ uv run python scripts/generate_narratives.py \
   --input generated/strategy-context.json \
   --output generated/narratives.json
 
-# 3. Review the artifact, then preview it against fresh live context.
-#    Preview and install use generated/narratives.json by default.
+# 3. Review strategy-context.json, policies.json, and narratives.json, then preview.
 uv run deadlock-build-sync preview --hero kelvin
 
 # 4. Install all private builds after closing Deadlock
 uv run deadlock-build-sync install --all
+
+# Or install the exact already-reviewed state artifact bundle without a refetch
+uv run deadlock-build-sync install-artifacts
 
 # Restore the most recent cache backup
 uv run deadlock-build-sync restore --latest
 ```
 
 Use `--narratives PATH` to select another reviewed artifact. A missing, stale,
-or incomplete narrative artifact stops preview or installation. Analytics-only
-guides require the explicit `--without-narratives` flag; installing them writes
-empty summary and tier-instruction fields.
+cross-mode, cross-policy, or incomplete artifact stops preview or installation.
+`--without-narratives` omits prose only; deterministic policy and Steam safety
+validation still apply.
 
 ## Rank cohorts
 
-Every analytics endpoint uses one validated rank range. The default is
-`phantom-i` through `eternus-vi`. Override either boundary with symbolic
-rank names:
+Every analytics endpoint uses one validated rank range. Following the current
+Ranked calibration reset, the default is `emissary-i` through `eternus-v`.
+Override either boundary with symbolic
+rank names only when the build-evidence artifact was exported for the same range:
 
 ```bash
 uv run deadlock-build-sync preview --all \
@@ -193,37 +220,40 @@ uv run deadlock-build-sync preview --all \
   --max-rank ascendant-vi
 ```
 
-Available tiers are `initiate`, `seeker`, `alchemist`, `arcanist`, `ritualist`,
-`emissary`, `archon`, `oracle`, `phantom`, `ascendant`, and `eternus`.
-Divisions accept `i`–`vi` or `1`–`6`. The selected range is recorded in preview
-output, exported context fingerprints, backup manifests, and in-game build
-descriptions.
+Current tiers are `initiate`, `seeker`, `acolyte`, `sentinel`, `mystic`,
+`ritualist`, `emissary`, `oracle`, `phantom`, `ascendant`, and `eternus`.
+Pre-rename aliases still parse when unambiguous, but numeric badge IDs are identity
+and labels come from the pinned rank asset. Divisions accept `i`–`vi` or `1`–`6`.
+The numeric range and label-map hash appear in the manifest, preview, backup, and
+in-game description.
 
-`export-context` produces a per-hero JSON object containing:
+`export-context` produces a per-hero closed evidence packet containing:
 
-- Full hero and ability descriptions plus labeled, nonzero ability properties.
-- The selected 16-step ability path, split into four quarters, with its complete
-  path raw outcome and sample size (not per-upgrade win rates).
-- Tier I–IV arrays of item objects with `item`, `slot` (`SPIRIT`, `VITALITY`,
-  or `WEAPON`), descriptions, timing windows, relative pick rate, raw win rate,
-  and match count.
-- Seven hero win-rate-by-duration buckets plus conservative early/mid/late
-  curve classification.
-- A full-source fingerprint plus a stable narrative-basis fingerprint.
+- Structured lore/role/playstyle, scaling, level information, complete ability and
+  item properties, component relationships, and category-investment breakpoints.
+- A legal ability timeline with earliest level, currency cost/balance, and
+  reached-state support for every projected action—without a `quarter` field.
+- True first-ownership adoption with eligible player-match denominators, raw event
+  counts kept separately, observed acquisition time/net-worth distributions, and
+  descriptive adopter outcome rates.
+- Separate lane and whole-team matchup rows, an ending-duration estimand, the typed
+  policy graph, the compact projection contract, and interpretation constraints.
+- Layered mechanics, analytics, policy, narrative, projection, and whole-document
+  fingerprints bound to the complete source manifest.
 
-Only heroes with eight reliable items in every tier, all four ability assets, a
-reliable complete 16-step ability path, and all seven duration buckets are
-exported. `--all` reports and skips incomplete heroes; selecting one explicitly
-returns an error instead of producing a guide with unsupported tactical timing.
+Every hero requires a supported, mechanically legal eight-item core at or below its
+median final net worth, ten adoption-ranked items in each price tier, complete current
+mechanics, a complete ability projection, a duration estimate or explicit duration
+abstention, and policy validation. Core items may intentionally reappear in their
+native tier row. Every omission receives a structured exclusion; all-hero installation
+fails on any exclusion rather than silently shipping a partial roster.
 
 The Codex response is constrained by
 [`schemas/narrative-response.schema.json`](schemas/narrative-response.schema.json).
-Installation rejects an artifact if the live patch or any selected hero's
-ranked items, purchase windows, mechanics, descriptions, ability path, or broad
-duration classification has changed. Raw match totals and rates may advance
-within the same patch without invalidating otherwise identical tactical prose.
-Regenerate the context and narratives when the narrative basis changes instead
-of silently applying stale strategy text.
+Installation rejects an artifact when patch identity, snapshot, client version,
+match mode, rank labels, policy, context, narrative basis, prompt, hero coverage,
+or projection categories differ. Advancing raw evidence creates a new context; it
+does not silently reuse prose merely because a patch title stayed the same.
 
 The CLI discovers the Deadlock Steam Cloud cache automatically when there is a
 single local Steam account. Use `--account-id` or `--cache-path` to disambiguate
@@ -236,11 +266,13 @@ multiple accounts.
 - Never invokes Codex while reading or changing Steam data.
 - Recomputes exported source and per-hero fingerprints before invoking Codex,
   so a context edited after export is rejected.
-- Rejects stale or incomplete Codex narrative artifacts.
+- Rejects stale, cross-cohort, incomplete, or policy-changing Codex artifacts.
 - Creates a timestamped backup of `cached_hero_builds.kv3` and
   `remotecache.vdf`.
-- Writes a temporary KV3 file, decodes and validates it, and then performs an
-  atomic replacement.
+- Writes a temporary KV3 file, decodes and validates it, atomically replaces the
+  cache, fsyncs the file and directory, and decodes the installed bytes again.
+- Fingerprints every out-of-scope KV3 section before and after mutation; a mismatch
+  restores the backup or reports the exact backup path if restoration also fails.
 - Preserves favorites, selected builds, saved builds, and unrelated private
   builds.
 - Reruns update only entries carrying the `[deadlock-build-sync:v1]` marker.

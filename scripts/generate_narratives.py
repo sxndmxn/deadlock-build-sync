@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import shutil
 import subprocess
@@ -17,229 +16,112 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+from deadlock_build_sync.artifacts import atomic_write_json
 from deadlock_build_sync.narratives import (
     DEFAULT_KIT_MODEL,
     DEFAULT_SYNTHESIS_MODEL,
+    NARRATIVE_PROMPT_VERSION,
+    NARRATIVE_SCHEMA_VERSION,
 )
-from deadlock_build_sync.purchase_guide import MAX_ITEMS_PER_TIER
 from deadlock_build_sync.strategy_context import (
     StrategyContextError,
     validate_strategy_context_document,
 )
 
-SCHEMA_VERSION = 2
-PROMPT_VERSION = 15
-REUSABLE_PROMPT_VERSIONS = frozenset({14, PROMPT_VERSION})
+SCHEMA_VERSION = NARRATIVE_SCHEMA_VERSION
+PROMPT_VERSION = NARRATIVE_PROMPT_VERSION
+REUSABLE_PROMPT_VERSIONS = frozenset({PROMPT_VERSION})
 KIT_SCHEMA_VERSION = 1
-KIT_PROMPT_VERSION = 1
-QUARTERS = ("I", "II", "III", "IV")
-COMPLETE_ABILITY_PATH_STEPS = 16
+KIT_PROMPT_VERSION = 3
 DEFAULT_GENERATION_ATTEMPTS = 3
-DECISION_CONDITION_PATTERN = re.compile(
+CONDITION_PATTERN = re.compile(
     r"\b(?:after|before|if|once|only|save|hold|until|when|while|unless|then)\b"
     r"|rather than|as soon as",
     re.IGNORECASE,
 )
-CHARGE_QUALIFICATION_PATTERN = re.compile(
-    r"\b(?:ability\s*charges?\b(?!\s+up\b)|charged abilities\b"
-    r"|allow(?:s|ed|ing)?\s+charges?\b)",
+REFERENCE_MENU_PATTERN = re.compile(
+    r"\b(?:adapt|menu|option|reference|situational)\w*\b", re.IGNORECASE
+)
+BUY_ALL_PATTERN = re.compile(
+    r"\b(?:buy|get|purchase|take)\s+(?:all|every)\b", re.IGNORECASE
+)
+CAUSAL_PATTERN = re.compile(
+    r"\b(?:causes?|guarantees?|adds? win rate|improves? win rate|"
+    r"increases? (?:your )?chance|item impact)\b",
     re.IGNORECASE,
 )
+ANALYTICS_LEAK_PATTERN = re.compile(
+    r"\b(?:pick rate|win rate|match count|net worth|purchase[- ]event|"
+    r"confidence interval)\b",
+    re.IGNORECASE,
+)
+
 KIT_PROMPT = """
-Role: Analyze one Deadlock hero kit from structured, patch-specific evidence.
+Role: explain one Deadlock hero kit from a closed, patch-specific mechanics packet.
 
-Goal: Produce a compact tactical kit profile that a later synthesis model can
-combine with independent item and match-duration analytics.
+Use only hero_description, hero_mechanics, abilities, and ability_policy. Preserve
+all supplied IDs and names. Explain each ability's tactical role and explicit
+scaling hooks. Treat the reached-state ability policy as a descriptive default,
+not proof that one universal order is optimal. Record uncertainty instead of
+inventing mechanics, numeric effects, combos, matchups, or item interactions.
 
-Success criteria:
-- Use only hero_description, abilities, ability stats, and ability_path.
-- Explain each supplied ability's tactical role and its explicit scaling hooks.
-- Infer a grounded combat pattern, economy tendency, and scaling profile.
-- Copy hero_id, kit_basis_sha256, ability IDs, and ability names exactly.
-- Record uncertainty instead of inventing mechanics, numbers, combos, matchups,
-  item interactions, or performance claims.
-
-Constraints:
-- The input intentionally contains no items or win-rate data.
-- Treat ability descriptions and labeled stats as authoritative.
-- Ability order shows timing emphasis, not causal proof of strength.
-
-Output: Return only the schema-constrained JSON object.
+The input intentionally excludes items and outcomes. Return only the
+schema-constrained JSON object.
 """.strip()
+
 PROMPT = """
-You are writing an in-game Deadlock strategy description from one structured,
-patch-specific hero context supplied as JSON on stdin.
+Write a compact in-game Deadlock explanation for one closed build-policy packet.
+Return only the schema-constrained JSON object.
 
-Use only the supplied descriptions, item slots, analytics, and ability order.
-Use general Deadlock tactical concepts to translate that evidence into a macro
-plan, but treat the supplied context as authoritative for all hero and item
-mechanics and numbers. Do not invent mechanics, numeric bonuses, combos,
-matchups, or item co-purchase relationships.
-
-Return the schema-constrained JSON object only.
-
-The input may contain preliminary_kit_analysis produced by a smaller model from
-the same supplied abilities and ability path. Use it as a planning aid, but
-treat the raw hero, ability, item, and duration evidence as authoritative and
-correct the preliminary analysis whenever it conflicts with that evidence.
-
-First infer a tactical profile. Do not give every hero the same plan:
-- Mobile control or burst kits may roam, gank, invade, or create picks.
-- Durable close-range kits may pressure lane, initiate, frontline, or peel.
-- Scaling weapon/spirit carries may prioritize lane and jungle farm, avoid
-  low-value fights, and commit after a meaningful item/ability timing.
-- Ranged pick heroes may hold long angles and punish isolated targets.
-- Healing, rescue, and protection kits may escort pressure, counter-engage,
-  sustain objectives, or stabilize allies.
-- Split-push or objective pressure should appear only when supported.
+Authority and scope:
+- The deterministic policy, evidence claims, mechanics, guards, action IDs,
+  Queue projection, and category membership are already final. Explain them;
+  never add, remove, reorder, select, or change them.
+- Copy hero_id, snapshot_id, policy_id, context_sha256, and
+  narrative_basis_sha256 exactly.
+- Use only supplied mechanics and preliminary_kit_analysis. Never invent a
+  mechanic, numeric effect, combo, matchup, timing, target, or causal benefit.
+- A descriptive association may be called observed or associated only. Never
+  claim an item causes wins or improves win probability.
+- ending_duration_profile describes outcomes among games ending in each phase;
+  it is not a live power curve and is not permission to stall a winnable game.
+  When both phase labels are UNAVAILABLE, state that the cohort is unsupported
+  and make no phase-strength claim.
+- Price tiers are price tiers. They are not early/mid/late phases and are never
+  paired with equal quarters of the ability order.
 
 tactical_profile:
-- primary_role: a short, specific role such as `mobile control ganker`,
-  `close-range initiator`, or `scaling backline carry`.
-- fight_role: how this hero creates value in fights.
-- economy_plan: whether and when this build should lane, jungle-farm, roam,
-  gank, invade, pressure objectives, group, or avoid low-value fights.
-- power_spikes: identify the single strongest spike and at most one genuinely
-  distinct secondary spike. Each entry contains:
-  - quarter: `I`, `II`, `III`, or `IV`.
-  - trigger: the exact named core item or active plus the specific supplied
-    ability unlock/final upgrade that align at this stage.
-  - tactical_unlock: the new play this combination permits, such as starting
-    ganks, surviving a committed dive, forcing an objective, or controlling a
-    full teamfight. In one concise, complete sentence, state the selected item's
-    documented contribution and the selected ability milestone's documented
-    contribution before the resulting permission; neither component may be
-    decorative or supported only by a different item or ability.
-- Compare all four quarters before choosing. A spike must change what the hero
-  can safely force. A completed active, expensive item, ultimate unlock, or
-  final ability upgrade is not automatically a spike. Do not label ordinary
-  damage, durability, or range growth as one. Include a secondary spike only
-  when it opens a different macro or fight permission from the primary spike.
-  Do not select a spectacular low-sample result over a stable high-volume core
-  timing. Never infer causation from raw win rate.
-- Make each trigger selection evidence-based. Choose exactly one primary item
-  from that quarter's first three and one same-quarter ability milestone. Start
-  with the lowest numeric rank_by_pick_rate as the high-volume default, then
-  compare the first three items' raw outcomes and match counts, the selected
-  complete ability path's outcome and volume, and the hero's broad duration
-  curve. A higher item outcome is corroborating only when its sample is credible
-  and its documented mechanics interact at that milestone; never select by raw
-  win rate alone. A Tier III core can be a stronger supported breakpoint than a
-  Tier IV core, so do not assume later tiers are monotonically stronger. Item
-  purchase windows are net-worth ranges, not clock time, and the supplied path
-  has no per-milestone outcome: do not invent a time mapping or attribute the
-  path's outcome to one ability level. Put other supporting items or abilities
-  in tactical_unlock instead of changing the trigger.
-- When an item's supplied mechanics apply only to charged, imbued, or otherwise
-  qualified abilities, pair it only with an ability whose supplied properties
-  show that qualification. Two unrelated improvements in the same quarter are
-  not an item-and-ability spike.
-- duration_plan:
-  - shape: copy duration_curve.shape exactly.
-  - strongest_phase and weakest_phase: copy the corresponding supplied phase
-    labels exactly.
-  - macro_plan: explain whether the hero should accelerate and close, convert a
-    midgame peak, scale patiently, or remain flexible.
-  - late_build_response: `REINFORCE`, `COMPENSATE`, or `MIXED`.
-  - response_reason: compare Tier III/IV core item mechanics with the natural
-    duration curve. `REINFORCE` means the late items amplify a phase where the
-    hero is already strong. `COMPENSATE` means survivability, access, control,
-    reach, cleanse, or sustain directly covers a declining phase. Use `MIXED`
-    when the package does both or merely preserves the hero's original threat.
-- Duration results are observational and outcome-conditioned. Use broad,
-  high-volume phase direction and the supplied tracked-game shares, not one
-  noisy bucket. The 50m+ bucket is a rare tail: never let it define the curve
-  alone, and mention it only when the adjacent 45–50m bucket supports the same
-  direction. Never claim that duration or an item causes wins.
-- Never tell a late-scaling hero to intentionally stall a winnable game. The
-  supplied population shows that 45m+ is uncommon. Late scaling means the hero
-  retains or gains relative leverage if the match naturally runs long; still
-  convert clean picks, objectives, and ending opportunities at earlier spikes.
-- This profile is review metadata and will not be copied into an item tier.
+- Give a hero-specific role, fight role, and economy plan grounded in the kit.
+- Copy the ending-duration estimand and strongest/weakest phase labels exactly.
+  Explain a conservative conversion plan without exposing rates or counts, or
+  acknowledge the explicit unavailable state without inventing a phase.
 
 build_summary:
-- 80–700 characters of concise plain text.
-- Aim for 200–400 characters and finish with a complete sentence.
-- Explain what the build revolves around, the hero's fight loop, how the
-  ability descriptions interact with the leading item descriptions, and the
-  max-order emphasis visible in the path.
-- Name two to four genuinely build-defining items when their tactical purpose
-  helps explain the resulting playstyle. Do not turn the summary into a list,
-  reproduce item descriptions, enumerate stat lines, or mention analytics.
-- State the hero's strongest tracked match-duration phase and whether the player
-  should close before a decline, convert a midgame peak, or scale toward late
-  fights. Do not include percentages or match counts.
-- For a late-scaling hero, phrase the plan as retaining strength if the match
-  runs late, never as a reason to delay an available close.
+- In 80–700 plain-text characters, describe the invariant role, eight-item CORE
+  path, and the purpose of the four tier reference menus. Do not dump stats or
+  analytics language.
 
-quarters I–IV:
-- 60–600 characters each, plain text, no Markdown bullets.
-- Aim for 180–350 characters and finish with a complete sentence.
-- Treat I/II/III/IV as establish/accelerate/pressure/close.
-- Use that quarter's corresponding four ability-order steps as context.
-- Name at least one ability from those four steps in every quarter.
-- Never name an ability before its first `UNLOCK` step. Once unlocked, an
-  earlier-quarter ability may remain part of later instructions.
-- Begin each string with `TIER I:`, `TIER II:`, `TIER III:`, or `TIER IV:`.
-- For every quarter declared in tactical_profile.power_spikes, immediately
-  follow the tier prefix with `POWER SPIKE —`, state the item-and-ability
-  trigger, and explain the newly permitted play. Do not call every tier a
-  power spike.
-- In TIER III, connect the pressure plan to the hero's duration curve: force
-  conversion if strength is already peaking, or preserve economy if the hero
-  is still scaling. For `LATE_SCALING`, explicitly use an economy term such as
-  `farm`, `economy`, or `preserve`; an ability's Spirit scaling does not satisfy
-  this strategic requirement.
-- In TIER IV, include `CURVE RESPONSE — REINFORCE`, `CURVE RESPONSE —
-  COMPENSATE`, or `CURVE RESPONSE — MIXED` exactly as selected in
-  tactical_profile.duration_plan. Explain how the named late items either
-  amplify the hero's natural strength or cover a late weakness, and give the
-  resulting close-out instructions.
-- Give only concrete instructions for how to play the hero in that stage:
-  positioning, engage pattern, ability sequencing, targets, resets, teamfight
-  role, and when to commit or disengage.
-- Every tier, including Tier IV, must state an explicit decision condition such
-  as `when`, `after`, `if`, or `until` for committing, resetting, or closing.
-  A sequence of commands without a condition is incomplete tactical advice.
-- Name one to three items from the corresponding tier and explain why they
-  change a tactical decision, power spike, target choice, ability sequence, or
-  commit threshold. At least one must come from that tier's first three items.
-  Do not merely tell the player to buy it or restate its description.
-- If an active item appears among that tier's first three items, name it and
-  give an explicit instruction for when to activate it, whom to target, where
-  it fits before or after an ability, or which defensive/offensive moment to
-  save it for. Never describe an active as a passive effect.
-- You may refer to an earlier-tier item when it remains central to the current
-  fight loop. Mention a lower-ranked active only as a situational alternative
-  when its supplied mechanics clearly support the instruction.
-- Each tier must choose a clear macro priority appropriate to this hero:
-  pressure lane, farm lane/jungle, roam, gank, invade, look for a pick, group,
-  force an objective, initiate, counter-engage, peel, split pressure, or reset.
-  Do not force farming or ganking onto a hero whose evidence does not support it.
-- Make the stage priority repeatable and explicit. Unless the supplied kit and
-  build clearly require a different plan, anchor Tier I in lane/economy, Tier II
-  in coordinated rotation and grouping, Tier III in objective pressure or
-  conversion, and Tier IV in closing or ending. Add hero-specific tactics around
-  that anchor instead of silently swapping the macro goal between equivalent
-  alternatives.
-- Use item purchase windows, path progression, pick rate, raw win rate, and
-  match count silently to judge when the build is establishing, waiting for a
-  power spike, or ready to pressure. Favor high-volume signals over spectacular
-  low-sample win rates, and never claim an item causes wins.
-- Use duration_curve.overall only as a silent baseline for the supplied early,
-  mid, and late windows; never expose its raw rate in player-facing prose.
-- Never mention an item slot, stat line, pick rate, win rate, match count,
-  net-worth window, or the fact that context came from analytics.
-- Item descriptions and stats are reasoning context. Translate them into
-  concise tactical purpose; never copy them wholesale or dump their numbers.
-- Make connections only where the supplied descriptions support them.
+action_explanations:
+- Return every supplied explainable action exactly once, in supplied order.
+- Copy node_id and evidence_ref. The instruction must name that supplied action.
+- Explain only the supplied annotation/mechanics and stay within the claim's
+  language ceiling. Conditional actions must retain their trigger, replacement,
+  execution, and failure condition.
 
-Copy hero_id, context_sha256, and narrative_basis_sha256 exactly from the input.
+category_summaries:
+- Return every supplied projection category exactly once, in supplied order.
+- Copy the category name and mention only items in that category.
+- CORE ITEMS is the automatic Queue. TIER 1–4 are optional reference menus:
+  describe candidates conservatively, say to choose situationally, and never
+  imply buying all options or claim adoption proves a counter/trigger.
+- For any other optional policy branch, retain its supplied observable condition
+  and exact replacement. Never invent an unsupplied condition.
+- Finish every player-facing field with a complete sentence. No Markdown lists.
 """.strip()
 
 
 class GenerationError(RuntimeError):
-    pass
+    """Raised when model generation or deterministic admission fails."""
 
 
 @dataclass(frozen=True)
@@ -271,19 +153,6 @@ def _context_text(value: Any) -> str:
     return ""
 
 
-def _mentions_upgrade(text: str, upgrade: str) -> bool:
-    if upgrade == "UNLOCK":
-        return re.search(r"\bunlock\w*\b", text, re.IGNORECASE) is not None
-    return (
-        re.search(
-            rf"(?<!\w){re.escape(upgrade)}(?!\w)",
-            text,
-            re.IGNORECASE,
-        )
-        is not None
-    )
-
-
 def _is_sha256(value: Any) -> bool:
     return isinstance(value, str) and re.fullmatch(r"[a-f0-9]{64}", value) is not None
 
@@ -296,13 +165,10 @@ def bind_response_identity(
     """Bind invocation-owned identity fields before semantic validation.
 
     Returns:
-        A response copy containing the exact source identity values.
+        A shallow response copy with source-owned identities restored.
 
     """
-    return {
-        **response,
-        **{field: source.get(field) for field in fields},
-    }
+    return {**response, **{field: source.get(field) for field in fields}}
 
 
 def generate_validated_response(
@@ -313,11 +179,11 @@ def generate_validated_response(
     """Generate and validate one response with bounded retries.
 
     Returns:
-        The first response that satisfies the production validator.
+        The first model response admitted by the deterministic validator.
 
     Raises:
-        GenerationError: If every generation or validation attempt fails.
-        ValueError: If the configured attempt count is less than one.
+        ValueError: If no generation attempt is permitted.
+        GenerationError: If every attempt fails generation or validation.
 
     """
     if stage.max_attempts < 1:
@@ -344,8 +210,7 @@ def generate_validated_response(
             last_error = error
             if attempt < stage.max_attempts:
                 print(
-                    f"retry {stage.label} "
-                    f"({attempt + 1}/{stage.max_attempts}): {error}",
+                    f"retry {stage.label} ({attempt + 1}/{stage.max_attempts}): {error}",
                     file=sys.stderr,
                 )
     raise GenerationError(
@@ -371,36 +236,46 @@ def normalize_narrative_response(response: dict[str, Any]) -> dict[str, Any]:
     """Normalize presentation-only sentence endings before strict validation.
 
     Returns:
-        A response copy with complete quarter and tactical-unlock sentences.
+        A response copy with complete player-facing sentences.
 
     """
     normalized = {**response}
-    quarters = response.get("quarters")
-    if isinstance(quarters, dict):
-        normalized["quarters"] = {
-            key: _finish_sentence(value) for key, value in quarters.items()
-        }
-    tactical_profile = response.get("tactical_profile")
-    if isinstance(tactical_profile, dict):
-        normalized_profile = {**tactical_profile}
-        power_spikes = tactical_profile.get("power_spikes")
-        if isinstance(power_spikes, list):
-            normalized_profile["power_spikes"] = [
-                {
-                    **spike,
-                    "tactical_unlock": _finish_sentence(spike.get("tactical_unlock")),
-                }
-                if isinstance(spike, dict)
-                else spike
-                for spike in power_spikes
+    for field in ("build_summary",):
+        if field in normalized:
+            normalized[field] = _finish_sentence(normalized[field])
+    tactical = response.get("tactical_profile")
+    if isinstance(tactical, dict):
+        normalized_tactical = {**tactical}
+        for field in ("fight_role", "economy_plan"):
+            if field in normalized_tactical:
+                normalized_tactical[field] = _finish_sentence(
+                    normalized_tactical[field]
+                )
+        duration = tactical.get("ending_duration_interpretation")
+        if isinstance(duration, dict):
+            normalized_tactical["ending_duration_interpretation"] = {
+                **duration,
+                "plan": _finish_sentence(duration.get("plan")),
+            }
+        normalized["tactical_profile"] = normalized_tactical
+    for field, text_field in (
+        ("action_explanations", "instruction"),
+        ("category_summaries", "summary"),
+    ):
+        rows = response.get(field)
+        if isinstance(rows, list):
+            normalized[field] = [
+                {**row, text_field: _finish_sentence(row.get(text_field))}
+                if isinstance(row, dict)
+                else row
+                for row in rows
             ]
-        normalized["tactical_profile"] = normalized_profile
     return normalized
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Generate reviewed Deadlock build narratives with Codex."
+        description="Generate reviewed Deadlock build explanations with Codex."
     )
     parser.add_argument("--input", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
@@ -440,10 +315,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--max-attempts",
         type=positive_int,
         default=DEFAULT_GENERATION_ATTEMPTS,
-        help=(
-            "generation/validation attempts per model stage "
-            f"(default: {DEFAULT_GENERATION_ATTEMPTS})"
-        ),
+        help=f"generation attempts per stage (default: {DEFAULT_GENERATION_ATTEMPTS})",
     )
     parser.add_argument("--force", action="store_true")
     return parser.parse_args(argv)
@@ -477,11 +349,15 @@ def _selected_heroes(
         if str(hero.get("hero_id")) in normalized
         or str(hero.get("hero") or "").casefold().replace(" ", "") in normalized
     ]
-    missing = (
-        normalized
-        - {str(hero.get("hero_id")) for hero in selected}
-        - {str(hero.get("hero") or "").casefold().replace(" ", "") for hero in selected}
-    )
+    matched = {
+        value
+        for hero in selected
+        for value in (
+            str(hero.get("hero_id")),
+            str(hero.get("hero") or "").casefold().replace(" ", ""),
+        )
+    }
+    missing = normalized - matched
     if missing:
         raise GenerationError(
             f"hero selector(s) not found: {', '.join(sorted(missing))}"
@@ -489,67 +365,178 @@ def _selected_heroes(
     return selected
 
 
+def _abilities(hero: dict[str, Any]) -> list[dict[str, Any]]:
+    mechanics = hero.get("hero_mechanics")
+    nested = mechanics.get("abilities") if isinstance(mechanics, dict) else None
+    abilities = nested if isinstance(nested, list) else hero.get("abilities")
+    return [ability for ability in abilities or [] if isinstance(ability, dict)]
+
+
+def _ability_identity(ability: dict[str, Any]) -> tuple[int | None, str]:
+    raw_id = ability.get("id", ability.get("ability_id"))
+    raw_name = ability.get("name", ability.get("ability"))
+    return (int(raw_id) if isinstance(raw_id, int) else None, str(raw_name or ""))
+
+
 def validate_hero_context(hero: dict[str, Any]) -> None:
-    """Reject a hero context that cannot support the production prompt.
+    """Reject packets that cannot support a closed-policy explanation.
 
     Raises:
-        GenerationError: If required ability, item, or duration context is absent.
+        GenerationError: If identity, mechanics, policy, or projection is incomplete.
 
     """
-    hero_name = str(hero.get("hero") or hero.get("hero_id") or "unknown")
-    abilities = hero.get("abilities")
-    if not isinstance(abilities, list) or len(abilities) != 4:
-        raise GenerationError(f"strategy context omitted abilities for {hero_name}")
-
-    ability_path = hero.get("ability_path")
-    steps = ability_path.get("steps") if isinstance(ability_path, dict) else None
-    if not isinstance(steps, list) or len(steps) != COMPLETE_ABILITY_PATH_STEPS:
-        raise GenerationError(
-            f"strategy context omitted a complete ability path for {hero_name}; "
-            "run export-context again"
-        )
-
-    duration_curve = hero.get("duration_curve")
-    if not isinstance(duration_curve, dict):
-        raise GenerationError(
-            f"strategy context omitted a complete duration curve for {hero_name}; "
-            "run export-context again"
-        )
-
-    tiers = hero.get("tiers")
-    if not isinstance(tiers, dict) or any(
-        not isinstance(tiers.get(quarter), list)
-        or len(tiers[quarter]) != MAX_ITEMS_PER_TIER
-        for quarter in QUARTERS
+    name = str(hero.get("hero") or hero.get("hero_id") or "unknown")
+    identity_fields = (
+        "snapshot_id",
+        "policy_id",
+        "context_sha256",
+        "kit_basis_sha256",
+        "narrative_basis_sha256",
+    )
+    if not isinstance(hero.get("hero_id"), int) or any(
+        not _is_sha256(hero.get(field)) for field in identity_fields
+    ):
+        raise GenerationError(f"strategy context omitted exact identity for {name}")
+    abilities = _abilities(hero)
+    if len(abilities) != 4 or any(
+        _ability_identity(ability)[0] is None for ability in abilities
     ):
         raise GenerationError(
-            f"strategy context omitted complete item tiers for {hero_name}; "
-            "run export-context again"
+            f"strategy context omitted four current abilities for {name}"
+        )
+    ability_policy = hero.get("ability_policy")
+    steps = ability_policy.get("steps") if isinstance(ability_policy, dict) else None
+    if (
+        not isinstance(steps, list)
+        or not steps
+        or any(
+            not isinstance(step, dict)
+            or not isinstance(step.get("earliest_legal_level"), int)
+            or "quarter" in step
+            for step in steps
+        )
+    ):
+        raise GenerationError(
+            f"strategy context omitted a legal ability timeline for {name}"
+        )
+    ending = hero.get("ending_duration_profile")
+    if (
+        not isinstance(ending, dict)
+        or ending.get("estimand") != "ending_duration_profile"
+    ):
+        raise GenerationError(
+            f"strategy context omitted the ending-duration estimand for {name}"
+        )
+    policy = hero.get("policy")
+    actions = hero.get("explainable_actions")
+    projection = hero.get("projection")
+    categories = projection.get("categories") if isinstance(projection, dict) else None
+    if not isinstance(policy, dict) or policy.get("policy_id") != hero.get("policy_id"):
+        raise GenerationError(f"strategy context omitted the policy for {name}")
+    if not isinstance(actions, list) or not actions:
+        raise GenerationError(f"strategy context omitted policy actions for {name}")
+    if not isinstance(categories, list) or not categories:
+        raise GenerationError(
+            f"strategy context omitted the Steam projection for {name}"
         )
 
 
 def kit_context(hero: dict[str, Any]) -> dict[str, Any]:
-    """Return the ability-only evidence made available to the kit model.
+    """Return only mechanics and legal ability evidence for the kit stage.
 
     Returns:
-        A structured context without item or duration analytics.
+        The ability-only packet supplied to the first model stage.
 
     """
-    ability_path = hero.get("ability_path")
     return {
         "hero_id": hero.get("hero_id"),
         "hero": hero.get("hero"),
         "hero_description": hero.get("hero_description"),
         "kit_basis_sha256": hero.get("kit_basis_sha256"),
-        "abilities": hero.get("abilities"),
-        "ability_path": (
-            {
-                "selection": ability_path.get("selection"),
-                "steps": ability_path.get("steps"),
-            }
-            if isinstance(ability_path, dict)
-            else None
-        ),
+        "hero_mechanics": hero.get("hero_mechanics"),
+        "abilities": _abilities(hero),
+        "ability_policy": hero.get("ability_policy"),
+    }
+
+
+def synthesis_context(
+    hero: dict[str, Any],
+    kit_profile: dict[str, Any],
+) -> dict[str, Any]:
+    """Return the smallest closed packet needed to explain the final policy.
+
+    Returns:
+        Identity, tactical evidence, selected-action mechanics, and projection semantics.
+
+    """
+    actions = hero.get("explainable_actions")
+    action_ids = (
+        {
+            action.get("action_id")
+            for action in actions
+            if isinstance(action, dict) and isinstance(action.get("action_id"), int)
+        }
+        if isinstance(actions, list)
+        else set()
+    )
+    selected_mechanics = []
+    tiers = hero.get("tiers")
+    if isinstance(tiers, dict):
+        for tier_items in tiers.values():
+            if not isinstance(tier_items, list):
+                continue
+            selected_mechanics.extend(
+                item
+                for item in tier_items
+                if isinstance(item, dict) and item.get("item_id") in action_ids
+            )
+    core = hero.get("core")
+    if isinstance(core, dict) and isinstance(core.get("items"), list):
+        selected_mechanics.extend(
+            item
+            for item in core["items"]
+            if isinstance(item, dict) and item.get("item_id") in action_ids
+        )
+    selected_mechanics = list(
+        {
+            int(item["item_id"]): item
+            for item in selected_mechanics
+            if isinstance(item.get("item_id"), int)
+        }.values()
+    )
+    policy = hero.get("policy")
+    policy_summary = None
+    if isinstance(policy, dict):
+        policy_summary = {
+            key: policy.get(key)
+            for key in (
+                "variant",
+                "invariant_kit_id",
+                "strategic_role",
+                "abstentions",
+            )
+        }
+    return {
+        key: hero.get(key)
+        for key in (
+            "hero_id",
+            "hero",
+            "snapshot_id",
+            "policy_id",
+            "context_sha256",
+            "narrative_basis_sha256",
+            "hero_description",
+            "ability_policy",
+            "ending_duration_profile",
+            "core",
+            "explainable_actions",
+            "projection",
+            "interpretation_constraints",
+        )
+    } | {
+        "policy_summary": policy_summary,
+        "selected_action_mechanics": selected_mechanics,
+        "preliminary_kit_analysis": kit_profile,
     }
 
 
@@ -557,21 +544,20 @@ def validate_kit_response(
     response: dict[str, Any],
     hero: dict[str, Any],
 ) -> dict[str, Any]:
-    """Validate and normalize one ability-only kit profile.
+    """Validate an ability-only profile without admitting invented identities.
 
     Returns:
-        The normalized profile with its prompt version.
+        A normalized, fingerprint-bound kit explanation.
 
     Raises:
-        GenerationError: If the profile changes or omits supplied kit evidence.
+        GenerationError: If identities or supplied ability evidence changed.
 
     """
-    hero_name = str(hero.get("hero") or hero.get("hero_id") or "unknown")
+    name = str(hero.get("hero") or hero.get("hero_id") or "unknown")
     if response.get("hero_id") != hero.get("hero_id"):
-        raise GenerationError(f"kit analysis changed hero_id for {hero_name}")
+        raise GenerationError(f"kit analysis changed hero_id for {name}")
     if response.get("kit_basis_sha256") != hero.get("kit_basis_sha256"):
-        raise GenerationError(f"kit analysis changed kit_basis_sha256 for {hero_name}")
-
+        raise GenerationError(f"kit analysis changed kit_basis_sha256 for {name}")
     text_fields = (
         "primary_role",
         "combat_pattern",
@@ -582,40 +568,31 @@ def validate_kit_response(
         not isinstance(response.get(field), str) or not response[field].strip()
         for field in text_fields
     ):
-        raise GenerationError(
-            f"kit analysis omitted its tactical profile for {hero_name}"
-        )
-
-    abilities = hero.get("abilities")
-    supplied = (
-        {
-            int(ability["ability_id"]): str(ability.get("ability") or "")
-            for ability in abilities
-            if isinstance(ability, dict) and isinstance(ability.get("ability_id"), int)
-        }
-        if isinstance(abilities, list)
-        else {}
-    )
-    ability_roles = response.get("ability_roles")
-    if not isinstance(ability_roles, list) or len(ability_roles) != len(supplied):
-        raise GenerationError(f"kit analysis omitted ability roles for {hero_name}")
+        raise GenerationError(f"kit analysis omitted its tactical profile for {name}")
+    supplied = {
+        ability_id: ability_name
+        for ability in _abilities(hero)
+        for ability_id, ability_name in (_ability_identity(ability),)
+        if ability_id is not None
+    }
+    roles = response.get("ability_roles")
+    if not isinstance(roles, list) or len(roles) != len(supplied):
+        raise GenerationError(f"kit analysis omitted ability roles for {name}")
     normalized_roles: list[dict[str, Any]] = []
     seen: set[int] = set()
-    for role in ability_roles:
+    for role in roles:
         if not isinstance(role, dict) or not isinstance(role.get("ability_id"), int):
             raise GenerationError(
-                f"kit analysis returned an invalid ability for {hero_name}"
+                f"kit analysis returned an invalid ability for {name}"
             )
         ability_id = int(role["ability_id"])
         if ability_id in seen or supplied.get(ability_id) != role.get("ability"):
-            raise GenerationError(f"kit analysis changed an ability for {hero_name}")
+            raise GenerationError(f"kit analysis changed an ability for {name}")
         if any(
             not isinstance(role.get(field), str) or not role[field].strip()
             for field in ("tactical_role", "scaling_hooks")
         ):
-            raise GenerationError(
-                f"kit analysis omitted ability evidence for {hero_name}"
-            )
+            raise GenerationError(f"kit analysis omitted ability evidence for {name}")
         seen.add(ability_id)
         normalized_roles.append({
             "ability_id": ability_id,
@@ -623,29 +600,23 @@ def validate_kit_response(
             "tactical_role": str(role["tactical_role"]).strip(),
             "scaling_hooks": str(role["scaling_hooks"]).strip(),
         })
-    if seen != set(supplied):
-        raise GenerationError(
-            f"kit analysis omitted a supplied ability for {hero_name}"
-        )
-
     synergies = response.get("synergies")
     uncertainties = response.get("uncertainties")
+    if seen != set(supplied):
+        raise GenerationError(f"kit analysis omitted a supplied ability for {name}")
     if (
         not isinstance(synergies, list)
         or not synergies
         or any(not isinstance(value, str) or not value.strip() for value in synergies)
-        or not isinstance(uncertainties, list)
-        or any(
-            not isinstance(value, str) or not value.strip() for value in uncertainties
-        )
     ):
-        raise GenerationError(
-            f"kit analysis omitted synergies or uncertainty for {hero_name}"
-        )
-
+        raise GenerationError(f"kit analysis omitted supplied synergies for {name}")
+    if not isinstance(uncertainties, list) or any(
+        not isinstance(value, str) or not value.strip() for value in uncertainties
+    ):
+        raise GenerationError(f"kit analysis omitted supplied evidence for {name}")
     return {
         "hero_id": int(response["hero_id"]),
-        "hero": hero_name,
+        "hero": name,
         "kit_basis_sha256": str(response["kit_basis_sha256"]),
         "prompt_version": KIT_PROMPT_VERSION,
         **{field: str(response[field]).strip() for field in text_fields},
@@ -658,8 +629,7 @@ def validate_kit_response(
 def _existing_entries(path: Path) -> dict[int, dict[str, Any]]:
     if not path.is_file():
         return {}
-    document = _load_object(path)
-    heroes = document.get("heroes")
+    heroes = _load_object(path).get("heroes")
     if not isinstance(heroes, list):
         return {}
     return {
@@ -673,12 +643,6 @@ def validated_reusable_kit_profiles(
     existing: dict[int, dict[str, Any]],
     source_heroes: dict[int, dict[str, Any]],
 ) -> dict[int, dict[str, Any]]:
-    """Return kit profiles whose ability-only basis is still current.
-
-    Returns:
-        Valid profiles keyed by hero ID.
-
-    """
     reusable: dict[int, dict[str, Any]] = {}
     for hero_id, entry in existing.items():
         hero = source_heroes.get(hero_id)
@@ -734,8 +698,7 @@ def run_codex(
             )
         except subprocess.TimeoutExpired as error:
             raise GenerationError(
-                f"Codex timed out generating {hero.get('hero')} after "
-                f"{timeout_seconds:g}s"
+                f"Codex timed out generating {hero.get('hero')} after {timeout_seconds:g}s"
             ) from error
     if result.returncode != 0:
         raise GenerationError(
@@ -752,415 +715,281 @@ def run_codex(
     return response
 
 
+def _validate_complete_sentence(value: Any, label: str, hero_name: str) -> str:
+    if (
+        not isinstance(value, str)
+        or not value.strip()
+        or value.rstrip()[-1] not in ".!?"
+    ):
+        raise GenerationError(f"Codex omitted a complete {label} for {hero_name}")
+    return value.strip()
+
+
+def _validate_prose_ceiling(text: str, hero_name: str) -> None:
+    if ANALYTICS_LEAK_PATTERN.search(text):
+        raise GenerationError(f"Codex leaked analytic-unit language for {hero_name}")
+    if CAUSAL_PATTERN.search(text):
+        raise GenerationError(f"Codex exceeded a non-causal claim for {hero_name}")
+
+
 def validate_response(
     response: dict[str, Any],
     hero: dict[str, Any],
     *,
     require_context_match: bool = True,
 ) -> dict[str, Any]:
-    if response.get("hero_id") != hero.get("hero_id"):
-        raise GenerationError(f"Codex changed hero_id for {hero.get('hero')}")
-    response_context_sha256 = response.get("context_sha256")
-    if not _is_sha256(response_context_sha256):
-        raise GenerationError(
-            f"Codex returned an invalid context_sha256 for {hero.get('hero')}"
-        )
-    if require_context_match and response_context_sha256 != hero.get("context_sha256"):
-        raise GenerationError(f"Codex changed context_sha256 for {hero.get('hero')}")
-    response_basis_sha256 = response.get("narrative_basis_sha256")
-    if not _is_sha256(response_basis_sha256):
-        raise GenerationError(
-            f"Codex returned an invalid narrative_basis_sha256 for {hero.get('hero')}"
-        )
-    if response_basis_sha256 != hero.get("narrative_basis_sha256"):
-        raise GenerationError(
-            f"Codex changed narrative_basis_sha256 for {hero.get('hero')}"
-        )
-    summary = response.get("build_summary")
-    tactical_profile = response.get("tactical_profile")
-    quarters = response.get("quarters")
-    if not isinstance(tactical_profile, dict) or any(
-        not isinstance(tactical_profile.get(field), str)
-        or not tactical_profile[field].strip()
-        for field in ("primary_role", "fight_role", "economy_plan")
-    ):
-        raise GenerationError(f"Codex omitted tactical_profile for {hero.get('hero')}")
-    power_spikes = tactical_profile.get("power_spikes")
-    if (
-        not isinstance(power_spikes, list)
-        or not 1 <= len(power_spikes) <= 2
-        or any(
-            not isinstance(spike, dict)
-            or spike.get("quarter") not in QUARTERS
-            or not isinstance(spike.get("trigger"), str)
-            or not spike["trigger"].strip()
-            or not isinstance(spike.get("tactical_unlock"), str)
-            or not spike["tactical_unlock"].strip()
-            for spike in power_spikes
-        )
-    ):
-        raise GenerationError(
-            f"Codex omitted valid power spikes for {hero.get('hero')}"
-        )
-    spike_quarters = [str(spike["quarter"]) for spike in power_spikes]
-    if len(spike_quarters) != len(set(spike_quarters)):
-        raise GenerationError(
-            f"Codex repeated a power-spike quarter for {hero.get('hero')}"
-        )
-    duration_curve = hero.get("duration_curve")
-    duration_plan = tactical_profile.get("duration_plan")
-    if (
-        not isinstance(duration_curve, dict)
-        or not isinstance(duration_plan, dict)
-        or any(
-            not isinstance(duration_plan.get(field), str)
-            or not duration_plan[field].strip()
-            for field in (
-                "shape",
-                "strongest_phase",
-                "weakest_phase",
-                "macro_plan",
-                "late_build_response",
-                "response_reason",
-            )
-        )
-    ):
-        raise GenerationError(f"Codex omitted a duration plan for {hero.get('hero')}")
-    if duration_plan["shape"] != duration_curve.get("shape"):
-        raise GenerationError(
-            f"Codex changed the duration-curve shape for {hero.get('hero')}"
-        )
-    if duration_plan["strongest_phase"] != duration_curve.get("strongest_phase"):
-        raise GenerationError(
-            f"Codex changed the strongest duration phase for {hero.get('hero')}"
-        )
-    if duration_plan["weakest_phase"] != duration_curve.get("weakest_phase"):
-        raise GenerationError(
-            f"Codex changed the weakest duration phase for {hero.get('hero')}"
-        )
-    if duration_plan["late_build_response"] not in {
-        "REINFORCE",
-        "COMPENSATE",
-        "MIXED",
-    }:
-        raise GenerationError(
-            f"Codex returned an invalid late-build response for {hero.get('hero')}"
-        )
-    if not isinstance(summary, str) or not summary.strip():
-        raise GenerationError(f"Codex omitted build_summary for {hero.get('hero')}")
-    if not isinstance(quarters, dict) or any(
-        not isinstance(quarters.get(quarter), str) or not quarters[quarter].strip()
-        for quarter in QUARTERS
-    ):
-        raise GenerationError(f"Codex omitted a quarter for {hero.get('hero')}")
-    for quarter in QUARTERS:
-        if not quarters[quarter].lstrip().startswith(f"TIER {quarter}:"):
-            raise GenerationError(
-                f"Codex did not label tier {quarter} for {hero.get('hero')}"
-            )
-        if quarters[quarter].rstrip()[-1] not in ".!?":
-            raise GenerationError(
-                f"Codex did not finish tier {quarter} for {hero.get('hero')}"
-            )
-        if DECISION_CONDITION_PATTERN.search(quarters[quarter]) is None:
-            raise GenerationError(
-                f"Codex omitted a decision condition in tier {quarter} for "
-                f"{hero.get('hero')}"
-            )
-        if quarter in spike_quarters and "POWER SPIKE" not in quarters[quarter]:
-            raise GenerationError(
-                f"Codex did not expose the tier {quarter} power spike for "
-                f"{hero.get('hero')}"
-            )
-    if (
-        duration_curve.get("shape") == "LATE_SCALING"
-        and re.search(
-            r"\b(?:economy|farm|patient|preserve)\w*\b",
-            quarters["III"],
-            re.IGNORECASE,
-        )
-        is None
-    ):
-        raise GenerationError(
-            f"Codex did not preserve economy in tier III for {hero.get('hero')}"
-        )
-    expected_curve_label = f"CURVE RESPONSE — {duration_plan['late_build_response']}"
-    if expected_curve_label not in quarters["IV"]:
-        raise GenerationError(
-            f"Codex did not expose the Tier IV curve response for {hero.get('hero')}"
-        )
+    """Admit prose only when it is an exact explanation of the closed policy.
 
-    tiers = hero.get("tiers")
-    if not isinstance(tiers, dict):
-        raise GenerationError(f"context omitted item tiers for {hero.get('hero')}")
-    active_verbs = re.compile(
-        r"\b(?:activate|cast|hold|press|save|target|trigger|use)\b",
-        re.IGNORECASE,
+    Returns:
+        A normalized explanation whose identifiers and action set are unchanged.
+
+    Raises:
+        GenerationError: If prose changes policy identity, semantics, or claim strength.
+
+    """
+    hero_name = str(hero.get("hero") or hero.get("hero_id") or "unknown")
+    identity_fields = (
+        "hero_id",
+        "snapshot_id",
+        "policy_id",
+        "narrative_basis_sha256",
     )
-    supplied_items = [
-        item
-        for items in tiers.values()
-        if isinstance(items, list)
-        for item in items
-        if isinstance(item, dict) and str(item.get("item") or "").strip()
-    ]
-    supplied_item_names = [str(item["item"]).strip() for item in supplied_items]
-    supplied_abilities = [
-        ability
-        for ability in hero.get("abilities") or []
-        if isinstance(ability, dict) and str(ability.get("ability") or "").strip()
-    ]
-    supplied_ability_names = [
-        str(ability["ability"]).strip() for ability in supplied_abilities
-    ]
-    ability_path = hero.get("ability_path")
-    ability_steps = (
-        ability_path.get("steps") if isinstance(ability_path, dict) else None
+    if require_context_match:
+        identity_fields = (*identity_fields, "context_sha256")
+    for field in identity_fields:
+        if response.get(field) != hero.get(field):
+            raise GenerationError(f"Codex changed {field} for {hero_name}")
+    tactical = response.get("tactical_profile")
+    if not isinstance(tactical, dict):
+        raise GenerationError(f"Codex omitted tactical_profile for {hero_name}")
+    primary_role = tactical.get("primary_role")
+    if not isinstance(primary_role, str) or not primary_role.strip():
+        raise GenerationError(f"Codex omitted primary_role for {hero_name}")
+    fight_role = _validate_complete_sentence(
+        tactical.get("fight_role"), "fight role", hero_name
     )
-    path_steps = (
-        [step for step in ability_steps if isinstance(step, dict)]
-        if isinstance(ability_steps, list)
-        else []
+    economy_plan = _validate_complete_sentence(
+        tactical.get("economy_plan"), "economy plan", hero_name
     )
-    first_ability_quarters: dict[str, int] = {}
-    for step in path_steps:
-        ability = step.get("ability")
-        quarter = step.get("quarter")
-        if not isinstance(ability, str) or not isinstance(quarter, int):
-            continue
-        first_ability_quarters[ability] = min(
-            quarter,
-            first_ability_quarters.get(ability, quarter),
+    ending = tactical.get("ending_duration_interpretation")
+    source_ending = hero.get("ending_duration_profile")
+    if not isinstance(ending, dict) or not isinstance(source_ending, dict):
+        raise GenerationError(
+            f"Codex omitted ending-duration interpretation for {hero_name}"
         )
-    for spike in power_spikes:
-        quarter = str(spike["quarter"])
-        trigger = str(spike["trigger"])
-        tactical_unlock = str(spike["tactical_unlock"])
-        if tactical_unlock.rstrip()[-1] not in ".!?":
+    for field in ("estimand", "strongest_phase", "weakest_phase"):
+        if ending.get(field) != source_ending.get(field):
             raise GenerationError(
-                f"Codex did not finish its tactical unlock for {hero.get('hero')}"
+                f"Codex changed ending-duration {field} for {hero_name}"
             )
-        mentioned_items = [
-            item for item in supplied_item_names if _mentions_item(trigger, item)
-        ]
-        core_items = tiers.get(quarter)
-        core_item_names = (
-            [
-                str(item.get("item") or "").strip()
-                for item in core_items[:3]
-                if isinstance(item, dict) and str(item.get("item") or "").strip()
-            ]
-            if isinstance(core_items, list)
-            else []
+    ending_plan = _validate_complete_sentence(
+        ending.get("plan"), "ending-duration plan", hero_name
+    )
+    summary = _validate_complete_sentence(
+        response.get("build_summary"), "build summary", hero_name
+    )
+
+    supplied_actions = hero.get("explainable_actions")
+    explanations = response.get("action_explanations")
+    if not isinstance(supplied_actions, list) or not isinstance(explanations, list):
+        raise GenerationError(f"Codex omitted policy actions for {hero_name}")
+    supplied_by_node = {
+        str(action.get("node_id")): action
+        for action in supplied_actions
+        if isinstance(action, dict)
+    }
+    response_nodes = [
+        str(explanation.get("node_id"))
+        for explanation in explanations
+        if isinstance(explanation, dict)
+    ]
+    if response_nodes != list(supplied_by_node) or len(response_nodes) != len(
+        explanations
+    ):
+        raise GenerationError(f"Codex changed the closed action set for {hero_name}")
+    normalized_actions = []
+    for explanation in explanations:
+        if not isinstance(explanation, dict):
+            raise GenerationError(f"Codex returned a malformed action for {hero_name}")
+        node_id = str(explanation["node_id"])
+        supplied = supplied_by_node[node_id]
+        if explanation.get("evidence_ref") != supplied.get("evidence_ref"):
+            raise GenerationError(f"Codex changed evidence for action {node_id}")
+        instruction = _validate_complete_sentence(
+            explanation.get("instruction"), f"instruction for {node_id}", hero_name
         )
-        if len(mentioned_items) != 1 or mentioned_items[0] not in core_item_names:
+        action_name = str(supplied.get("action") or "")
+        if action_name and not _mentions_item(instruction, action_name):
+            raise GenerationError(f"Codex omitted {action_name} from action {node_id}")
+        if supplied.get("annotation") and CONDITION_PATTERN.search(instruction) is None:
+            raise GenerationError(f"Codex removed the condition from action {node_id}")
+        _validate_prose_ceiling(instruction, hero_name)
+        normalized_actions.append({
+            "node_id": node_id,
+            "evidence_ref": str(explanation["evidence_ref"]),
+            "instruction": instruction,
+        })
+
+    projection = hero.get("projection")
+    categories = projection.get("categories") if isinstance(projection, dict) else None
+    summaries = response.get("category_summaries")
+    if not isinstance(categories, list) or not isinstance(summaries, list):
+        raise GenerationError(f"Codex omitted projection categories for {hero_name}")
+    supplied_names = [
+        str(category.get("name"))
+        for category in categories
+        if isinstance(category, dict)
+    ]
+    response_names = [
+        str(category.get("category"))
+        for category in summaries
+        if isinstance(category, dict)
+    ]
+    if response_names != supplied_names or len(response_names) != len(summaries):
+        raise GenerationError(f"Codex changed projection categories for {hero_name}")
+    all_items = {
+        str(item.get("item"))
+        for category in categories
+        if isinstance(category, dict)
+        for item in category.get("items") or []
+        if isinstance(item, dict) and item.get("item")
+    }
+    normalized_categories = []
+    for source_category, category in zip(categories, summaries, strict=True):
+        if not isinstance(source_category, dict) or not isinstance(category, dict):
             raise GenerationError(
-                "Codex power-spike trigger must name exactly one top-three "
-                f"same-tier item for {hero.get('hero')}"
+                f"Codex returned a malformed category for {hero_name}"
             )
-        mentioned_abilities = [
-            ability
-            for ability in supplied_ability_names
-            if _mentions_item(trigger, ability)
-        ]
-        if len(mentioned_abilities) != 1:
-            raise GenerationError(
-                "Codex power-spike trigger must name exactly one supplied ability "
-                f"for {hero.get('hero')}"
-            )
-        selected_item = next(
+        text = _validate_complete_sentence(
+            category.get("summary"),
+            f"category {source_category.get('name')}",
+            hero_name,
+        )
+        raw_category_items = source_category.get("items")
+        category_items = (
+            {
+                str(item.get("item"))
+                for item in raw_category_items
+                if isinstance(item, dict) and item.get("item")
+            }
+            if isinstance(raw_category_items, list)
+            else set()
+        )
+        category_annotations = " ".join(
+            str(action.get("annotation") or "")
+            for action in supplied_actions
+            if isinstance(action, dict)
+            and str(action.get("action") or "") in category_items
+        )
+        allowed_replacement_refs = {
             item
-            for item in supplied_items
-            if str(item["item"]).strip() == mentioned_items[0]
-        )
-        selected_ability = next(
-            ability
-            for ability in supplied_abilities
-            if str(ability["ability"]).strip() == mentioned_abilities[0]
-        )
-        if CHARGE_QUALIFICATION_PATTERN.search(_context_text(selected_item)) and not (
-            CHARGE_QUALIFICATION_PATTERN.search(_context_text(selected_ability))
-        ):
-            raise GenerationError(
-                "Codex paired a charge-specific item with an ability whose supplied "
-                f"mechanics do not show charges for {hero.get('hero')}"
-            )
-        if path_steps:
-            matching_steps = [
-                step
-                for step in path_steps
-                if step.get("quarter") == QUARTERS.index(quarter) + 1
-                and step.get("ability") == mentioned_abilities[0]
-                and isinstance(step.get("upgrade"), str)
-                and _mentions_upgrade(trigger, str(step["upgrade"]))
-            ]
-            if len(matching_steps) != 1:
-                raise GenerationError(
-                    "Codex power-spike trigger must name one real same-tier "
-                    f"ability milestone for {hero.get('hero')}"
-                )
-    for quarter in QUARTERS:
-        quarter_number = QUARTERS.index(quarter) + 1
-        quarter_abilities = {
-            str(step["ability"]).strip()
-            for step in path_steps
-            if step.get("quarter") == quarter_number
-            and isinstance(step.get("ability"), str)
-            and str(step["ability"]).strip()
+            for item in all_items - category_items
+            if _mentions_item(category_annotations, item)
         }
-        if quarter_abilities and not any(
-            _mentions_item(quarters[quarter], ability) for ability in quarter_abilities
+        mentioned = {item for item in all_items if _mentions_item(text, item)}
+        if not mentioned or not mentioned <= (
+            category_items | allowed_replacement_refs
         ):
             raise GenerationError(
-                f"Codex omitted a tier {quarter} ability-path ability for "
-                f"{hero.get('hero')}"
+                f"Codex used missing or cross-category items in {source_category.get('name')}"
             )
-        future_abilities = [
-            ability
-            for ability, first_quarter in first_ability_quarters.items()
-            if first_quarter > quarter_number
-            and _mentions_item(quarters[quarter], ability)
-        ]
-        if future_abilities:
-            raise GenerationError(
-                f"Codex mentioned future ability(s) in tier {quarter} for "
-                f"{hero.get('hero')}: {', '.join(sorted(future_abilities))}"
-            )
-
-        items = tiers.get(quarter)
-        if not isinstance(items, list):
-            raise GenerationError(
-                f"context omitted tier {quarter} items for {hero.get('hero')}"
-            )
-        core_items = [
-            item
-            for item in items[:3]
-            if isinstance(item, dict) and str(item.get("item") or "").strip()
-        ]
-        named_core_items = [
-            str(item["item"])
-            for item in core_items
-            if _mentions_item(quarters[quarter], str(item["item"]))
-        ]
-        if not named_core_items:
-            raise GenerationError(
-                f"Codex did not explain a core tier {quarter} item for "
-                f"{hero.get('hero')}"
-            )
-        active_core_items = [
-            str(item["item"]) for item in core_items if item.get("is_active_item")
-        ]
-        missing_actives = [
-            item
-            for item in active_core_items
-            if not _mentions_item(quarters[quarter], item)
-        ]
-        if missing_actives:
-            raise GenerationError(
-                f"Codex omitted core active item(s) in tier {quarter} for "
-                f"{hero.get('hero')}: {', '.join(missing_actives)}"
-            )
-        if active_core_items and active_verbs.search(quarters[quarter]) is None:
-            raise GenerationError(
-                f"Codex did not give an activation instruction in tier {quarter} "
-                f"for {hero.get('hero')}"
-            )
-
-    combined = " ".join([summary, *[quarters[quarter] for quarter in QUARTERS]])
-    normalized = combined.casefold()
-    banned_phrases = ("pick rate", "win rate", "match count", "net worth")
-    leaked_phrases = [phrase for phrase in banned_phrases if phrase in normalized]
-    if leaked_phrases:
-        raise GenerationError(
-            f"Codex leaked analytics language for {hero.get('hero')}: "
-            f"{', '.join(leaked_phrases)}"
-        )
+        if source_category.get("optional"):
+            category_name = str(source_category.get("name") or "")
+            if BUY_ALL_PATTERN.search(text) is not None:
+                raise GenerationError(
+                    f"Codex made {category_name} an automatic all-item purchase"
+                )
+            if category_name.startswith("TIER "):
+                if REFERENCE_MENU_PATTERN.search(text) is None:
+                    raise GenerationError(
+                        f"Codex removed reference-menu semantics for {category_name}"
+                    )
+            elif CONDITION_PATTERN.search(text) is None:
+                raise GenerationError(
+                    f"Codex removed the optional trigger for {category_name}"
+                )
+        _validate_prose_ceiling(text, hero_name)
+        normalized_categories.append({
+            "category": str(category.get("category")),
+            "summary": text,
+        })
+    combined = " ".join(
+        [summary, fight_role, economy_plan, ending_plan]
+        + [row["instruction"] for row in normalized_actions]
+        + [row["summary"] for row in normalized_categories]
+    )
+    _validate_prose_ceiling(combined, hero_name)
     return {
         "hero_id": int(response["hero_id"]),
-        "hero": str(hero.get("hero") or response["hero_id"]),
-        "context_sha256": response_context_sha256,
-        "narrative_basis_sha256": response_basis_sha256,
+        "hero": hero_name,
+        "snapshot_id": str(response["snapshot_id"]),
+        "policy_id": str(response["policy_id"]),
+        "context_sha256": str(hero.get("context_sha256")),
+        "narrative_basis_sha256": str(response["narrative_basis_sha256"]),
         "prompt_version": PROMPT_VERSION,
         "tactical_profile": {
-            **{
-                field: tactical_profile[field].strip()
-                for field in ("primary_role", "fight_role", "economy_plan")
-            },
-            "power_spikes": sorted(
-                [
-                    {
-                        "quarter": str(spike["quarter"]),
-                        "trigger": str(spike["trigger"]).strip(),
-                        "tactical_unlock": str(spike["tactical_unlock"]).strip(),
-                    }
-                    for spike in power_spikes
-                ],
-                key=lambda spike: QUARTERS.index(spike["quarter"]),
-            ),
-            "duration_plan": {
-                field: duration_plan[field].strip()
-                for field in (
-                    "shape",
-                    "strongest_phase",
-                    "weakest_phase",
-                    "macro_plan",
-                    "late_build_response",
-                    "response_reason",
-                )
+            "primary_role": primary_role.strip(),
+            "fight_role": fight_role,
+            "economy_plan": economy_plan,
+            "ending_duration_interpretation": {
+                "estimand": str(ending["estimand"]),
+                "strongest_phase": str(ending["strongest_phase"]),
+                "weakest_phase": str(ending["weakest_phase"]),
+                "plan": ending_plan,
             },
         },
-        "build_summary": summary.strip(),
-        "quarters": {quarter: quarters[quarter].strip() for quarter in QUARTERS},
+        "build_summary": summary,
+        "action_explanations": normalized_actions,
+        "category_summaries": normalized_categories,
     }
 
 
 def _write_artifact(path: Path, document: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            encoding="utf-8",
-            prefix=f".{path.name}.",
-            suffix=".tmp",
-            dir=path.parent,
-            delete=False,
-        ) as output:
-            json.dump(document, output, indent=2, ensure_ascii=False)
-            output.write("\n")
-            output.flush()
-            os.fsync(output.fileno())
-            temporary = Path(output.name)
-        temporary.replace(path)
-        temporary = None
-    finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
+    atomic_write_json(path, document)
 
 
 def _artifact_document(
     source: dict[str, Any],
     generated: dict[int, dict[str, Any]],
     *,
+    requested_hero_ids: set[int],
     kit_model: str | None,
     synthesis_model: str | None,
 ) -> dict[str, Any]:
+    manifest = source["snapshot_manifest"]
+    source_exclusions = source.get("exclusions")
+    exclusions = [
+        exclusion
+        for exclusion in source_exclusions or []
+        if isinstance(exclusion, dict)
+        and exclusion.get("hero_id") in requested_hero_ids
+    ]
     return {
         "schema_version": SCHEMA_VERSION,
         "generated_at": datetime.now(UTC).isoformat(),
-        "generator": "codex exec (kit analysis + synthesis)",
+        "generator": "codex exec (kit analysis + closed-policy explanation)",
         "prompt_version": PROMPT_VERSION,
-        "models": {
-            "kit_analysis": kit_model,
-            "synthesis": synthesis_model,
-        },
+        "models": {"kit_analysis": kit_model, "synthesis": synthesis_model},
         "source_context_sha256": source.get("source_context_sha256"),
+        "snapshot_id": manifest.get("snapshot_id"),
         "patch": source.get("patch"),
-        "heroes": [generated[key] for key in sorted(generated)],
+        "cohort": {
+            "client_version": manifest.get("client_version"),
+            "match_mode": manifest.get("match_mode"),
+            "game_mode": manifest.get("game_mode"),
+            "rank_range": manifest.get("rank_range"),
+            "as_of_timestamp": manifest.get("as_of_timestamp"),
+        },
+        "requested_hero_ids": sorted(requested_hero_ids),
+        "exclusions": exclusions,
+        "heroes": [
+            generated[key] for key in sorted(generated) if key in requested_hero_ids
+        ],
     }
 
 
 def _kit_artifact_document(
+    source: dict[str, Any],
     generated: dict[int, dict[str, Any]],
     *,
     model: str | None,
@@ -1171,6 +1000,8 @@ def _kit_artifact_document(
         "generator": "codex exec",
         "prompt_version": KIT_PROMPT_VERSION,
         "model": model,
+        "source_context_sha256": source.get("source_context_sha256"),
+        "snapshot_manifest": source.get("snapshot_manifest"),
         "heroes": [generated[key] for key in sorted(generated)],
     }
 
@@ -1179,23 +1010,29 @@ def validated_reusable_entries(
     existing: dict[int, dict[str, Any]],
     source_heroes: dict[int, dict[str, Any]],
 ) -> dict[int, dict[str, Any]]:
+    """Return only exact-policy, exact-snapshot narrative artifacts.
+
+    Returns:
+        Revalidated entries keyed by hero ID.
+
+    """
     reusable: dict[int, dict[str, Any]] = {}
+    identity_fields = (
+        "snapshot_id",
+        "policy_id",
+        "context_sha256",
+        "narrative_basis_sha256",
+    )
     for hero_id, entry in existing.items():
         hero = source_heroes.get(hero_id)
         if (
             hero is None
-            # Version 15 adds an ability-unlock timing rule. Version 14 output
-            # is safe to migrate only when it passes the stricter validator.
             or entry.get("prompt_version") not in REUSABLE_PROMPT_VERSIONS
-            or entry.get("narrative_basis_sha256") != hero.get("narrative_basis_sha256")
+            or any(entry.get(field) != hero.get(field) for field in identity_fields)
         ):
             continue
         try:
-            reusable[hero_id] = validate_response(
-                entry,
-                hero,
-                require_context_match=False,
-            )
+            reusable[hero_id] = validate_response(entry, hero)
         except GenerationError:
             continue
     return reusable
@@ -1211,53 +1048,42 @@ def main(argv: list[str] | None = None) -> int:
             raise GenerationError(str(error)) from error
         if not args.schema.is_file():
             raise GenerationError(f"response schema not found: {args.schema}")
-        kit_schema = getattr(
-            args,
-            "kit_schema",
-            Path(__file__).resolve().parents[1]
-            / "schemas/kit-analysis-response.schema.json",
-        )
+        kit_schema = args.kit_schema
         if not kit_schema.is_file():
             raise GenerationError(f"kit response schema not found: {kit_schema}")
-        kit_output = getattr(args, "kit_output", None) or args.output.with_name(
-            "kit-profiles.json"
-        )
-        kit_model = getattr(args, "kit_model", DEFAULT_KIT_MODEL)
-        synthesis_model = args.model or DEFAULT_SYNTHESIS_MODEL
+        kit_output = args.kit_output or args.output.with_name("kit-profiles.json")
         selected = _selected_heroes(source, args.hero)
         for hero in selected:
             validate_hero_context(hero)
-        existing = _existing_entries(args.output)
-        source_heroes: dict[int, dict[str, Any]] = {}
-        for hero in source["heroes"]:
-            if not isinstance(hero.get("hero_id"), int):
-                continue
-            try:
-                validate_hero_context(hero)
-            except GenerationError:
-                continue
-            source_heroes[int(hero["hero_id"])] = hero
-        generated = validated_reusable_entries(existing, source_heroes)
+        selected_ids = {int(hero["hero_id"]) for hero in selected}
+        if args.hero is None:
+            selected_ids.update(
+                int(exclusion["hero_id"])
+                for exclusion in source.get("exclusions") or []
+                if isinstance(exclusion, dict)
+                and isinstance(exclusion.get("hero_id"), int)
+            )
+        source_heroes = {int(hero["hero_id"]): hero for hero in selected}
+        generated = validated_reusable_entries(
+            _existing_entries(args.output),
+            source_heroes,
+        )
         kit_profiles = validated_reusable_kit_profiles(
             _existing_entries(kit_output),
             source_heroes,
         )
-        artifact_written = False
-        kit_artifact_written = False
         for index, hero in enumerate(selected, start=1):
             hero_id = int(hero["hero_id"])
-            reusable = generated.get(hero_id)
-            if not args.force and reusable is not None:
+            if not args.force and hero_id in generated:
                 print(
                     f"[{index}/{len(selected)}] reuse {hero.get('hero')}",
                     file=sys.stderr,
                 )
-                generated[hero_id] = reusable
                 continue
             kit_profile = kit_profiles.get(hero_id)
             if args.force or kit_profile is None:
                 print(
-                    f"[{index}/{len(selected)}] Kit ({kit_model}): {hero.get('hero')}",
+                    f"[{index}/{len(selected)}] Kit ({args.kit_model}): {hero.get('hero')}",
                     file=sys.stderr,
                 )
                 kit_profile = generate_validated_response(
@@ -1265,57 +1091,45 @@ def main(argv: list[str] | None = None) -> int:
                     hero,
                     GenerationStage(
                         schema_path=kit_schema,
-                        model=kit_model,
+                        model=args.kit_model,
                         prompt=KIT_PROMPT,
                         identity_fields=("hero_id", "kit_basis_sha256"),
                         validator=validate_kit_response,
                         label=f"kit analysis for {hero.get('hero')}",
-                        max_attempts=getattr(
-                            args,
-                            "max_attempts",
-                            DEFAULT_GENERATION_ATTEMPTS,
-                        ),
+                        max_attempts=args.max_attempts,
                     ),
                 )
                 kit_profiles[hero_id] = kit_profile
                 _write_artifact(
                     kit_output,
-                    _kit_artifact_document(kit_profiles, model=kit_model),
-                )
-                kit_artifact_written = True
-            else:
-                print(
-                    f"[{index}/{len(selected)}] reuse kit: {hero.get('hero')}",
-                    file=sys.stderr,
+                    _kit_artifact_document(
+                        source,
+                        kit_profiles,
+                        model=args.kit_model,
+                    ),
                 )
             print(
-                f"[{index}/{len(selected)}] Synthesis ({synthesis_model}): "
-                f"{hero.get('hero')}",
+                f"[{index}/{len(selected)}] Synthesis ({args.model}): {hero.get('hero')}",
                 file=sys.stderr,
             )
-            synthesis_context = {
-                **hero,
-                "preliminary_kit_analysis": kit_profile,
-            }
+            model_context = synthesis_context(hero, kit_profile)
             generated[hero_id] = generate_validated_response(
-                synthesis_context,
-                synthesis_context,
+                model_context,
+                hero,
                 GenerationStage(
                     schema_path=args.schema,
-                    model=synthesis_model,
+                    model=args.model,
                     prompt=PROMPT,
                     identity_fields=(
                         "hero_id",
+                        "snapshot_id",
+                        "policy_id",
                         "context_sha256",
                         "narrative_basis_sha256",
                     ),
                     validator=validate_response,
                     label=f"narrative synthesis for {hero.get('hero')}",
-                    max_attempts=getattr(
-                        args,
-                        "max_attempts",
-                        DEFAULT_GENERATION_ATTEMPTS,
-                    ),
+                    max_attempts=args.max_attempts,
                     normalizer=normalize_narrative_response,
                 ),
             )
@@ -1324,26 +1138,25 @@ def main(argv: list[str] | None = None) -> int:
                 _artifact_document(
                     source,
                     generated,
-                    kit_model=kit_model,
-                    synthesis_model=synthesis_model,
+                    requested_hero_ids=selected_ids,
+                    kit_model=args.kit_model,
+                    synthesis_model=args.model,
                 ),
             )
-            artifact_written = True
-        if kit_profiles and not kit_artifact_written:
-            _write_artifact(
-                kit_output,
-                _kit_artifact_document(kit_profiles, model=kit_model),
-            )
-        if not artifact_written:
-            _write_artifact(
-                args.output,
-                _artifact_document(
-                    source,
-                    generated,
-                    kit_model=kit_model,
-                    synthesis_model=synthesis_model,
-                ),
-            )
+        _write_artifact(
+            kit_output,
+            _kit_artifact_document(source, kit_profiles, model=args.kit_model),
+        )
+        _write_artifact(
+            args.output,
+            _artifact_document(
+                source,
+                generated,
+                requested_hero_ids=selected_ids,
+                kit_model=args.kit_model,
+                synthesis_model=args.model,
+            ),
+        )
         print(f"Wrote {len(generated)} narrative(s): {args.output}")
         return 0
     except GenerationError as error:

@@ -9,10 +9,22 @@ from .ranks import DEFAULT_RANK_RANGE, RankRange
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from .purchase_guide import PurchaseGuide
+    from .purchase_guide import GuideCategory, GuideItem, PurchaseGuide
 
 MANAGED_MARKER = "[deadlock-build-sync:v1]"
 CATEGORY_LABELS = {1: "I", 2: "II", 3: "III", 4: "IV"}
+DEFAULT_CATEGORY_SIZE = (760.0, 164.0)
+STANDARD_CATEGORY_SIZES = {
+    # Captured from a user-tuned Viscous build at 2560x1440. Source 2 flows
+    # categories in encoded order, so these dimensions produce a two-column
+    # CORE/TIER 1 row, a two-column TIER 2/TIER 3 row, and a full-width TIER 4.
+    # The CORE block has room for eleven item cards across two lines.
+    "CORE ITEMS": (567.0, 307.5),
+    "TIER 1": (465.75, 318.75),
+    "TIER 2": (562.5, 315.75),
+    "TIER 3": (465.75, 319.5),
+    "TIER 4": (1039.5, 152.25),
+}
 
 
 @dataclass(frozen=True)
@@ -174,23 +186,28 @@ def hero_build_metadata(result_blob: bytes) -> HeroBuildMetadata:
     )
 
 
-def _encode_mod(item_id: int, annotation: str) -> bytes:
-    return varint_field(1, item_id) + string_field(2, annotation)
+def _encode_mod(item: GuideItem) -> bytes:
+    return (
+        varint_field(1, item.item_id)
+        + string_field(2, item.annotation)
+        + varint_field(3, item.required_flex_slots)
+        + varint_field(4, item.sell_priority)
+        + varint_field(5, item.imbue_target_ability_id)
+    )
 
 
 def _encode_category(
-    name: str,
-    items: list[tuple[int, str]],
-    description: str,
+    category: GuideCategory,
 ) -> bytes:
+    width, height = STANDARD_CATEGORY_SIZES.get(category.name, DEFAULT_CATEGORY_SIZE)
     output = bytearray()
-    for item_id, annotation in items:
-        output += message_field(1, _encode_mod(item_id, annotation))
-    output += string_field(2, name)
-    output += string_field(3, description)
-    output += float_field(4, 760.0)
-    output += float_field(5, 164.0)
-    output += bool_field(6, value=False)
+    for item in category.items:
+        output += message_field(1, _encode_mod(item))
+    output += string_field(2, category.name)
+    output += string_field(3, category.description)
+    output += float_field(4, width)
+    output += float_field(5, height)
+    output += bool_field(6, value=category.optional)
     return bytes(output)
 
 
@@ -263,24 +280,21 @@ def encode_hero_build(
     rank_range: RankRange = DEFAULT_RANK_RANGE,
 ) -> bytes:
     details = bytearray()
-    for tier in range(1, 5):
-        items = [(item.item_id, item.annotation) for item in guide.tiers[tier]]
-        details += message_field(
-            1,
-            _encode_category(
-                CATEGORY_LABELS[tier],
-                items,
-                guide.tier_summaries.get(tier, ""),
-            ),
-        )
+    for category in guide.rendered_categories:
+        details += message_field(1, _encode_category(category))
     details += message_field(2, _encode_ability_order(guide))
 
     build_name = _build_name(persona, guide.hero_name, patch_title)
     description_lines = [
         MANAGED_MARKER,
-        "Private analytics guide generated from deadlock-api.com.",
+        "Private evidence-grounded guide generated from deadlock-api.com.",
         f"Patch: {patch_title} ({patch_published_at})",
-        f"Filters: Standard, {rank_range.label}.",
+        f"Client: {guide.client_version or 'UNRESOLVED'}.",
+        f"Matchmaking: {guide.match_mode.upper() if guide.match_mode else 'UNRESOLVED'}; ruleset: NORMAL.",
+        f"Ranks: {guide.rank_identity or rank_range.label}.",
+        f"Snapshot: {guide.snapshot_id or 'UNRESOLVED'}.",
+        f"Policy: {guide.policy_id or 'UNRESOLVED'}.",
+        "Claim limit: observational associations are not item effects or causation.",
     ]
     if guide.summary:
         description_lines.append(guide.summary)
@@ -290,7 +304,7 @@ def encode_hero_build(
             "(20+ matches)."
         )
     description_lines.append(
-        "Item picks are independently ranked options, not a mandate to buy every item."
+        "CORE ITEMS is the only Queue row; TIER 1–4 are optional reference menus."
     )
     description = "\n".join(description_lines)
 
@@ -335,7 +349,19 @@ def describe_guide(guide: PurchaseGuide) -> dict[str, Any]:
         "hero_id": guide.hero_id,
         "hero_name": guide.hero_name,
         "item_count": guide.item_count,
+        "snapshot_id": guide.snapshot_id,
+        "policy_id": guide.policy_id,
+        "client_version": guide.client_version,
+        "match_mode": guide.match_mode,
+        "rank_identity": guide.rank_identity,
         "summary": guide.summary,
+        "core": {
+            "item_count": len(guide.core_items),
+            "joint_player_matches": guide.core_joint_matches,
+            "joint_share": guide.core_joint_share,
+            "median_final_net_worth": guide.median_final_net_worth,
+            "target_cost": guide.core_target_cost,
+        },
         "ability_path": (
             {
                 "abilities": list(ability_path.ability_ids),
@@ -350,19 +376,29 @@ def describe_guide(guide: PurchaseGuide) -> dict[str, Any]:
             if ability_path is not None
             else None
         ),
-        "tiers": {
-            CATEGORY_LABELS[tier]: {
-                "summary": guide.tier_summaries.get(tier, ""),
+        "categories": [
+            {
+                "name": category.name,
+                "description": category.description,
+                "optional": category.optional,
                 "items": [
                     {
                         "item_id": item.item_id,
                         "name": item.name,
                         "annotation": item.annotation,
-                        "matches": item.overall_matches,
+                        "purchase_event_observations": item.purchase_event_observations,
+                        "purchase_adoption": item.purchase_adoption,
+                        "adopter_matches": item.adopter_matches,
+                        "eligible_player_matches": item.eligible_player_matches,
+                        "median_first_ownership_time_s": item.median_buy_time_s,
+                        "median_valid_first_ownership_net_worth": item.median_valid_buy_net_worth,
+                        "required_flex_slots": item.required_flex_slots,
+                        "sell_priority": item.sell_priority,
+                        "imbue_target_ability_id": item.imbue_target_ability_id,
                     }
-                    for item in guide.tiers[tier]
+                    for item in category.items
                 ],
             }
-            for tier in range(1, 5)
-        },
+            for category in guide.rendered_categories
+        ],
     }

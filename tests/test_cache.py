@@ -21,6 +21,12 @@ from deadlock_build_sync.protobuf import (
 )
 from deadlock_build_sync.purchase_guide import GuideItem, PurchaseGuide, PurchaseWindow
 
+SNAPSHOT_ID = "c" * 64
+
+
+def snapshot_manifest() -> dict[str, str]:
+    return {"snapshot_id": SNAPSHOT_ID}
+
 
 def guide() -> PurchaseGuide:
     window = PurchaseWindow(5000, 10000, 100, 60, 0.6, 0.5)
@@ -46,7 +52,17 @@ def complete_guide() -> PurchaseGuide:
         )
         for tier in range(1, 5)
     }
-    return PurchaseGuide(12, "Kelvin", "hero_kelvin", tiers)
+    return PurchaseGuide(
+        12,
+        "Kelvin",
+        "hero_kelvin",
+        tiers,
+        snapshot_id=SNAPSHOT_ID,
+        policy_id="policy/kelvin",
+        client_version=123,
+        match_mode="ranked",
+        rank_identity="Phantom I [91]–Eternus VI [116]",
+    )
 
 
 def existing_blob(
@@ -218,10 +234,14 @@ def test_install_creates_backup_and_restore_recovers_original(
         patch_title="Patch",
         patch_published_at="2026-01-01T00:00:00Z",
         backup_root=state_root,
+        snapshot_manifest=snapshot_manifest(),
+        expected_hero_ids={12},
     )
     assert result.created == 1
     assert (result.backup_directory / "cached_hero_builds.kv3").is_file()
     assert (result.backup_directory / "remotecache.vdf").is_file()
+    assert result.snapshot_id == SNAPSHOT_ID
+    assert result.policy_ids == {12: "policy/kelvin"}
     installed = read_cache(cache_path)
     assert installed["LastUsedBuilds"] == original["LastUsedBuilds"]
     assert len(installed["Unpublished"]) == 1
@@ -252,7 +272,7 @@ def test_install_rejects_incomplete_item_coverage(
     location = CacheLocation(146293212, cache_path, app_directory)
     monkeypatch.setattr(cache_module, "deadlock_is_running", lambda: False)
 
-    with pytest.raises(CacheError, match="incomplete item coverage"):
+    with pytest.raises(CacheError, match="incomplete policy identity/projection"):
         install_guides(
             location,
             [guide()],
@@ -261,4 +281,142 @@ def test_install_rejects_incomplete_item_coverage(
             patch_title="Patch",
             patch_published_at="2026-01-01T00:00:00Z",
             backup_root=tmp_path / "state",
+            snapshot_manifest=snapshot_manifest(),
         )
+
+
+def isolated_location(tmp_path: Path) -> tuple[CacheLocation, dict[str, object]]:
+    app_directory = tmp_path / "userdata/146293212/1422450"
+    cache_path = app_directory / "remote/cfg/cached_hero_builds.kv3"
+    cache_path.parent.mkdir(parents=True)
+    original: dict[str, object] = {
+        "LastUsedBuilds": {"hero_kelvin": 777},
+        "Favorites": [b"favorite"],
+        "Unpublished": [b"unrelated-private-build"],
+        "SavedLastUsed": [b"saved"],
+        "UnknownFutureField": {"nested": [1, b"opaque"]},
+    }
+    cache_path.write_bytes(encode_binary_v4(original))
+    return CacheLocation(146293212, cache_path, app_directory), original
+
+
+def install_complete(
+    location: CacheLocation,
+    backup_root: Path,
+) -> None:
+    install_guides(
+        location,
+        [complete_guide()],
+        persona="XMLJDX",
+        timestamp=100,
+        patch_title="Patch",
+        patch_published_at="2026-01-01T00:00:00Z",
+        backup_root=backup_root,
+        snapshot_manifest=snapshot_manifest(),
+        expected_hero_ids={12},
+    )
+
+
+def test_install_refuses_if_deadlock_starts_at_mutation_boundary(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    location, original = isolated_location(tmp_path)
+    states = iter((False, True))
+    monkeypatch.setattr(cache_module, "deadlock_is_running", lambda: next(states))
+
+    with pytest.raises(CacheError, match="started before replacement"):
+        install_complete(location, tmp_path / "state")
+
+    assert read_cache(location.cache_path) == original
+
+
+def test_install_restores_after_directory_fsync_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    location, original = isolated_location(tmp_path)
+    monkeypatch.setattr(cache_module, "deadlock_is_running", lambda: False)
+    real_fsync_directory = cache_module._fsync_directory
+    target_fsync_calls = 0
+
+    def inject_failure(path: Path) -> None:
+        nonlocal target_fsync_calls
+        if path == location.cache_path.parent:
+            target_fsync_calls += 1
+        if path == location.cache_path.parent and target_fsync_calls == 1:
+            raise OSError("injected target-directory fsync failure")
+        real_fsync_directory(path)
+
+    monkeypatch.setattr(cache_module, "_fsync_directory", inject_failure)
+
+    with pytest.raises(CacheError, match="original cache was restored"):
+        install_complete(location, tmp_path / "state")
+
+    assert read_cache(location.cache_path) == original
+
+
+def test_out_of_scope_corruption_is_detected_and_restored(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    location, original = isolated_location(tmp_path)
+    monkeypatch.setattr(cache_module, "deadlock_is_running", lambda: False)
+    real_read_cache = cache_module.read_cache
+    calls = 0
+
+    def corrupt_candidate(path: Path) -> dict[str, object]:
+        nonlocal calls
+        calls += 1
+        root = real_read_cache(path)
+        if calls == 2:
+            root["Favorites"] = [b"corrupted"]
+        return root
+
+    monkeypatch.setattr(cache_module, "read_cache", corrupt_candidate)
+
+    with pytest.raises(CacheError, match="out-of-scope"):
+        install_complete(location, tmp_path / "state")
+
+    assert real_read_cache(location.cache_path) == original
+
+
+def test_all_hero_installation_refuses_missing_roster_member(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    location, original = isolated_location(tmp_path)
+    monkeypatch.setattr(cache_module, "deadlock_is_running", lambda: False)
+
+    with pytest.raises(CacheError, match="coverage mismatch"):
+        install_guides(
+            location,
+            [complete_guide()],
+            persona="XMLJDX",
+            timestamp=100,
+            patch_title="Patch",
+            patch_published_at="2026-01-01T00:00:00Z",
+            backup_root=tmp_path / "state",
+            snapshot_manifest=snapshot_manifest(),
+            expected_hero_ids={12, 13},
+        )
+
+    assert read_cache(location.cache_path) == original
+    assert not (tmp_path / "state").exists()
+
+
+def test_double_failure_reports_recoverable_backup_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    location, _ = isolated_location(tmp_path)
+    states = iter((False, True))
+    monkeypatch.setattr(cache_module, "deadlock_is_running", lambda: next(states))
+    monkeypatch.setattr(
+        cache_module,
+        "_restore_cache_file",
+        lambda _source, _destination: (_ for _ in ()).throw(OSError("restore failed")),
+    )
+
+    with pytest.raises(CacheError, match=r"automatic restore failed.*backup is at"):
+        install_complete(location, tmp_path / "state")

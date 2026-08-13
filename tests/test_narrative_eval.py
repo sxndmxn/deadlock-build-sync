@@ -173,7 +173,7 @@ def test_generate_reliability_case_retains_generation_errors(
     ) -> dict[str, Any]:
         nonlocal synthesis_attempt
         assert stage.timeout_seconds == 5
-        assert stage.max_attempts == 1
+        assert stage.max_attempts == generate_narratives.DEFAULT_GENERATION_ATTEMPTS
         if stage.schema_path == narrative_eval.KIT_SCHEMA_PATH:
             return {"hero_id": 12, "kit_basis_sha256": "d" * 64}
         synthesis_attempt += 1
