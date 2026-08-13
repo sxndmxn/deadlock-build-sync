@@ -16,7 +16,7 @@ NORMAL_AVERAGE_SHARE = 0.10
 LOW_VOLUME_AVERAGE_SHARE = 0.15
 MIN_WINDOW_MATCHES = 20
 MIN_WINDOW_SHARE = 0.05
-CORE_CATEGORY_DESCRIPTION = "Automatic eight-item Queue, purchased left to right."
+CORE_CATEGORY_DESCRIPTION = "Automatic purchase path, purchased left to right."
 TIER_CATEGORY_DESCRIPTION = (
     "Optional choices, ordered left to right by observed purchase window."
 )

@@ -77,6 +77,7 @@ def test_install_artifacts_loads_frozen_build_evidence_from_the_bundle(
     seen: dict[str, object] = {}
     monkeypatch.setattr(cli_module, "_location", lambda _args: location)
     monkeypatch.setattr(cli_module, "deadlock_is_running", lambda: False)
+    monkeypatch.setattr(cli_module, "local_steam_persona", lambda _account_id: "XMLJDX")
 
     def load_bundle(*paths: Path) -> SimpleNamespace:
         seen["paths"] = paths
@@ -95,10 +96,10 @@ def test_install_artifacts_loads_frozen_build_evidence_from_the_bundle(
         )
 
     monkeypatch.setattr(cli_module, "load_artifact_guide_bundle", load_bundle)
-    monkeypatch.setattr(
-        cli_module,
-        "install_guides",
-        lambda *_args, **_kwargs: SimpleNamespace(
+
+    def install_guides(*_args: object, **kwargs: object) -> SimpleNamespace:
+        seen["persona"] = kwargs["persona"]
+        return SimpleNamespace(
             build_ids={},
             created=0,
             updated=0,
@@ -106,8 +107,9 @@ def test_install_artifacts_loads_frozen_build_evidence_from_the_bundle(
             backup_directory=tmp_path / "backup",
             snapshot_id="s" * 64,
             policy_ids={},
-        ),
-    )
+        )
+
+    monkeypatch.setattr(cli_module, "install_guides", install_guides)
 
     assert (
         cli_module._run_install_artifacts(
@@ -125,6 +127,7 @@ def test_install_artifacts_loads_frozen_build_evidence_from_the_bundle(
         artifact_directory / "narratives.json",
         artifact_directory / "build-evidence.json",
     )
+    assert seen["persona"] == "XMLJDX"
 
 
 def snapshot() -> SnapshotManifest:

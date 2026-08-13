@@ -38,6 +38,7 @@ from .protobuf import describe_guide
 from .ranks import DEFAULT_RANK_RANGE, Rank, RankRange
 from .service import GuideError, generate_guides
 from .snapshot import EpochBoundary, EpochSet, MatchMode
+from .steam_identity import local_steam_persona
 from .strategy_context import build_strategy_context_document
 
 if TYPE_CHECKING:
@@ -239,7 +240,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     install_artifacts.add_argument(
         "--persona",
-        help="name prefix shown on installed builds (default: local user name)",
+        help="name prefix shown on installed builds (default: local Steam persona)",
     )
 
     export_context = subparsers.add_parser(
@@ -562,10 +563,15 @@ def _run_install_artifacts(args: argparse.Namespace) -> int:
     )
     for hero_id, reason in bundle.exclusions:
         print(f"Skipped hero {hero_id}: {reason}", file=sys.stderr)
+    persona = args.persona or local_steam_persona(location.account_id)
+    if persona is None:
+        raise CacheError(
+            "could not resolve the local Steam persona; pass --persona explicitly"
+        )
     result = install_guides(
         location,
         bundle.guides,
-        persona=args.persona or os.environ.get("USER") or "Deadlock Build Sync",
+        persona=persona,
         timestamp=int(time.time()),
         patch_title=bundle.patch.title,
         patch_published_at=bundle.patch.published_at,

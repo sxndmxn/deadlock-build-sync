@@ -334,7 +334,7 @@ def test_loads_exact_reviewed_bundle_without_analytics_refetch(tmp_path: Path) -
     ]
     assert guide.summary == "Use the reviewed coherent core."
     assert guide.rendered_categories[0].description == (
-        "Automatic eight-item Queue, purchased left to right."
+        "Automatic purchase path, purchased left to right."
     )
     assert guide.rendered_categories[1].description == (
         "Optional choices, ordered left to right by observed purchase window."
