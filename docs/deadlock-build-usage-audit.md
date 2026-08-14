@@ -941,6 +941,8 @@ Those are patterns to borrow in Python—explicit optionality, typed IDs, determ
 
 ## Phase 0: truth and routing
 
+Implementation brief: [Phase 0 — Truth and routing](roadmap/phase-0-truth-and-routing.md).
+
 1. Add a read-only freshness preflight comparing installed artifacts with the latest patch/client.
 2. Correct ability-path terminology in descriptions, JSON preview, tests, and docs.
 3. Add a presentation model with explicit length limits.
@@ -951,6 +953,8 @@ Those are patterns to borrow in Python—explicit optionality, typed IDs, determ
 Exit criterion: the build says exactly how its current algorithms work, and every expensive generated field has a player-facing or audit-facing consumer.
 
 ## Phase 1: tags, titles, and duplicate space
+
+Implementation brief: [Phase 1 — Discovery and space](roadmap/phase-1-discovery-and-space.md).
 
 1. Fetch/pin the build-tag taxonomy with the same client identity as items/heroes.
 2. Encode exactly three valid repeated field 11 tags.
@@ -963,6 +967,8 @@ Exit criterion: no unknown tag badges, no misleading title, and no unexplained C
 
 ## Phase 2: hover hierarchy
 
+Implementation brief: [Phase 2 — Hover hierarchy](roadmap/phase-2-hover-hierarchy.md).
+
 1. Produce ≤165-byte core tactical instructions.
 2. Append deterministic window/adoption within the 240-byte total.
 3. Remove raw adopter outcome from the default hover.
@@ -972,6 +978,8 @@ Exit criterion: no unknown tag badges, no misleading title, and no unexplained C
 Exit criterion: a player can hover any CORE item and learn what it does for this hero and roughly when it is observed, without reading a statistical disclaimer.
 
 ## Phase 3: sequence and deviation research
+
+Implementation brief: [Phase 3 — Sequence and deviation](roadmap/phase-3-sequence-and-deviation.md).
 
 1. Evaluate component-expanded shopping paths in the live client.
 2. Reconstruct purchase, upgrade-consumption, discretionary-sell, and save decisions.
@@ -983,6 +991,8 @@ Exit criterion: a player can hover any CORE item and learn what it does for this
 Exit criterion: the system can recover after a manual deviation and can abstain when evidence is sparse.
 
 ## Phase 4: situational policies
+
+Implementation brief: [Phase 4 — Situational policies](roadmap/phase-4-situational-policies.md).
 
 1. Define a mechanics-first threat taxonomy.
 2. Generate only legal response candidates.

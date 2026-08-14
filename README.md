@@ -11,6 +11,7 @@ Design evidence and implementation contracts:
 
 - [Strategy-description research](docs/deadlock-strategy-description-research.md) — source evidence, analytical rationale, and build-policy findings.
 - [Build-policy requirements](docs/deadlock-build-policy-requirements.md) — staged normative requirements, acceptance criteria, and verification evidence.
+- [Build usage audit](docs/deadlock-build-usage-audit.md) — live-client findings and the five linked implementation phase briefs.
 
 Every run resolves one client version, freezes one as-of cutoff, and records
 Ranked or Unranked as an explicit cohort identity. Exact response bytes, patch
