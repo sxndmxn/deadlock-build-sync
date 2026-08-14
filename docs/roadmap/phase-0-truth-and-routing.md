@@ -1,6 +1,6 @@
 # Phase 0 — Truth and routing
 
-Status: implemented; live Steam acceptance remains separately authorized
+Status: implemented; authorized all-hero Steam install verified on 2026-08-14
 
 ## Outcome
 
@@ -60,6 +60,9 @@ information it already validates into truthful player-facing surfaces.
 - Regression coverage includes malformed/missing/stale chains, exact action identity,
   UTF-8 budgets, refresh handoff admission, and a composed ability path that was never
   observed as one complete sequence.
+- The authorized live run updated 38 managed guides with zero exclusions, created a
+  recoverable backup, preserved the same 65 unpublished entries and out-of-scope hash,
+  and ended with every freshness stage current.
 
 Traceability: [usage audit](../deadlock-build-usage-audit.md#phase-0-truth-and-routing),
 [artifact requirements](../deadlock-build-policy-requirements.md#8-artifacts-fingerprints-and-freshness),

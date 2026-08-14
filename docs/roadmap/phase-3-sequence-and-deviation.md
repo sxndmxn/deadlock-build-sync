@@ -1,6 +1,6 @@
 # Phase 3 — Sequence and deviation
 
-Status: implemented; live Queue acceptance awaits explicit authorization
+Status: implemented and installed; interactive Queue mechanics remain a client test
 
 ## Outcome
 
@@ -55,6 +55,8 @@ outside supported states.
   buy, save, end, or abstain.
 - Recommendation tests cover component credit, saving, sold/off-path history, backoff,
   sparse/unknown states, and exact evidence identity. Steam is never accessed.
+- The authorized all-hero install preserved CORE as the only automatic static Queue;
+  live component/deviation behavior remains an interactive client acceptance check.
 
 Traceability: [usage audit](../deadlock-build-usage-audit.md#phase-3-sequence-and-deviation-research),
 [deviation requirement](../deadlock-build-policy-requirements.md#req-pol-007--support-deviation-and-recalculation),

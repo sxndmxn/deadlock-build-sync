@@ -8,6 +8,22 @@ Live client context: 2560×1440, August 12 client update; inspected managed buil
 
 Decision: preserve the exact five-section structure CORE ITEMS, TIER 1, TIER 2, TIER 3, TIER 4.
 
+## Implementation verification — 2026-08-14
+
+All five linked phase briefs are implemented on pull request #3. Fresh schema-2 build
+evidence freezes the August 12 minor update through August 14 for ranked Normal,
+badges 71–115, client 6677: 7,007 matches, 83,027 eligible player appearances, 38
+heroes, and zero exclusions. Unsupported situational comparisons remain explicit
+abstentions; no counter cards were admitted.
+
+Narrative schema 6 / prompt 22 rejects incomplete or corrupted roles. The authorized
+live run updated all 38 managed guides, created none, validated a temporary cache,
+backed up the original, and replaced it atomically. The backup and installed cache
+both retain 65 unpublished entries and the same out-of-scope fingerprint. Post-install
+status reports every artifact stage and the installed cache current. The full local
+gate passes 288 tests and pull-request CI/CodeQL are green. A representative fresh
+client visual recheck remains pending only while the Hyprland session is locked.
+
 ## Executive verdict
 
 The five-section layout is good and should remain. It is calmer and more legible than most public builds, its Queue semantics are now correct, and it works across weapon, spirit, melee, tank, and hybrid heroes. The repository behind it is unusually strong at evidence identity, legality, failure handling, and safe Steam mutation.

@@ -1,6 +1,6 @@
 # Phase 2 — Hover hierarchy
 
-Status: implemented; screenshot/clipping matrix awaits explicit authorization
+Status: implemented and installed; fresh visual smoke test awaits session unlock
 
 ## Outcome
 

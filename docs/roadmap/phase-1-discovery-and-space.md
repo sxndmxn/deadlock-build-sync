@@ -1,6 +1,6 @@
 # Phase 1 — Discovery and space
 
-Status: implemented; resolved-badge client inspection awaits explicit authorization
+Status: implemented and installed; representative visual recheck awaits session unlock
 
 ## Outcome
 
@@ -51,6 +51,8 @@ optional menus that never repeat CORE merely to fill space.
   CORE/tier disjointness, support 20, stable ordering, and one-through-ten sparse rows.
 - Golden protobuf and artifact tests cover tag resolution, order, title fallback,
   support gates, sparsity, and duplicate rejection.
+- The authorized 38-guide install validated every title, three-tag tuple, category
+  projection, and round trip before atomic replacement.
 
 Traceability: [usage audit](../deadlock-build-usage-audit.md#phase-1-tags-titles-and-duplicate-space)
 and [rendering requirements](../deadlock-build-policy-requirements.md#7-valve-rendering-and-guide-ux).

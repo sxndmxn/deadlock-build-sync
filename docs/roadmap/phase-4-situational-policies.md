@@ -1,6 +1,6 @@
 # Phase 4 — Situational policies
 
-Status: implemented as a fail-closed capability; fresh production evidence required
+Status: implemented; fresh August 12 evidence correctly emitted only abstentions
 
 ## Outcome
 
@@ -67,6 +67,9 @@ are all proven.
   failure without weakening admission.
 - Existing privacy-bounded `RecommendationEvent` and monitoring/drift contracts remain
   the only feedback path; account IDs and other personal fields are rejected.
+- The frozen August 12–14 production cohort produced 38 policies with zero admitted
+  counter cards; each unsupported candidate remained an explicit abstention instead of
+  becoming client prose.
 
 Traceability: [usage audit](../deadlock-build-usage-audit.md#phase-4-situational-policies),
 [counter requirement](../deadlock-build-policy-requirements.md#req-ana-012--require-mechanics-first-counter-evidence),
