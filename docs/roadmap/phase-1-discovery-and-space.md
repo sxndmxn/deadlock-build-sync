@@ -1,6 +1,6 @@
 # Phase 1 — Discovery and space
 
-Status: planned
+Status: implemented; resolved-badge client inspection awaits explicit authorization
 
 ## Outcome
 
@@ -39,6 +39,18 @@ optional menus that never repeat CORE merely to fill space.
 - Tier sparsity, support, ordering, and disjointness tests across direct generation,
   artifact loading, preview, and round trip.
 - Live preview confirms resolved badges only after explicit authorization.
+
+## Implementation record
+
+- `build_tags.py` admits the pinned 14-tag taxonomy, selects three deterministic tag
+  classes, and fingerprints the catalog through snapshots, contexts, bundles, and
+  previews.
+- The presentation title is archetype-first and bounded to 50 characters; protobuf
+  field 11 encodes exactly three nonzero IDs.
+- Direct selection, reviewed-artifact loading, and offline layout previews enforce
+  CORE/tier disjointness, support 20, stable ordering, and one-through-ten sparse rows.
+- Golden protobuf and artifact tests cover tag resolution, order, title fallback,
+  support gates, sparsity, and duplicate rejection.
 
 Traceability: [usage audit](../deadlock-build-usage-audit.md#phase-1-tags-titles-and-duplicate-space)
 and [rendering requirements](../deadlock-build-policy-requirements.md#7-valve-rendering-and-guide-ux).

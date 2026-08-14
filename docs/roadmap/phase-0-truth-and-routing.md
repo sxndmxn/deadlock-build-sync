@@ -1,6 +1,6 @@
 # Phase 0 — Truth and routing
 
-Status: planned
+Status: implemented; live Steam acceptance remains separately authorized
 
 ## Outcome
 
@@ -47,6 +47,19 @@ information it already validates into truthful player-facing surfaces.
   state-composed ability fixture that was never observed as one complete path.
 - Offline refresh smoke test ending in `load_build_evidence`, plus the normal full
   repository gate.
+
+## Implementation record
+
+- `freshness.py` reports each artifact stage, validates the complete reviewed bundle,
+  and makes stale `sync` fail before Steam discovery or model generation.
+- `presentation.py`, `narratives.py`, and `protobuf.py` now carry validated tactical
+  prose to player-first descriptions and exact CORE hovers without moving the Steam
+  transaction boundary.
+- The former sibling analysis producer lives under `deadlock_build_sync.offline` and
+  is exposed only through the lazy, Steam-free `refresh-evidence` command.
+- Regression coverage includes malformed/missing/stale chains, exact action identity,
+  UTF-8 budgets, refresh handoff admission, and a composed ability path that was never
+  observed as one complete sequence.
 
 Traceability: [usage audit](../deadlock-build-usage-audit.md#phase-0-truth-and-routing),
 [artifact requirements](../deadlock-build-policy-requirements.md#8-artifacts-fingerprints-and-freshness),

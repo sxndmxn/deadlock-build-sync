@@ -1,6 +1,6 @@
 # Phase 4 — Situational policies
 
-Status: planned
+Status: implemented as a fail-closed capability; no current branch is promoted
 
 ## Outcome
 
@@ -44,6 +44,20 @@ are all proven.
   trigger/execution/failure instructions.
 - Representative weapon, spirit, melee/tank, summon/support, and sparse/new heroes pass
   offline and authorized live acceptance without weakening validators.
+
+## Implementation record
+
+- Evidence schema 2 admits only the seven-item threat vocabulary and requires mechanic
+  reference, comparator, support 20, effective support 20, overlap 0.5, temporal
+  stability, trigger, replacement, execution, and failure condition.
+- The producer retains every mechanics-backed candidate and its individual gates in
+  `candidate_audit`. It currently emits no live branch because bounded comparative
+  uncertainty has not been established; this is a deliberate abstention, not a stub.
+- The read-only recommender checks observable threats and enemy identity, rejects
+  conflicting matches, filters mechanically illegal purchases, and exposes the full
+  admitted branch contract when one exists.
+- Existing privacy-bounded `RecommendationEvent` and monitoring/drift contracts remain
+  the only feedback path; account IDs and other personal fields are rejected.
 
 Traceability: [usage audit](../deadlock-build-usage-audit.md#phase-4-situational-policies),
 [counter requirement](../deadlock-build-policy-requirements.md#req-ana-012--require-mechanics-first-counter-evidence),

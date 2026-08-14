@@ -549,14 +549,14 @@ The key words **MUST**, **MUST NOT**, **REQUIRED**, **SHOULD**, **SHOULD NOT**, 
 - **Requirement:** For each hero, production **MUST** choose the highest-joint-support
   legal eight-item reconstructed final-inventory candidate whose catalog investment does
   not exceed the hero's cohort median final net worth. The core **MUST** be ordered by
-  median first-ownership time. Each Tier I–IV menu **MUST** contain the ten items with
-  highest unique player-match adoption, then display them left to right by median valid
-  pre-purchase net worth, median time, and item ID, with missing net worth last. Outcome
-  rate **MUST NOT** select or order items. Core duplication in a native tier menu is
-  intentional.
-- **Acceptance:** Fixtures prove exact 8/10/10/10/10 cardinality, budget fallback,
-  deterministic ties, net-worth ordering, missing-value placement, and outcome
-  independence.
+  median first-ownership time. Each Tier I–IV menu **MUST** exclude CORE, require at
+  least 20 adopting player-matches, select up to ten items by unique player-match
+  adoption, then display them left to right by median valid pre-purchase net worth,
+  median time, and item ID, with missing net worth last. Outcome rate **MUST NOT**
+  select or order items, and weak items **MUST NOT** be added as filler.
+- **Acceptance:** Fixtures prove an exact eight-item core, one-through-ten optional-row
+  cardinality, CORE disjointness, support and budget fallback, deterministic ties,
+  net-worth ordering, missing-value placement, and outcome independence.
 - **Proof:** Build-evidence selection, service projection, and renderer tests.
 - **Dependencies:** REQ-ANA-001, REQ-ANA-004, REQ-ANA-005, REQ-MEC-004, REQ-MEC-007.
 
@@ -703,9 +703,11 @@ The key words **MUST**, **MUST NOT**, **REQUIRED**, **SHOULD**, **SHOULD NOT**, 
 - **Status:** `Verified`
 - **Requirement:** `CORE ITEMS` **MUST** be the first and only non-optional category and
   contain exactly the eight-item coherent default path. `TIER 1` through `TIER 4`
-  **MUST** follow in order, each marked optional and containing exactly ten adoption
-  reference items. Reference items **MUST NOT** all enter Queue. Prose such as “choose
-  one” is not an executable substitute.
+  **MUST** follow in order, each marked optional and containing up to ten adoption
+  reference items, with fewer when evidence is sparse. Every tier
+  item **MUST** be disjoint from CORE and **MUST** have at least 20 adopter matches.
+  Reference items **MUST NOT** all enter Queue. Prose such as “choose one” is not an
+  executable substitute.
 - **Research basis:** [Machine semantics before prose](deadlock-strategy-description-research.md#machine-semantics-before-prose), F-09.
 - **Acceptance:** Decoded output shows optional flags and a default Queue that does not
   contain all alternatives.
@@ -771,15 +773,18 @@ The key words **MUST**, **MUST NOT**, **REQUIRED**, **SHOULD**, **SHOULD NOT**, 
   choice/replacement, proactive/reactive execution where relevant, and failure condition
   within Valve UI limits. Optional tier reference menus **MUST** instead identify their
   non-automatic reference semantics and **MUST NOT** invent a trigger from adoption.
-  Evidence-backed standard-layout tiles **MUST** show only the observed 25th–75th
-  percentile first-ownership net-worth window rounded to the nearest 1,000 souls, the
-  observed outcome rate among adopters, and first-ownership adoption among eligible
-  player-matches. Denominators, coverage, medians, and statistical caveats belong in the
-  evidence artifact and guide description/sidecar, not duplicated on every tile.
+  Evidence-backed CORE tiles **MUST** lead with the exact validated hero-specific action
+  instruction, followed only by a supported observed first-ownership window and
+  adoption context that fits the byte budget. Optional tiles **MUST** lead with a
+  mechanics-backed job or neutral reference label and expose only burdens actually
+  encoded. Raw adopter outcome **MUST NOT** occupy the default hover. Denominators,
+  coverage, medians, and statistical caveats belong in the evidence artifact and guide
+  description/sidecar, not duplicated on every tile.
 - **Research basis:** [Keep the menu small and actionable](deadlock-strategy-description-research.md#keep-the-menu-small-and-actionable).
-- **Acceptance:** Golden annotations fit length/encoding limits, standard item tiles use
-  the three-line `Purchase window` / `Win rate` / `Pick rate` presentation, and
-  executable policy branches preserve their required tactical fields.
+- **Acceptance:** Generated CORE instructions fit 165 UTF-8 bytes, complete annotations
+  fit 240 bytes, CORE action identity is exact, optional job fixtures cover every
+  supported mechanic and neutral abstention, and no default hover labels adoption as
+  pick rate or exposes raw win rate.
 - **Proof:** Renderer snapshot and Unicode/length tests.
 - **Dependencies:** REQ-ANA-012.
 

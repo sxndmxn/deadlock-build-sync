@@ -1,6 +1,6 @@
 # Phase 3 — Sequence and deviation
 
-Status: planned
+Status: implemented; live Queue acceptance awaits explicit authorization
 
 ## Outcome
 
@@ -42,6 +42,19 @@ outside supported states.
   flex changes, insufficient currency, sparse states, and stale state identity.
 - Live Queue acceptance for parent upgrades, manual deviation, component ownership, and
   imbue prompts only with explicit authorization.
+
+## Implementation record
+
+- Build-evidence schema 2 exports component-expanded defaults plus deterministic
+  first/previous/position/popularity backoffs from training rows only.
+- The existing XGBoost ranker remains a chronological challenger and cannot be
+  promoted without a portable validated policy artifact, even when imitation metrics
+  pass.
+- `schemas/decision-state.schema.json` and `recommendation.py` provide one strict,
+  deidentified patch/client/mode/rank/inventory contract and return only buy, save,
+  end, or abstain.
+- Recommendation tests cover component credit, saving, sold/off-path history, backoff,
+  sparse/unknown states, and exact evidence identity. Steam is never accessed.
 
 Traceability: [usage audit](../deadlock-build-usage-audit.md#phase-3-sequence-and-deviation-research),
 [deviation requirement](../deadlock-build-policy-requirements.md#req-pol-007--support-deviation-and-recalculation),
