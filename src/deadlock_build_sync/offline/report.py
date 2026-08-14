@@ -16,6 +16,17 @@ import matplotlib.pyplot as plt
 CASE_STUDIES = ("Abrams", "Haze", "Kelvin", "Dynamo", "Infernus")
 
 
+def _format_scope_median(frame: pl.DataFrame, scope: str) -> str:
+    """Format one optional matchup-stability statistic for prose."""
+    scoped = frame.filter(pl.col("scope") == scope)
+    if scoped.is_empty():
+        return "unavailable"
+    value = scoped["median_spearman"].item()
+    if value is None or not np.isfinite(value):
+        return "unavailable"
+    return f"{float(value):.4f}"
+
+
 def _weighted_evaluation(frame: pl.DataFrame) -> pl.DataFrame:
     return (
         frame
@@ -601,12 +612,12 @@ def render_report(paths: RunPaths) -> dict[str, Any]:
         )
         .sort("scope")
     )
-    matchup_whole_team = matchup_stability_summary.filter(
-        pl.col("scope") == "whole_enemy_team"
-    ).row(0, named=True)
-    matchup_same_lane = matchup_stability_summary.filter(
-        pl.col("scope") == "same_lane"
-    ).row(0, named=True)
+    matchup_whole_team_spearman = _format_scope_median(
+        matchup_stability_summary, "whole_enemy_team"
+    )
+    matchup_same_lane_spearman = _format_scope_median(
+        matchup_stability_summary, "same_lane"
+    )
     mechanic_channels = [
         ("Any active scaled property", pl.col("scaled_property_count") > 0),
         ("Spirit-damage coefficient", pl.col("has_spirit_damage_scaling")),
@@ -811,7 +822,7 @@ The main findings are:
 5. **Adjustment is only as good as its pre-decision state.** Only **{valid_share:.1%}** of first-purchase rows have a temporally valid net-worth snapshot. Missing opening state must remain missing or become its own stratum.
 6. **Provisional rank status does not destabilize popularity here.** Calibrated-versus-provisional adoption has median Spearman **{calibration_adoption_summary.row(0, named=True)["median_spearman"]:.4f}** and median top-ten Jaccard **{calibration_adoption_summary.row(0, named=True)["median_top10_jaccard"]:.4f}**. This supports pooling calibration states for popularity while retaining the audit.
 7. **Raw support is not comparable-state support.** Among top-ten adopted items, median overlap-weighted effective support is only **{overall_overlap["median_effective_support_share"]:.1%}** of raw observations; its 10th percentile is **{overall_overlap["p10_effective_support_share"]:.1%}**. Outcome contrasts need phase/position-specific candidate slates and explicit no-overlap abstention.
-8. **Matchup outcome deltas do not survive main-effect adjustment reliably.** After subtracting each hero-versus-enemy baseline, median chronological Spearman falls to **{matchup_same_lane["median_spearman"]:.4f}** for same-lane residuals and **{matchup_whole_team["median_spearman"]:.4f}** for whole-team residuals. Counter purchases must start from mechanics and use these residuals only as an abstention-gated audit.
+8. **Matchup outcome deltas do not survive main-effect adjustment reliably.** After subtracting each hero-versus-enemy baseline, median chronological Spearman is **{matchup_same_lane_spearman}** for same-lane residuals and **{matchup_whole_team_spearman}** for whole-team residuals. Counter purchases must start from mechanics and use these residuals only as an abstention-gated audit.
 9. **A single marginal top-item path can mix persistent build archetypes.** Eight-action co-purchase coverage varies by hero but is itself highly chronological-stable (train/test Spearman **{eight_action_coverage_spearman:.4f}**). Core selection therefore needs an archetype-aware sequence model, not just marginal adoption sorted by time.
 
 {kelvin_note}
