@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Protocol
 
+from .artifact_bundle import ArtifactBundleError, load_artifact_guide_bundle
 from .artifacts import ArtifactError, validate_policy_artifact
 from .build_evidence import load_build_evidence
 from .cache import CacheError, read_cache
@@ -68,8 +69,13 @@ class FreshnessReport:
         return 2
 
     def as_dict(self) -> dict[str, Any]:
+        status = {
+            0: "current",
+            1: "invalid_or_unavailable",
+            2: "regeneration_required",
+        }[self.exit_code]
         return {
-            "status": "current" if self.exit_code == 0 else "regeneration_required",
+            "status": status,
             "latest_client_version": self.latest_client_version,
             "latest_patch": self.latest_patch.as_dict(),
             "stages": [stage.as_dict() for stage in self.stages],
@@ -313,6 +319,31 @@ def _installed_stage(
     return FreshnessStage("installed_cache", state, detail)
 
 
+def _bundle_stage(artifact_directory: Path) -> FreshnessStage:
+    paths = (
+        artifact_directory / "strategy-context.json",
+        artifact_directory / "policies.json",
+        artifact_directory / "narratives.json",
+        artifact_directory / "build-evidence.json",
+    )
+    missing = [str(path) for path in paths if not path.is_file()]
+    if missing:
+        return FreshnessStage(
+            "artifact_bundle",
+            FreshnessState.MISSING,
+            "missing: " + ", ".join(missing),
+        )
+    try:
+        bundle = load_artifact_guide_bundle(*paths)
+    except (ArtifactBundleError, ArtifactError, OSError, ValueError) as error:
+        return FreshnessStage("artifact_bundle", FreshnessState.MALFORMED, str(error))
+    return FreshnessStage(
+        "artifact_bundle",
+        FreshnessState.CURRENT,
+        f"{len(bundle.guides)} reviewed guide(s) validated as one bundle",
+    )
+
+
 def _installed_descriptions(cache_path: Path, account_id: int) -> dict[int, str]:
     root = read_cache(cache_path)
     unpublished = root.get("Unpublished")
@@ -362,6 +393,7 @@ def build_freshness_report(
         context_stage,
         _policy_stage(artifact_directory / "policies.json", context),
         _narrative_stage(artifact_directory / "narratives.json", context),
+        _bundle_stage(artifact_directory),
         _installed_stage(cache_path, account_id, context),
     )
     return FreshnessReport(stages, latest_client, latest_patch)

@@ -58,6 +58,7 @@ def test_missing_and_malformed_artifact_chains_have_distinct_exit_codes(
 
     missing = build_freshness_report(tmp_path, api)
     assert missing.exit_code == 1
+    assert missing.as_dict()["status"] == "invalid_or_unavailable"
     assert missing.stages[0].state is FreshnessState.MISSING
     assert missing.stages[-1].state is FreshnessState.UNAVAILABLE
 

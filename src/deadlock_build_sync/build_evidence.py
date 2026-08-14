@@ -5,7 +5,7 @@ import json
 import math
 from dataclasses import dataclass
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from .artifacts import ArtifactError
 from .mechanics import InventoryState, ItemGraph, MechanicsError, purchase_item
@@ -16,13 +16,30 @@ if TYPE_CHECKING:
 
     from .ranks import RankCatalog, RankRange
 
-BUILD_EVIDENCE_SCHEMA_VERSION = 1
+BUILD_EVIDENCE_SCHEMA_VERSION = 2
 CORE_ITEM_COUNT = 8
 CORE_CANDIDATE_LIMIT = 64
 TIER_ITEM_COUNT = 10
 MINIMUM_TIER_SUPPORT = 20
 MINIMUM_CORE_SUPPORT = 20
-METHOD_VERSION = "reconstructed-final-inventory-v2"
+METHOD_VERSION = "reconstructed-final-inventory-v3"
+SEQUENCE_POLICY_VERSION = 1
+SITUATIONAL_POLICY_VERSION = 1
+SEQUENCE_LEVELS = (
+    "first_previous_position",
+    "previous_position",
+    "position",
+    "popularity",
+)
+THREAT_CLASSES = frozenset({
+    "healing",
+    "bullet_pressure",
+    "spirit_pressure",
+    "control",
+    "mobility_escape",
+    "ally_protection",
+    "active_slot_burden",
+})
 
 
 @dataclass(frozen=True)
@@ -53,6 +70,50 @@ class CoreCandidate:
 
 
 @dataclass(frozen=True)
+class SequenceTransition:
+    level: str
+    first_item_id: int
+    previous_item_id: int
+    position: int
+    next_item_id: int
+    support: int
+    context_support: int
+
+
+@dataclass(frozen=True)
+class SequencePolicy:
+    default_path: tuple[int, ...]
+    transitions: tuple[SequenceTransition, ...]
+    minimum_support: int
+    production_model: str
+    evaluation: dict[str, Any]
+    challenger: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class SituationalBranch:
+    threat: str
+    item_id: int
+    enemy_hero_id: int | None
+    mechanic_ref: str
+    comparator: str
+    support: int
+    effective_support: float
+    overlap: float
+    stable: bool
+    trigger: str
+    replacement: str
+    execution: str
+    failure_condition: str
+
+
+@dataclass(frozen=True)
+class SituationalPolicy:
+    branches: tuple[SituationalBranch, ...]
+    abstentions: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class HeroBuildEvidence:
     hero_id: int
     hero: str
@@ -60,6 +121,8 @@ class HeroBuildEvidence:
     median_final_net_worth: int
     core_candidates: tuple[CoreCandidate, ...]
     items: tuple[ItemEvidence, ...]
+    sequence_policy: SequencePolicy | None = None
+    situational_policy: SituationalPolicy | None = None
 
 
 @dataclass(frozen=True)
@@ -225,6 +288,139 @@ def _item(value: object, hero_id: int) -> ItemEvidence:
     )
 
 
+def _sequence_transition(value: object, hero_id: int) -> SequenceTransition:
+    if not isinstance(value, dict):
+        raise ArtifactError(f"hero {hero_id} has a malformed sequence transition")
+    level = value.get("level")
+    if level not in SEQUENCE_LEVELS:
+        raise ArtifactError(f"hero {hero_id} has an invalid sequence backoff level")
+    support = _required_int(value.get("support"), "transition support", minimum=1)
+    context_support = _required_int(
+        value.get("context_support"),
+        "transition context support",
+        minimum=support,
+    )
+    return SequenceTransition(
+        level=str(level),
+        first_item_id=_required_int(value.get("first_item_id"), "first item id"),
+        previous_item_id=_required_int(
+            value.get("previous_item_id"), "previous item id"
+        ),
+        position=_required_int(value.get("position"), "purchase position"),
+        next_item_id=_required_int(
+            value.get("next_item_id"), "next item id", minimum=1
+        ),
+        support=support,
+        context_support=context_support,
+    )
+
+
+def _sequence_policy(value: object, hero_id: int) -> SequencePolicy:
+    if not isinstance(value, dict) or value.get("version") != SEQUENCE_POLICY_VERSION:
+        raise ArtifactError(f"hero {hero_id} has no supported sequence policy")
+    data = cast("dict[str, Any]", value)
+    raw_path = data.get("component_expanded_default_path")
+    raw_transitions = data.get("transitions")
+    evaluation = data.get("evaluation")
+    challenger = data.get("challenger")
+    production_model = data.get("production_model")
+    if (
+        not isinstance(raw_path, list)
+        or not raw_path
+        or not isinstance(raw_transitions, list)
+        or not raw_transitions
+        or not isinstance(evaluation, dict)
+        or not isinstance(challenger, dict)
+        or production_model != "deterministic_backoff"
+    ):
+        raise ArtifactError(f"hero {hero_id} has an incomplete sequence policy")
+    path = tuple(
+        _required_int(item_id, "default path item id", minimum=1)
+        for item_id in raw_path
+    )
+    minimum_support = _required_int(
+        data.get("minimum_support"), "sequence minimum support", minimum=20
+    )
+    transitions = tuple(_sequence_transition(row, hero_id) for row in raw_transitions)
+    if any(row.support < minimum_support for row in transitions):
+        raise ArtifactError(f"hero {hero_id} has a weak sequence transition")
+    return SequencePolicy(
+        path,
+        transitions,
+        minimum_support,
+        str(production_model),
+        cast("dict[str, Any]", evaluation),
+        cast("dict[str, Any]", challenger),
+    )
+
+
+def _situational_branch(value: object, hero_id: int) -> SituationalBranch:
+    if not isinstance(value, dict):
+        raise ArtifactError(f"hero {hero_id} has a malformed situational branch")
+    data = cast("dict[str, Any]", value)
+    threat = data.get("threat")
+    enemy_hero_id = data.get("enemy_hero_id")
+    text_fields = (
+        "mechanic_ref",
+        "comparator",
+        "trigger",
+        "replacement",
+        "execution",
+        "failure_condition",
+    )
+    if threat not in THREAT_CLASSES or any(
+        not isinstance(data.get(field), str) or not str(data[field]).strip()
+        for field in text_fields
+    ):
+        raise ArtifactError(f"hero {hero_id} has an incomplete situational branch")
+    if enemy_hero_id is not None:
+        enemy_hero_id = _required_int(enemy_hero_id, "enemy hero id", minimum=1)
+    support = _required_int(data.get("support"), "situational support", minimum=20)
+    effective = _required_float(
+        data.get("effective_support"), "situational effective support", minimum=20
+    )
+    overlap = _required_float(data.get("overlap"), "situational overlap", maximum=1.0)
+    stable = _required_bool(data.get("stable"), "situational stability")
+    if overlap < 0.5 or not stable:
+        raise ArtifactError(
+            f"hero {hero_id} contains an unqualified situational branch"
+        )
+    return SituationalBranch(
+        threat=str(threat),
+        item_id=_required_int(data.get("item_id"), "situational item id", minimum=1),
+        enemy_hero_id=enemy_hero_id,
+        mechanic_ref=str(data["mechanic_ref"]),
+        comparator=str(data["comparator"]),
+        support=support,
+        effective_support=effective,
+        overlap=overlap,
+        stable=stable,
+        trigger=str(data["trigger"]),
+        replacement=str(data["replacement"]),
+        execution=str(data["execution"]),
+        failure_condition=str(data["failure_condition"]),
+    )
+
+
+def _situational_policy(value: object, hero_id: int) -> SituationalPolicy:
+    if (
+        not isinstance(value, dict)
+        or value.get("version") != SITUATIONAL_POLICY_VERSION
+    ):
+        raise ArtifactError(f"hero {hero_id} has no supported situational policy")
+    data = cast("dict[str, Any]", value)
+    branches = data.get("branches")
+    abstentions = data.get("abstentions")
+    if not isinstance(branches, list) or not isinstance(abstentions, list):
+        raise ArtifactError(f"hero {hero_id} has an incomplete situational policy")
+    if not all(isinstance(reason, str) and reason.strip() for reason in abstentions):
+        raise ArtifactError(f"hero {hero_id} has an invalid situational abstention")
+    return SituationalPolicy(
+        tuple(_situational_branch(row, hero_id) for row in branches),
+        tuple(cast("list[str]", abstentions)),
+    )
+
+
 def _hero(value: object) -> HeroBuildEvidence:
     if not isinstance(value, dict):
         raise ArtifactError("build evidence contains a malformed hero")
@@ -275,8 +471,17 @@ def _hero(value: object) -> HeroBuildEvidence:
     if candidates != expected:
         raise ArtifactError(f"hero {hero_id} core candidates are not deterministic")
     for tier in range(1, 5):
-        if sum(item.tier == tier for item in items) < TIER_ITEM_COUNT:
-            raise ArtifactError(f"hero {hero_id} has fewer than ten Tier {tier} items")
+        if not any(item.tier == tier for item in items):
+            raise ArtifactError(f"hero {hero_id} has no Tier {tier} item evidence")
+    sequence_policy = _sequence_policy(value.get("sequence_policy"), hero_id)
+    situational_policy = _situational_policy(value.get("situational_policy"), hero_id)
+    referenced_items = (
+        set(sequence_policy.default_path)
+        | {row.next_item_id for row in sequence_policy.transitions}
+        | {branch.item_id for branch in situational_policy.branches}
+    )
+    if not referenced_items <= set(item_ids):
+        raise ArtifactError(f"hero {hero_id} policy references missing item evidence")
     return HeroBuildEvidence(
         hero_id=hero_id,
         hero=name.strip(),
@@ -286,6 +491,8 @@ def _hero(value: object) -> HeroBuildEvidence:
         ),
         core_candidates=tuple(candidates),
         items=items,
+        sequence_policy=sequence_policy,
+        situational_policy=situational_policy,
     )
 
 
@@ -321,6 +528,7 @@ def load_build_evidence(path: Path) -> BuildEvidenceCatalog:
         "core_item_count": CORE_ITEM_COUNT,
         "core_candidate_limit": CORE_CANDIDATE_LIMIT,
         "minimum_core_support": MINIMUM_CORE_SUPPORT,
+        "minimum_tier_support": MINIMUM_TIER_SUPPORT,
         "tier_item_count": TIER_ITEM_COUNT,
     }
     if not isinstance(method, dict) or any(

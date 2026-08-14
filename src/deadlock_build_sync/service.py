@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 from .ability_order import LOW_ABILITY_DECISION_SUPPORT, select_ability_path
 from .artifacts import ArtifactError
 from .build_evidence import (
+    METHOD_VERSION,
     assert_build_evidence_compatible,
     select_hero_build,
 )
@@ -393,7 +394,7 @@ def generate_guides(
         "artifact:build-evidence",
         {
             "artifact_id": build_evidence.artifact_id,
-            "method": "reconstructed-final-inventory-v2",
+            "method": METHOD_VERSION,
             "hero_count": len(build_evidence.heroes),
         },
         build_evidence.raw_bytes,

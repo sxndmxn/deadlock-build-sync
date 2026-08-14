@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 
 import deadlock_build_sync.cli as cli_module
+import deadlock_build_sync.offline.cli as offline_cli_module
 from deadlock_build_sync.api import Patch
 from deadlock_build_sync.cache import CacheError, CacheLocation
 from deadlock_build_sync.cli import DEFAULT_NARRATIVE_PATH, build_parser
@@ -44,6 +45,48 @@ def test_status_is_read_only_and_supports_json() -> None:
 
     assert args.command == "status"
     assert args.json
+
+
+def test_refresh_evidence_handoff_exports_and_admits_one_artifact(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    forwarded: list[str] = []
+    loaded: list[Path] = []
+
+    def refresh(arguments: list[str]) -> int:
+        forwarded.extend(arguments)
+        return 0
+
+    def load(path: Path) -> SimpleNamespace:
+        loaded.append(path)
+        return SimpleNamespace(artifact_id="a" * 64)
+
+    monkeypatch.setattr(offline_cli_module, "main", refresh)
+    monkeypatch.setattr(cli_module, "load_build_evidence", load)
+    args = build_parser().parse_args([
+        "refresh-evidence",
+        "--artifacts",
+        str(tmp_path),
+        "--run-id",
+        "frozen",
+    ])
+
+    assert cli_module._run_refresh_evidence(args) == 0
+    assert forwarded[0] == "all"
+    assert forwarded[forwarded.index("--output") + 1] == str(
+        tmp_path / "build-evidence.json"
+    )
+    assert "--run-id" in forwarded
+    assert loaded == [tmp_path / "build-evidence.json"]
+
+
+def test_recommend_parser_requires_a_decision_state() -> None:
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["recommend"])
+
+    args = build_parser().parse_args(["recommend", "--state", "state.json"])
+    assert args.state == Path("state.json")
 
 
 def test_stale_sync_stops_before_cache_discovery(

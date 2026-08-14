@@ -42,6 +42,7 @@ from .narratives import (
 from .presentation import build_presentation
 from .protobuf import describe_guide
 from .ranks import DEFAULT_RANK_RANGE, Rank, RankRange
+from .recommendation import DecisionState, RecommendationError, recommend
 from .service import GuideError, generate_guides
 from .snapshot import EpochBoundary, EpochSet, MatchMode
 from .steam_identity import local_steam_persona
@@ -201,6 +202,23 @@ def build_parser() -> argparse.ArgumentParser:
     status.add_argument(
         "--json", action="store_true", help="emit machine-readable JSON"
     )
+    refresh = subparsers.add_parser(
+        "refresh-evidence",
+        help="rebuild current deidentified evidence without reading or writing Steam",
+    )
+    refresh.add_argument("--artifacts", type=Path, help="artifact output directory")
+    refresh.add_argument("--run-id", help="stable offline run identifier")
+    refresh.add_argument("--min-badge", type=positive_int, default=71)
+    refresh.add_argument("--max-badge", type=positive_int, default=115)
+    refresh.add_argument("--since", help="cohort lower timestamp in ISO-8601 form")
+    refresh.add_argument("--as-of", help="frozen upper timestamp in ISO-8601 form")
+    recommendation = subparsers.add_parser(
+        "recommend",
+        help="return a read-only next action for a deidentified state file",
+    )
+    recommendation.add_argument("--state", type=Path, required=True)
+    recommendation.add_argument("--build-evidence", type=Path)
+    recommendation.add_argument("--artifacts", type=Path)
     sync.add_argument(
         "--kit-model",
         default=DEFAULT_KIT_MODEL,
@@ -499,7 +517,11 @@ def _run_status(args: argparse.Namespace) -> int:
     if args.json:
         print(json.dumps(report.as_dict(), indent=2, ensure_ascii=False))
     else:
-        label = "CURRENT" if report.exit_code == 0 else "STALE — regeneration required"
+        label = {
+            0: "CURRENT",
+            1: "INVALID OR UNAVAILABLE — intervention required",
+            2: "STALE — regeneration required",
+        }[report.exit_code]
         print(label)
         print(
             f"Latest: client {report.latest_client_version} • "
@@ -508,6 +530,60 @@ def _run_status(args: argparse.Namespace) -> int:
         for stage in report.stages:
             print(f"{stage.name}: {stage.state.value} — {stage.detail}")
     return report.exit_code
+
+
+def _run_refresh_evidence(args: argparse.Namespace) -> int:
+    try:
+        from .offline.cli import main as offline_main
+    except ImportError as error:
+        raise GuideError(
+            "refresh-evidence requires the analysis dependencies; "
+            "install deadlock-build-sync[analysis]"
+        ) from error
+    output = _sync_artifact_directory(args.artifacts) / "build-evidence.json"
+    forwarded = [
+        "all",
+        "--min-rank",
+        str(args.min_badge),
+        "--max-rank",
+        str(args.max_badge),
+        "--output",
+        str(output),
+    ]
+    for flag, value in (
+        ("--run-id", args.run_id),
+        ("--since", args.since),
+        ("--as-of", args.as_of),
+    ):
+        if value:
+            forwarded.extend((flag, str(value)))
+    result = offline_main(forwarded)
+    if result == 0:
+        loaded = load_build_evidence(output)
+        print(f"Build evidence: {output} ({loaded.artifact_id})")
+    return result
+
+
+def _run_recommend(args: argparse.Namespace) -> int:
+    evidence_path = (
+        args.build_evidence.expanduser().resolve()
+        if args.build_evidence is not None
+        else _sync_artifact_directory(args.artifacts) / "build-evidence.json"
+    )
+    evidence = require_current_build_evidence(
+        evidence_path,
+        DeadlockApi(args.api_base_url),
+    )
+    state = DecisionState.from_file(args.state.expanduser().resolve())
+    pinned_api = DeadlockApi(
+        args.api_base_url,
+        client_version=evidence.client_version,
+        as_of_timestamp=evidence.as_of_timestamp,
+        epochs=evidence.epochs,
+    )
+    decision = recommend(evidence, state, pinned_api.items())
+    print(json.dumps(decision.as_dict(), indent=2, ensure_ascii=False))
+    return 0
 
 
 def _run_preview(args: argparse.Namespace) -> int:
@@ -716,6 +792,8 @@ def main(argv: list[str] | None = None) -> int:
     handlers = {
         "sync": _run_sync,
         "status": _run_status,
+        "refresh-evidence": _run_refresh_evidence,
+        "recommend": _run_recommend,
         "preview": _run_preview,
         "install": _run_install,
         "install-artifacts": _run_install_artifacts,
@@ -730,6 +808,7 @@ def main(argv: list[str] | None = None) -> int:
         GuideError,
         FreshnessError,
         NarrativeError,
+        RecommendationError,
         OSError,
         ValueError,
     ) as error:

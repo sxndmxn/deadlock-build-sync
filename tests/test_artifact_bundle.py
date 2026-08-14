@@ -69,7 +69,7 @@ def _manifest(evidence: dict[str, Any], raw_evidence: bytes) -> SnapshotManifest
                 {
                     "artifact_id": evidence["artifact_id"],
                     "hero_count": 1,
-                    "method": "reconstructed-final-inventory-v2",
+                    "method": "reconstructed-final-inventory-v3",
                 },
                 datetime.now(UTC).isoformat(),
                 hashlib.sha256(raw_evidence).hexdigest(),
@@ -192,13 +192,14 @@ def _build_evidence() -> dict[str, Any]:
             })
     boundary = EpochBoundary(PATCH.identity, 100)
     payload = {
-        "schema_version": 1,
+        "schema_version": 2,
         "producer": "fixture",
         "method": {
-            "version": "reconstructed-final-inventory-v2",
+            "version": "reconstructed-final-inventory-v3",
             "core_item_count": 8,
             "core_candidate_limit": 64,
             "minimum_core_support": 20,
+            "minimum_tier_support": 20,
             "tier_item_count": 10,
         },
         "cohort": {
@@ -228,6 +229,34 @@ def _build_evidence() -> dict[str, Any]:
                     }
                 ],
                 "items": items,
+                "sequence_policy": {
+                    "version": 1,
+                    "minimum_support": 20,
+                    "production_model": "deterministic_backoff",
+                    "component_expanded_default_path": list(range(1001, 1009)),
+                    "transitions": [
+                        {
+                            "level": "popularity",
+                            "first_item_id": 0,
+                            "previous_item_id": 0,
+                            "position": 0,
+                            "next_item_id": 1001,
+                            "support": 50,
+                            "context_support": 100,
+                        }
+                    ],
+                    "evaluation": {"chronological_fold": "test"},
+                    "challenger": {
+                        "evaluated": True,
+                        "passed": False,
+                        "promoted": False,
+                    },
+                },
+                "situational_policy": {
+                    "version": 1,
+                    "branches": [],
+                    "abstentions": ["No branch passed every gate."],
+                },
             }
         ],
     }
