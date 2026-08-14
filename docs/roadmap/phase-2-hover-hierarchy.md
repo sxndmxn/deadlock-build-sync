@@ -1,24 +1,25 @@
 # Phase 2 — Hover hierarchy
 
-Status: implemented and installed; fresh visual smoke test awaits session unlock
+Status: feedback correction implemented; corrected build awaits installation
 
 ## Outcome
 
-CORE hovers lead with hero-specific action, every option states a mechanically proven
-job, and observational context remains compact and subordinate.
+Every item keeps the familiar compact analytics block. Reviewed hero-specific advice
+may precede it, while Valve's native tooltip remains the sole generic mechanics
+description.
 
 ## Decisions
 
 - Limit generated CORE instructions to 165 UTF-8 bytes and the complete Steam
   annotation to 240 bytes. Reject, do not truncate, model output that exceeds its
   contract.
-- Format CORE as action first, then `Usually <window> • adopted <rate> (n=<eligible>)`.
-  Omit unavailable or weak timing instead of substituting outcome rate.
-- Classify optional items only into mechanics-backed jobs: anti-heal, bullet defense,
-  spirit defense, mobility, ally protection, active use, imbue, upgrade, or slot
-  consolidation. Use the neutral “reference option” label when no rule matches.
-- Show active, imbue, sell, flex, component, and replacement burdens only when those
-  fields are actually encoded. Never emit counter language without Phase 4 evidence.
+- Keep the native item description authoritative. Default to the compact analytics
+  block `PURCHASE WINDOW`, `WIN RATE`, and `PICK RATE`; prepend only reviewed,
+  hero-specific tactical guidance.
+  Show an unavailable purchase window honestly when timing is missing.
+- Do not repeat native mechanics with generic labels such as active use, active
+  binding, imbue, upgrade, component consumption, or reference option.
+- Never emit counter language without Phase 4 evidence.
 - Keep category descriptions fixed and short; category summaries remain in the audit
   artifact but do not enumerate visible cards in the client.
 
@@ -26,16 +27,16 @@ job, and observational context remains compact and subordinate.
 
 - Add one byte-budgeted annotation composer shared by live generation and reviewed
   artifact loading.
-- Add deterministic mechanics-job classification from pinned structured assets.
+- Keep unreviewed optional-item hovers stats-only.
 - Tighten narrative schema/prompt validation and bump narrative identity.
 - Add projection-utilization evaluation so every required narrative field has a
   declared player or audit consumer.
 
 ## Proof
 
-- Golden UTF-8 boundary tests, missing/sparse window cases, and no raw `Win rate` or
-  misleading `Pick rate` in any default hover.
-- Mechanics classifier fixtures for each supported job and neutral abstention.
+- Golden UTF-8 boundary tests and missing/sparse window cases. Raw buyer win rate
+  remains descriptive only, and pick rate means unique hero-player-match adoption.
+- Regression coverage proves the complete stats block survives tactical composition.
 - DeepEval contract, grounding, causal-language, action-order, byte-budget, and
   projection-utilization suites.
 - Authorized screenshots verify no clipping at 2560×1440, lower 16:9, and ultrawide.
@@ -45,9 +46,9 @@ job, and observational context remains compact and subordinate.
 - Narrative schema 6 / prompt 22 requires a complete, uncorrupted primary-role
   sentence and enforces 165-byte item instructions; the shared composer enforces the
   240-byte Steam annotation ceiling without truncation.
-- CORE annotations lead with exact hero-specific action prose. Optional annotations
-  use explicit mechanics jobs and report active, imbue, replacement, flex, component,
-  and consolidation burdens only when present.
+- CORE annotations lead with exact reviewed hero-specific action prose when it fits.
+  Optional reference items contain only the stats block; an admitted conditional
+  action may add reviewed hero-specific guidance.
 - `NARRATIVE_FIELD_SURFACES` declares the consumer for every generated field family,
   and `ProjectionUtilizationMetric` enforces the declaration in the production suite.
 - Prompt 22 validates conditional trigger, comparator, replacement, execution, and
@@ -60,6 +61,9 @@ job, and observational context remains compact and subordinate.
   Grey Talon passed unchanged on the third bounded attempt after two drafts were
   correctly rejected for making an optional tier automatic. All 11 admitted responses
   passed the same 44/44 production metrics.
+- Live-client review on 2026-08-14 found the deterministic mechanics labels redundant
+  with Valve's item tooltip. The correction removed that classifier and restored the
+  three-line analytics block for every item.
 
 Traceability: [usage audit](../deadlock-build-usage-audit.md#phase-2-hover-hierarchy)
 and [annotation requirement](../deadlock-build-policy-requirements.md#req-rnd-006--keep-annotations-actionable-and-bounded).

@@ -86,7 +86,7 @@ class GuideItem:
         if self.tactical_annotation:
             return self.tactical_annotation
         if self.eligible_player_matches:
-            return observational_item_context(self)
+            return item_stat_context(self)
         timing = (
             " • ".join(format_purchase_window(window) for window in self.windows)
             if self.windows
@@ -219,28 +219,22 @@ def _format_observed_purchase_window(q25: float | None, q75: float | None) -> st
     return f"{lower}k–{upper}k souls"
 
 
-def observational_item_context(item: GuideItem) -> str:
-    """Render concise descriptive timing/adoption without outcome claims.
+def item_stat_context(item: GuideItem) -> str:
+    """Render the compact analytics block shown under an item's native tooltip.
 
     Returns:
-        A subordinate observational context line.
+        Purchase window, raw buyer win rate, and player-match pick rate.
 
     """
-    parts: list[str] = []
-    if item.buy_net_worth_q25 is not None and item.buy_net_worth_q75 is not None:
-        parts.append(
-            "Usually "
-            + _format_observed_purchase_window(
-                item.buy_net_worth_q25,
-                item.buy_net_worth_q75,
-            )
-        )
-    if item.eligible_player_matches:
-        parts.append(
-            f"adopted {item.purchase_adoption * 100:.1f}% "
-            f"(n={item.eligible_player_matches:,})"
-        )
-    return " • ".join(parts) or "Observational timing unavailable."
+    window = _format_observed_purchase_window(
+        item.buy_net_worth_q25,
+        item.buy_net_worth_q75,
+    )
+    return (
+        f"PURCHASE WINDOW: {window}\n"
+        f"WIN RATE: {item.observed_outcome_rate * 100:.1f}%\n"
+        f"PICK RATE: {item.purchase_adoption * 100:.1f}%"
+    )
 
 
 def tactical_item_annotation(instruction: str, item: GuideItem) -> str:
@@ -259,12 +253,12 @@ def tactical_item_annotation(instruction: str, item: GuideItem) -> str:
             "tactical instruction must be 1–"
             f"{MAX_TACTICAL_INSTRUCTION_BYTES} UTF-8 bytes"
         )
-    context = observational_item_context(item)
+    context = item_stat_context(item)
     combined = f"{action}\n{context}"
     annotation = (
         combined
         if len(combined.encode("utf-8")) <= MAX_ITEM_ANNOTATION_BYTES
-        else action
+        else context
     )
     if len(annotation.encode("utf-8")) > MAX_ITEM_ANNOTATION_BYTES:
         raise ValueError(

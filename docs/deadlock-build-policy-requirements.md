@@ -774,17 +774,18 @@ The key words **MUST**, **MUST NOT**, **REQUIRED**, **SHOULD**, **SHOULD NOT**, 
   within Valve UI limits. Optional tier reference menus **MUST** instead identify their
   non-automatic reference semantics and **MUST NOT** invent a trigger from adoption.
   Evidence-backed CORE tiles **MUST** lead with the exact validated hero-specific action
-  instruction, followed only by a supported observed first-ownership window and
-  adoption context that fits the byte budget. Optional tiles **MUST** lead with a
-  mechanics-backed job or neutral reference label and expose only burdens actually
-  encoded. Raw adopter outcome **MUST NOT** occupy the default hover. Denominators,
-  coverage, medians, and statistical caveats belong in the evidence artifact and guide
+  instruction when the complete annotation fits. Every item **MUST** retain the compact
+  `PURCHASE WINDOW`, `WIN RATE`, and `PICK RATE` analytics block. `WIN RATE` is the raw
+  buyer outcome and **MUST NOT** be described causally; `PICK RATE` is unique
+  hero-player-match purchase adoption. Optional reference tiles **MUST NOT** repeat
+  mechanics already visible in Valve's native tooltip. Denominators, coverage, medians,
+  and statistical caveats belong in the evidence artifact and guide
   description/sidecar, not duplicated on every tile.
 - **Research basis:** [Keep the menu small and actionable](deadlock-strategy-description-research.md#keep-the-menu-small-and-actionable).
 - **Acceptance:** Generated CORE instructions fit 165 UTF-8 bytes, complete annotations
-  fit 240 bytes, CORE action identity is exact, optional job fixtures cover every
-  supported mechanic and neutral abstention, and no default hover labels adoption as
-  pick rate or exposes raw win rate.
+  fit 240 bytes, CORE action identity is exact when included, the complete three-line
+  stats block is never displaced, and unreviewed optional hovers contain no generated
+  mechanics description.
 - **Proof:** Renderer snapshot and Unicode/length tests.
 - **Dependencies:** REQ-ANA-012.
 

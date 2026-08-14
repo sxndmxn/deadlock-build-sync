@@ -418,7 +418,12 @@ def test_loads_exact_reviewed_bundle_without_analytics_refetch(tmp_path: Path) -
     )
     assert guide.rendered_categories[0].items[0].annotation == (
         "Use Item 1001 at its observed place in the core.\n"
-        "Usually 4k–14k souls • adopted 80.0% (n=100)"
+        "PURCHASE WINDOW: 4k–14k souls\n"
+        "WIN RATE: 50.0%\n"
+        "PICK RATE: 80.0%"
+    )
+    assert guide.rendered_categories[1].items[0].annotation == (
+        "PURCHASE WINDOW: 4k–14k souls\nWIN RATE: 50.0%\nPICK RATE: 80.0%"
     )
     assert guide.ability_path is not None
     assert len(guide.ability_path.ability_ids) == 16

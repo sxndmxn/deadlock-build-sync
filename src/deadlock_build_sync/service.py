@@ -12,7 +12,6 @@ from .build_evidence import (
     select_hero_build,
 )
 from .build_tags import BuildTagCatalog, BuildTagError, select_build_tags
-from .item_jobs import annotate_optional_items
 from .mechanics import (
     AbilityTimelineStep,
     ItemGraph,
@@ -702,7 +701,6 @@ def generate_guides(
             layout_source=inputs.analytic_guide,
         )
         projected = replace(projected, ability_path=inputs.analytic_guide.ability_path)
-        projected = annotate_optional_items(projected, assets)
         try:
             tag_selection = select_build_tags(
                 tuple(item.item_id for item in projected.core_items),
