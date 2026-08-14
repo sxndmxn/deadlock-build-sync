@@ -1,3 +1,7 @@
+from dataclasses import replace
+
+import pytest
+
 from deadlock_build_sync.item_jobs import annotate_optional_items, mechanics_job
 from deadlock_build_sync.purchase_guide import (
     GuideCategory,
@@ -18,6 +22,33 @@ def test_mechanics_jobs_use_explicit_rules_and_neutral_abstention() -> None:
     assert mechanics_job({"description": "Plain damage."}, item()) == (
         "Reference option"
     )
+
+
+@pytest.mark.parametrize(
+    ("asset", "guide_item", "expected"),
+    [
+        ({"description": "Applies healing reduction."}, item(), "Healing reduction"),
+        ({"description": "Gain Bullet Resist."}, item(), "Bullet defense"),
+        ({"description": "Gain Spirit Resist."}, item(), "Spirit defense"),
+        ({"description": "Gain move speed."}, item(), "Mobility"),
+        ({"description": "Shield an ally."}, item(), "Ally protection"),
+        ({"is_active_item": True}, item(), "Active use"),
+        ({"description": "Choose an imbue target."}, item(), "Imbue"),
+        ({"component_items": ["base"]}, item(), "Upgrade"),
+        (
+            {"component_items": ["base", "second"]},
+            replace(item(), tier=4),
+            "Slot consolidation",
+        ),
+        ({"description": "Plain damage."}, item(), "Reference option"),
+    ],
+)
+def test_every_hover_job_has_a_mechanics_fixture(
+    asset: dict[str, object],
+    guide_item: GuideItem,
+    expected: str,
+) -> None:
+    assert mechanics_job(asset, guide_item) == expected
 
 
 def test_optional_annotation_leads_with_job_and_keeps_observation_subordinate() -> None:

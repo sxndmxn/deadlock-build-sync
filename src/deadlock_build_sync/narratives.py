@@ -20,6 +20,15 @@ NARRATIVE_SCHEMA_VERSION = 5
 NARRATIVE_PROMPT_VERSION = 20
 DEFAULT_KIT_MODEL = "gpt-5.6-luna"
 DEFAULT_SYNTHESIS_MODEL = "gpt-5.6-sol"
+NARRATIVE_FIELD_SURFACES = {
+    "build_summary": ("reviewed_guide.summary",),
+    "tactical_profile.primary_role": ("player.description",),
+    "tactical_profile.fight_role": ("player.description",),
+    "tactical_profile.economy_plan": ("player.description",),
+    "tactical_profile.ending_duration_interpretation": ("audit.narrative",),
+    "action_explanations": ("player.core_item_hover",),
+    "category_summaries": ("audit.narrative",),
+}
 
 
 class NarrativeError(RuntimeError):

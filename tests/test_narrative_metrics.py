@@ -26,6 +26,7 @@ def hero() -> dict[str, Any]:
 
 def response() -> dict[str, Any]:
     return {
+        "build_summary": "Follow the default and adapt through optional menus.",
         "action_explanations": [
             {
                 "node_id": "core",
@@ -43,12 +44,15 @@ def response() -> dict[str, Any]:
             {"category": "IF BURST", "summary": "Conditional."},
         ],
         "tactical_profile": {
+            "primary_role": "Mobile pressure",
+            "fight_role": "Maintain contact and convert clean picks.",
+            "economy_plan": "Build the core in order unless the state changes.",
             "ending_duration_interpretation": {
                 "estimand": "ending_duration_profile",
                 "strongest_phase": "LATE (45m+)",
                 "weakest_phase": "EARLY (<30m)",
                 "plan": "Convert clean opportunities.",
-            }
+            },
         },
     }
 
@@ -95,6 +99,18 @@ def test_evidence_language_metric_reports_claim_failure(
 
     assert metric.measure(case(response())) == 0.0
     assert metric.reason == "causal language"
+
+
+def test_projection_utilization_requires_every_generated_field_family() -> None:
+    metric = metrics.ProjectionUtilizationMetric(hero())
+
+    assert metric.measure(case(response())) == 1.0
+
+    incomplete = response()
+    incomplete.pop("build_summary")
+    assert metric.measure(case(incomplete)) == 0.0
+    assert isinstance(metric.reason, str)
+    assert "build_summary" in metric.reason
 
 
 def test_repeated_metric_passes_structurally_stable_outputs(

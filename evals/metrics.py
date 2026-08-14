@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any, override
 
 from deepeval.metrics import BaseMetric
 
+from deadlock_build_sync.narratives import NARRATIVE_FIELD_SURFACES
 from scripts import generate_narratives
 
 if TYPE_CHECKING:
@@ -186,6 +187,64 @@ class EvidenceLanguageMetric(_SynchronousNarrativeMetric):
         )
 
 
+class ProjectionUtilizationMetric(_SynchronousNarrativeMetric):
+    """Require every generated narrative family to name a real consumer."""
+
+    metric_name = "Projection utilization"
+
+    @override
+    def measure(
+        self,
+        test_case: LLMTestCase,
+        *_args: Any,
+        **_kwargs: Any,
+    ) -> float:
+        """Measure declared UI or audit consumption for required response fields.
+
+        Returns:
+            One when every required narrative family exists and has a consumer.
+
+        """
+        response, error = _parse_object(test_case.actual_output)
+        if response is None:
+            return self._record(0.0, error or "invalid response")
+        tactical = response.get("tactical_profile")
+        required = {
+            "build_summary": response.get("build_summary"),
+            "tactical_profile.primary_role": (
+                tactical.get("primary_role") if isinstance(tactical, dict) else None
+            ),
+            "tactical_profile.fight_role": (
+                tactical.get("fight_role") if isinstance(tactical, dict) else None
+            ),
+            "tactical_profile.economy_plan": (
+                tactical.get("economy_plan") if isinstance(tactical, dict) else None
+            ),
+            "tactical_profile.ending_duration_interpretation": (
+                tactical.get("ending_duration_interpretation")
+                if isinstance(tactical, dict)
+                else None
+            ),
+            "action_explanations": response.get("action_explanations"),
+            "category_summaries": response.get("category_summaries"),
+        }
+        missing = [path for path, value in required.items() if not value]
+        unconsumed = [
+            path for path in required if not NARRATIVE_FIELD_SURFACES.get(path)
+        ]
+        if missing or unconsumed:
+            details = []
+            if missing:
+                details.append("missing: " + ", ".join(missing))
+            if unconsumed:
+                details.append("no declared consumer: " + ", ".join(unconsumed))
+            return self._record(0.0, "; ".join(details))
+        return self._record(
+            1.0,
+            "Every required narrative family has a declared player or audit surface",
+        )
+
+
 class RepeatedGenerationStabilityMetric(_SynchronousNarrativeMetric):
     """Score completion and structural stability across repeated generations."""
 
@@ -281,4 +340,5 @@ def production_metrics(hero: dict[str, Any]) -> list[BaseMetric]:
         ProductionContractMetric(hero),
         ClosedPolicyCoverageMetric(hero),
         EvidenceLanguageMetric(hero),
+        ProjectionUtilizationMetric(hero),
     ]

@@ -34,7 +34,13 @@ def mechanics_job(asset: dict[str, Any], item: GuideItem) -> str:
         ("Mobility", ("move speed", "movespeed", "dash", "teleport", "leap")),
         (
             "Ally protection",
-            ("target ally", "allied target", "ally shield", "ally barrier"),
+            (
+                "target ally",
+                "allied target",
+                "ally shield",
+                "ally barrier",
+                "shield an ally",
+            ),
         ),
     )
     for label, terms in rules:
@@ -45,6 +51,8 @@ def mechanics_job(asset: dict[str, Any], item: GuideItem) -> str:
     if bool(asset.get("is_active_item")):
         return "Active use"
     if asset.get("component_items"):
+        if item.tier == 4:
+            return "Slot consolidation"
         return "Upgrade"
     return "Reference option"
 
@@ -57,6 +65,11 @@ def _instruction(asset: dict[str, Any], item: GuideItem) -> str:
         parts.append(f"Replacement: sell priority {item.sell_priority}.")
     if item.imbue_target_ability_id is not None:
         parts.append(f"Imbue ability {item.imbue_target_ability_id}.")
+    if bool(asset.get("is_active_item")):
+        parts.append("Uses an active binding.")
+    components = asset.get("component_items")
+    if isinstance(components, list) and components:
+        parts.append(f"Consumes {len(components)} component(s).")
     return " ".join(parts)
 
 
