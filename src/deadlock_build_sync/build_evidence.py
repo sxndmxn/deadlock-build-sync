@@ -20,6 +20,7 @@ BUILD_EVIDENCE_SCHEMA_VERSION = 1
 CORE_ITEM_COUNT = 8
 CORE_CANDIDATE_LIMIT = 64
 TIER_ITEM_COUNT = 10
+MINIMUM_TIER_SUPPORT = 20
 MINIMUM_CORE_SUPPORT = 20
 METHOD_VERSION = "reconstructed-final-inventory-v2"
 
@@ -475,13 +476,22 @@ def select_hero_build(
         raise ArtifactError(f"hero {evidence.hero_id} has no legal supported core")
 
     tiers: dict[int, tuple[ItemEvidence, ...]] = {}
+    core_ids = set(selected.item_ids)
     for tier in range(1, 5):
         membership = sorted(
-            (item for item in evidence.items if item.tier == tier),
+            (
+                item
+                for item in evidence.items
+                if item.tier == tier
+                and item.item_id not in core_ids
+                and item.adopter_matches >= MINIMUM_TIER_SUPPORT
+            ),
             key=lambda item: (-item.adoption, -item.adopter_matches, item.item_id),
         )[:TIER_ITEM_COUNT]
-        if len(membership) != TIER_ITEM_COUNT:
-            raise ArtifactError(f"hero {evidence.hero_id} lacks ten Tier {tier} items")
+        if not membership:
+            raise ArtifactError(
+                f"hero {evidence.hero_id} lacks a supported non-CORE Tier {tier} item"
+            )
         tiers[tier] = tuple(
             sorted(
                 membership,

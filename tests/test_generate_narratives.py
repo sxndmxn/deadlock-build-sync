@@ -151,7 +151,7 @@ def packet_and_response() -> tuple[dict[str, Any], dict[str, Any]]:
 
 
 def test_generator_uses_installer_prompt_version() -> None:
-    assert generate_narratives.PROMPT_VERSION == NARRATIVE_PROMPT_VERSION == 19
+    assert generate_narratives.PROMPT_VERSION == NARRATIVE_PROMPT_VERSION == 20
 
 
 def test_kit_context_excludes_items_outcomes_and_policy() -> None:
@@ -203,11 +203,17 @@ def test_validates_closed_policy_explanation() -> None:
 
     validated = generate_narratives.validate_response(response, packet)
 
-    assert validated["prompt_version"] == 19
-    assert [row["node_id"] for row in validated["action_explanations"]] == [
-        "core",
-        "counter",
-    ]
+    assert validated["prompt_version"] == 20
+
+
+def test_rejects_core_instruction_over_utf8_byte_budget() -> None:
+    packet, response = packet_and_response()
+    response["action_explanations"][0]["instruction"] = (
+        "Use Frost Core " + "é" * 80 + "."
+    )
+
+    with pytest.raises(generate_narratives.GenerationError, match="165-byte"):
+        generate_narratives.validate_response(response, packet)
 
 
 def test_rejects_changed_snapshot_or_policy() -> None:

@@ -16,10 +16,11 @@ NORMAL_AVERAGE_SHARE = 0.10
 LOW_VOLUME_AVERAGE_SHARE = 0.15
 MIN_WINDOW_MATCHES = 20
 MIN_WINDOW_SHARE = 0.05
-CORE_CATEGORY_DESCRIPTION = "Automatic purchase path, purchased left to right."
-TIER_CATEGORY_DESCRIPTION = (
-    "Optional choices, ordered left to right by observed purchase window."
-)
+CORE_CATEGORY_DESCRIPTION = "AUTO QUEUE • Default path, buy left→right."
+TIER_CATEGORY_DESCRIPTION = "OPTIONAL • Excluded from Queue; choose deliberately."
+MAX_ITEM_ANNOTATION_BYTES = 240
+MAX_CATEGORY_DESCRIPTION_BYTES = 240
+MAX_TACTICAL_INSTRUCTION_BYTES = 165
 
 
 @dataclass(frozen=True)
@@ -47,6 +48,13 @@ class PurchaseWindow:
     wins: int
     observed_outcome_rate: float
     wilson_lower_bound: float
+
+
+@dataclass(frozen=True)
+class TacticalProfile:
+    primary_role: str
+    fight_role: str
+    economy_plan: str
 
 
 @dataclass(frozen=True)
@@ -78,12 +86,7 @@ class GuideItem:
         if self.tactical_annotation:
             return self.tactical_annotation
         if self.eligible_player_matches:
-            return (
-                "Purchase window: "
-                f"{_format_observed_purchase_window(self.buy_net_worth_q25, self.buy_net_worth_q75)}\n"
-                f"Win rate: {self.observed_outcome_rate * 100:.1f}%\n"
-                f"Pick rate: {self.purchase_adoption * 100:.1f}%"
-            )
+            return observational_item_context(self)
         timing = (
             " • ".join(format_purchase_window(window) for window in self.windows)
             if self.windows
@@ -112,6 +115,7 @@ class PurchaseGuide:
     tiers: dict[int, tuple[GuideItem, ...]]
     ability_path: AbilityPath | None = None
     summary: str = ""
+    tactical_profile: TacticalProfile | None = None
     tier_summaries: dict[int, str] = field(default_factory=dict)
     categories: tuple[GuideCategory, ...] = ()
     snapshot_id: str = ""
@@ -124,6 +128,12 @@ class PurchaseGuide:
     core_joint_share: float = 0.0
     median_final_net_worth: int = 0
     core_target_cost: int = 0
+    build_tag_ids: tuple[int, ...] = ()
+    build_tag_classes: tuple[str, ...] = ()
+    build_tag_labels: tuple[str, ...] = ()
+    build_tag_catalog_sha256: str = ""
+    build_archetype: str = "Evidence Default"
+    as_of_timestamp: int = 0
 
     @property
     def item_count(self) -> int:
@@ -209,6 +219,60 @@ def _format_observed_purchase_window(q25: float | None, q75: float | None) -> st
     return f"{lower}k–{upper}k souls"
 
 
+def observational_item_context(item: GuideItem) -> str:
+    """Render concise descriptive timing/adoption without outcome claims.
+
+    Returns:
+        A subordinate observational context line.
+
+    """
+    parts: list[str] = []
+    if item.buy_net_worth_q25 is not None and item.buy_net_worth_q75 is not None:
+        parts.append(
+            "Usually "
+            + _format_observed_purchase_window(
+                item.buy_net_worth_q25,
+                item.buy_net_worth_q75,
+            )
+        )
+    if item.eligible_player_matches:
+        parts.append(
+            f"adopted {item.purchase_adoption * 100:.1f}% "
+            f"(n={item.eligible_player_matches:,})"
+        )
+    return " • ".join(parts) or "Observational timing unavailable."
+
+
+def tactical_item_annotation(instruction: str, item: GuideItem) -> str:
+    """Compose an action-first annotation within Steam's UTF-8 byte ceiling.
+
+    Returns:
+        The bounded tactical and observational annotation.
+
+    Raises:
+        ValueError: If the tactical instruction exceeds its UTF-8 contract.
+
+    """
+    action = instruction.strip()
+    if not action or len(action.encode("utf-8")) > MAX_TACTICAL_INSTRUCTION_BYTES:
+        raise ValueError(
+            "tactical instruction must be 1–"
+            f"{MAX_TACTICAL_INSTRUCTION_BYTES} UTF-8 bytes"
+        )
+    context = observational_item_context(item)
+    combined = f"{action}\n{context}"
+    annotation = (
+        combined
+        if len(combined.encode("utf-8")) <= MAX_ITEM_ANNOTATION_BYTES
+        else action
+    )
+    if len(annotation.encode("utf-8")) > MAX_ITEM_ANNOTATION_BYTES:
+        raise ValueError(
+            f"item annotation exceeds {MAX_ITEM_ANNOTATION_BYTES} UTF-8 bytes"
+        )
+    return annotation
+
+
 def guide_item_from_evidence(item: ItemEvidence) -> GuideItem:
     return GuideItem(
         item_id=item.item_id,
@@ -240,7 +304,7 @@ def build_purchase_guide_from_evidence(
     """Project validated player-match evidence into the analytic guide model.
 
     Returns:
-        An eight-item coherent core and four ten-item adoption menus.
+        An eight-item coherent core and four compact adoption menus.
 
     """
     by_id = {

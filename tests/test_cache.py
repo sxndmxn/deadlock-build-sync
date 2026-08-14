@@ -14,6 +14,7 @@ from deadlock_build_sync.cache import (
     update_managed_builds,
 )
 from deadlock_build_sync.kv3_binary import encode_binary_v4
+from deadlock_build_sync.presentation import MANAGED_MARKER, BuildPresentation
 from deadlock_build_sync.protobuf import (
     encode_hero_build,
     hero_build_metadata,
@@ -31,7 +32,14 @@ def snapshot_manifest() -> dict[str, str]:
 def guide() -> PurchaseGuide:
     window = PurchaseWindow(5000, 10000, 100, 60, 0.6, 0.5)
     item = GuideItem(123, "Test Item", 1, 200, 0.55, 0.48, 1.0, (window,))
-    return PurchaseGuide(12, "Kelvin", "hero_kelvin", {1: (item,), 2: (), 3: (), 4: ()})
+    return PurchaseGuide(
+        12,
+        "Kelvin",
+        "hero_kelvin",
+        {1: (item,), 2: (), 3: (), 4: ()},
+        build_tag_ids=(1, 2, 3),
+        as_of_timestamp=1_767_225_600,
+    )
 
 
 def complete_guide() -> PurchaseGuide:
@@ -62,6 +70,9 @@ def complete_guide() -> PurchaseGuide:
         client_version=123,
         match_mode="ranked",
         rank_identity="Phantom I [91]–Eternus VI [116]",
+        build_tag_ids=(1, 2, 3),
+        build_archetype="Spirit Damage",
+        as_of_timestamp=1_767_225_600,
     )
 
 
@@ -69,15 +80,17 @@ def existing_blob(
     build_id: int, hero_id: int, description_patch: str = "Existing"
 ) -> bytes:
     build = encode_hero_build(
-        PurchaseGuide(
-            hero_id, "Existing", "hero_existing", {1: (), 2: (), 3: (), 4: ()}
+        BuildPresentation(
+            hero_id,
+            "Existing | Ranked | 2026-01-01",
+            (1, 2, 3),
+            f"{description_patch}\n{MANAGED_MARKER}",
+            (),
+            None,
         ),
         build_id=build_id,
         account_id=146293212,
-        persona="XMLJDX",
         timestamp=1,
-        patch_title=description_patch,
-        patch_published_at="2026-01-01T00:00:00Z",
     )
     return wrap_hero_build(build)
 

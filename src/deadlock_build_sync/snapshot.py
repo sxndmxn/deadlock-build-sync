@@ -247,6 +247,7 @@ class SnapshotManifest:
     outcome_policy: OutcomePolicy
     outcome_policy_enforced: bool
     records: tuple[EvidenceRecord, ...]
+    build_tags_sha256: str = ""
     warnings: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
@@ -264,6 +265,8 @@ class SnapshotManifest:
             raise ValueError("as-of cutoff precedes a required epoch boundary")
         if not self.records:
             raise ValueError("snapshot manifest must contain source records")
+        if len(self.build_tags_sha256) != 64:
+            raise ValueError("snapshot manifest has no valid build-tag fingerprint")
 
     def _payload(self, *, identity: bool = False) -> dict[str, Any]:
         return {
@@ -275,6 +278,7 @@ class SnapshotManifest:
             "game_mode": self.game_mode,
             "rank_range": self.rank_range,
             "rank_labels_sha256": self.rank_labels_sha256,
+            "build_tags_sha256": self.build_tags_sha256,
             "patch": self.patch,
             "epochs": self.epochs.as_dict(),
             "outcome_policy": self.outcome_policy.as_dict(

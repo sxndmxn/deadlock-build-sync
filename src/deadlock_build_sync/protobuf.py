@@ -4,14 +4,12 @@ import struct
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from .ranks import DEFAULT_RANK_RANGE, RankRange
+from .presentation import MANAGED_MARKER, BuildPresentation
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
     from .purchase_guide import GuideCategory, GuideItem, PurchaseGuide
-
-MANAGED_MARKER = "[deadlock-build-sync:v1]"
 CATEGORY_LABELS = {1: "I", 2: "II", 3: "III", 4: "IV"}
 DEFAULT_CATEGORY_SIZE = (760.0, 164.0)
 STANDARD_CATEGORY_SIZES = {
@@ -43,6 +41,7 @@ class HeroBuildMetadata:
     description: str | None
     version: int | None
     publish_timestamp: int | None
+    tag_ids: tuple[int, ...]
 
 
 def encode_varint(value: int) -> bytes:
@@ -155,9 +154,12 @@ def extract_hero_build(result_blob: bytes) -> bytes:
 def hero_build_metadata(result_blob: bytes) -> HeroBuildMetadata:
     build = extract_hero_build(result_blob)
     values: dict[int, int | str] = {}
+    tag_ids: list[int] = []
     for field in parse_fields(build):
         if field.wire_type == 0 and isinstance(field.value, int):
             values[field.number] = field.value
+            if field.number == 11:
+                tag_ids.append(field.value)
         elif (
             field.wire_type == 2
             and field.number in {5, 6}
@@ -183,6 +185,7 @@ def hero_build_metadata(result_blob: bytes) -> HeroBuildMetadata:
         publish_timestamp=(
             publish_timestamp if isinstance(publish_timestamp, int) else None
         ),
+        tag_ids=tuple(tag_ids),
     )
 
 
@@ -226,13 +229,13 @@ def _encode_currency_change(
     )
 
 
-def _encode_ability_order(guide: PurchaseGuide) -> bytes:
-    if guide.ability_path is None:
+def _encode_ability_order(presentation: BuildPresentation) -> bytes:
+    if presentation.ability_path is None:
         return b""
     output = bytearray()
     purchases: dict[int, int] = {}
     upgrade_costs = (-1, -2, -5)
-    for index, ability_id in enumerate(guide.ability_path.ability_ids):
+    for index, ability_id in enumerate(presentation.ability_path.ability_ids):
         prior_purchases = purchases.get(ability_id, 0)
         if prior_purchases == 0:
             currency_type = 2
@@ -242,7 +245,7 @@ def _encode_ability_order(guide: PurchaseGuide) -> bytes:
             delta = upgrade_costs[prior_purchases - 1]
         else:
             raise ValueError(f"ability {ability_id} appears too often in ability path")
-        annotation = guide.ability_path.annotation if index == 0 else None
+        annotation = presentation.ability_path.annotation if index == 0 else None
         output += message_field(
             1,
             _encode_currency_change(
@@ -256,69 +259,31 @@ def _encode_ability_order(guide: PurchaseGuide) -> bytes:
     return bytes(output)
 
 
-def _build_name(persona: str, hero_name: str, patch_title: str) -> str:
-    parts = [persona, hero_name, patch_title]
-    overflow = len(" | ".join(parts)) - 50
-    for index in (2, 1, 0):
-        if overflow <= 0:
-            break
-        reduction = min(overflow, max(0, len(parts[index]) - 1))
-        parts[index] = parts[index][:-reduction] if reduction else parts[index]
-        overflow -= reduction
-    return " | ".join(parts)[:50]
-
-
 def encode_hero_build(
-    guide: PurchaseGuide,
+    presentation: BuildPresentation,
     *,
     build_id: int,
     account_id: int,
-    persona: str,
     timestamp: int,
-    patch_title: str,
-    patch_published_at: str,
-    rank_range: RankRange = DEFAULT_RANK_RANGE,
 ) -> bytes:
     details = bytearray()
-    for category in guide.rendered_categories:
+    for category in presentation.categories:
         details += message_field(1, _encode_category(category))
-    details += message_field(2, _encode_ability_order(guide))
-
-    build_name = _build_name(persona, guide.hero_name, patch_title)
-    description_lines = [
-        MANAGED_MARKER,
-        "Private evidence-grounded guide generated from deadlock-api.com.",
-        f"Patch: {patch_title} ({patch_published_at})",
-        f"Client: {guide.client_version or 'UNRESOLVED'}.",
-        f"Matchmaking: {guide.match_mode.upper() if guide.match_mode else 'UNRESOLVED'}; ruleset: NORMAL.",
-        f"Ranks: {guide.rank_identity or rank_range.label}.",
-        f"Snapshot: {guide.snapshot_id or 'UNRESOLVED'}.",
-        f"Policy: {guide.policy_id or 'UNRESOLVED'}.",
-        "Claim limit: observational associations are not item effects or causation.",
-    ]
-    if guide.summary:
-        description_lines.append(guide.summary)
-    if guide.ability_path is not None:
-        description_lines.append(
-            "Ability-path pick rate compares reliable complete 16-step paths "
-            "(20+ matches)."
-        )
-    description_lines.append(
-        "CORE ITEMS is the only Queue row; TIER 1–4 are optional reference menus."
-    )
-    description = "\n".join(description_lines)
+    details += message_field(2, _encode_ability_order(presentation))
 
     output = bytearray()
     output += varint_field(1, build_id)
-    output += varint_field(2, guide.hero_id)
+    output += varint_field(2, presentation.hero_id)
     output += varint_field(3, account_id)
     output += varint_field(4, timestamp)
-    output += string_field(5, build_name)
-    output += string_field(6, description)
+    output += string_field(5, presentation.name)
+    output += string_field(6, presentation.description)
     output += varint_field(7, 0)
     output += varint_field(8, 0)
     output += varint_field(9, 0)
     output += message_field(10, bytes(details))
+    for tag_id in presentation.tag_ids:
+        output += varint_field(11, tag_id)
     output += bool_field(12, value=False)
     return bytes(output)
 
@@ -343,7 +308,11 @@ def is_managed_build(
     )
 
 
-def describe_guide(guide: PurchaseGuide) -> dict[str, Any]:
+def describe_guide(
+    guide: PurchaseGuide,
+    *,
+    presentation: BuildPresentation | None = None,
+) -> dict[str, Any]:
     ability_path = guide.ability_path
     return {
         "hero_id": guide.hero_id,
@@ -355,6 +324,22 @@ def describe_guide(guide: PurchaseGuide) -> dict[str, Any]:
         "match_mode": guide.match_mode,
         "rank_identity": guide.rank_identity,
         "summary": guide.summary,
+        "presentation": (
+            {
+                "name": presentation.name,
+                "tag_ids": list(presentation.tag_ids),
+                "description": presentation.description,
+            }
+            if presentation is not None
+            else None
+        ),
+        "build_tags": {
+            "archetype": guide.build_archetype,
+            "ids": list(guide.build_tag_ids),
+            "classes": list(guide.build_tag_classes),
+            "labels": list(guide.build_tag_labels),
+            "catalog_sha256": guide.build_tag_catalog_sha256,
+        },
         "core": {
             "item_count": len(guide.core_items),
             "joint_player_matches": guide.core_joint_matches,
@@ -365,8 +350,11 @@ def describe_guide(guide: PurchaseGuide) -> dict[str, Any]:
         "ability_path": (
             {
                 "abilities": list(ability_path.ability_ids),
-                "pick_rate": ability_path.pick_rate,
-                "win_rate": ability_path.win_rate,
+                "final_branch_support_share": (ability_path.final_branch_support_share),
+                "observed_final_branch_outcome_rate": (
+                    ability_path.observed_final_branch_outcome_rate
+                ),
+                "minimum_decision_support": ability_path.minimum_decision_support,
                 "matches": ability_path.matches,
                 "wins": ability_path.wins,
                 "losses": ability_path.losses,

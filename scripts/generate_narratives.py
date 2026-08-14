@@ -23,6 +23,7 @@ from deadlock_build_sync.narratives import (
     NARRATIVE_PROMPT_VERSION,
     NARRATIVE_SCHEMA_VERSION,
 )
+from deadlock_build_sync.purchase_guide import MAX_TACTICAL_INSTRUCTION_BYTES
 from deadlock_build_sync.strategy_context import (
     StrategyContextError,
     validate_strategy_context_document,
@@ -104,6 +105,8 @@ build_summary:
 action_explanations:
 - Return every supplied explainable action exactly once, in supplied order.
 - Copy node_id and evidence_ref. The instruction must name that supplied action.
+- Keep every instruction within 165 UTF-8 bytes so the deterministic timing line
+  can fit in the Steam hover.
 - Explain only the supplied annotation/mechanics and stay within the claim's
   language ceiling. Conditional actions must retain their trigger, replacement,
   execution, and failure condition.
@@ -818,6 +821,11 @@ def validate_response(
         instruction = _validate_complete_sentence(
             explanation.get("instruction"), f"instruction for {node_id}", hero_name
         )
+        if len(instruction.encode("utf-8")) > MAX_TACTICAL_INSTRUCTION_BYTES:
+            raise GenerationError(
+                f"Codex exceeded the {MAX_TACTICAL_INSTRUCTION_BYTES}-byte "
+                f"instruction limit for {node_id}"
+            )
         action_name = str(supplied.get("action") or "")
         if action_name and not _mentions_item(instruction, action_name):
             raise GenerationError(f"Codex omitted {action_name} from action {node_id}")

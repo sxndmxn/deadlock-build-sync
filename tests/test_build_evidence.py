@@ -158,14 +158,12 @@ def test_load_and_select_exact_build_layout(tmp_path: Path) -> None:
     assert selected.core_joint_share == 0.08
     assert selected.core_target_cost == 20_000
     assert {tier: len(items) for tier, items in selected.tiers.items()} == {
-        1: 10,
-        2: 10,
-        3: 10,
-        4: 10,
+        1: 9,
+        2: 9,
+        3: 9,
+        4: 9,
     }
     assert [item.item_id for item in selected.tiers[1]] == [
-        101,
-        102,
         103,
         104,
         105,
@@ -173,9 +171,12 @@ def test_load_and_select_exact_build_layout(tmp_path: Path) -> None:
         107,
         108,
         109,
+        111,
         110,
     ]
-    assert 111 not in {item.item_id for item in selected.tiers[1]}
+    assert not {item.item_id for item in selected.core} & {
+        item.item_id for items in selected.tiers.values() for item in items
+    }
     assert (
         next(
             item for item in catalog.heroes[13].items if item.item_id == 111

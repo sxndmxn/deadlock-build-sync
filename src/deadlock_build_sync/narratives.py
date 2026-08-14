@@ -4,7 +4,11 @@ import json
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any
 
-from .purchase_guide import standard_category_description
+from .purchase_guide import (
+    TacticalProfile,
+    standard_category_description,
+    tactical_item_annotation,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -12,8 +16,8 @@ if TYPE_CHECKING:
     from .api import Patch
     from .purchase_guide import PurchaseGuide
 
-NARRATIVE_SCHEMA_VERSION = 4
-NARRATIVE_PROMPT_VERSION = 19
+NARRATIVE_SCHEMA_VERSION = 5
+NARRATIVE_PROMPT_VERSION = 20
 DEFAULT_KIT_MODEL = "gpt-5.6-luna"
 DEFAULT_SYNTHESIS_MODEL = "gpt-5.6-sol"
 
@@ -198,13 +202,26 @@ def apply_narrative(
                 f"{label} changed for {guide.hero_name}; regenerate the artifact"
             )
     summary = entry.get("build_summary")
+    tactical_profile = entry.get("tactical_profile")
+    action_explanations = entry.get("action_explanations")
     category_summaries = entry.get("category_summaries")
     if (
         not isinstance(summary, str)
         or not summary.strip()
+        or not isinstance(tactical_profile, dict)
+        or not isinstance(action_explanations, list)
         or not isinstance(category_summaries, list)
     ):
         raise NarrativeError(f"narrative for {guide.hero_name} is incomplete")
+    profile_fields = {
+        field: tactical_profile.get(field)
+        for field in ("primary_role", "fight_role", "economy_plan")
+    }
+    if any(
+        not isinstance(value, str) or not value.strip()
+        for value in profile_fields.values()
+    ):
+        raise NarrativeError(f"narrative for {guide.hero_name} has no tactical profile")
     summaries: dict[str, str] = {}
     for category in category_summaries:
         if (
@@ -232,4 +249,95 @@ def apply_narrative(
         )
         for category in guide.rendered_categories
     )
-    return replace(guide, summary=summary.strip(), categories=categories)
+    supplied_actions = context.get("explainable_actions")
+    if not isinstance(supplied_actions, list):
+        raise NarrativeError(
+            f"strategy context for {guide.hero_name} has no explainable actions"
+        )
+    supplied = [action for action in supplied_actions if isinstance(action, dict)]
+    explanations = [
+        explanation
+        for explanation in action_explanations
+        if isinstance(explanation, dict)
+    ]
+    supplied_nodes = [str(action.get("node_id")) for action in supplied]
+    explanation_nodes = [str(action.get("node_id")) for action in explanations]
+    if (
+        len(supplied) != len(supplied_actions)
+        or len(explanations) != len(action_explanations)
+        or explanation_nodes != supplied_nodes
+    ):
+        raise NarrativeError(
+            f"narrative for {guide.hero_name} changed the closed action set"
+        )
+    explanation_by_node = {
+        str(explanation["node_id"]): explanation for explanation in explanations
+    }
+    core_category = next(
+        (category for category in categories if category.name == "CORE ITEMS"),
+        None,
+    )
+    if core_category is None:
+        core_category = next(
+            (category for category in categories if not category.optional),
+            None,
+        )
+    if core_category is None:
+        raise NarrativeError(f"projection for {guide.hero_name} has no CORE row")
+    core_items = list(core_category.items)
+    core_actions = [
+        action
+        for action in supplied
+        if str(action.get("node_id") or "").startswith("core-")
+    ]
+    if len(core_actions) != len(core_items):
+        raise NarrativeError(
+            f"narrative for {guide.hero_name} does not cover every CORE item"
+        )
+    annotated_items = []
+    for position, (item, action) in enumerate(
+        zip(core_items, core_actions, strict=True),
+        start=1,
+    ):
+        node_id = f"core-{position}"
+        explanation = explanation_by_node.get(node_id)
+        if (
+            action.get("node_id") != node_id
+            or action.get("action_id") != item.item_id
+            or action.get("action") != item.name
+            or explanation is None
+            or explanation.get("evidence_ref") != action.get("evidence_ref")
+            or not isinstance(explanation.get("instruction"), str)
+        ):
+            raise NarrativeError(
+                f"narrative for {guide.hero_name} changed CORE action {node_id}"
+            )
+        try:
+            annotation = tactical_item_annotation(
+                str(explanation["instruction"]),
+                item,
+            )
+        except ValueError as error:
+            raise NarrativeError(
+                f"narrative for {guide.hero_name} has invalid CORE action {node_id}: "
+                f"{error}"
+            ) from error
+        annotated_items.append(replace(item, tactical_annotation=annotation))
+    annotated_core = tuple(annotated_items)
+    categories = tuple(
+        replace(category, items=annotated_core)
+        if category is core_category
+        else category
+        for category in categories
+    )
+    return replace(
+        guide,
+        summary=summary.strip(),
+        tactical_profile=TacticalProfile(
+            primary_role=str(profile_fields["primary_role"]).strip(),
+            fight_role=str(profile_fields["fight_role"]).strip(),
+            economy_plan=str(profile_fields["economy_plan"]).strip(),
+        ),
+        categories=categories,
+        core_items=annotated_core,
+    )

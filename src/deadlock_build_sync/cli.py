@@ -26,6 +26,11 @@ from .cache import (
     install_guides,
     restore_latest,
 )
+from .freshness import (
+    FreshnessError,
+    build_freshness_report,
+    require_current_build_evidence,
+)
 from .narratives import (
     DEFAULT_KIT_MODEL,
     DEFAULT_SYNTHESIS_MODEL,
@@ -34,6 +39,7 @@ from .narratives import (
     apply_narrative,
     load_narrative_catalog,
 )
+from .presentation import build_presentation
 from .protobuf import describe_guide
 from .ranks import DEFAULT_RANK_RANGE, Rank, RankRange
 from .service import GuideError, generate_guides
@@ -180,6 +186,20 @@ def build_parser() -> argparse.ArgumentParser:
         "--artifacts",
         type=Path,
         help="directory for reusable context, kit, and narrative artifacts",
+    )
+
+    status = subparsers.add_parser(
+        "status",
+        help="check evidence, artifacts, and installed managed builds without changes",
+    )
+    _common_location_arguments(status)
+    status.add_argument(
+        "--artifacts",
+        type=Path,
+        help="artifact directory (default: user state directory)",
+    )
+    status.add_argument(
+        "--json", action="store_true", help="emit machine-readable JSON"
     )
     sync.add_argument(
         "--kit-model",
@@ -366,11 +386,16 @@ def _write_policy_artifact(path: Path, generated: GeneratedGuides) -> None:
 
 
 def _run_sync(args: argparse.Namespace) -> int:
+    artifact_directory = _sync_artifact_directory(args.artifacts)
+    evidence_path = _build_evidence_path(args)
+    evidence = require_current_build_evidence(
+        evidence_path,
+        DeadlockApi(args.api_base_url),
+    )
     location = _location(args)
     if deadlock_is_running():
         raise CacheError("Deadlock is running; close it before syncing private builds")
 
-    evidence_path, evidence = _build_evidence(args)
     generated = generate_guides(
         _api(args, evidence),
         build_evidence=evidence,
@@ -387,7 +412,6 @@ def _run_sync(args: argparse.Namespace) -> int:
             + ", ".join(generated.skipped_heroes)
         )
 
-    artifact_directory = _sync_artifact_directory(args.artifacts)
     context_path = artifact_directory / "strategy-context.json"
     policy_path = artifact_directory / "policies.json"
     kit_path = artifact_directory / "kit-profiles.json"
@@ -455,6 +479,37 @@ def _run_sync(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_status(args: argparse.Namespace) -> int:
+    artifact_directory = _sync_artifact_directory(args.artifacts)
+    cache_path: Path | None = None
+    account_id: int | None = None
+    try:
+        location = _location(args)
+    except CacheError:
+        pass
+    else:
+        cache_path = location.cache_path
+        account_id = location.account_id
+    report = build_freshness_report(
+        artifact_directory,
+        DeadlockApi(args.api_base_url),
+        cache_path=cache_path,
+        account_id=account_id,
+    )
+    if args.json:
+        print(json.dumps(report.as_dict(), indent=2, ensure_ascii=False))
+    else:
+        label = "CURRENT" if report.exit_code == 0 else "STALE — regeneration required"
+        print(label)
+        print(
+            f"Latest: client {report.latest_client_version} • "
+            f"{report.latest_patch.title} ({report.latest_patch.published_at})"
+        )
+        for stage in report.stages:
+            print(f"{stage.name}: {stage.state.value} — {stage.detail}")
+    return report.exit_code
+
+
 def _run_preview(args: argparse.Namespace) -> int:
     location = _location(args)
     evidence_path, evidence = _build_evidence(args)
@@ -485,7 +540,18 @@ def _run_preview(args: argparse.Namespace) -> int:
             "narrative": str(args.narratives) if args.narratives else None,
         },
         "policies": [policy.as_dict() for policy in generated.policies],
-        "guides": [describe_guide(guide) for guide in generated.guides],
+        "guides": [
+            describe_guide(
+                guide,
+                presentation=build_presentation(
+                    guide,
+                    patch_title=generated.patch.title,
+                    patch_published_at=generated.patch.published_at,
+                    rank_range=generated.rank_range,
+                ),
+            )
+            for guide in generated.guides
+        ],
     }
     print(json.dumps(payload, indent=2, ensure_ascii=False))
     return 0
@@ -649,6 +715,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     handlers = {
         "sync": _run_sync,
+        "status": _run_status,
         "preview": _run_preview,
         "install": _run_install,
         "install-artifacts": _run_install_artifacts,
@@ -661,6 +728,7 @@ def main(argv: list[str] | None = None) -> int:
         ApiError,
         CacheError,
         GuideError,
+        FreshnessError,
         NarrativeError,
         OSError,
         ValueError,

@@ -175,6 +175,7 @@ class DeadlockApi:
             ),
             "/v1/assets/heroes": (EvidenceUnit.ASSET, "hero-asset"),
             "/v1/assets/items": (EvidenceUnit.ASSET, "item-or-ability-asset"),
+            "/v1/assets/build-tags": (EvidenceUnit.ASSET, "build-tag-asset"),
             "/v1/assets/ranks": (EvidenceUnit.ASSET, "rank-tier-asset"),
             "/v2/patches": (EvidenceUnit.ASSET, "patch-feed-entry"),
             "/v1/players/steam": (EvidenceUnit.ASSET, "steam-account-profile"),
@@ -292,6 +293,12 @@ class DeadlockApi:
             if isinstance(item, dict)
             and str(item.get("game_mode") or GAME_MODE).casefold() == GAME_MODE
         ]
+
+    def build_tags(self) -> list[dict[str, Any]]:
+        data = self.get_json("/v1/assets/build-tags", self._asset_parameters())
+        if not isinstance(data, list):
+            raise ApiError("build-tag assets response was not a list")
+        return [tag for tag in data if isinstance(tag, dict)]
 
     def rank_catalog(self) -> RankCatalog:
         data = self.get_json("/v1/assets/ranks", self._asset_parameters())
@@ -489,6 +496,7 @@ class DeadlockApi:
         *,
         patch: Patch,
         rank_catalog: RankCatalog,
+        build_tags_sha256: str,
     ) -> SnapshotManifest:
         version = self.resolve_client_version()
         warnings = ()
@@ -505,6 +513,7 @@ class DeadlockApi:
             game_mode=GAME_MODE,
             rank_range=rank_catalog.range_dict(self.rank_range),
             rank_labels_sha256=rank_catalog.sha256,
+            build_tags_sha256=build_tags_sha256,
             patch=patch.as_dict(),
             epochs=self.epochs_for_patch(patch),
             outcome_policy=self.outcome_policy,

@@ -6,6 +6,7 @@ from collections import Counter
 from typing import TYPE_CHECKING, Any
 
 from .artifacts import FingerprintLayers
+from .build_tags import AXIS_CLASSES, COMPLEXITY_CLASS, FUNCTION_CLASSES
 from .mechanics import build_hero_mechanics, extract_asset_mechanics
 from .power_curve import summarize_ending_duration_profile
 from .purchase_guide import format_purchase_window
@@ -17,14 +18,45 @@ if TYPE_CHECKING:
     from .purchase_guide import PurchaseGuide
     from .snapshot import SnapshotManifest
 
-CONTEXT_SCHEMA_VERSION = 7
+CONTEXT_SCHEMA_VERSION = 8
 KIT_BASIS_SCHEMA_VERSION = 2
-NARRATIVE_BASIS_SCHEMA_VERSION = 5
+NARRATIVE_BASIS_SCHEMA_VERSION = 6
 TIER_LABELS = {1: "I", 2: "II", 3: "III", 4: "IV"}
 
 
 class StrategyContextError(ValueError):
     """Raised when an exported strategy context is malformed or was edited."""
+
+
+def _validate_build_identity(entry: dict[str, Any], manifest: dict[str, Any]) -> None:
+    projection = entry.get("projection")
+    build = projection.get("build") if isinstance(projection, dict) else None
+    if not isinstance(build, dict):
+        raise StrategyContextError("strategy context has no build identity")
+    ids = build.get("tag_ids")
+    classes = build.get("tag_classes")
+    labels = build.get("tag_labels")
+    valid = (
+        isinstance(ids, list)
+        and len(ids) == 3
+        and all(isinstance(value, int) and value > 0 for value in ids)
+        and len(set(ids)) == 3
+        and isinstance(classes, list)
+        and len(classes) == 3
+        and isinstance(labels, list)
+        and len(labels) == 3
+    )
+    if not valid:
+        raise StrategyContextError("strategy context has invalid build tags")
+    if (
+        classes[0] not in AXIS_CLASSES
+        or classes[1] not in FUNCTION_CLASSES
+        or classes[2] != COMPLEXITY_CLASS
+        or build.get("tag_catalog_sha256") != manifest.get("build_tags_sha256")
+        or not isinstance(build.get("archetype"), str)
+        or not build["archetype"].strip()
+    ):
+        raise StrategyContextError("strategy context has invalid build tags")
 
 
 def _canonical_hash(value: Any) -> str:
@@ -159,6 +191,7 @@ def validate_strategy_context_document(document: dict[str, Any]) -> None:
             raise StrategyContextError(
                 f"strategy context snapshot differs for {hero_name}"
             )
+        _validate_build_identity(entry, manifest)
         if entry.get("kit_basis_sha256") != calculate_kit_basis_sha256(entry):
             raise StrategyContextError(
                 f"strategy context kit basis was edited for {hero_name}; "
@@ -230,7 +263,7 @@ def _ability_policy(
         "all_valid_telemetry_appearances": path.cohort_matches,
         "complete_path_appearances": path.complete_path_matches,
         "final_branch_support": path.matches,
-        "observed_final_branch_outcome_rate": path.win_rate,
+        "observed_final_branch_outcome_rate": path.observed_final_branch_outcome_rate,
         "steps": steps,
     }
 
@@ -360,6 +393,13 @@ def build_hero_strategy_context(
             })
     projected = projection or guide
     projection_context = {
+        "build": {
+            "archetype": projected.build_archetype,
+            "tag_ids": list(projected.build_tag_ids),
+            "tag_classes": list(projected.build_tag_classes),
+            "tag_labels": list(projected.build_tag_labels),
+            "tag_catalog_sha256": projected.build_tag_catalog_sha256,
+        },
         "categories": [
             {
                 "name": category.name,

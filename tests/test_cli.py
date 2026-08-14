@@ -9,6 +9,7 @@ import deadlock_build_sync.cli as cli_module
 from deadlock_build_sync.api import Patch
 from deadlock_build_sync.cache import CacheError, CacheLocation
 from deadlock_build_sync.cli import DEFAULT_NARRATIVE_PATH, build_parser
+from deadlock_build_sync.freshness import FreshnessError
 from deadlock_build_sync.narratives import (
     DEFAULT_KIT_MODEL,
     DEFAULT_SYNTHESIS_MODEL,
@@ -36,6 +37,41 @@ def test_sync_defaults_to_every_eligible_hero_and_staged_models() -> None:
     assert args.kit_model == DEFAULT_KIT_MODEL
     assert args.model == DEFAULT_SYNTHESIS_MODEL
     assert args.max_attempts == 3
+
+
+def test_status_is_read_only_and_supports_json() -> None:
+    args = build_parser().parse_args(["status", "--json"])
+
+    assert args.command == "status"
+    assert args.json
+
+
+def test_stale_sync_stops_before_cache_discovery(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+    monkeypatch.setattr(
+        cli_module,
+        "require_current_build_evidence",
+        lambda *_args: (_ for _ in ()).throw(
+            FreshnessError("STALE — regeneration required")
+        ),
+    )
+    monkeypatch.setattr(
+        cli_module,
+        "_location",
+        lambda _args: calls.append("cache"),
+    )
+    args = build_parser().parse_args([
+        "sync",
+        "--artifacts",
+        str(tmp_path),
+    ])
+
+    with pytest.raises(FreshnessError, match="STALE"):
+        cli_module._run_sync(args)
+    assert calls == []
     assert args.match_mode == MatchMode.RANKED
     assert args.client_version is None
 
@@ -140,6 +176,7 @@ def snapshot() -> SnapshotManifest:
         game_mode="normal",
         rank_range=DEFAULT_RANK_RANGE.as_dict(),
         rank_labels_sha256="ranks",
+        build_tags_sha256="b" * 64,
         patch={"identity": "patch"},
         epochs=EpochSet(boundary, boundary, boundary, boundary),
         outcome_policy=OutcomePolicy(),
@@ -198,11 +235,8 @@ def test_sync_generates_artifacts_and_installs_without_extra_flags(
     monkeypatch.setattr(cli_module, "deadlock_is_running", lambda: False)
     monkeypatch.setattr(
         cli_module,
-        "_build_evidence",
-        lambda _args: (
-            tmp_path / "artifacts/build-evidence.json",
-            SimpleNamespace(artifact_id="e" * 64),
-        ),
+        "require_current_build_evidence",
+        lambda *_args: SimpleNamespace(artifact_id="e" * 64),
     )
     monkeypatch.setattr(cli_module, "_api", lambda *_args: object())
 

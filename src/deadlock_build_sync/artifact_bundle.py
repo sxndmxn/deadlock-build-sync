@@ -14,6 +14,7 @@ from .build_evidence import (
     evidence_record_sha256,
     load_build_evidence,
 )
+from .build_tags import AXIS_CLASSES, COMPLEXITY_CLASS, FUNCTION_CLASSES
 from .narratives import apply_narrative, load_narrative_catalog
 from .policy import BuildPolicy, NodeKind
 from .purchase_guide import (
@@ -44,6 +45,15 @@ class ArtifactGuideBundle:
     rank_range: RankRange
     expected_hero_ids: frozenset[int]
     exclusions: tuple[tuple[int, str], ...]
+
+
+@dataclass(frozen=True)
+class ArtifactBuildIdentity:
+    tag_ids: tuple[int, ...]
+    tag_classes: tuple[str, ...]
+    tag_labels: tuple[str, ...]
+    catalog_sha256: str
+    archetype: str
 
 
 def _read_document(path: Path, label: str) -> dict[str, Any]:
@@ -216,11 +226,11 @@ def _categories(
         projection.get("categories") if isinstance(projection, dict) else None
     )
     expected = (
-        ("CORE ITEMS", False, 8),
-        ("TIER 1", True, 10),
-        ("TIER 2", True, 10),
-        ("TIER 3", True, 10),
-        ("TIER 4", True, 10),
+        ("CORE ITEMS", False, 8, 8),
+        ("TIER 1", True, 1, 10),
+        ("TIER 2", True, 1, 10),
+        ("TIER 3", True, 1, 10),
+        ("TIER 4", True, 1, 10),
     )
     if not isinstance(raw_categories, list) or len(raw_categories) != len(expected):
         raise ArtifactBundleError(
@@ -229,7 +239,7 @@ def _categories(
     categories: list[GuideCategory] = []
     tiers: dict[int, tuple[GuideItem, ...]] = {}
     core_items: tuple[GuideItem, ...] = ()
-    for index, (raw, (name, optional, count)) in enumerate(
+    for index, (raw, (name, optional, minimum, maximum)) in enumerate(
         zip(raw_categories, expected, strict=True)
     ):
         raw_items = raw.get("items") if isinstance(raw, dict) else None
@@ -238,7 +248,7 @@ def _categories(
             or raw.get("name") != name
             or raw.get("optional") is not optional
             or not isinstance(raw_items, list)
-            or len(raw_items) != count
+            or not minimum <= len(raw_items) <= maximum
         ):
             raise ArtifactBundleError(
                 f"hero {policy.hero_id} artifact row {name} is malformed"
@@ -263,6 +273,12 @@ def _categories(
     if tuple(item.item_id for item in core_items) != _policy_core(policy):
         raise ArtifactBundleError(
             f"hero {policy.hero_id} projection core differs from its policy"
+        )
+    core_ids = {item.item_id for item in core_items}
+    tier_ids = {item.item_id for tier_items in tiers.values() for item in tier_items}
+    if core_ids & tier_ids:
+        raise ArtifactBundleError(
+            f"hero {policy.hero_id} optional rows repeat CORE items"
         )
     return tuple(categories), core_items, tiers
 
@@ -394,6 +410,67 @@ def _core_evidence(
     return joint_matches, float(joint_share), median_net_worth, target_cost
 
 
+def _valid_tag_list(values: object, *, integers: bool) -> bool:
+    if not isinstance(values, list) or len(values) != 3:
+        return False
+    if integers:
+        return (
+            all(
+                isinstance(value, int) and not isinstance(value, bool) and value > 0
+                for value in values
+            )
+            and len(set(values)) == 3
+        )
+    return all(isinstance(value, str) and bool(value) for value in values)
+
+
+def _build_identity(
+    hero: dict[str, Any],
+    policy: BuildPolicy,
+    manifest: dict[str, Any],
+) -> ArtifactBuildIdentity:
+    projection = hero.get("projection")
+    build = projection.get("build") if isinstance(projection, dict) else None
+    if not isinstance(build, dict):
+        raise ArtifactBundleError(f"hero {policy.hero_id} has no build identity")
+    tag_ids = build.get("tag_ids")
+    classes = build.get("tag_classes")
+    labels = build.get("tag_labels")
+    catalog_sha256 = build.get("tag_catalog_sha256")
+    archetype = build.get("archetype")
+    if (
+        not _valid_tag_list(tag_ids, integers=True)
+        or not _valid_tag_list(classes, integers=False)
+        or not _valid_tag_list(labels, integers=False)
+    ):
+        raise ArtifactBundleError(f"hero {policy.hero_id} has invalid build tags")
+    if (
+        not isinstance(catalog_sha256, str)
+        or catalog_sha256 != manifest.get("build_tags_sha256")
+        or not isinstance(archetype, str)
+        or not archetype.strip()
+    ):
+        raise ArtifactBundleError(f"hero {policy.hero_id} has invalid build tags")
+    resolved_ids = cast("list[int]", tag_ids)
+    resolved_classes = cast("list[str]", classes)
+    resolved_labels = cast("list[str]", labels)
+    resolved_catalog = cast("str", catalog_sha256)
+    resolved_archetype = cast("str", archetype)
+    if (
+        resolved_classes[0] not in AXIS_CLASSES
+        or resolved_classes[1] not in FUNCTION_CLASSES
+        or resolved_classes[2] != COMPLEXITY_CLASS
+    ):
+        raise ArtifactBundleError(f"hero {policy.hero_id} has invalid build tags")
+    return ArtifactBuildIdentity(
+        tuple(resolved_ids),
+        tuple(resolved_classes),
+        tuple(resolved_labels),
+        resolved_catalog,
+        resolved_archetype.strip(),
+    )
+
+
 def _guide(
     hero: dict[str, Any],
     policy: BuildPolicy,
@@ -407,9 +484,19 @@ def _guide(
     joint_matches, joint_share, median_net_worth, target_cost = _core_evidence(
         hero, policy
     )
+    build_identity = _build_identity(
+        hero,
+        policy,
+        manifest,
+    )
     client_version = manifest.get("client_version")
     match_mode = manifest.get("match_mode")
-    if not isinstance(client_version, int) or not isinstance(match_mode, str):
+    as_of_timestamp = manifest.get("as_of_timestamp")
+    if (
+        not isinstance(client_version, int)
+        or not isinstance(match_mode, str)
+        or not isinstance(as_of_timestamp, int)
+    ):
         raise ArtifactBundleError("artifact snapshot has an invalid cohort")
     return PurchaseGuide(
         hero_id=policy.hero_id,
@@ -428,6 +515,12 @@ def _guide(
         core_joint_share=joint_share,
         median_final_net_worth=median_net_worth,
         core_target_cost=target_cost,
+        build_tag_ids=build_identity.tag_ids,
+        build_tag_classes=build_identity.tag_classes,
+        build_tag_labels=build_identity.tag_labels,
+        build_tag_catalog_sha256=build_identity.catalog_sha256,
+        build_archetype=build_identity.archetype,
+        as_of_timestamp=as_of_timestamp,
     )
 
 

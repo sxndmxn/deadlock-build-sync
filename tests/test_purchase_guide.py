@@ -35,17 +35,15 @@ def evidence_item(
 
 def test_evidence_item_annotation_is_compact_player_facing_copy() -> None:
     assert evidence_item().annotation == (
-        "Purchase window: 4k–14k souls\nWin rate: 49.0%\nPick rate: 80.6%"
+        "Usually 4k–14k souls • adopted 80.6% (n=15,639)"
     )
 
 
 def test_collapsed_and_missing_purchase_windows_remain_readable() -> None:
     assert evidence_item(q25=1_553, q75=2_449).annotation.startswith(
-        "Purchase window: about 2k souls\n"
+        "Usually about 2k souls • "
     )
-    assert evidence_item(q25=None, q75=None).annotation.startswith(
-        "Purchase window: unavailable\n"
-    )
+    assert evidence_item(q25=None, q75=None).annotation.startswith("adopted ")
 
 
 def test_wilson_interval_matches_known_value() -> None:

@@ -192,8 +192,17 @@ def project_policy_to_guide(
             raise PolicyError(
                 "policy default path does not match the eight-item evidence core"
             )
-        if any(len(layout_source.tiers.get(tier, ())) != 10 for tier in range(1, 5)):
-            raise PolicyError("evidence projection requires ten items in every tier")
+        if any(
+            not 1 <= len(layout_source.tiers.get(tier, ())) <= 10
+            for tier in range(1, 5)
+        ):
+            raise PolicyError("evidence projection requires 1–10 items in every tier")
+        if {
+            item.item_id
+            for tier_items in layout_source.tiers.values()
+            for item in tier_items
+        } & set(source_core_ids):
+            raise PolicyError("evidence tier menus must not repeat CORE items")
         core_items = _apply_sell_priorities(layout_source.core_items, policy.nodes)
         categories = (
             GuideCategory(
@@ -220,7 +229,7 @@ def project_policy_to_guide(
                 f"{policy.strategic_role}; coherent eight-item core observed in "
                 f"{layout_source.core_joint_matches:,} player-matches "
                 f"({layout_source.core_joint_share * 100:.2f}%). Tier rows are "
-                "ten-item adoption reference menus, not automatic purchases."
+                "adoption reference menus, not automatic purchases."
             ),
             categories=categories,
             snapshot_id=policy.snapshot_id,
@@ -315,6 +324,13 @@ def projection_fingerprint(guide: PurchaseGuide) -> str:
         "hero_id": guide.hero_id,
         "snapshot_id": guide.snapshot_id,
         "policy_id": guide.policy_id,
+        "build": {
+            "archetype": guide.build_archetype,
+            "tag_ids": list(guide.build_tag_ids),
+            "tag_classes": list(guide.build_tag_classes),
+            "tag_labels": list(guide.build_tag_labels),
+            "tag_catalog_sha256": guide.build_tag_catalog_sha256,
+        },
         "categories": [
             {
                 "name": category.name,

@@ -9,6 +9,8 @@ from .build_evidence import (
     assert_build_evidence_compatible,
     select_hero_build,
 )
+from .build_tags import BuildTagCatalog, BuildTagError, select_build_tags
+from .item_jobs import annotate_optional_items
 from .mechanics import (
     AbilityTimelineStep,
     ItemGraph,
@@ -357,6 +359,10 @@ def generate_guides(
     selected = select_heroes(heroes, hero_query=hero_query, all_heroes=all_heroes)
     assets = api.items()
     try:
+        build_tag_catalog = BuildTagCatalog.from_assets(api.build_tags())
+    except BuildTagError as error:
+        raise GuideError(f"pinned build-tag taxonomy is invalid: {error}") from error
+    try:
         item_graph = ItemGraph.from_assets(assets)
     except MechanicsError as error:
         raise GuideError(f"pinned item mechanics are invalid: {error}") from error
@@ -483,7 +489,11 @@ def generate_guides(
             )
         )
 
-    manifest = api.snapshot_manifest(patch=patch, rank_catalog=rank_catalog)
+    manifest = api.snapshot_manifest(
+        patch=patch,
+        rank_catalog=rank_catalog,
+        build_tags_sha256=build_tag_catalog.sha256,
+    )
     rank_identity = _rank_identity(rank_catalog, api.rank_range)
     guides: list[PurchaseGuide] = []
     policies: list[BuildPolicy] = []
@@ -505,6 +515,26 @@ def generate_guides(
             layout_source=inputs.analytic_guide,
         )
         projected = replace(projected, ability_path=inputs.analytic_guide.ability_path)
+        projected = annotate_optional_items(projected, assets)
+        try:
+            tag_selection = select_build_tags(
+                tuple(item.item_id for item in projected.core_items),
+                assets,
+                build_tag_catalog,
+            )
+        except BuildTagError as error:
+            raise GuideError(
+                f"{projected.hero_name} build tags are invalid: {error}"
+            ) from error
+        projected = replace(
+            projected,
+            build_tag_ids=tag_selection.tag_ids,
+            build_tag_classes=tag_selection.class_names,
+            build_tag_labels=tag_selection.labels,
+            build_tag_catalog_sha256=build_tag_catalog.sha256,
+            build_archetype=tag_selection.archetype,
+            as_of_timestamp=manifest.as_of_timestamp,
+        )
         analytic = replace(
             inputs.analytic_guide,
             snapshot_id=manifest.snapshot_id,

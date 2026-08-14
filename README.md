@@ -27,7 +27,7 @@ The rich output is a typed, snapshot-bound policy graph:
 - A coherent eight-item final-inventory path selected by joint player-match support,
   ordered by observed acquisition time, and kept within the hero's median final net
   worth.
-- Four ten-item price-tier reference menus selected by true player-match adoption and
+- Four compact price-tier reference menus selected by true player-match adoption and
   ordered left to right by observed first-ownership net worth. Outcome rate is
   descriptive only and never selects or orders an item.
 - Evidence objects that name their actual unit and claim class. Item adoption uses
@@ -40,7 +40,7 @@ The rich output is a typed, snapshot-bound policy graph:
 
 Steam receives five rows in a fixed order: `CORE ITEMS`, `TIER 1`, `TIER 2`,
 `TIER 3`, and `TIER 4`. Only the eight-item core enters Queue. Each tier row is an
-optional ten-item reference menu, not a claim that all ten items should be bought or
+optional reference menu of up to ten items, not a claim that every item should be bought or
 that popularity proves a situational counter. Standard row descriptions stay short,
 and each evidence-backed item shows only its observed purchase window, adopter win
 rate, and player-match pick rate. Deterministic code validates the core against

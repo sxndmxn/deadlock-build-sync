@@ -17,6 +17,7 @@ import keyvalues3
 
 from .artifacts import atomic_write_json
 from .kv3_binary import encode_binary_v4
+from .presentation import build_presentation
 from .protobuf import (
     MANAGED_MARKER,
     encode_hero_build,
@@ -263,6 +264,7 @@ def update_managed_builds(
     patch_published_at: str,
     rank_range: RankRange = DEFAULT_RANK_RANGE,
 ) -> tuple[dict[str, Any], dict[int, int], int, int]:
+    _ = persona
     updated_root = deepcopy(root)
     unpublished = updated_root["Unpublished"]
     build_ids: dict[int, int] = {}
@@ -289,14 +291,15 @@ def update_managed_builds(
         if managed_id is None:
             managed_id = _allocate_local_build_id(updated_root, account_id)
         hero_build = encode_hero_build(
-            guide,
+            build_presentation(
+                guide,
+                patch_title=patch_title,
+                patch_published_at=patch_published_at,
+                rank_range=rank_range,
+            ),
             build_id=managed_id,
             account_id=account_id,
-            persona=persona,
             timestamp=timestamp,
-            patch_title=patch_title,
-            patch_published_at=patch_published_at,
-            rank_range=rank_range,
         )
         wrapped = wrap_hero_build(hero_build)
         if managed_index is None:

@@ -119,6 +119,33 @@ class FakeApi(DeadlockApi):
         return self._assets
 
     @override
+    def build_tags(self) -> list[dict[str, Any]]:
+        classes = (
+            "weapon",
+            "spirit",
+            "vitality",
+            "damage",
+            "utility",
+            "healing",
+            "crowd_control",
+            "mobility",
+            "melee",
+            "headshots",
+            "debuff",
+            "complexity_1",
+            "complexity_2",
+            "complexity_3",
+        )
+        return [
+            {
+                "id": index,
+                "class_name": f"citadel_build_tag_{class_name}",
+                "label": class_name.replace("_", " ").title(),
+            }
+            for index, class_name in enumerate(classes, start=1)
+        ]
+
+    @override
     def current_patch(self) -> Patch:
         return Patch("Patch", 123, "2026-01-01T00:00:00Z")
 
@@ -187,6 +214,7 @@ class FakeApi(DeadlockApi):
         *,
         patch: Patch,
         rank_catalog: RankCatalog,
+        build_tags_sha256: str,
     ) -> SnapshotManifest:
         boundary = EpochBoundary("patch", patch.start_timestamp)
         record = EvidenceRecord(
@@ -207,6 +235,7 @@ class FakeApi(DeadlockApi):
             game_mode="normal",
             rank_range=rank_catalog.range_dict(self.rank_range),
             rank_labels_sha256=rank_catalog.sha256,
+            build_tags_sha256=build_tags_sha256,
             patch=patch.as_dict(),
             epochs=EpochSet(boundary, boundary, boundary, boundary),
             outcome_policy=OutcomePolicy(),
@@ -359,8 +388,8 @@ def test_generated_guide_is_snapshot_bound_policy_projection() -> None:
         "TIER 3",
         "TIER 4",
     ]
-    assert [len(category.items) for category in guide.categories] == [8, 10, 10, 10, 10]
-    assert guide.item_count == 48
+    assert [len(category.items) for category in guide.categories] == [8, 8, 8, 8, 8]
+    assert guide.item_count == 40
     assert not guide.categories[0].optional
     assert generated.contexts[0]["ending_duration_profile"]["estimand"] == (
         "ending_duration_profile"
