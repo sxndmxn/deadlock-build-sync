@@ -342,15 +342,42 @@ class Branch:
     next_id: str
     guard: Guard | None = None
     priority: int | None = None
+    additional_guards: tuple[Guard, ...] = ()
 
     @property
     def is_default(self) -> bool:
-        return self.guard is None
+        return self.guard is None and not self.additional_guards
+
+    @property
+    def guards(self) -> tuple[Guard, ...]:
+        """Every condition in this branch's conjunction."""
+        return (
+            (self.guard, *self.additional_guards)
+            if self.guard is not None
+            else self.additional_guards
+        )
+
+    def matches(self, state: dict[str, Any]) -> bool:
+        """Return whether every observable condition matches.
+
+        Returns:
+            Whether all conditions match the current observable state.
+
+        """
+        return bool(self.guards) and all(guard.matches(state) for guard in self.guards)
 
     def as_dict(self) -> dict[str, Any]:
+        guards = self.guards
+        when: str | dict[str, Any] | list[dict[str, Any]]
+        if not guards:
+            when = "default"
+        elif len(guards) == 1:
+            when = guards[0].as_dict()
+        else:
+            when = [guard.as_dict() for guard in guards]
         return {
             "next": self.next_id,
-            "when": self.guard.as_dict() if self.guard is not None else "default",
+            "when": when,
             "priority": self.priority,
         }
 
@@ -369,8 +396,17 @@ class Branch:
             raw_guard = value.get("when")
             if raw_guard == "default":
                 guard = None
+                additional_guards: tuple[Guard, ...] = ()
             elif isinstance(raw_guard, dict):
                 guard = Guard.from_dict(raw_guard)
+                additional_guards = ()
+            elif isinstance(raw_guard, list) and raw_guard:
+                parsed = tuple(
+                    Guard.from_dict(_require_dict(item, "branch guard"))
+                    for item in raw_guard
+                )
+                guard = parsed[0]
+                additional_guards = parsed[1:]
             else:
                 raise PolicyError("branch must use a guard or default")
             raw_priority = value.get("priority")
@@ -378,6 +414,7 @@ class Branch:
                 next_id=str(value["next"]),
                 guard=guard,
                 priority=int(raw_priority) if raw_priority is not None else None,
+                additional_guards=additional_guards,
             )
         except (KeyError, TypeError, ValueError) as error:
             raise PolicyError(f"malformed policy branch: {error}") from error
@@ -557,6 +594,29 @@ class Abstention:
             raise PolicyError("abstention detail must not be empty")
 
 
+def _validate_counter_cards(
+    cards: tuple[CounterCard, ...],
+    nodes: tuple[PolicyNode, ...],
+    claim_ids: list[str],
+) -> None:
+    item_ids = [card.item_id for card in cards]
+    if len(item_ids) != len(set(item_ids)):
+        raise PolicyError("counter cards must use distinct items")
+    claims = set(claim_ids)
+    actions = {
+        (node.item_id, node.evidence_ref)
+        for node in nodes
+        if node.kind == NodeKind.PURCHASE and node.optional
+    }
+    for card in cards:
+        if card.evidence_ref not in claims:
+            raise PolicyError(
+                f"counter card references missing evidence {card.evidence_ref}"
+            )
+        if (card.item_id, card.evidence_ref) not in actions:
+            raise PolicyError("counter card has no matching optional purchase node")
+
+
 @dataclass(frozen=True)
 class BuildPolicy:
     schema_version: int
@@ -570,6 +630,7 @@ class BuildPolicy:
     evidence: tuple[EvidenceClaim, ...]
     ability_plan: tuple[PolicyNode, ...] = ()
     abstentions: tuple[Abstention, ...] = ()
+    counter_cards: tuple[CounterCard, ...] = ()
 
     def __post_init__(self) -> None:
         """Validate policy-level identity and uniqueness.
@@ -607,6 +668,7 @@ class BuildPolicy:
         for claim in self.evidence:
             if claim.snapshot_id != self.snapshot_id:
                 raise PolicyError(f"claim {claim.claim_id} uses a stale snapshot")
+        _validate_counter_cards(self.counter_cards, self.nodes, claim_ids)
 
     @property
     def policy_id(self) -> str:
@@ -632,6 +694,7 @@ class BuildPolicy:
                 }
                 for abstention in self.abstentions
             ],
+            "counter_cards": [card.as_dict() for card in self.counter_cards],
         }
         if include_policy_id:
             payload["policy_id"] = self.policy_id
@@ -657,6 +720,10 @@ class BuildPolicy:
         raw_abstentions = _require_dict_list(
             value.get("abstentions", []),
             "abstentions",
+        )
+        raw_counter_cards = _require_dict_list(
+            value.get("counter_cards", []),
+            "counter_cards",
         )
         try:
             policy = cls(
@@ -685,6 +752,9 @@ class BuildPolicy:
                         ),
                     )
                     for abstention in raw_abstentions
+                ),
+                counter_cards=tuple(
+                    CounterCard.from_dict(card) for card in raw_counter_cards
                 ),
             )
         except (KeyError, TypeError, ValueError) as error:
@@ -717,13 +787,10 @@ def _validate_choice(node: PolicyNode) -> None:
         raise PolicyError(f"choice {node.node_id} must have exactly one default")
     guarded = [branch for branch in node.branches if not branch.is_default]
     signatures = [
-        (
-            branch.guard.field,
-            branch.guard.operator,
-            repr(branch.guard.value),
+        tuple(
+            (guard.field, guard.operator, repr(guard.value)) for guard in branch.guards
         )
         for branch in guarded
-        if branch.guard is not None
     ]
     if len(set(signatures)) != len(signatures) and any(
         branch.priority is None for branch in guarded
@@ -902,9 +969,7 @@ def next_policy_decision(
         node = nodes[current]
         if node.kind in {NodeKind.CHOICE, NodeKind.OBJECTIVE_GATE}:
             matching = [
-                branch
-                for branch in node.branches
-                if branch.guard is not None and branch.guard.matches(state.observable)
+                branch for branch in node.branches if branch.matches(state.observable)
             ]
             if len(matching) > 1 and any(
                 branch.priority is None for branch in matching
@@ -961,6 +1026,7 @@ def next_policy_decision(
 class CounterCard:
     threat: str
     item_id: int
+    comparator_item_id: int
     mechanic_ref: str
     legal_timing: str
     alternative: str
@@ -968,6 +1034,7 @@ class CounterCard:
     execution_mode: str
     failure_condition: str
     evidence_ref: str
+    enemy_hero_id: int | None = None
 
     def __post_init__(self) -> None:
         """Require the complete mechanics-first counter contract.
@@ -986,10 +1053,67 @@ class CounterCard:
             self.failure_condition,
             self.evidence_ref,
         )
-        if self.item_id <= 0 or not all(value.strip() for value in values):
+        if (
+            self.item_id <= 0
+            or self.comparator_item_id <= 0
+            or self.comparator_item_id == self.item_id
+            or not all(value.strip() for value in values)
+        ):
             raise PolicyError(
                 "counter card is missing a mechanics-first contract field"
             )
+        if self.enemy_hero_id is not None and self.enemy_hero_id <= 0:
+            raise PolicyError("counter card enemy hero id must be positive")
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the complete serializable decision contract.
+
+        Returns:
+            A JSON-compatible counter-card object.
+
+        """
+        return {
+            "threat": self.threat,
+            "item_id": self.item_id,
+            "comparator_item_id": self.comparator_item_id,
+            "enemy_hero_id": self.enemy_hero_id,
+            "mechanic_ref": self.mechanic_ref,
+            "legal_timing": self.legal_timing,
+            "alternative": self.alternative,
+            "replacement": self.replacement,
+            "execution_mode": self.execution_mode,
+            "failure_condition": self.failure_condition,
+            "evidence_ref": self.evidence_ref,
+        }
+
+    @classmethod
+    def from_dict(cls, value: dict[str, Any]) -> CounterCard:
+        """Decode a complete counter card.
+
+        Returns:
+            The validated counter card.
+
+        Raises:
+            PolicyError: If the object is incomplete or malformed.
+
+        """
+        try:
+            enemy = value.get("enemy_hero_id")
+            return cls(
+                threat=str(value["threat"]),
+                item_id=int(value["item_id"]),
+                comparator_item_id=int(value["comparator_item_id"]),
+                mechanic_ref=str(value["mechanic_ref"]),
+                legal_timing=str(value["legal_timing"]),
+                alternative=str(value["alternative"]),
+                replacement=str(value["replacement"]),
+                execution_mode=str(value["execution_mode"]),
+                failure_condition=str(value["failure_condition"]),
+                evidence_ref=str(value["evidence_ref"]),
+                enemy_hero_id=int(enemy) if enemy is not None else None,
+            )
+        except (KeyError, TypeError, ValueError) as error:
+            raise PolicyError(f"malformed counter card: {error}") from error
 
 
 @dataclass(frozen=True)

@@ -150,6 +150,15 @@ def _document(
                 "sequence_policy": sequence_policy,
                 "situational_policy": {
                     "version": 1,
+                    "threat_vocabulary": [
+                        "active_slot_burden",
+                        "ally_protection",
+                        "bullet_pressure",
+                        "control",
+                        "healing",
+                        "mobility_escape",
+                        "spirit_pressure",
+                    ],
                     "branches": [],
                     "abstentions": ["No branch passed every gate."],
                 },
@@ -303,10 +312,14 @@ def test_situational_branch_requires_every_comparative_gate(tmp_path: Path) -> N
         "enemy_hero_id": 7,
         "mechanic_ref": "item/103/healing-reduction",
         "comparator": "same-tier default continuation or save",
+        "comparator_item_id": 104,
+        "comparison_support": 20,
+        "same_opportunity": True,
         "support": 20,
         "effective_support": 20.0,
         "overlap": 0.5,
         "stable": True,
+        "comparative_interval": [0.01, 0.06],
         "trigger": "Enemy healing is observed.",
         "replacement": "Replace the next optional purchase.",
         "execution": "Apply healing reduction after contact.",
@@ -320,8 +333,21 @@ def test_situational_branch_requires_every_comparative_gate(tmp_path: Path) -> N
     assert catalog.heroes[13].situational_policy is not None
     assert catalog.heroes[13].situational_policy.branches[0].threat == "healing"
 
-    branch["overlap"] = 0.49
-    _refingerprint(document)
-    _write(path, document)
-    with pytest.raises(ArtifactError, match="unqualified situational branch"):
-        load_build_evidence(path)
+    baseline = dict(branch)
+    for changes, error in (
+        ({"overlap": 0.49}, "unqualified situational branch"),
+        ({"same_opportunity": False}, "unqualified situational branch"),
+        ({"stable": False}, "unqualified situational branch"),
+        ({"support": 19}, "situational support"),
+        ({"effective_support": 19.0}, "effective support"),
+        ({"comparison_support": 19}, "comparison support"),
+        ({"comparative_interval": [-0.01, 0.06]}, "interval"),
+        ({"comparative_interval": [0.01, 0.12]}, "interval"),
+        ({"mechanic_ref": "item/999/healing"}, "mechanic reference"),
+    ):
+        branch.clear()
+        branch.update(baseline, **changes)
+        _refingerprint(document)
+        _write(path, document)
+        with pytest.raises(ArtifactError, match=error):
+            load_build_evidence(path)

@@ -25,6 +25,8 @@ MINIMUM_CORE_SUPPORT = 20
 METHOD_VERSION = "reconstructed-final-inventory-v3"
 SEQUENCE_POLICY_VERSION = 1
 SITUATIONAL_POLICY_VERSION = 1
+MAX_SITUATIONAL_BRANCHES = 7
+MAX_COMPARATIVE_INTERVAL_WIDTH = 0.10
 SEQUENCE_LEVELS = (
     "first_previous_position",
     "previous_position",
@@ -40,6 +42,14 @@ THREAT_CLASSES = frozenset({
     "ally_protection",
     "active_slot_burden",
 })
+MECHANIC_RESPONSE_THREATS = {
+    "hard_control": "control",
+    "healing": "healing",
+    "bullet_pressure": "bullet_pressure",
+    "spirit_burst": "spirit_pressure",
+    "mobility_denial": "mobility_escape",
+    "ally_protection": "ally_protection",
+}
 
 
 @dataclass(frozen=True)
@@ -97,10 +107,14 @@ class SituationalBranch:
     enemy_hero_id: int | None
     mechanic_ref: str
     comparator: str
+    comparator_item_id: int
+    comparison_support: int
+    same_opportunity: bool
     support: int
     effective_support: float
     overlap: float
     stable: bool
+    comparative_interval: tuple[float, float]
     trigger: str
     replacement: str
     execution: str
@@ -375,26 +389,61 @@ def _situational_branch(value: object, hero_id: int) -> SituationalBranch:
         raise ArtifactError(f"hero {hero_id} has an incomplete situational branch")
     if enemy_hero_id is not None:
         enemy_hero_id = _required_int(enemy_hero_id, "enemy hero id", minimum=1)
+    item_id = _required_int(data.get("item_id"), "situational item id", minimum=1)
+    comparator_item_id = _required_int(
+        data.get("comparator_item_id"),
+        "situational comparator item id",
+        minimum=1,
+    )
+    if comparator_item_id == item_id:
+        raise ArtifactError(f"hero {hero_id} compares a situational item with itself")
+    if not str(data["mechanic_ref"]).startswith(f"item/{item_id}/"):
+        raise ArtifactError(
+            f"hero {hero_id} has a mismatched situational mechanic reference"
+        )
+    same_opportunity = _required_bool(
+        data.get("same_opportunity"), "situational same-opportunity gate"
+    )
+    comparison_support = _required_int(
+        data.get("comparison_support"),
+        "situational comparison support",
+        minimum=20,
+    )
     support = _required_int(data.get("support"), "situational support", minimum=20)
     effective = _required_float(
         data.get("effective_support"), "situational effective support", minimum=20
     )
     overlap = _required_float(data.get("overlap"), "situational overlap", maximum=1.0)
     stable = _required_bool(data.get("stable"), "situational stability")
-    if overlap < 0.5 or not stable:
+    raw_interval = data.get("comparative_interval")
+    if not isinstance(raw_interval, list) or len(raw_interval) != 2:
+        raise ArtifactError(
+            f"hero {hero_id} has no bounded situational comparative interval"
+        )
+    lower = _required_float(raw_interval[0], "situational interval lower")
+    upper = _required_float(raw_interval[1], "situational interval upper")
+    if lower > upper or lower <= 0 or upper - lower > MAX_COMPARATIVE_INTERVAL_WIDTH:
+        raise ArtifactError(
+            f"hero {hero_id} has an unqualified situational comparative interval"
+        )
+    if overlap < 0.5 or not stable or not same_opportunity:
         raise ArtifactError(
             f"hero {hero_id} contains an unqualified situational branch"
         )
     return SituationalBranch(
         threat=str(threat),
-        item_id=_required_int(data.get("item_id"), "situational item id", minimum=1),
+        item_id=item_id,
         enemy_hero_id=enemy_hero_id,
         mechanic_ref=str(data["mechanic_ref"]),
         comparator=str(data["comparator"]),
+        comparator_item_id=comparator_item_id,
+        comparison_support=comparison_support,
+        same_opportunity=same_opportunity,
         support=support,
         effective_support=effective,
         overlap=overlap,
         stable=stable,
+        comparative_interval=(lower, upper),
         trigger=str(data["trigger"]),
         replacement=str(data["replacement"]),
         execution=str(data["execution"]),
@@ -411,12 +460,30 @@ def _situational_policy(value: object, hero_id: int) -> SituationalPolicy:
     data = cast("dict[str, Any]", value)
     branches = data.get("branches")
     abstentions = data.get("abstentions")
-    if not isinstance(branches, list) or not isinstance(abstentions, list):
+    vocabulary = data.get("threat_vocabulary")
+    if (
+        not isinstance(branches, list)
+        or not isinstance(abstentions, list)
+        or vocabulary != sorted(THREAT_CLASSES)
+    ):
         raise ArtifactError(f"hero {hero_id} has an incomplete situational policy")
+    if len(branches) > MAX_SITUATIONAL_BRANCHES:
+        raise ArtifactError(f"hero {hero_id} has too many situational branches")
     if not all(isinstance(reason, str) and reason.strip() for reason in abstentions):
         raise ArtifactError(f"hero {hero_id} has an invalid situational abstention")
+    admitted = tuple(_situational_branch(row, hero_id) for row in branches)
+    identities = [
+        (branch.threat, branch.enemy_hero_id, branch.item_id) for branch in admitted
+    ]
+    if len(identities) != len(set(identities)):
+        raise ArtifactError(f"hero {hero_id} has duplicate situational branches")
+    item_ids = [branch.item_id for branch in admitted]
+    if len(item_ids) != len(set(item_ids)):
+        raise ArtifactError(f"hero {hero_id} repeats a situational item")
+    if not admitted and not abstentions:
+        raise ArtifactError(f"hero {hero_id} has no situational result")
     return SituationalPolicy(
-        tuple(_situational_branch(row, hero_id) for row in branches),
+        admitted,
         tuple(cast("list[str]", abstentions)),
     )
 
@@ -479,9 +546,16 @@ def _hero(value: object) -> HeroBuildEvidence:
         set(sequence_policy.default_path)
         | {row.next_item_id for row in sequence_policy.transitions}
         | {branch.item_id for branch in situational_policy.branches}
+        | {branch.comparator_item_id for branch in situational_policy.branches}
     )
     if not referenced_items <= set(item_ids):
         raise ArtifactError(f"hero {hero_id} policy references missing item evidence")
+    items_by_id = {item.item_id: item for item in items}
+    if any(
+        items_by_id[branch.item_id].adopter_matches < MINIMUM_TIER_SUPPORT
+        for branch in situational_policy.branches
+    ):
+        raise ArtifactError(f"hero {hero_id} has a weak situational tier item")
     return HeroBuildEvidence(
         hero_id=hero_id,
         hero=name.strip(),
@@ -685,8 +759,18 @@ def select_hero_build(
 
     tiers: dict[int, tuple[ItemEvidence, ...]] = {}
     core_ids = set(selected.item_ids)
+    situational_ids = {
+        branch.item_id
+        for branch in (
+            evidence.situational_policy.branches if evidence.situational_policy else ()
+        )
+    }
+    if situational_ids & core_ids:
+        raise ArtifactError(
+            f"hero {evidence.hero_id} situational items repeat the selected CORE"
+        )
     for tier in range(1, 5):
-        membership = sorted(
+        ranked = sorted(
             (
                 item
                 for item in evidence.items
@@ -695,7 +779,18 @@ def select_hero_build(
                 and item.adopter_matches >= MINIMUM_TIER_SUPPORT
             ),
             key=lambda item: (-item.adoption, -item.adopter_matches, item.item_id),
-        )[:TIER_ITEM_COUNT]
+        )
+        required = [item for item in ranked if item.item_id in situational_ids]
+        if len(required) > TIER_ITEM_COUNT:
+            raise ArtifactError(
+                f"hero {evidence.hero_id} has too many Tier {tier} situational items"
+            )
+        membership = (
+            required
+            + [item for item in ranked if item.item_id not in situational_ids][
+                : TIER_ITEM_COUNT - len(required)
+            ]
+        )
         if not membership:
             raise ArtifactError(
                 f"hero {evidence.hero_id} lacks a supported non-CORE Tier {tier} item"

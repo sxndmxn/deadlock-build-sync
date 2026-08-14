@@ -386,6 +386,7 @@ def test_claim_language_counter_and_spike_contracts_fail_closed() -> None:
         CounterCard(
             "hard control",
             2,
+            1,
             "",
             "now",
             "save",

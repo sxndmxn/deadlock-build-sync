@@ -12,6 +12,7 @@ from deadlock_build_sync.mechanics import (
     ability_definitions_from_kit,
     build_hero_mechanics,
     classify_item_threat_responses,
+    classify_observed_item_threats,
     purchase_item,
     sell_item,
     validate_ability_timeline,
@@ -253,3 +254,31 @@ def test_threat_classes_require_explicit_item_mechanics(
     asset["description"] = {"desc": description}
 
     assert expected in classify_item_threat_responses(asset)
+
+
+@pytest.mark.parametrize(
+    ("description", "expected"),
+    [
+        ("Restore Health to an ally.", "healing"),
+        ("Gain Weapon Damage.", "bullet_pressure"),
+        ("Gain Spirit Power.", "spirit_pressure"),
+        ("Apply a Stun after a delay.", "control"),
+        ("Teleport to the target.", "mobility_escape"),
+        ("Shield an ally.", "ally_protection"),
+    ],
+)
+def test_observed_enemy_item_threats_require_explicit_mechanics(
+    description: str,
+    expected: str,
+) -> None:
+    asset = item(99, "threat")
+    asset["description"] = {"desc": description}
+
+    assert expected in classify_observed_item_threats(asset)
+
+
+def test_anti_heal_is_not_mislabeled_as_enemy_healing() -> None:
+    asset = item(99, "anti_heal")
+    asset["description"] = {"desc": "Applies healing reduction."}
+
+    assert "healing" not in classify_observed_item_threats(asset)

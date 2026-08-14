@@ -254,6 +254,15 @@ def _build_evidence() -> dict[str, Any]:
                 },
                 "situational_policy": {
                     "version": 1,
+                    "threat_vocabulary": [
+                        "active_slot_burden",
+                        "ally_protection",
+                        "bullet_pressure",
+                        "control",
+                        "healing",
+                        "mobility_escape",
+                        "spirit_pressure",
+                    ],
                     "branches": [],
                     "abstentions": ["No branch passed every gate."],
                 },

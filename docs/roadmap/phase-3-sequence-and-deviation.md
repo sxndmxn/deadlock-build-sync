@@ -51,8 +51,8 @@ outside supported states.
   promoted without a portable validated policy artifact, even when imitation metrics
   pass.
 - `schemas/decision-state.schema.json` and `recommendation.py` provide one strict,
-  deidentified patch/client/mode/rank/inventory contract and return only buy, save,
-  end, or abstain.
+  deidentified patch/client/mode/rank/inventory/composition contract and return only
+  buy, save, end, or abstain.
 - Recommendation tests cover component credit, saving, sold/off-path history, backoff,
   sparse/unknown states, and exact evidence identity. Steam is never accessed.
 

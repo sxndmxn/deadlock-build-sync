@@ -14,10 +14,10 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from .api import Patch
-    from .purchase_guide import PurchaseGuide
+    from .purchase_guide import GuideItem, PurchaseGuide
 
 NARRATIVE_SCHEMA_VERSION = 5
-NARRATIVE_PROMPT_VERSION = 20
+NARRATIVE_PROMPT_VERSION = 21
 DEFAULT_KIT_MODEL = "gpt-5.6-luna"
 DEFAULT_SYNTHESIS_MODEL = "gpt-5.6-sol"
 NARRATIVE_FIELD_SURFACES = {
@@ -26,7 +26,7 @@ NARRATIVE_FIELD_SURFACES = {
     "tactical_profile.fight_role": ("player.description",),
     "tactical_profile.economy_plan": ("player.description",),
     "tactical_profile.ending_duration_interpretation": ("audit.narrative",),
-    "action_explanations": ("player.core_item_hover",),
+    "action_explanations": ("player.item_hover",),
     "category_summaries": ("audit.narrative",),
 }
 
@@ -339,6 +339,59 @@ def apply_narrative(
         else category
         for category in categories
     )
+    optional_annotations: dict[int, GuideItem] = {}
+    for action in supplied:
+        if not isinstance(action.get("conditional_contract"), dict):
+            continue
+        node_id = str(action.get("node_id"))
+        explanation = explanation_by_node.get(node_id)
+        action_id = action.get("action_id")
+        matches = [
+            item
+            for category in categories
+            if category.optional
+            for item in category.items
+            if item.item_id == action_id
+        ]
+        if (
+            not isinstance(action_id, int)
+            or len(matches) != 1
+            or action.get("action") != matches[0].name
+            or explanation is None
+            or explanation.get("evidence_ref") != action.get("evidence_ref")
+            or not isinstance(explanation.get("instruction"), str)
+        ):
+            raise NarrativeError(
+                f"narrative for {guide.hero_name} changed conditional action {node_id}"
+            )
+        try:
+            annotation = tactical_item_annotation(
+                str(explanation["instruction"]),
+                matches[0],
+            )
+        except ValueError as error:
+            raise NarrativeError(
+                f"narrative for {guide.hero_name} has invalid conditional action "
+                f"{node_id}: {error}"
+            ) from error
+        optional_annotations[action_id] = replace(
+            matches[0], tactical_annotation=annotation
+        )
+    if optional_annotations:
+        categories = tuple(
+            replace(
+                category,
+                items=tuple(
+                    optional_annotations.get(item.item_id, item)
+                    for item in category.items
+                ),
+            )
+            for category in categories
+        )
+    tiers = {
+        tier: tuple(optional_annotations.get(item.item_id, item) for item in items)
+        for tier, items in guide.tiers.items()
+    }
     return replace(
         guide,
         summary=summary.strip(),
@@ -349,4 +402,5 @@ def apply_narrative(
         ),
         categories=categories,
         core_items=annotated_core,
+        tiers=tiers,
     )

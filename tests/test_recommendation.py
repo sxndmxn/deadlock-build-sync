@@ -94,10 +94,14 @@ def catalog(*, branch: bool = False) -> BuildEvidenceCatalog:
                 enemy_hero_id=None,
                 mechanic_ref="item/3/healing-reduction",
                 comparator="default continuation or save",
+                comparator_item_id=2,
+                comparison_support=30,
+                same_opportunity=True,
                 support=30,
                 effective_support=25.0,
                 overlap=0.8,
                 stable=True,
+                comparative_interval=(0.01, 0.06),
                 trigger="Enemy healing is observed.",
                 replacement="Replace the next optional purchase.",
                 execution="Apply the supplied healing reduction after contact.",
@@ -340,6 +344,43 @@ def test_decision_state_file_requires_complete_context(tmp_path: Path) -> None:
         DecisionState.from_file(path)
 
 
+def test_decision_state_file_admits_deidentified_enemy_items(tmp_path: Path) -> None:
+    path = tmp_path / "state.json"
+    path.write_text(
+        json.dumps({
+            "schema_version": 1,
+            "build_evidence_id": "a" * 64,
+            "client_version": 123,
+            "patch_identity": "b" * 64,
+            "match_mode": "Ranked",
+            "game_mode": "Normal",
+            "hero_id": 12,
+            "clock_s": 300,
+            "average_badge": 90,
+            "liquid_souls": 500,
+            "purchases": [],
+            "inventory": {
+                "items": [],
+                "components": [],
+                "open_slots": 9,
+                "flex_slots": 0,
+                "active_bindings": 0,
+            },
+            "learned_abilities": [],
+            "enemy_hero_ids": [7],
+            "enemy_item_ids": [4],
+            "allied_hero_ids": [8],
+            "objectives": ["mid boss"],
+            "threats": [],
+        }),
+        encoding="utf-8",
+    )
+
+    decision_state = DecisionState.from_file(path)
+
+    assert decision_state.enemy_item_ids == (4,)
+
+
 def test_situational_branch_and_unknown_threat_are_explicit() -> None:
     decision = recommend(
         catalog(branch=True),
@@ -351,6 +392,14 @@ def test_situational_branch_and_unknown_threat_are_explicit() -> None:
     assert decision.counter is not None
     assert decision.counter["failure_condition"] == "Skip when healing is not material."
 
+    save = recommend(
+        catalog(branch=True),
+        state(threats=("healing",), liquid_souls=999),
+        assets(),
+    )
+    assert save.action is RecommendationAction.SAVE
+    assert save.target_item_id == 3
+
     unknown = recommend(
         catalog(branch=True),
         state(threats=("magic_vibes",)),
@@ -358,3 +407,97 @@ def test_situational_branch_and_unknown_threat_are_explicit() -> None:
     )
     assert unknown.action is RecommendationAction.ABSTAIN
     assert "unknown threat" in unknown.reason
+
+
+def test_conflicting_situational_branches_fail_closed() -> None:
+    base = catalog(branch=True)
+    hero = base.heroes[12]
+    assert hero.situational_policy is not None
+    second = replace(
+        hero.situational_policy.branches[0],
+        threat="control",
+        item_id=4,
+        mechanic_ref="item/4/control-response",
+    )
+    conflicting = replace(
+        base,
+        heroes={
+            12: replace(
+                hero,
+                situational_policy=replace(
+                    hero.situational_policy,
+                    branches=(*hero.situational_policy.branches, second),
+                ),
+            )
+        },
+    )
+
+    with pytest.raises(RecommendationError, match="multiple situational branches"):
+        recommend(
+            conflicting,
+            state(threats=("healing", "control")),
+            expanded_assets(),
+        )
+
+
+def test_enemy_item_mechanics_supply_an_observable_threat() -> None:
+    item_assets = expanded_assets()
+    next(row for row in item_assets if row["id"] == 4)["description"] = {
+        "desc": "Restore Health to an ally."
+    }
+
+    decision = recommend(
+        catalog(branch=True),
+        state(enemy_item_ids=(4,), liquid_souls=1_000),
+        item_assets,
+    )
+
+    assert decision.action is RecommendationAction.BUY
+    assert decision.item_id == 3
+    assert decision.backoff_level == "situational"
+
+
+def test_full_active_bindings_supply_the_active_burden_threat() -> None:
+    base = catalog(branch=True)
+    hero = base.heroes[12]
+    assert hero.situational_policy is not None
+    branch = replace(
+        hero.situational_policy.branches[0],
+        threat="active_slot_burden",
+        mechanic_ref="item/3/active-slot-response",
+    )
+    burden = replace(
+        base,
+        heroes={
+            12: replace(
+                hero,
+                situational_policy=replace(
+                    hero.situational_policy,
+                    branches=(branch,),
+                ),
+            )
+        },
+    )
+
+    decision = recommend(
+        burden,
+        state(
+            owned_items=(4, 5, 6, 7),
+            open_slots=5,
+            active_bindings=4,
+            liquid_souls=1_000,
+        ),
+        expanded_assets(active_ids=frozenset({4, 5, 6, 7})),
+    )
+
+    assert decision.action is RecommendationAction.BUY
+    assert decision.item_id == 3
+
+
+def test_unknown_enemy_item_fails_closed() -> None:
+    with pytest.raises(RecommendationError, match="unknown current item 999"):
+        recommend(
+            catalog(branch=True),
+            state(enemy_item_ids=(999,)),
+            expanded_assets(),
+        )

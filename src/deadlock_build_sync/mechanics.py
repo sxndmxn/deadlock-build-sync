@@ -230,6 +230,46 @@ def classify_item_threat_responses(asset: dict[str, Any]) -> frozenset[str]:
     return frozenset(responses)
 
 
+_OBSERVED_ITEM_THREAT_PHRASES = {
+    "bullet_pressure": ("bullet damage", "weapon damage"),
+    "spirit_pressure": ("spirit damage", "spirit power"),
+    "control": ("apply a stun", "silence", "immobilize", "rooted"),
+    "mobility_escape": ("dash", "teleport", "leap", "move speed"),
+    "ally_protection": (
+        "target ally",
+        "allied target",
+        "shield an ally",
+        "ally barrier",
+    ),
+}
+
+
+def classify_observed_item_threats(asset: dict[str, Any]) -> frozenset[str]:
+    """Classify only explicit threat mechanics on an observed enemy item.
+
+    Returns:
+        Conservative threat labels supported by the pinned item text.
+
+    """
+    normalized = canonical_mechanics_text(extract_asset_mechanics(asset))
+    threats = {
+        threat
+        for threat, phrases in _OBSERVED_ITEM_THREAT_PHRASES.items()
+        if any(phrase in normalized for phrase in phrases)
+    }
+    healing_response = any(
+        phrase in normalized
+        for phrase in ("healing reduction", "reduce healing", "anti-heal")
+    )
+    healing = any(
+        phrase in normalized
+        for phrase in ("restore health", "health regen", "healing amp", "heal an ally")
+    )
+    if healing and not healing_response:
+        threats.add("healing")
+    return frozenset(threats)
+
+
 def canonical_mechanics_text(mechanics: dict[str, Any]) -> str:
     """Flatten normalized mechanics for conservative phrase classification.
 

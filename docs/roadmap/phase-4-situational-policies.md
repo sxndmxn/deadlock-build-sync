@@ -1,6 +1,6 @@
 # Phase 4 — Situational policies
 
-Status: implemented as a fail-closed capability; no current branch is promoted
+Status: implemented as a fail-closed capability; fresh production evidence required
 
 ## Outcome
 
@@ -47,15 +47,24 @@ are all proven.
 
 ## Implementation record
 
-- Evidence schema 2 admits only the seven-item threat vocabulary and requires mechanic
-  reference, comparator, support 20, effective support 20, overlap 0.5, temporal
-  stability, trigger, replacement, execution, and failure condition.
-- The producer retains every mechanics-backed candidate and its individual gates in
-  `candidate_audit`. It currently emits no live branch because bounded comparative
-  uncertainty has not been established; this is a deliberate abstention, not a stub.
-- The read-only recommender checks observable threats and enemy identity, rejects
-  conflicting matches, filters mechanically illegal purchases, and exposes the full
-  admitted branch contract when one exists.
+- Evidence schema 2 admits at most seven distinct branches from the seven-item threat
+  vocabulary and requires a mechanic reference, same-opportunity comparator, both
+  supports at 20, effective support 20, overlap 0.5, temporal stability, and a bounded
+  positive comparative interval no wider than 0.10.
+- The producer compares items within the same hero, enemy scope, price tier, and match
+  phase, retaining the existing partial pooling and overlap diagnostics. Every candidate
+  and gate remains in `candidate_audit`; failed comparisons emit explicit abstentions.
+- Admitted branches enter one typed choice with conjunctive threat/enemy guards and a
+  `CounterCard`. The default still enters CORE, while optional tier cards receive only
+  their compact validated conditional instruction.
+- The read-only recommender combines explicit threats with conservative pinned
+  enemy-item mechanics, recognizes four-active slot burden, rejects unknown items or
+  conflicting branches, filters illegal purchases, and exposes the admitted contract.
+- Prompt 21 rejects changed identities, invented threats, causal language, missing
+  comparators, and incomplete trigger/replacement/execution/failure instructions.
+- The synthetic admitted-branch DeepEval case passed all four production metrics;
+  deterministic negative fixtures exercise every conditional omission and identity
+  failure without weakening admission.
 - Existing privacy-bounded `RecommendationEvent` and monitoring/drift contracts remain
   the only feedback path; account IDs and other personal fields are rejected.
 

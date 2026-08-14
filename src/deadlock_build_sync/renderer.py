@@ -86,11 +86,14 @@ def _linear_projection(
 
 
 def _branch_label(branch: Branch) -> str:
-    guard = branch.guard
-    if guard is None:
+    if not branch.guards:
         return "DEFAULT"
-    value = str(guard.value).replace("_", " ").upper()
-    label = f"IF {value}" if value else f"IF {guard.field.upper()}"
+    values = [
+        str(guard.value).replace("_", " ").upper()
+        for guard in branch.guards
+        if guard.value is not None
+    ]
+    label = "IF " + " + ".join(values or [branch.guards[0].field.upper()])
     return label[:48]
 
 
@@ -158,6 +161,105 @@ class ProjectionIdentity:
     rank_identity: str
 
 
+def _conditional_nodes(policy: BuildPolicy) -> dict[int, PolicyNode]:
+    result: dict[int, PolicyNode] = {}
+    for node in policy.nodes:
+        if node.kind != NodeKind.PURCHASE or not node.optional:
+            continue
+        if node.item_id is None:
+            raise PolicyError(f"optional purchase {node.node_id} has no item")
+        if node.item_id in result:
+            raise PolicyError(
+                f"multiple conditional branches project item {node.item_id}"
+            )
+        validate_optional_annotation(node.annotation)
+        result[node.item_id] = node
+    return result
+
+
+def _project_evidence_layout(
+    policy: BuildPolicy,
+    identity: ProjectionIdentity,
+    layout: PurchaseGuide,
+    default_path: tuple[PolicyNode, ...],
+) -> PurchaseGuide:
+    source_core_ids = tuple(item.item_id for item in layout.core_items)
+    policy_core_ids = tuple(
+        node.item_id
+        for node in default_path
+        if node.kind == NodeKind.PURCHASE and node.item_id is not None
+    )
+    if len(source_core_ids) != 8 or policy_core_ids != source_core_ids:
+        raise PolicyError(
+            "policy default path does not match the eight-item evidence core"
+        )
+    if any(not 1 <= len(layout.tiers.get(tier, ())) <= 10 for tier in range(1, 5)):
+        raise PolicyError("evidence projection requires 1–10 items in every tier")
+    tier_item_ids = {item.item_id for items in layout.tiers.values() for item in items}
+    if tier_item_ids & set(source_core_ids):
+        raise PolicyError("evidence tier menus must not repeat CORE items")
+    conditional = _conditional_nodes(policy)
+    missing_conditional = set(conditional) - tier_item_ids
+    if missing_conditional:
+        raise PolicyError(
+            "conditional policy items are missing from tier menus: "
+            + ", ".join(str(item_id) for item_id in sorted(missing_conditional))
+        )
+
+    def project_item(item: GuideItem) -> GuideItem:
+        node = conditional.get(item.item_id)
+        if node is None:
+            return item
+        return replace(
+            item,
+            tactical_annotation=node.annotation,
+            required_flex_slots=node.required_flex_slots or None,
+            sell_priority=node.sell_priority,
+            imbue_target_ability_id=node.imbue_target_ability_id,
+        )
+
+    tiers = {
+        tier: tuple(project_item(item) for item in items)
+        for tier, items in layout.tiers.items()
+    }
+    core_items = _apply_sell_priorities(layout.core_items, policy.nodes)
+    categories = (
+        GuideCategory("CORE ITEMS", core_items, CORE_CATEGORY_DESCRIPTION),
+        *(
+            GuideCategory(
+                f"TIER {tier}",
+                tiers[tier],
+                TIER_CATEGORY_DESCRIPTION,
+                optional=True,
+            )
+            for tier in range(1, 5)
+        ),
+    )
+    return PurchaseGuide(
+        hero_id=policy.hero_id,
+        hero_name=identity.hero_name,
+        hero_class_name=identity.hero_class_name,
+        tiers=tiers,
+        summary=(
+            f"{policy.strategic_role}; coherent eight-item core observed in "
+            f"{layout.core_joint_matches:,} player-matches "
+            f"({layout.core_joint_share * 100:.2f}%). Tier rows are "
+            "adoption reference menus, not automatic purchases."
+        ),
+        categories=categories,
+        snapshot_id=policy.snapshot_id,
+        policy_id=policy.policy_id,
+        client_version=identity.client_version,
+        match_mode=identity.match_mode,
+        rank_identity=identity.rank_identity,
+        core_items=core_items,
+        core_joint_matches=layout.core_joint_matches,
+        core_joint_share=layout.core_joint_share,
+        median_final_net_worth=layout.median_final_net_worth,
+        core_target_cost=layout.core_target_cost,
+    )
+
+
 def project_policy_to_guide(
     policy: BuildPolicy,
     context: ValidationContext,
@@ -182,67 +284,7 @@ def project_policy_to_guide(
     }
     default_path = _linear_projection(nodes, policy.entry)
     if layout_source is not None:
-        policy_core_ids = tuple(
-            node.item_id
-            for node in default_path
-            if node.kind == NodeKind.PURCHASE and node.item_id is not None
-        )
-        source_core_ids = tuple(item.item_id for item in layout_source.core_items)
-        if len(source_core_ids) != 8 or policy_core_ids != source_core_ids:
-            raise PolicyError(
-                "policy default path does not match the eight-item evidence core"
-            )
-        if any(
-            not 1 <= len(layout_source.tiers.get(tier, ())) <= 10
-            for tier in range(1, 5)
-        ):
-            raise PolicyError("evidence projection requires 1–10 items in every tier")
-        if {
-            item.item_id
-            for tier_items in layout_source.tiers.values()
-            for item in tier_items
-        } & set(source_core_ids):
-            raise PolicyError("evidence tier menus must not repeat CORE items")
-        core_items = _apply_sell_priorities(layout_source.core_items, policy.nodes)
-        categories = (
-            GuideCategory(
-                "CORE ITEMS",
-                core_items,
-                CORE_CATEGORY_DESCRIPTION,
-            ),
-            *(
-                GuideCategory(
-                    f"TIER {tier}",
-                    layout_source.tiers[tier],
-                    TIER_CATEGORY_DESCRIPTION,
-                    optional=True,
-                )
-                for tier in range(1, 5)
-            ),
-        )
-        return PurchaseGuide(
-            hero_id=policy.hero_id,
-            hero_name=identity.hero_name,
-            hero_class_name=identity.hero_class_name,
-            tiers=dict(layout_source.tiers),
-            summary=(
-                f"{policy.strategic_role}; coherent eight-item core observed in "
-                f"{layout_source.core_joint_matches:,} player-matches "
-                f"({layout_source.core_joint_share * 100:.2f}%). Tier rows are "
-                "adoption reference menus, not automatic purchases."
-            ),
-            categories=categories,
-            snapshot_id=policy.snapshot_id,
-            policy_id=policy.policy_id,
-            client_version=identity.client_version,
-            match_mode=identity.match_mode,
-            rank_identity=identity.rank_identity,
-            core_items=core_items,
-            core_joint_matches=layout_source.core_joint_matches,
-            core_joint_share=layout_source.core_joint_share,
-            median_final_net_worth=layout_source.median_final_net_worth,
-            core_target_cost=layout_source.core_target_cost,
-        )
+        return _project_evidence_layout(policy, identity, layout_source, default_path)
     core_items = tuple(
         _guide_item(node, assets_by_id, policy, optional=False)
         for node in default_path

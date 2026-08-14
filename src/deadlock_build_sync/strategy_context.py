@@ -268,6 +268,45 @@ def _ability_policy(
     }
 
 
+def _explainable_actions(
+    policy: BuildPolicy | None,
+    assets_by_id: dict[int, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    if policy is None:
+        return []
+    claims = {claim.claim_id: claim for claim in policy.evidence}
+    counter_cards = {card.evidence_ref: card for card in policy.counter_cards}
+    result: list[dict[str, Any]] = []
+    for node in policy.nodes:
+        if node.evidence_ref is None:
+            continue
+        claim = claims[node.evidence_ref]
+        action_id = node.item_id if node.item_id is not None else node.ability_id
+        asset = assets_by_id.get(action_id or -1, {})
+        action: dict[str, Any] = {
+            "node_id": node.node_id,
+            "kind": node.kind.value,
+            "action_id": action_id,
+            "action": str(asset.get("name") or action_id or node.node_id),
+            "evidence_ref": node.evidence_ref,
+            "claim_class": claim.claim_class.value,
+            "language_ceiling": sorted(claim.language_ceiling),
+            "mechanics_refs": list(claim.mechanics_refs),
+            "annotation": node.annotation,
+        }
+        card = counter_cards.get(node.evidence_ref)
+        if card is not None:
+            contract = card.as_dict()
+            comparator = assets_by_id.get(card.comparator_item_id, {})
+            contract["item"] = str(asset.get("name") or f"Item {card.item_id}")
+            contract["comparator_item"] = str(
+                comparator.get("name") or f"Item {card.comparator_item_id}"
+            )
+            action["conditional_contract"] = contract
+        result.append(action)
+    return result
+
+
 def _ending_duration_evidence(
     points: tuple[HeroDurationStat, ...],
     distribution: dict[str, dict[str, float | int]] | None,
@@ -367,30 +406,7 @@ def build_hero_strategy_context(
         tiers[TIER_LABELS[tier]] = tier_items
 
     ending_profile = _ending_duration_evidence(duration_curve, duration_distribution)
-    claims = (
-        {claim.claim_id: claim for claim in policy.evidence}
-        if policy is not None
-        else {}
-    )
-    explainable_actions = []
-    if policy is not None:
-        for node in policy.nodes:
-            if node.evidence_ref is None:
-                continue
-            claim = claims[node.evidence_ref]
-            action_id = node.item_id if node.item_id is not None else node.ability_id
-            asset = assets_by_id.get(action_id or -1, {})
-            explainable_actions.append({
-                "node_id": node.node_id,
-                "kind": node.kind.value,
-                "action_id": action_id,
-                "action": str(asset.get("name") or action_id or node.node_id),
-                "evidence_ref": node.evidence_ref,
-                "claim_class": claim.claim_class.value,
-                "language_ceiling": sorted(claim.language_ceiling),
-                "mechanics_refs": list(claim.mechanics_refs),
-                "annotation": node.annotation,
-            })
+    explainable_actions = _explainable_actions(policy, assets_by_id)
     projected = projection or guide
     projection_context = {
         "build": {

@@ -210,6 +210,7 @@ deidentified state document matching
   },
   "learned_abilities": [1, 2],
   "enemy_hero_ids": [],
+  "enemy_item_ids": [],
   "allied_hero_ids": [],
   "objectives": [],
   "threats": []
@@ -222,7 +223,9 @@ uv run deadlock-build-sync recommend --state state.json
 
 The result is `buy`, `save`, `end`, or `abstain`, with policy identity, support,
 backoff level, and component-aware incremental cost. It never mutates Steam and
-never treats next-action imitation as an item-effect claim.
+never treats next-action imitation as an item-effect claim. Explicit `threats`
+remain supported; pinned enemy-item mechanics add only conservative threat labels,
+and unknown items or conflicting situational branches fail closed.
 
 ### What is cached
 

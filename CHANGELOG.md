@@ -7,6 +7,22 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Read-only artifact freshness, evidence refresh, and state-aware recommendation
+  commands.
+- Pinned build tags, archetype titles, tactical hover projection, and typed
+  situational counter cards.
+- An optional offline analysis extra with component-aware sequence evidence,
+  same-opportunity comparator gates, and fail-closed branch admission.
+
+### Changed
+
+- Keep CORE as the only automatic path while making all four tier menus sparse,
+  disjoint, mechanics-labeled optional references.
+- Route validated player-first narrative instructions into descriptions and exact
+  item hovers while retaining complete artifact provenance.
+
 ## [0.1.0] - 2026-08-01
 
 ### Added

@@ -207,3 +207,23 @@ def test_situational_branch_is_emitted_only_when_every_gate_is_present(
     assert policy["branches"][0]["failure_condition"]
     assert policy["candidate_audit"][0]["admitted"]
     assert policy["abstentions"] == []
+
+    pl.DataFrame([
+        {
+            "hero_id": 12,
+            "item_id": 3,
+            "enemy_hero_id": 7,
+            "scope": "same_lane",
+            "observations": 40,
+            "same_opportunity": True,
+            "comparator_item_id": 4,
+            "comparison_support": 30,
+            "comparative_interval_low": -0.01,
+            "comparative_interval_high": 0.06,
+        }
+    ]).write_csv(paths.tables / "matchup_interactions.csv")
+
+    unsupported = _situational_policy(paths, 12, assets)
+
+    assert unsupported["branches"] == []
+    assert not unsupported["candidate_audit"][0]["gates"]["comparative_advantage"]

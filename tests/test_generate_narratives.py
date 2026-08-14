@@ -75,11 +75,26 @@ def packet_and_response() -> tuple[dict[str, Any], dict[str, Any]]:
                 "evidence_ref": "item/102/purchase-events",
                 "claim_class": "descriptive",
                 "language_ceiling": ["observed"],
-                "mechanics_refs": ["item/102"],
+                "mechanics_refs": ["item/102/burst-response"],
                 "annotation": (
-                    "If burst is material, choose Reactive Barrier instead of Frost Core; "
-                    "use before committing; skip unless burst is observed."
+                    "If enemy 7's spirit pressure is material, choose Reactive Barrier "
+                    "instead of Frost Core; use before committing; skip unless observed."
                 ),
+                "conditional_contract": {
+                    "threat": "spirit_pressure",
+                    "item_id": 102,
+                    "item": "Reactive Barrier",
+                    "comparator_item_id": 101,
+                    "comparator_item": "Frost Core",
+                    "enemy_hero_id": 7,
+                    "mechanic_ref": "item/102/burst-response",
+                    "legal_timing": "same observed decision opportunity",
+                    "alternative": "Frost Core or save",
+                    "replacement": "Choose Reactive Barrier instead of Frost Core.",
+                    "execution_mode": "Use before committing.",
+                    "failure_condition": "Skip unless spirit pressure is observed.",
+                    "evidence_ref": "item/102/purchase-events",
+                },
             },
         ],
         "projection": {
@@ -128,8 +143,8 @@ def packet_and_response() -> tuple[dict[str, Any], dict[str, Any]]:
                 "node_id": "counter",
                 "evidence_ref": "item/102/purchase-events",
                 "instruction": (
-                    "If burst is observed, choose Reactive Barrier before committing; "
-                    "skip it unless that threat is material."
+                    "If enemy 7's spirit pressure is observed, choose Reactive Barrier over "
+                    "Frost Core; use before committing; skip unless material."
                 ),
             },
         ],
@@ -151,7 +166,7 @@ def packet_and_response() -> tuple[dict[str, Any], dict[str, Any]]:
 
 
 def test_generator_uses_installer_prompt_version() -> None:
-    assert generate_narratives.PROMPT_VERSION == NARRATIVE_PROMPT_VERSION == 20
+    assert generate_narratives.PROMPT_VERSION == NARRATIVE_PROMPT_VERSION == 21
 
 
 def test_kit_context_excludes_items_outcomes_and_policy() -> None:
@@ -203,7 +218,7 @@ def test_validates_closed_policy_explanation() -> None:
 
     validated = generate_narratives.validate_response(response, packet)
 
-    assert validated["prompt_version"] == 20
+    assert validated["prompt_version"] == 21
 
 
 def test_rejects_core_instruction_over_utf8_byte_budget() -> None:
@@ -259,6 +274,46 @@ def test_rejects_optional_category_without_observable_condition() -> None:
     )
 
     with pytest.raises(generate_narratives.GenerationError, match="optional trigger"):
+        generate_narratives.validate_response(response, packet)
+
+
+@pytest.mark.parametrize(
+    ("instruction", "reason"),
+    [
+        (
+            "If enemy 7's spirit pressure is observed, choose Reactive Barrier over the default; use it; skip unless material.",
+            "comparator",
+        ),
+        (
+            "Against enemy 7's spirit pressure, choose Reactive Barrier over Frost Core; use it; skip unless material.",
+            "trigger",
+        ),
+        (
+            "If enemy 7's spirit pressure is observed, take Reactive Barrier with Frost Core; use it; skip unless material.",
+            "replacement",
+        ),
+        (
+            "If enemy 7's spirit pressure is observed, choose Reactive Barrier over Frost Core; keep observing; skip unless material.",
+            "execution",
+        ),
+        (
+            "If enemy 7's spirit pressure is observed, choose Reactive Barrier over Frost Core; use it while material.",
+            "failure condition",
+        ),
+        (
+            "If enemy 7's spirit pressure and healing are observed, choose Reactive Barrier over Frost Core; use it; skip unless material.",
+            "invented a threat",
+        ),
+    ],
+)
+def test_rejects_incomplete_or_invented_conditional_contract(
+    instruction: str,
+    reason: str,
+) -> None:
+    packet, response = packet_and_response()
+    response["action_explanations"][1]["instruction"] = instruction
+
+    with pytest.raises(generate_narratives.GenerationError, match=reason):
         generate_narratives.validate_response(response, packet)
 
 

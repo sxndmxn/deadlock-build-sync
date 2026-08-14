@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 from deadlock_build_sync.artifacts import atomic_write_json
+from deadlock_build_sync.build_evidence import THREAT_CLASSES
 from deadlock_build_sync.narratives import (
     DEFAULT_KIT_MODEL,
     DEFAULT_SYNTHESIS_MODEL,
@@ -40,12 +41,18 @@ CONDITION_PATTERN = re.compile(
     r"|rather than|as soon as",
     re.IGNORECASE,
 )
+TRIGGER_PATTERN = re.compile(r"\b(?:if|when)\b", re.IGNORECASE)
 REFERENCE_MENU_PATTERN = re.compile(
     r"\b(?:adapt|menu|option|reference|situational)\w*\b", re.IGNORECASE
 )
 BUY_ALL_PATTERN = re.compile(
     r"\b(?:buy|get|purchase|take)\s+(?:all|every)\b", re.IGNORECASE
 )
+CHOICE_PATTERN = re.compile(r"\b(?:choose|instead|replace)\b|\bover\b", re.IGNORECASE)
+EXECUTION_PATTERN = re.compile(
+    r"\b(?:use|activate|apply|hold|trigger)\b", re.IGNORECASE
+)
+FAILURE_PATTERN = re.compile(r"\b(?:skip|avoid|unless|fails?|do not)\b", re.IGNORECASE)
 CAUSAL_PATTERN = re.compile(
     r"\b(?:causes?|guarantees?|adds? win rate|improves? win rate|"
     r"increases? (?:your )?chance|item impact)\b",
@@ -158,6 +165,10 @@ def _context_text(value: Any) -> str:
 
 def _is_sha256(value: Any) -> bool:
     return isinstance(value, str) and re.fullmatch(r"[a-f0-9]{64}", value) is not None
+
+
+def _is_positive_int(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
 
 
 def bind_response_identity(
@@ -735,6 +746,92 @@ def _validate_prose_ceiling(text: str, hero_name: str) -> None:
         raise GenerationError(f"Codex exceeded a non-causal claim for {hero_name}")
 
 
+def _validate_conditional_instruction(
+    instruction: str,
+    supplied: dict[str, Any],
+    *,
+    node_id: str,
+) -> None:
+    contract = supplied.get("conditional_contract")
+    if contract is None:
+        return
+    if not isinstance(contract, dict):
+        raise GenerationError(f"conditional contract is malformed for {node_id}")
+    required = (
+        "threat",
+        "item",
+        "comparator_item",
+        "mechanic_ref",
+        "legal_timing",
+        "replacement",
+        "execution_mode",
+        "failure_condition",
+    )
+    if any(
+        not isinstance(contract.get(field), str) or not str(contract[field]).strip()
+        for field in required
+    ):
+        raise GenerationError(f"conditional contract is incomplete for {node_id}")
+    threat_value = contract.get("threat")
+    item_id = contract.get("item_id")
+    comparator_item_id = contract.get("comparator_item_id")
+    identity_checks = (
+        threat_value in THREAT_CLASSES,
+        _is_positive_int(item_id),
+        item_id == supplied.get("action_id"),
+        contract.get("item") == supplied.get("action"),
+        _is_positive_int(comparator_item_id),
+        comparator_item_id != item_id,
+        contract.get("evidence_ref") == supplied.get("evidence_ref"),
+        contract.get("mechanic_ref") in supplied.get("mechanics_refs", []),
+    )
+    if not all(identity_checks):
+        raise GenerationError(f"conditional contract identity changed for {node_id}")
+    normalized = instruction.casefold()
+    threat = str(threat_value).replace("_", " ").casefold()
+    if threat not in normalized:
+        raise GenerationError(f"Codex changed the threat for action {node_id}")
+    invented_threats = {
+        candidate
+        for candidate in THREAT_CLASSES
+        if candidate != threat_value and candidate.replace("_", " ") in normalized
+    }
+    if invented_threats:
+        raise GenerationError(f"Codex invented a threat for action {node_id}")
+    if not _mentions_item(instruction, str(contract["comparator_item"])):
+        raise GenerationError(f"Codex omitted the comparator for action {node_id}")
+    enemy_hero_id = contract.get("enemy_hero_id")
+    if enemy_hero_id is not None and (
+        not isinstance(enemy_hero_id, int)
+        or isinstance(enemy_hero_id, bool)
+        or enemy_hero_id <= 0
+    ):
+        raise GenerationError(f"conditional enemy trigger changed for {node_id}")
+    if (
+        enemy_hero_id is not None
+        and re.search(
+            rf"\benemy(?:\s+hero)?\s+{int(enemy_hero_id)}\b",
+            instruction,
+            re.IGNORECASE,
+        )
+        is None
+    ):
+        raise GenerationError(f"Codex changed the enemy trigger for action {node_id}")
+    checks = (
+        (TRIGGER_PATTERN, "trigger"),
+        (CHOICE_PATTERN, "replacement"),
+        (EXECUTION_PATTERN, "execution"),
+        (FAILURE_PATTERN, "failure condition"),
+    )
+    missing = [
+        label for pattern, label in checks if pattern.search(instruction) is None
+    ]
+    if missing:
+        raise GenerationError(
+            f"Codex omitted conditional {', '.join(missing)} for action {node_id}"
+        )
+
+
 def validate_response(
     response: dict[str, Any],
     hero: dict[str, Any],
@@ -831,6 +928,11 @@ def validate_response(
             raise GenerationError(f"Codex omitted {action_name} from action {node_id}")
         if supplied.get("annotation") and CONDITION_PATTERN.search(instruction) is None:
             raise GenerationError(f"Codex removed the condition from action {node_id}")
+        _validate_conditional_instruction(
+            instruction,
+            supplied,
+            node_id=node_id,
+        )
         _validate_prose_ceiling(instruction, hero_name)
         normalized_actions.append({
             "node_id": node_id,

@@ -13,7 +13,13 @@ from .build_evidence import (
     SequenceTransition,
     SituationalBranch,
 )
-from .mechanics import InventoryState, ItemGraph, MechanicsError, purchase_item
+from .mechanics import (
+    InventoryState,
+    ItemGraph,
+    MechanicsError,
+    classify_observed_item_threats,
+    purchase_item,
+)
 from .snapshot import sha256_json
 
 if TYPE_CHECKING:
@@ -35,6 +41,7 @@ _DECISION_STATE_FIELDS = frozenset({
     "inventory",
     "learned_abilities",
     "enemy_hero_ids",
+    "enemy_item_ids",
     "allied_hero_ids",
     "objectives",
     "threats",
@@ -78,6 +85,7 @@ class DecisionState:
     active_bindings: int
     learned_abilities: tuple[int, ...]
     enemy_hero_ids: tuple[int, ...] = ()
+    enemy_item_ids: tuple[int, ...] = ()
     allied_hero_ids: tuple[int, ...] = ()
     objectives: tuple[str, ...] = ()
     threats: tuple[str, ...] = ()
@@ -151,6 +159,9 @@ class DecisionState:
             ),
             enemy_hero_ids=_unique_integers(
                 value.get("enemy_hero_ids", []), "enemy heroes"
+            ),
+            enemy_item_ids=_unique_integers(
+                value.get("enemy_item_ids", []), "enemy items"
             ),
             allied_hero_ids=_unique_integers(
                 value.get("allied_hero_ids", []), "allied heroes"
@@ -353,6 +364,7 @@ def _next_purchase(
 def _matching_counter(
     hero: HeroBuildEvidence,
     state: DecisionState,
+    threats: frozenset[str],
 ) -> SituationalBranch | None:
     policy = hero.situational_policy
     if policy is None:
@@ -360,7 +372,7 @@ def _matching_counter(
     matches = [
         branch
         for branch in policy.branches
-        if branch.threat in state.threats
+        if branch.threat in threats
         and (
             branch.enemy_hero_id is None or branch.enemy_hero_id in state.enemy_hero_ids
         )
@@ -370,6 +382,23 @@ def _matching_counter(
             "multiple situational branches matched without precedence"
         )
     return matches[0] if matches else None
+
+
+def _observed_threats(
+    state: DecisionState,
+    assets: list[dict[str, Any]],
+    graph: ItemGraph,
+) -> frozenset[str]:
+    by_id = {
+        int(asset["id"]): asset for asset in assets if isinstance(asset.get("id"), int)
+    }
+    inferred: set[str] = set()
+    for item_id in state.enemy_item_ids:
+        graph.require(item_id)
+        inferred.update(classify_observed_item_threats(by_id[item_id]))
+    if state.active_bindings == 4:
+        inferred.add("active_slot_burden")
+    return frozenset((*state.threats, *inferred))
 
 
 def recommend(
@@ -404,7 +433,11 @@ def recommend(
             policy_id,
             reason="unknown threat classes: " + ", ".join(unknown_threats),
         )
-    counter = _matching_counter(hero, state)
+    try:
+        observed_threats = _observed_threats(state, assets, graph)
+    except MechanicsError as error:
+        raise RecommendationError(str(error)) from error
+    counter = _matching_counter(hero, state, observed_threats)
     if counter is not None:
         purchase = _next_purchase(counter.item_id, inventory, graph)
         if purchase is not None:

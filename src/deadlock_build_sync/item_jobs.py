@@ -99,6 +99,10 @@ def annotate_optional_items(
             if not category.optional:
                 items.append(item)
                 continue
+            if item.tactical_annotation:
+                replacements[item.item_id] = item
+                items.append(item)
+                continue
             asset = by_id.get(item.item_id)
             if asset is None:
                 raise ValueError(f"optional item {item.item_id} is missing from assets")

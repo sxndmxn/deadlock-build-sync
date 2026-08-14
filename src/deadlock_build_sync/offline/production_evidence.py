@@ -16,6 +16,12 @@ from typing import Any
 import duckdb
 import polars as pl
 
+from deadlock_build_sync.build_evidence import (
+    MAX_COMPARATIVE_INTERVAL_WIDTH,
+    MAX_SITUATIONAL_BRANCHES,
+    MECHANIC_RESPONSE_THREATS,
+    THREAT_CLASSES,
+)
 from deadlock_build_sync.mechanics import classify_item_threat_responses
 
 from .api import read_json
@@ -29,7 +35,6 @@ TIER_ITEM_COUNT = 10
 MINIMUM_CORE_SUPPORT = 20
 METHOD_VERSION = "reconstructed-final-inventory-v3"
 SEQUENCE_MINIMUM_SUPPORT = 20
-MAX_COMPARATIVE_INTERVAL_WIDTH = 0.10
 _STEAM_CDN_HOST_PATTERN = re.compile(
     r"(?<=://)(clan|shared)\.(?:akamai|fastly)\.steamstatic\.com",
     re.IGNORECASE,
@@ -341,6 +346,8 @@ def _situational_policy(
     paths: RunPaths,
     hero_id: int,
     assets: list[dict[str, Any]],
+    *,
+    excluded_item_ids: frozenset[int] = frozenset(),
 ) -> dict[str, Any]:
     matchup_path = paths.tables / "matchup_interactions.csv"
     overlap_path = paths.tables / "state_overlap_diagnostics.csv"
@@ -360,16 +367,10 @@ def _situational_policy(
         stability_by_scope = {
             str(row["scope"]): row for row in stability.iter_rows(named=True)
         }
-        threat_names = {
-            "hard_control": "control",
-            "healing": "healing",
-            "bullet_pressure": "bullet_pressure",
-            "spirit_burst": "spirit_pressure",
-            "mobility_denial": "mobility_escape",
-            "ally_protection": "ally_protection",
-        }
         for row in matchups.iter_rows(named=True):
             item_id = int(row["item_id"])
+            if item_id in excluded_item_ids:
+                continue
             asset = asset_by_id.get(item_id)
             if asset is None:
                 continue
@@ -392,6 +393,16 @@ def _situational_policy(
                     and float(interval_high) - float(interval_low)
                     <= MAX_COMPARATIVE_INTERVAL_WIDTH
                 )
+                comparative_interval = (
+                    (float(interval_low), float(interval_high))
+                    if bounded_uncertainty
+                    and interval_low is not None
+                    and interval_high is not None
+                    else None
+                )
+                comparative_advantage = (
+                    comparative_interval is not None and comparative_interval[0] > 0
+                )
                 stable = (
                     float(temporal.get("spearman") or 0.0) >= 0.3
                     and float(temporal.get("sign_agreement") or 0.0) >= 0.6
@@ -406,10 +417,11 @@ def _situational_policy(
                     "overlap": state_coverage >= 0.5,
                     "chronological_stability": stable,
                     "bounded_comparative_uncertainty": bounded_uncertainty,
+                    "comparative_advantage": comparative_advantage,
                 }
                 passed = all(gates.values())
                 candidate = {
-                    "threat": threat_names[response],
+                    "threat": MECHANIC_RESPONSE_THREATS[response],
                     "item_id": item_id,
                     "comparator_item_id": comparator_item_id or None,
                     "enemy_hero_id": int(row["enemy_hero_id"]),
@@ -431,8 +443,8 @@ def _situational_policy(
                     "admitted": False,
                 }
                 candidates.append(candidate)
-                if passed:
-                    threat = threat_names[response]
+                if passed and comparative_interval is not None:
+                    threat = MECHANIC_RESPONSE_THREATS[response]
                     enemy_id = int(row["enemy_hero_id"])
                     branch = {
                         "threat": threat,
@@ -440,10 +452,14 @@ def _situational_policy(
                         "enemy_hero_id": enemy_id,
                         "mechanic_ref": f"item/{item_id}/{response}",
                         "comparator": candidate["comparator"],
+                        "comparator_item_id": comparator_item_id,
+                        "comparison_support": comparison_support,
+                        "same_opportunity": True,
                         "support": int(row["observations"]),
                         "effective_support": effective,
                         "overlap": state_coverage,
                         "stable": stable,
+                        "comparative_interval": list(comparative_interval),
                         "trigger": (
                             f"Enemy hero {enemy_id} presents material "
                             f"{threat.replace('_', ' ')}."
@@ -469,31 +485,33 @@ def _situational_policy(
                         -float(item_id),
                     )
                     qualified.append((score, candidate, branch))
-    winners: dict[
-        tuple[str, int], tuple[tuple[float, ...], dict[str, Any], dict[str, Any]]
-    ] = {}
-    for row in qualified:
-        branch = row[2]
-        key = (str(branch["threat"]), int(branch["enemy_hero_id"]))
-        if key not in winners or row[0] > winners[key][0]:
-            winners[key] = row
+    ordered = sorted(
+        qualified,
+        key=lambda row: (
+            tuple(-value for value in row[0]),
+            str(row[2]["threat"]),
+            int(row[2]["enemy_hero_id"]),
+            int(row[2]["item_id"]),
+        ),
+    )
     branches = []
-    for key in sorted(winners):
-        _, candidate, branch = winners[key]
+    used_items: set[int] = set()
+    used_guards: set[tuple[str, int]] = set()
+    for _, candidate, branch in ordered:
+        item_id = int(branch["item_id"])
+        guard = (str(branch["threat"]), int(branch["enemy_hero_id"]))
+        if item_id in used_items or guard in used_guards:
+            continue
         candidate["admitted"] = True
         branches.append(branch)
+        used_items.add(item_id)
+        used_guards.add(guard)
+        if len(branches) == MAX_SITUATIONAL_BRANCHES:
+            break
     rejected = len(candidates) - len(branches)
     return {
         "version": 1,
-        "threat_vocabulary": [
-            "healing",
-            "bullet_pressure",
-            "spirit_pressure",
-            "control",
-            "mobility_escape",
-            "ally_protection",
-            "active_slot_burden",
-        ],
+        "threat_vocabulary": sorted(THREAT_CLASSES),
         "branches": branches,
         "candidate_audit": candidates,
         "abstentions": (
@@ -501,7 +519,11 @@ def _situational_policy(
                 f"{rejected} mechanics-backed candidate(s) failed at least one same-opportunity, comparator, support, overlap, bounded-uncertainty, or chronological-stability gate."
             ]
             if rejected
-            else []
+            else (
+                ["No mechanics-backed situational candidate was available."]
+                if not branches
+                else []
+            )
         ),
     }
 
@@ -609,6 +631,7 @@ def export_production_evidence(paths: RunPaths, output: Path) -> dict[str, Any]:
                     paths,
                     hero_id,
                     normal_assets,
+                    excluded_item_ids=frozenset(core_candidates[0]["item_ids"]),
                 ),
             })
     finally:

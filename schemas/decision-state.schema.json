@@ -51,6 +51,7 @@
     },
     "learned_abilities": {"$ref": "#/$defs/unique_id_list"},
     "enemy_hero_ids": {"$ref": "#/$defs/unique_id_list"},
+    "enemy_item_ids": {"$ref": "#/$defs/unique_id_list"},
     "allied_hero_ids": {"$ref": "#/$defs/unique_id_list"},
     "objectives": {
       "type": "array",
