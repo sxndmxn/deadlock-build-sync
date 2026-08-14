@@ -13,7 +13,12 @@
     "tactical_profile": {
       "type": "object",
       "properties": {
-        "primary_role": {"type": "string", "minLength": 3, "maxLength": 100},
+        "primary_role": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 100,
+          "pattern": "[.!?]$"
+        },
         "fight_role": {"type": "string", "minLength": 20, "maxLength": 350},
         "economy_plan": {"type": "string", "minLength": 20, "maxLength": 350},
         "ending_duration_interpretation": {

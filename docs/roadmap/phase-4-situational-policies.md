@@ -60,7 +60,7 @@ are all proven.
 - The read-only recommender combines explicit threats with conservative pinned
   enemy-item mechanics, recognizes four-active slot burden, rejects unknown items or
   conflicting branches, filters illegal purchases, and exposes the admitted contract.
-- Prompt 21 rejects changed identities, invented threats, causal language, missing
+- Prompt 22 rejects changed identities, invented threats, causal language, missing
   comparators, and incomplete trigger/replacement/execution/failure instructions.
 - The synthetic admitted-branch DeepEval case passed all four production metrics;
   deterministic negative fixtures exercise every conditional omission and identity

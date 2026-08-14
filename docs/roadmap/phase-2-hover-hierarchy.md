@@ -42,19 +42,24 @@ job, and observational context remains compact and subordinate.
 
 ## Implementation record
 
-- Narrative schema 5 / prompt 21 enforces 165-byte item instructions; the shared
-  composer enforces the 240-byte Steam annotation ceiling without truncation.
+- Narrative schema 6 / prompt 22 requires a complete, uncorrupted primary-role
+  sentence and enforces 165-byte item instructions; the shared composer enforces the
+  240-byte Steam annotation ceiling without truncation.
 - CORE annotations lead with exact hero-specific action prose. Optional annotations
   use explicit mechanics jobs and report active, imbue, replacement, flex, component,
   and consolidation burdens only when present.
 - `NARRATIVE_FIELD_SURFACES` declares the consumer for every generated field family,
   and `ProjectionUtilizationMetric` enforces the declaration in the production suite.
-- Prompt 21 validates conditional trigger, comparator, replacement, execution, and
+- Prompt 22 validates conditional trigger, comparator, replacement, execution, and
   failure-condition identity in addition to the original CORE contract.
 - On 2026-08-13, the 11-case prompt run admitted 9 responses on their first attempt;
   Shiv and Vindicta passed unchanged immediate rechecks. All 11 admitted responses
   passed contract, closed-policy, evidence-language, and projection-utilization
   metrics (44/44), while preserving the validator's fail-closed behavior.
+- On 2026-08-14, the prompt-22 run admitted 10 responses on the first full attempt;
+  Grey Talon passed unchanged on the third bounded attempt after two drafts were
+  correctly rejected for making an optional tier automatic. All 11 admitted responses
+  passed the same 44/44 production metrics.
 
 Traceability: [usage audit](../deadlock-build-usage-audit.md#phase-2-hover-hierarchy)
 and [annotation requirement](../deadlock-build-policy-requirements.md#req-rnd-006--keep-annotations-actionable-and-bounded).

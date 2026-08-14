@@ -119,7 +119,7 @@ def packet_and_response() -> tuple[dict[str, Any], dict[str, Any]]:
         "context_sha256": "3" * 64,
         "narrative_basis_sha256": "5" * 64,
         "tactical_profile": {
-            "primary_role": "control support",
+            "primary_role": "Control support.",
             "fight_role": "Protect allied pressure and control committed enemies.",
             "economy_plan": "Take safe income, then group when allied pressure is ready.",
             "ending_duration_interpretation": {
@@ -166,7 +166,7 @@ def packet_and_response() -> tuple[dict[str, Any], dict[str, Any]]:
 
 
 def test_generator_uses_installer_prompt_version() -> None:
-    assert generate_narratives.PROMPT_VERSION == NARRATIVE_PROMPT_VERSION == 21
+    assert generate_narratives.PROMPT_VERSION == NARRATIVE_PROMPT_VERSION == 22
 
 
 def test_kit_context_excludes_items_outcomes_and_policy() -> None:
@@ -218,7 +218,7 @@ def test_validates_closed_policy_explanation() -> None:
 
     validated = generate_narratives.validate_response(response, packet)
 
-    assert validated["prompt_version"] == 21
+    assert validated["prompt_version"] == 22
 
 
 def test_rejects_core_instruction_over_utf8_byte_budget() -> None:
@@ -363,6 +363,23 @@ def test_rejects_changed_ending_duration_estimand() -> None:
     ] = "MID (30–45m)"
 
     with pytest.raises(generate_narratives.GenerationError, match="strongest_phase"):
+        generate_narratives.validate_response(response, packet)
+
+
+@pytest.mark.parametrize(
+    "primary_role",
+    [
+        "Protect allies and control committed enemies",
+        "Protect allies or56.",
+        "Protect allies 和 control enemies.",
+        "Protect allies\u2060 and control enemies.",
+    ],
+)
+def test_rejects_incomplete_or_corrupted_primary_role(primary_role: str) -> None:
+    packet, response = packet_and_response()
+    response["tactical_profile"]["primary_role"] = primary_role
+
+    with pytest.raises(generate_narratives.GenerationError, match=r"primary role"):
         generate_narratives.validate_response(response, packet)
 
 

@@ -63,6 +63,10 @@ ANALYTICS_LEAK_PATTERN = re.compile(
     r"confidence interval)\b",
     re.IGNORECASE,
 )
+CORRUPT_PROSE_PATTERN = re.compile(
+    r"[\u200b-\u200f\u202a-\u202e\u2060-\u206f\u4e00-\u9fff]"
+    r"|(?<=[A-Za-z])\d+(?=\W|$)"
+)
 
 KIT_PROMPT = """
 Role: explain one Deadlock hero kit from a closed, patch-specific mechanics packet.
@@ -100,6 +104,7 @@ Authority and scope:
 
 tactical_profile:
 - Give a hero-specific role, fight role, and economy plan grounded in the kit.
+- Make primary_role one complete sentence of at most 100 characters.
 - Copy the ending-duration estimand and strongest/weakest phase labels exactly.
   Explain a conservative conversion plan without exposing rates or counts, or
   acknowledge the explicit unavailable state without inventing a phase.
@@ -736,7 +741,10 @@ def _validate_complete_sentence(value: Any, label: str, hero_name: str) -> str:
         or value.rstrip()[-1] not in ".!?"
     ):
         raise GenerationError(f"Codex omitted a complete {label} for {hero_name}")
-    return value.strip()
+    text = value.strip()
+    if CORRUPT_PROSE_PATTERN.search(text):
+        raise GenerationError(f"Codex returned corrupted {label} for {hero_name}")
+    return text
 
 
 def _validate_prose_ceiling(text: str, hero_name: str) -> None:
@@ -862,9 +870,9 @@ def validate_response(
     tactical = response.get("tactical_profile")
     if not isinstance(tactical, dict):
         raise GenerationError(f"Codex omitted tactical_profile for {hero_name}")
-    primary_role = tactical.get("primary_role")
-    if not isinstance(primary_role, str) or not primary_role.strip():
-        raise GenerationError(f"Codex omitted primary_role for {hero_name}")
+    primary_role = _validate_complete_sentence(
+        tactical.get("primary_role"), "primary role", hero_name
+    )
     fight_role = _validate_complete_sentence(
         tactical.get("fight_role"), "fight role", hero_name
     )

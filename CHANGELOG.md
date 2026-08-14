@@ -22,6 +22,8 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   disjoint, mechanics-labeled optional references.
 - Route validated player-first narrative instructions into descriptions and exact
   item hovers while retaining complete artifact provenance.
+- Reject incomplete or corrupted primary-role prose and version the stronger narrative
+  schema and prompt as 6 / 22.
 
 ## [0.1.0] - 2026-08-01
 
