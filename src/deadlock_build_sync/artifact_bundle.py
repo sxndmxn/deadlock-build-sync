@@ -225,8 +225,14 @@ def _categories(
     raw_categories = (
         projection.get("categories") if isinstance(projection, dict) else None
     )
+    policy_core_ids = _policy_core(policy)
+    core_path_ids = (
+        evidence.sequence_policy.default_path
+        if evidence.sequence_policy is not None
+        else policy_core_ids
+    )
     expected = (
-        ("CORE ITEMS", False, 8, 8),
+        ("CORE ITEMS", False, len(core_path_ids), len(core_path_ids)),
         ("TIER 1", True, 1, 10),
         ("TIER 2", True, 1, 10),
         ("TIER 3", True, 1, 10),
@@ -261,16 +267,26 @@ def _categories(
             )
             for item in raw_items
         )
-        if len({item.item_id for item in items}) != len(items):
+        if index != 0 and len({item.item_id for item in items}) != len(items):
             raise ArtifactBundleError(
                 f"hero {policy.hero_id} artifact row {name} contains duplicates"
             )
         categories.append(GuideCategory(name, items, optional=optional))
         if index == 0:
-            core_items = items
+            if tuple(item.item_id for item in items) != core_path_ids:
+                raise ArtifactBundleError(
+                    f"hero {policy.hero_id} projection CORE path differs from "
+                    "component-expanded evidence"
+                )
+            by_id = {item.item_id: item for item in items}
+            if not set(policy_core_ids) <= set(by_id):
+                raise ArtifactBundleError(
+                    f"hero {policy.hero_id} projection CORE path omits final items"
+                )
+            core_items = tuple(by_id[item_id] for item_id in policy_core_ids)
         else:
             tiers[index] = items
-    if tuple(item.item_id for item in core_items) != _policy_core(policy):
+    if tuple(item.item_id for item in core_items) != policy_core_ids:
         raise ArtifactBundleError(
             f"hero {policy.hero_id} projection core differs from its policy"
         )
@@ -511,6 +527,7 @@ def _guide(
         match_mode=match_mode,
         rank_identity=rank_identity,
         core_items=core_items,
+        core_purchase_items=categories[0].items,
         core_joint_matches=joint_matches,
         core_joint_share=joint_share,
         median_final_net_worth=median_net_worth,

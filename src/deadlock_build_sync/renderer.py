@@ -184,6 +184,8 @@ def _project_evidence_layout(
     default_path: tuple[PolicyNode, ...],
 ) -> PurchaseGuide:
     source_core_ids = tuple(item.item_id for item in layout.core_items)
+    core_purchase_items = layout.core_purchase_items or layout.core_items
+    core_purchase_ids = tuple(item.item_id for item in core_purchase_items)
     policy_core_ids = tuple(
         node.item_id
         for node in default_path
@@ -196,8 +198,8 @@ def _project_evidence_layout(
     if any(not 1 <= len(layout.tiers.get(tier, ())) <= 10 for tier in range(1, 5)):
         raise PolicyError("evidence projection requires 1–10 items in every tier")
     tier_item_ids = {item.item_id for items in layout.tiers.values() for item in items}
-    if tier_item_ids & set(source_core_ids):
-        raise PolicyError("evidence tier menus must not repeat CORE items")
+    if tier_item_ids & set(core_purchase_ids):
+        raise PolicyError("evidence tier menus must not repeat CORE path items")
     conditional = _conditional_nodes(policy)
     missing_conditional = set(conditional) - tier_item_ids
     if missing_conditional:
@@ -223,8 +225,13 @@ def _project_evidence_layout(
         for tier, items in layout.tiers.items()
     }
     core_items = _apply_sell_priorities(layout.core_items, policy.nodes)
+    core_purchase_items = _apply_sell_priorities(core_purchase_items, policy.nodes)
     categories = (
-        GuideCategory("CORE ITEMS", core_items, CORE_CATEGORY_DESCRIPTION),
+        GuideCategory(
+            "CORE ITEMS",
+            core_purchase_items,
+            CORE_CATEGORY_DESCRIPTION,
+        ),
         *(
             GuideCategory(
                 f"TIER {tier}",
@@ -253,6 +260,7 @@ def _project_evidence_layout(
         match_mode=identity.match_mode,
         rank_identity=identity.rank_identity,
         core_items=core_items,
+        core_purchase_items=core_purchase_items,
         core_joint_matches=layout.core_joint_matches,
         core_joint_share=layout.core_joint_share,
         median_final_net_worth=layout.median_final_net_worth,

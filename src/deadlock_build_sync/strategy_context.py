@@ -435,8 +435,9 @@ def build_hero_strategy_context(
             for category in projected.rendered_categories
         ],
         "semantics": (
-            "CORE ITEMS is the only non-optional Queue row. TIER 1–4 are optional "
-            "adoption reference menus and never automatic purchases."
+            "CORE ITEMS is the component-expanded non-optional Queue path. "
+            "TIER 1–4 are optional adoption reference menus and never automatic "
+            "purchases."
         ),
     }
     context: dict[str, Any] = {
@@ -453,6 +454,9 @@ def build_hero_strategy_context(
             "selection": "highest joint-support legal eight-item final inventory within median final net worth",
             "item_ids_in_observed_acquisition_order": [
                 item.item_id for item in guide.core_items
+            ],
+            "component_expanded_purchase_path": [
+                item.item_id for item in (guide.core_purchase_items or guide.core_items)
             ],
             "joint_player_matches": guide.core_joint_matches,
             "joint_share": guide.core_joint_share,
@@ -490,7 +494,7 @@ def build_hero_strategy_context(
             "Observed adopter outcomes and ending-duration profiles are descriptive associations, not item effects or live power curves.",
             "Ability actions use reached-state support and exact legal levels; price tiers are not ability quarters.",
             "Only mechanics-backed, state-observable policy branches may be explained.",
-            "CORE ITEMS is the only automatic Queue; TIER 1–4 are optional reference menus and do not prove a situational trigger.",
+            "CORE ITEMS is the component-expanded automatic Queue path; TIER 1–4 are optional reference menus and do not prove a situational trigger.",
             "Do not invent mechanics, numeric effects, threats, combos, or matchups absent from this packet.",
         ],
     }

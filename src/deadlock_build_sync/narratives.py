@@ -293,7 +293,7 @@ def apply_narrative(
         )
     if core_category is None:
         raise NarrativeError(f"projection for {guide.hero_name} has no CORE row")
-    core_items = list(core_category.items)
+    core_items = list(guide.core_items or core_category.items)
     core_actions = [
         action
         for action in supplied
@@ -301,7 +301,7 @@ def apply_narrative(
     ]
     if len(core_actions) != len(core_items):
         raise NarrativeError(
-            f"narrative for {guide.hero_name} does not cover every CORE item"
+            f"narrative for {guide.hero_name} does not cover every final CORE item"
         )
     annotated_items = []
     for position, (item, action) in enumerate(
@@ -333,8 +333,12 @@ def apply_narrative(
             ) from error
         annotated_items.append(replace(item, tactical_annotation=annotation))
     annotated_core = tuple(annotated_items)
+    annotated_by_id = {item.item_id: item for item in annotated_core}
+    annotated_purchase_path = tuple(
+        annotated_by_id.get(item.item_id, item) for item in core_category.items
+    )
     categories = tuple(
-        replace(category, items=annotated_core)
+        replace(category, items=annotated_purchase_path)
         if category is core_category
         else category
         for category in categories
@@ -402,5 +406,6 @@ def apply_narrative(
         ),
         categories=categories,
         core_items=annotated_core,
+        core_purchase_items=annotated_purchase_path,
         tiers=tiers,
     )

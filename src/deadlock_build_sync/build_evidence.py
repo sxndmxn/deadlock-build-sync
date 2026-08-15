@@ -143,6 +143,7 @@ class HeroBuildEvidence:
 class SelectedHeroBuild:
     hero_id: int
     core: tuple[ItemEvidence, ...]
+    core_purchase_path: tuple[ItemEvidence, ...]
     tiers: dict[int, tuple[ItemEvidence, ...]]
     core_joint_matches: int
     core_joint_share: float
@@ -703,6 +704,49 @@ def assert_build_evidence_compatible(
         )
 
 
+def _replay_component_path(
+    graph: ItemGraph,
+    evidence_by_id: dict[int, ItemEvidence],
+    path: tuple[int, ...],
+) -> InventoryState:
+    state = InventoryState()
+    for item_id in path:
+        if item_id not in evidence_by_id:
+            raise MechanicsError(f"purchase path item {item_id} lacks evidence")
+        missing = [
+            component_id
+            for component_id in graph.components[item_id]
+            if component_id not in state.owned
+        ]
+        if missing:
+            raise MechanicsError(
+                f"purchase path item {item_id} precedes components {missing}"
+            )
+        state = purchase_item(graph, state, item_id)
+    return state
+
+
+def _expand_component_path(
+    graph: ItemGraph,
+    targets: tuple[int, ...],
+) -> tuple[int, ...]:
+    state = InventoryState()
+    actions: list[int] = []
+
+    def purchase(item_id: int) -> None:
+        nonlocal state
+        if item_id in state.owned:
+            return
+        for component_id in graph.components[item_id]:
+            purchase(component_id)
+        state = purchase_item(graph, state, item_id)
+        actions.append(item_id)
+
+    for item_id in targets:
+        purchase(item_id)
+    return tuple(actions)
+
+
 def select_hero_build(
     evidence: HeroBuildEvidence,
     assets: list[dict[str, Any]],
@@ -757,8 +801,27 @@ def select_hero_build(
     if selected is None:
         raise ArtifactError(f"hero {evidence.hero_id} has no legal supported core")
 
+    path_ids = (
+        evidence.sequence_policy.default_path
+        if evidence.sequence_policy is not None
+        else _expand_component_path(graph, selected_order)
+    )
+    try:
+        state = _replay_component_path(graph, by_id, path_ids)
+    except MechanicsError as error:
+        raise ArtifactError(
+            f"hero {evidence.hero_id} has an invalid component-expanded path: {error}"
+        ) from error
+    if set(state.owned) != set(selected.item_ids):
+        path_ids = _expand_component_path(graph, selected_order)
+        state = _replay_component_path(graph, by_id, path_ids)
+        if set(state.owned) != set(selected.item_ids):
+            raise ArtifactError(
+                f"hero {evidence.hero_id} component-expanded path does not end in CORE"
+            )
+
     tiers: dict[int, tuple[ItemEvidence, ...]] = {}
-    core_ids = set(selected.item_ids)
+    core_ids = set(path_ids)
     situational_ids = {
         branch.item_id
         for branch in (
@@ -811,6 +874,7 @@ def select_hero_build(
     return SelectedHeroBuild(
         hero_id=evidence.hero_id,
         core=tuple(by_id[item_id] for item_id in selected_order),
+        core_purchase_path=tuple(by_id[item_id] for item_id in path_ids),
         tiers=tiers,
         core_joint_matches=selected.joint_matches,
         core_joint_share=selected.joint_matches / evidence.eligible_player_matches,

@@ -14,6 +14,8 @@ from deadlock_build_sync.build_evidence import (
     CoreCandidate,
     HeroBuildEvidence,
     ItemEvidence,
+    SequencePolicy,
+    SequenceTransition,
     SituationalBranch,
     SituationalPolicy,
 )
@@ -274,6 +276,7 @@ def build_evidence(
     api: FakeApi,
     *,
     with_situational_branch: bool = False,
+    with_component_path: bool = False,
 ) -> BuildEvidenceCatalog:
     eligible = 100
     item_rows = tuple(
@@ -334,6 +337,18 @@ def build_evidence(
         median_final_net_worth=20_000,
         core_candidates=(CoreCandidate((100, 101, 200, 201, 300, 301, 400, 401), 40),),
         items=item_rows,
+        sequence_policy=(
+            SequencePolicy(
+                (100, 101, 102, 200, 201, 300, 301, 400, 401),
+                (SequenceTransition("popularity", 0, 0, 0, 100, 40, 100),),
+                20,
+                "deterministic_backoff",
+                {"chronological_fold": "test"},
+                {"evaluated": True, "passed": False, "promoted": False},
+            )
+            if with_component_path
+            else None
+        ),
         situational_policy=situational,
     )
     patch = api.current_patch()
@@ -437,6 +452,48 @@ def test_generated_guide_is_snapshot_bound_policy_projection() -> None:
     )
     assert (
         generated.contexts[0]["ability_policy"]["steps"][0]["earliest_legal_level"] == 1
+    )
+
+
+def test_required_components_join_core_queue_and_leave_optional_rows() -> None:
+    api = FakeApi(ability_rows=ability_rows(), duration_points=duration_points())
+    parent = next(item for item in api._assets if item.get("id") == 200)
+    parent["component_items"] = ["item_1_2"]
+
+    generated = generate_guides(
+        api,
+        build_evidence=build_evidence(api, with_component_path=True),
+        account_id=123,
+        hero_query="Kelvin",
+        all_heroes=False,
+    )
+
+    guide = generated.guides[0]
+    assert [item.item_id for item in guide.categories[0].items] == [
+        100,
+        101,
+        102,
+        200,
+        201,
+        300,
+        301,
+        400,
+        401,
+    ]
+    assert [item.item_id for item in guide.core_items] == [
+        100,
+        101,
+        200,
+        201,
+        300,
+        301,
+        400,
+        401,
+    ]
+    assert 102 not in {item.item_id for item in guide.categories[1].items}
+    assert (
+        generated.contexts[0]["projection"]["categories"][0]["items"][2]["item_id"]
+        == 102
     )
 
 

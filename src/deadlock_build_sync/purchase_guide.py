@@ -124,6 +124,7 @@ class PurchaseGuide:
     match_mode: str = ""
     rank_identity: str = ""
     core_items: tuple[GuideItem, ...] = ()
+    core_purchase_items: tuple[GuideItem, ...] = ()
     core_joint_matches: int = 0
     core_joint_share: float = 0.0
     median_final_net_worth: int = 0
@@ -153,7 +154,7 @@ class PurchaseGuide:
             return (
                 GuideCategory(
                     name="CORE ITEMS",
-                    items=self.core_items,
+                    items=self.core_purchase_items or self.core_items,
                     description=CORE_CATEGORY_DESCRIPTION,
                 ),
                 *(
@@ -308,6 +309,8 @@ def build_purchase_guide_from_evidence(
     }
     for item in selected.core:
         by_id.setdefault(item.item_id, guide_item_from_evidence(item))
+    for item in selected.core_purchase_path:
+        by_id.setdefault(item.item_id, guide_item_from_evidence(item))
     return PurchaseGuide(
         hero_id=int(hero["id"]),
         hero_name=str(hero.get("name") or f"Hero {hero['id']}"),
@@ -318,6 +321,9 @@ def build_purchase_guide_from_evidence(
         },
         ability_path=ability_path,
         core_items=tuple(by_id[item.item_id] for item in selected.core),
+        core_purchase_items=tuple(
+            by_id[item.item_id] for item in selected.core_purchase_path
+        ),
         core_joint_matches=selected.core_joint_matches,
         core_joint_share=selected.core_joint_share,
         median_final_net_worth=selected.median_final_net_worth,
