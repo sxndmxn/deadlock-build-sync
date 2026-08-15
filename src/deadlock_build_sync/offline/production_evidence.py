@@ -20,9 +20,14 @@ from deadlock_build_sync.build_evidence import (
     MAX_COMPARATIVE_INTERVAL_WIDTH,
     MAX_SITUATIONAL_BRANCHES,
     MECHANIC_RESPONSE_THREATS,
+    SEQUENCE_POLICY_VERSION,
     THREAT_CLASSES,
 )
-from deadlock_build_sync.mechanics import classify_item_threat_responses
+from deadlock_build_sync.mechanics import (
+    ItemGraph,
+    classify_item_threat_responses,
+    schedule_component_path,
+)
 
 from .api import read_json
 from .config import RunPaths, sha256_json
@@ -212,7 +217,7 @@ def _item_payload(row: dict[str, Any]) -> dict[str, Any]:
 def _expanded_default_path(
     core_candidates: list[dict[str, Any]],
     hero_metrics: pl.DataFrame,
-    components: dict[int, tuple[int, ...]],
+    graph: ItemGraph,
 ) -> list[int]:
     if not core_candidates:
         raise RuntimeError("hero has no supported eight-item core")
@@ -225,23 +230,15 @@ def _expanded_default_path(
             item_id,
         ),
     )
-    owned: set[int] = set()
-    actions: list[int] = []
-
-    def purchase(item_id: int) -> None:
-        if item_id in owned:
-            return
-        for component_id in components.get(item_id, ()):
-            purchase(component_id)
-        owned.difference_update(components.get(item_id, ()))
-        owned.add(item_id)
-        actions.append(item_id)
-
-    for item_id in core:
-        purchase(item_id)
-    if owned != set(core):
-        raise RuntimeError("component-expanded path does not end in the selected core")
-    return actions
+    priorities = {
+        item_id: (
+            float(row.get("median_valid_buy_net_worth") or float("inf")),
+            float(row.get("median_buy_time_s") or float("inf")),
+            item_id,
+        )
+        for item_id, row in evidence.items()
+    }
+    return list(schedule_component_path(graph, core, priorities))
 
 
 def _sequence_rows(
@@ -570,6 +567,7 @@ def export_production_evidence(paths: RunPaths, output: Path) -> dict[str, Any]:
         and str(item.get("game_mode") or "normal").casefold() == "normal"
     ]
     item_assets, components = _asset_maps(paths.raw / "items.json")
+    item_graph = ItemGraph.from_assets(list(item_assets.values()))
     item_costs = {
         item_id: int(asset.get("cost") or 0) for item_id, asset in item_assets.items()
     }
@@ -611,13 +609,13 @@ def export_production_evidence(paths: RunPaths, output: Path) -> dict[str, Any]:
                     for row in hero_metrics.sort("item_id").iter_rows(named=True)
                 ],
                 "sequence_policy": {
-                    "version": 1,
+                    "version": SEQUENCE_POLICY_VERSION,
                     "minimum_support": SEQUENCE_MINIMUM_SUPPORT,
                     "production_model": "deterministic_backoff",
                     "component_expanded_default_path": _expanded_default_path(
                         core_candidates,
                         hero_metrics,
-                        components,
+                        item_graph,
                     ),
                     "transitions": _sequence_rows(con, hero_id),
                     "evaluation": {

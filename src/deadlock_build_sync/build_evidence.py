@@ -8,7 +8,13 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, cast
 
 from .artifacts import ArtifactError
-from .mechanics import InventoryState, ItemGraph, MechanicsError, purchase_item
+from .mechanics import (
+    InventoryState,
+    ItemGraph,
+    MechanicsError,
+    purchase_item,
+    schedule_component_path,
+)
 from .snapshot import EpochBoundary, EpochSet, MatchMode, sha256_json
 
 if TYPE_CHECKING:
@@ -23,7 +29,7 @@ TIER_ITEM_COUNT = 10
 MINIMUM_TIER_SUPPORT = 20
 MINIMUM_CORE_SUPPORT = 20
 METHOD_VERSION = "reconstructed-final-inventory-v3"
-SEQUENCE_POLICY_VERSION = 1
+SEQUENCE_POLICY_VERSION = 2
 SITUATIONAL_POLICY_VERSION = 1
 MAX_SITUATIONAL_BRANCHES = 7
 MAX_COMPARATIVE_INTERVAL_WIDTH = 0.10
@@ -729,22 +735,19 @@ def _replay_component_path(
 def _expand_component_path(
     graph: ItemGraph,
     targets: tuple[int, ...],
+    evidence_by_id: dict[int, ItemEvidence],
 ) -> tuple[int, ...]:
-    state = InventoryState()
-    actions: list[int] = []
-
-    def purchase(item_id: int) -> None:
-        nonlocal state
-        if item_id in state.owned:
-            return
-        for component_id in graph.components[item_id]:
-            purchase(component_id)
-        state = purchase_item(graph, state, item_id)
-        actions.append(item_id)
-
-    for item_id in targets:
-        purchase(item_id)
-    return tuple(actions)
+    priorities = {
+        item_id: (
+            item.median_valid_buy_net_worth
+            if item.median_valid_buy_net_worth is not None
+            else math.inf,
+            item.median_buy_time_s,
+            item_id,
+        )
+        for item_id, item in evidence_by_id.items()
+    }
+    return schedule_component_path(graph, targets, priorities)
 
 
 def select_hero_build(
@@ -804,7 +807,7 @@ def select_hero_build(
     path_ids = (
         evidence.sequence_policy.default_path
         if evidence.sequence_policy is not None
-        else _expand_component_path(graph, selected_order)
+        else _expand_component_path(graph, selected_order, by_id)
     )
     try:
         state = _replay_component_path(graph, by_id, path_ids)
@@ -813,7 +816,7 @@ def select_hero_build(
             f"hero {evidence.hero_id} has an invalid component-expanded path: {error}"
         ) from error
     if set(state.owned) != set(selected.item_ids):
-        path_ids = _expand_component_path(graph, selected_order)
+        path_ids = _expand_component_path(graph, selected_order, by_id)
         state = _replay_component_path(graph, by_id, path_ids)
         if set(state.owned) != set(selected.item_ids):
             raise ArtifactError(

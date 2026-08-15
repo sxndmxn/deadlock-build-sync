@@ -3,6 +3,7 @@ from pathlib import Path
 import duckdb
 import polars as pl
 
+from deadlock_build_sync.mechanics import ItemGraph
 from deadlock_build_sync.offline.config import RunPaths
 from deadlock_build_sync.offline.production_evidence import (
     _expanded_default_path,
@@ -11,6 +12,27 @@ from deadlock_build_sync.offline.production_evidence import (
     _situational_policy,
     _top_core_candidates,
 )
+
+
+def _item_graph(components: dict[int, tuple[int, ...]]) -> ItemGraph:
+    return ItemGraph.from_assets([
+        {
+            "id": item_id,
+            "class_name": f"item_{item_id}",
+            "name": f"Item {item_id}",
+            "cost": 800,
+            "item_slot_type": "weapon",
+            "item_tier": 1,
+            "component_items": [
+                f"item_{component_id}" for component_id in components.get(item_id, ())
+            ],
+            "shopable": True,
+            "disabled": False,
+            "is_active_item": False,
+            "is_unique": True,
+        }
+        for item_id in range(1, 10)
+    ])
 
 
 def test_core_candidates_are_supported_and_deterministically_ranked() -> None:
@@ -68,7 +90,7 @@ def test_component_expanded_default_path_buys_missing_components_first() -> None
     path = _expanded_default_path(
         [{"item_ids": list(range(2, 10)), "joint_matches": 30}],
         metrics,
-        {2: (1,)},
+        _item_graph({2: (1,)}),
     )
 
     assert path == list(range(1, 10))
@@ -87,7 +109,7 @@ def test_component_expansion_can_rebuy_a_consumed_component_in_the_final_core() 
     path = _expanded_default_path(
         [{"item_ids": list(range(1, 9)), "joint_matches": 30}],
         metrics,
-        {2: (1,)},
+        _item_graph({2: (1,)}),
     )
 
     assert path[:3] == [1, 2, 1]

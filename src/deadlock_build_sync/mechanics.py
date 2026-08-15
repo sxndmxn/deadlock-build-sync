@@ -4,7 +4,10 @@ import html
 import json
 import re
 from dataclasses import dataclass, replace
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
 
 from .snapshot import sha256_json
 
@@ -811,6 +814,173 @@ def purchase_item(
     if active_count > MAX_ACTIVE_ITEMS:
         raise MechanicsError("purchase exceeds four active-item bindings")
     return replace(state, owned=tuple(owned))
+
+
+@dataclass(frozen=True)
+class _ComponentPlan:
+    item_ids: tuple[int, ...]
+    dependencies: tuple[frozenset[int], ...]
+
+
+def _plan_component_actions(
+    graph: ItemGraph, target_ids: tuple[int, ...]
+) -> _ComponentPlan:
+    planned_ids: list[int] = []
+    dependencies: list[set[int]] = []
+    consumed_by: dict[int, int] = {}
+    owned_actions: dict[int, int] = {}
+    last_action_by_item: dict[int, int] = {}
+    planning_state = InventoryState()
+
+    def plan(item_id: int) -> int:
+        nonlocal planning_state
+        if item_id in planning_state.owned:
+            try:
+                return owned_actions[item_id]
+            except KeyError as error:
+                raise MechanicsError(
+                    f"owned item {item_id} has no planned purchase action"
+                ) from error
+
+        component_actions = tuple(
+            plan(component_id) for component_id in graph.components[item_id]
+        )
+        action_index = len(planned_ids)
+        action_dependencies = set(component_actions)
+        previous_action = last_action_by_item.get(item_id)
+        if previous_action is not None:
+            consumer = consumed_by.get(previous_action)
+            if consumer is None:
+                raise MechanicsError(
+                    f"item {item_id} cannot be rebought before its prior copy is consumed"
+                )
+            action_dependencies.add(consumer)
+
+        missing = [
+            component_id
+            for component_id in graph.components[item_id]
+            if component_id not in planning_state.owned
+        ]
+        if missing:
+            raise MechanicsError(
+                f"planned item {item_id} is missing components {missing}"
+            )
+        planning_state = purchase_item(graph, planning_state, item_id)
+        planned_ids.append(item_id)
+        dependencies.append(action_dependencies)
+        for component_id, component_action in zip(
+            graph.components[item_id], component_actions, strict=True
+        ):
+            consumed_by[component_action] = action_index
+            owned_actions.pop(component_id, None)
+        owned_actions[item_id] = action_index
+        last_action_by_item[item_id] = action_index
+        return action_index
+
+    final_actions: list[int] = []
+    for item_id in target_ids:
+        action_index = plan(item_id)
+        if action_index in final_actions:
+            raise MechanicsError(f"final item {item_id} was already scheduled")
+        if final_actions:
+            dependencies[action_index].add(final_actions[-1])
+        final_actions.append(action_index)
+    if set(planning_state.owned) != set(target_ids):
+        raise MechanicsError("planned component path does not end in final inventory")
+    return _ComponentPlan(
+        tuple(planned_ids), tuple(frozenset(required) for required in dependencies)
+    )
+
+
+def _search_component_schedule(
+    graph: ItemGraph,
+    plan: _ComponentPlan,
+    target_ids: tuple[int, ...],
+    priorities: Mapping[int, tuple[float, float, int]],
+) -> tuple[int, ...] | None:
+    planned_ids = plan.item_ids
+    dependencies = plan.dependencies
+
+    failed_states: set[tuple[frozenset[int], tuple[int, ...], int]] = set()
+
+    def search(
+        completed: frozenset[int], state: InventoryState
+    ) -> tuple[int, ...] | None:
+        if len(completed) == len(planned_ids):
+            return () if set(state.owned) == set(target_ids) else None
+        state_key = (
+            completed,
+            tuple(sorted(state.owned)),
+            state.unlocked_flex_slots,
+        )
+        if state_key in failed_states:
+            return None
+        ready = sorted(
+            (
+                index
+                for index, required in enumerate(dependencies)
+                if index not in completed and required <= completed
+            ),
+            key=lambda index: (
+                *priorities.get(
+                    planned_ids[index],
+                    (float("inf"), float("inf"), planned_ids[index]),
+                ),
+                index,
+            ),
+        )
+        for action_index in ready:
+            item_id = planned_ids[action_index]
+            if any(
+                component_id not in state.owned
+                for component_id in graph.components[item_id]
+            ):
+                continue
+            try:
+                next_state = purchase_item(graph, state, item_id)
+            except MechanicsError:
+                continue
+            suffix = search(completed | {action_index}, next_state)
+            if suffix is not None:
+                return (action_index, *suffix)
+        failed_states.add(state_key)
+        return None
+
+    return search(frozenset(), InventoryState())
+
+
+def schedule_component_path(
+    graph: ItemGraph,
+    targets: Sequence[int],
+    priorities: Mapping[int, tuple[float, float, int]],
+) -> tuple[int, ...]:
+    """Schedule a chronological, legal purchase path for a final inventory.
+
+    Purchase timing ranks every action, while component dependencies, final-item
+    order, inventory capacity, active-item limits, and consumed-component rebuys
+    remain hard constraints.
+
+    Returns:
+        Item IDs in executable left-to-right purchase order.
+
+    Raises:
+        MechanicsError: If no legal schedule reaches the requested inventory.
+
+    """
+    target_ids = tuple(targets)
+    if not target_ids:
+        raise MechanicsError("component schedule has no final inventory targets")
+    if len(set(target_ids)) != len(target_ids):
+        raise MechanicsError("component schedule final inventory contains duplicates")
+    for item_id in target_ids:
+        graph.require(item_id)
+
+    plan = _plan_component_actions(graph, target_ids)
+    scheduled_actions = _search_component_schedule(graph, plan, target_ids, priorities)
+    if scheduled_actions is None:
+        names = ", ".join(graph.require(item_id).name for item_id in target_ids)
+        raise MechanicsError(f"no legal chronological component schedule for {names}")
+    return tuple(plan.item_ids[index] for index in scheduled_actions)
 
 
 def sell_item(graph: ItemGraph, state: InventoryState, item_id: int) -> InventoryState:

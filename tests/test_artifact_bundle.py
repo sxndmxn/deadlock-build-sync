@@ -230,7 +230,7 @@ def _build_evidence() -> dict[str, Any]:
                 ],
                 "items": items,
                 "sequence_policy": {
-                    "version": 1,
+                    "version": 2,
                     "minimum_support": 20,
                     "production_model": "deterministic_backoff",
                     "component_expanded_default_path": list(range(1001, 1009)),

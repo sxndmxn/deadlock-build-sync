@@ -14,6 +14,7 @@ from deadlock_build_sync.mechanics import (
     classify_item_threat_responses,
     classify_observed_item_threats,
     purchase_item,
+    schedule_component_path,
     sell_item,
     validate_ability_timeline,
     validate_imbue,
@@ -103,6 +104,46 @@ def test_item_graph_handles_branches_cost_credit_and_component_consumption() -> 
     assert graph.incremental_cash_cost(2, (1,)) == 750
     assert graph.total_tree_investment(2) == 1250
     assert purchase_item(graph, InventoryState((1,)), 2).owned == (2,)
+
+
+def test_component_schedule_moves_an_early_component_before_prior_core() -> None:
+    graph = ItemGraph.from_assets([
+        item(1, "early_component"),
+        item(2, "first_core"),
+        item(3, "late_upgrade", components=["early_component"]),
+    ])
+
+    path = schedule_component_path(
+        graph,
+        (2, 3),
+        {
+            1: (6_000.0, 300.0, 1),
+            2: (9_000.0, 500.0, 2),
+            3: (19_000.0, 1_200.0, 3),
+        },
+    )
+
+    assert path == (1, 2, 3)
+
+
+def test_component_schedule_rebuys_only_after_the_first_copy_is_consumed() -> None:
+    graph = ItemGraph.from_assets([
+        item(1, "shared_component"),
+        item(2, "first_upgrade", components=["shared_component"]),
+        item(3, "second_upgrade", components=["shared_component"]),
+    ])
+
+    path = schedule_component_path(
+        graph,
+        (2, 3),
+        {
+            1: (2_000.0, 100.0, 1),
+            2: (8_000.0, 500.0, 2),
+            3: (16_000.0, 1_000.0, 3),
+        },
+    )
+
+    assert path == (1, 2, 1, 3)
 
 
 @pytest.mark.parametrize(

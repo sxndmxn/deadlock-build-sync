@@ -25,8 +25,9 @@ eight-item set remains the final-inventory estimand, not the literal shopping qu
   ranking; `save` is returned when the supported next item is legal but unaffordable.
 - Keep the installed Steam build static. Dynamic decisions live in the sidecar/CLI;
   CORE remains the simple default when no live state is supplied.
-- Put every required component in CORE immediately before its parent and exclude every
-  CORE-path item from the optional tier rows. Preserve legitimate component rebuys.
+- Schedule every required component in CORE by observed first-ownership net worth while
+  keeping it before its parent. Preserve final-item order, inventory legality, and
+  legitimate component rebuys, and exclude every CORE-path item from optional rows.
 - Prefer CUDA automatically for XGBoost when a runtime probe succeeds; retain explicit
   `cuda` and `cpu` overrides and record the resolved device in the experiment manifest.
 
@@ -54,7 +55,8 @@ eight-item set remains the final-inventory estimand, not the literal shopping qu
 
 ## Implementation record
 
-- Build-evidence schema 2 exports component-expanded defaults plus deterministic
+- Build-evidence schema 2 sequence policy 2 exports chronologically scheduled,
+  component-expanded defaults plus deterministic
   first/previous/position/popularity backoffs from training rows only.
 - The existing XGBoost ranker remains a chronological challenger and cannot be
   promoted without a portable validated policy artifact, even when imitation metrics
@@ -69,6 +71,11 @@ eight-item set remains the final-inventory estimand, not the literal shopping qu
   as optional. The shared projection now admits the validated component-expanded path;
   the frozen 38-hero regression spans 9–17 CORE purchase actions with zero optional
   overlap.
+- Follow-up live review found that immediate-before-parent expansion still violated the
+  row's earlier-to-later promise for components such as Kelvin's Mystic Expansion.
+  Sequence policy 2 now uses a dependency-safe chronological scheduler: timing is the
+  priority, while component, final-order, capacity, active-item, and rebuy constraints
+  remain mandatory.
 - XGBoost 3.3 uses `tree_method=hist` with the resolved `device`; a real one-round CUDA
   probe prevents an `auto` run from silently selecting an unavailable GPU.
 
