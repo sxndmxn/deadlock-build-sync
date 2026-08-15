@@ -90,7 +90,7 @@ def _document(
     current_assets = assets or _assets()
     heroes = [{"id": 13, "name": "Haze"}]
     sequence_policy = {
-        "version": 2,
+        "version": 3,
         "minimum_support": 20,
         "production_model": "deterministic_backoff",
         "component_expanded_default_path": [101, 102, 201, 202, 301, 302, 401, 402],
@@ -269,14 +269,25 @@ def test_loader_rejects_tampering(tmp_path: Path) -> None:
         load_build_evidence(path)
 
 
-def test_loader_rejects_immediate_parent_sequence_policy(tmp_path: Path) -> None:
+def test_loader_rejects_duplicate_permitting_sequence_policy(tmp_path: Path) -> None:
     path = tmp_path / "build-evidence.json"
     document = _document()
-    document["heroes"][0]["sequence_policy"]["version"] = 1
+    document["heroes"][0]["sequence_policy"]["version"] = 2
     _refingerprint(document)
     _write(path, document)
 
     with pytest.raises(ArtifactError, match="sequence policy"):
+        load_build_evidence(path)
+
+
+def test_loader_rejects_repeated_default_path_item(tmp_path: Path) -> None:
+    path = tmp_path / "build-evidence.json"
+    document = _document()
+    document["heroes"][0]["sequence_policy"]["component_expanded_default_path"][1] = 101
+    _refingerprint(document)
+    _write(path, document)
+
+    with pytest.raises(ArtifactError, match="repeats an item"):
         load_build_evidence(path)
 
 

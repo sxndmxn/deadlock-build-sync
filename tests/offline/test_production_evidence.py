@@ -6,6 +6,7 @@ import polars as pl
 from deadlock_build_sync.mechanics import ItemGraph
 from deadlock_build_sync.offline.config import RunPaths
 from deadlock_build_sync.offline.production_evidence import (
+    _duplicate_free_core_candidates,
     _expanded_default_path,
     _patch_content_sha256,
     _sequence_rows,
@@ -96,23 +97,26 @@ def test_component_expanded_default_path_buys_missing_components_first() -> None
     assert path == list(range(1, 10))
 
 
-def test_component_expansion_can_rebuy_a_consumed_component_in_the_final_core() -> None:
+def test_duplicate_free_core_filter_uses_next_supported_candidate() -> None:
     metrics = pl.DataFrame([
         {
             "item_id": item_id,
             "median_valid_buy_net_worth": 1_000 if item_id == 2 else item_id * 2_000,
             "median_buy_time_s": item_id * 60,
         }
-        for item_id in range(1, 9)
+        for item_id in range(1, 10)
     ])
+    candidates = [
+        {"item_ids": list(range(1, 9)), "joint_matches": 30},
+        {"item_ids": list(range(2, 10)), "joint_matches": 25},
+    ]
+    graph = _item_graph({2: (1,)})
 
-    path = _expanded_default_path(
-        [{"item_ids": list(range(1, 9)), "joint_matches": 30}],
-        metrics,
-        _item_graph({2: (1,)}),
-    )
+    filtered = _duplicate_free_core_candidates(candidates, metrics, graph)
+    path = _expanded_default_path(filtered, metrics, graph)
 
-    assert path[:3] == [1, 2, 1]
+    assert filtered == [candidates[1]]
+    assert path == list(range(1, 10))
 
 
 def test_sequence_policy_uses_train_rows_and_emits_supported_backoffs() -> None:

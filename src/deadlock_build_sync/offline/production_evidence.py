@@ -25,6 +25,7 @@ from deadlock_build_sync.build_evidence import (
 )
 from deadlock_build_sync.mechanics import (
     ItemGraph,
+    MechanicsError,
     classify_item_threat_responses,
     schedule_component_path,
 )
@@ -214,31 +215,62 @@ def _item_payload(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _purchase_priorities(
+    hero_metrics: pl.DataFrame,
+) -> dict[int, tuple[float, float, int]]:
+    return {
+        item_id: (
+            float(row.get("median_valid_buy_net_worth") or float("inf")),
+            float(row.get("median_buy_time_s") or float("inf")),
+            item_id,
+        )
+        for row in hero_metrics.iter_rows(named=True)
+        for item_id in (int(row["item_id"]),)
+    }
+
+
+def _candidate_path(
+    candidate: dict[str, Any],
+    graph: ItemGraph,
+    priorities: dict[int, tuple[float, float, int]],
+) -> tuple[int, ...]:
+    core = sorted(
+        (int(item_id) for item_id in candidate["item_ids"]),
+        key=lambda item_id: priorities[item_id],
+    )
+    return schedule_component_path(graph, core, priorities)
+
+
+def _duplicate_free_core_candidates(
+    core_candidates: list[dict[str, Any]],
+    hero_metrics: pl.DataFrame,
+    graph: ItemGraph,
+) -> list[dict[str, Any]]:
+    priorities = _purchase_priorities(hero_metrics)
+    result = []
+    for candidate in core_candidates:
+        try:
+            path = _candidate_path(candidate, graph, priorities)
+        except MechanicsError:
+            continue
+        if len(path) == len(set(path)):
+            result.append(candidate)
+    return result
+
+
 def _expanded_default_path(
     core_candidates: list[dict[str, Any]],
     hero_metrics: pl.DataFrame,
     graph: ItemGraph,
 ) -> list[int]:
     if not core_candidates:
-        raise RuntimeError("hero has no supported eight-item core")
-    evidence = {int(row["item_id"]): row for row in hero_metrics.iter_rows(named=True)}
-    core = sorted(
-        (int(item_id) for item_id in core_candidates[0]["item_ids"]),
-        key=lambda item_id: (
-            float(evidence[item_id].get("median_valid_buy_net_worth") or float("inf")),
-            float(evidence[item_id].get("median_buy_time_s") or float("inf")),
-            item_id,
-        ),
+        raise RuntimeError("hero has no supported duplicate-free eight-item core")
+    path = _candidate_path(
+        core_candidates[0], graph, _purchase_priorities(hero_metrics)
     )
-    priorities = {
-        item_id: (
-            float(row.get("median_valid_buy_net_worth") or float("inf")),
-            float(row.get("median_buy_time_s") or float("inf")),
-            item_id,
-        )
-        for item_id, row in evidence.items()
-    }
-    return list(schedule_component_path(graph, core, priorities))
+    if len(path) != len(set(path)):
+        raise RuntimeError("component-expanded default path repeats an item")
+    return list(path)
 
 
 def _sequence_rows(
@@ -597,6 +629,11 @@ def export_production_evidence(paths: RunPaths, output: Path) -> dict[str, Any]:
                 inventories,
                 item_costs,
                 int(cohort_row[1]),
+            )
+            core_candidates = _duplicate_free_core_candidates(
+                core_candidates,
+                hero_metrics,
+                item_graph,
             )
             hero_payloads.append({
                 "hero_id": hero_id,

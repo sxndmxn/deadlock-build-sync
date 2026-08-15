@@ -29,7 +29,7 @@ TIER_ITEM_COUNT = 10
 MINIMUM_TIER_SUPPORT = 20
 MINIMUM_CORE_SUPPORT = 20
 METHOD_VERSION = "reconstructed-final-inventory-v3"
-SEQUENCE_POLICY_VERSION = 2
+SEQUENCE_POLICY_VERSION = 3
 SITUATIONAL_POLICY_VERSION = 1
 MAX_SITUATIONAL_BRANCHES = 7
 MAX_COMPARATIVE_INTERVAL_WIDTH = 0.10
@@ -359,6 +359,8 @@ def _sequence_policy(value: object, hero_id: int) -> SequencePolicy:
         _required_int(item_id, "default path item id", minimum=1)
         for item_id in raw_path
     )
+    if len(path) != len(set(path)):
+        raise ArtifactError(f"hero {hero_id} default path repeats an item")
     minimum_support = _required_int(
         data.get("minimum_support"), "sequence minimum support", minimum=20
     )
@@ -750,6 +752,45 @@ def _expand_component_path(
     return schedule_component_path(graph, targets, priorities)
 
 
+def _select_core_candidate(
+    graph: ItemGraph,
+    evidence: HeroBuildEvidence,
+    by_id: dict[int, ItemEvidence],
+) -> tuple[CoreCandidate, tuple[int, ...], int]:
+    for candidate in evidence.core_candidates:
+        cost = sum(graph.require(item_id).cost for item_id in candidate.item_ids)
+        if cost > evidence.median_final_net_worth:
+            continue
+        selected_order = tuple(
+            sorted(
+                candidate.item_ids,
+                key=lambda item_id: (by_id[item_id].median_buy_time_s, item_id),
+            )
+        )
+        purchase_order = tuple(
+            sorted(
+                candidate.item_ids,
+                key=lambda item_id: (
+                    by_id[item_id].median_valid_buy_net_worth
+                    if by_id[item_id].median_valid_buy_net_worth is not None
+                    else math.inf,
+                    by_id[item_id].median_buy_time_s,
+                    item_id,
+                ),
+            )
+        )
+        try:
+            candidate_path = _expand_component_path(graph, purchase_order, by_id)
+            state = _replay_component_path(graph, by_id, candidate_path)
+        except MechanicsError:
+            continue
+        if len(candidate_path) != len(set(candidate_path)):
+            continue
+        if set(state.owned) == set(candidate.item_ids):
+            return candidate, selected_order, cost
+    raise ArtifactError(f"hero {evidence.hero_id} has no legal supported core")
+
+
 def select_hero_build(
     evidence: HeroBuildEvidence,
     assets: list[dict[str, Any]],
@@ -773,42 +814,19 @@ def select_hero_build(
                 f"hero {evidence.hero_id} item {item.item_id} conflicts with assets"
             )
 
-    selected: CoreCandidate | None = None
-    selected_order: tuple[int, ...] = ()
-    selected_cost = 0
-    for candidate in evidence.core_candidates:
-        cost = sum(graph.require(item_id).cost for item_id in candidate.item_ids)
-        if cost > evidence.median_final_net_worth:
-            continue
-        ordered = tuple(
-            sorted(
-                candidate.item_ids,
-                key=lambda item_id: (
-                    by_id[item_id].median_buy_time_s,
-                    item_id,
-                ),
-            )
-        )
-        state = InventoryState()
-        try:
-            for item_id in ordered:
-                state = purchase_item(graph, state, item_id)
-        except MechanicsError:
-            continue
-        if set(state.owned) != set(candidate.item_ids):
-            continue
-        selected = candidate
-        selected_order = ordered
-        selected_cost = cost
-        break
-    if selected is None:
-        raise ArtifactError(f"hero {evidence.hero_id} has no legal supported core")
+    selected, selected_order, selected_cost = _select_core_candidate(
+        graph, evidence, by_id
+    )
 
     path_ids = (
         evidence.sequence_policy.default_path
         if evidence.sequence_policy is not None
         else _expand_component_path(graph, selected_order, by_id)
     )
+    if len(path_ids) != len(set(path_ids)):
+        raise ArtifactError(
+            f"hero {evidence.hero_id} component-expanded path repeats an item"
+        )
     try:
         state = _replay_component_path(graph, by_id, path_ids)
     except MechanicsError as error:
@@ -817,6 +835,10 @@ def select_hero_build(
         ) from error
     if set(state.owned) != set(selected.item_ids):
         path_ids = _expand_component_path(graph, selected_order, by_id)
+        if len(path_ids) != len(set(path_ids)):
+            raise ArtifactError(
+                f"hero {evidence.hero_id} component-expanded path repeats an item"
+            )
         state = _replay_component_path(graph, by_id, path_ids)
         if set(state.owned) != set(selected.item_ids):
             raise ArtifactError(

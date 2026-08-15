@@ -705,9 +705,10 @@ The key words **MUST**, **MUST NOT**, **REQUIRED**, **SHOULD**, **SHOULD NOT**, 
   contain the component-expanded purchase path that realizes the coherent eight-item
   final inventory. The complete row **MUST** be scheduled by observed first-ownership
   net worth subject to hard legality constraints. Required components **MUST** precede
-  their parents, final items **MUST** retain their evidence order, and a repeated
-  component **MUST NOT** be rebought until its prior copy is consumed. `TIER 1` through
-  `TIER 4` **MUST** follow in order,
+  their parents, final items **MUST** retain their evidence order, and no item card
+  **MAY** appear more than once. A final-inventory candidate that requires a component
+  rebuy is ineligible for the static Steam row. `TIER 1` through `TIER 4` **MUST**
+  follow in order,
   each marked optional and containing up to ten adoption reference items, with fewer
   when evidence is sparse. Every tier item **MUST** be disjoint from the complete CORE
   purchase path and **MUST** have at least 20 adopter matches. Reference items **MUST
@@ -715,7 +716,7 @@ The key words **MUST**, **MUST NOT**, **REQUIRED**, **SHOULD**, **SHOULD NOT**, 
 - **Research basis:** [Machine semantics before prose](deadlock-strategy-description-research.md#machine-semantics-before-prose), F-09.
 - **Acceptance:** Decoded output shows optional flags, timing-prioritized left-to-right
   order, every required component before its parent, legal capacity/active counts,
-  legal component rebuys, no CORE-path item in an optional row, and a default Queue
+  no repeated CORE item, no CORE-path item in an optional row, and a default Queue
   that does not contain all alternatives.
 - **Proof:** Protobuf field and Queue-projection tests.
 - **Dependencies:** REQ-POL-003.

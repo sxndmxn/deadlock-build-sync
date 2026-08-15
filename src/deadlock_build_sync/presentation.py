@@ -106,7 +106,7 @@ def build_presentation(
         )
     lines = [
         role_line,
-        "AUTO: CORE left→right. TIER 1–4 are optional and never auto-queued.",
+        "AUTO: CORE left→right. TIER 1–4 never auto-queue.",
         plan_line,
         (
             f"{queue} • {guide.rank_identity or rank_range.label} • data through "

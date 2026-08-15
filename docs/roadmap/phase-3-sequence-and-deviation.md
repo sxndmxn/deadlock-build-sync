@@ -26,8 +26,9 @@ eight-item set remains the final-inventory estimand, not the literal shopping qu
 - Keep the installed Steam build static. Dynamic decisions live in the sidecar/CLI;
   CORE remains the simple default when no live state is supplied.
 - Schedule every required component in CORE by observed first-ownership net worth while
-  keeping it before its parent. Preserve final-item order, inventory legality, and
-  legitimate component rebuys, and exclude every CORE-path item from optional rows.
+  keeping it before its parent. Preserve final-item order and inventory legality,
+  reject candidates that require a repeated component card, and exclude every
+  CORE-path item from optional rows.
 - Prefer CUDA automatically for XGBoost when a runtime probe succeeds; retain explicit
   `cuda` and `cpu` overrides and record the resolved device in the experiment manifest.
 
@@ -55,7 +56,7 @@ eight-item set remains the final-inventory estimand, not the literal shopping qu
 
 ## Implementation record
 
-- Build-evidence schema 2 sequence policy 2 exports chronologically scheduled,
+- Build-evidence schema 2 sequence policy 3 exports chronologically scheduled,
   component-expanded defaults plus deterministic
   first/previous/position/popularity backoffs from training rows only.
 - The existing XGBoost ranker remains a chronological challenger and cannot be
@@ -73,9 +74,12 @@ eight-item set remains the final-inventory estimand, not the literal shopping qu
   overlap.
 - Follow-up live review found that immediate-before-parent expansion still violated the
   row's earlier-to-later promise for components such as Kelvin's Mystic Expansion.
-  Sequence policy 2 now uses a dependency-safe chronological scheduler: timing is the
-  priority, while component, final-order, capacity, active-item, and rebuy constraints
-  remain mandatory.
+  Sequence policy 3 uses a dependency-safe chronological scheduler: timing is the
+  priority, while component, final-order, capacity, and active-item constraints remain
+  mandatory.
+- A later UI review established that the static Steam row cannot communicate component
+  rebuys without duplicate cards. Candidate selection now rejects any expanded path
+  with a repeated item ID and chooses the next supported coherent final inventory.
 - The 2026-08-15 regeneration admitted all 38 heroes. An independent replay matched
   evidence, context, and projected CORE order for 38/38 heroes, resolved every path to
   its selected final eight, covered 190 component consumptions and seven legal rebuys,

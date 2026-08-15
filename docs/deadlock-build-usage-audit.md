@@ -277,7 +277,7 @@ Recommended shape:
 
 ~~~text
 Mobile damage-over-time pressure; maintain contact and convert clean picks.
-AUTO: CORE left→right. TIER 1–4 are optional and never auto-queued.
+AUTO: CORE left→right. TIER 1–4 never auto-queue.
 Ranked • Emissary I–Eternus V • data through 2026-08-09 • client 6673.
 
 [managed marker]
@@ -390,6 +390,10 @@ Tier 1 row rather than the automatic CORE path. The frozen full-roster audit fou
 same projection defect in all 38 heroes. The implementation now renders the existing
 component-expanded evidence path as CORE and excludes all of its item IDs from optional
 menus while retaining the eight-item set as final-inventory analytics.
+
+Follow-up resolution recorded 2026-08-15: repeated component cards are not an acceptable
+static-row representation. The producer now rejects final-inventory candidates whose
+expanded path repeats any item and chooses the next supported duplicate-free candidate.
 
 ## P2: tier rows lack actual situational evidence
 
@@ -532,7 +536,7 @@ The generated category summaries currently have a median length of about 253 byt
 Recommended fixed descriptions:
 
 - CORE ITEMS: “AUTO QUEUE • Default path, buy left→right.”
-- TIER 1–4: “OPTIONAL • Excluded from Queue; choose deliberately.”
+- TIER 1–4: “Excluded from Queue • Choose deliberately.”
 
 If a trustworthy hero-specific condition becomes available, use a second compact clause. Do not dump all item names into the header.
 

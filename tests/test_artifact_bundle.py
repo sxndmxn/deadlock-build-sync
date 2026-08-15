@@ -230,7 +230,7 @@ def _build_evidence() -> dict[str, Any]:
                 ],
                 "items": items,
                 "sequence_policy": {
-                    "version": 2,
+                    "version": 3,
                     "minimum_support": 20,
                     "production_model": "deterministic_backoff",
                     "component_expanded_default_path": list(range(1001, 1009)),
@@ -414,7 +414,7 @@ def test_loads_exact_reviewed_bundle_without_analytics_refetch(tmp_path: Path) -
         "AUTO QUEUE • Default path, buy left→right."
     )
     assert guide.rendered_categories[1].description == (
-        "OPTIONAL • Excluded from Queue; choose deliberately."
+        "Excluded from Queue • Choose deliberately."
     )
     assert guide.rendered_categories[0].items[0].annotation == (
         "Use Item 1001 at its observed place in the core.\n"
