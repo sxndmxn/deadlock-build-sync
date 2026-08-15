@@ -1,6 +1,6 @@
 # Phase 3 — Sequence and deviation
 
-Status: component projection corrected; fresh artifact generation and reinstall pending
+Status: component projection corrected, regenerated, audited, and installed
 
 ## Outcome
 
@@ -76,6 +76,13 @@ eight-item set remains the final-inventory estimand, not the literal shopping qu
   Sequence policy 2 now uses a dependency-safe chronological scheduler: timing is the
   priority, while component, final-order, capacity, active-item, and rebuy constraints
   remain mandatory.
+- The 2026-08-15 regeneration admitted all 38 heroes. An independent replay matched
+  evidence, context, and projected CORE order for 38/38 heroes, resolved every path to
+  its selected final eight, covered 190 component consumptions and seven legal rebuys,
+  and found zero optional-row overlaps. The authorized stats-only install updated all
+  38 managed builds from evidence `060bb289...5043cf4`; the decoded Steam cache matched
+  every projected category, item order, annotation, and optional flag. Its recoverable
+  backup is `20260815T165850Z`.
 - XGBoost 3.3 uses `tree_method=hist` with the resolved `device`; a real one-round CUDA
   probe prevents an `auto` run from silently selecting an unavailable GPU.
 

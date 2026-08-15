@@ -1,6 +1,6 @@
 # Phase 2 — Hover hierarchy
 
-Status: feedback correction implemented; corrected build awaits installation
+Status: feedback correction implemented, audited, and installed
 
 ## Outcome
 
@@ -64,6 +64,9 @@ description.
 - Live-client review on 2026-08-14 found the deterministic mechanics labels redundant
   with Valve's item tooltip. The correction removed that classifier and restored the
   three-line analytics block for every item.
+- The 2026-08-15 stats-only reinstall decoded cleanly for all 38 managed builds: every
+  item retained exactly `PURCHASE WINDOW`, `WIN RATE`, and `PICK RATE`, with no generic
+  mechanics label added.
 
 Traceability: [usage audit](../deadlock-build-usage-audit.md#phase-2-hover-hierarchy)
 and [annotation requirement](../deadlock-build-policy-requirements.md#req-rnd-006--keep-annotations-actionable-and-bounded).
