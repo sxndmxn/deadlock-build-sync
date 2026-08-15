@@ -178,7 +178,7 @@ uv run deadlock-build-sync sync
 
 `sync` discovers the local Steam account, generates every eligible hero from one
 coherent snapshot, builds an ability-only kit profile with `gpt-5.6-luna`, explains
-the closed policy with `gpt-5.6-sol`, validates every artifact, backs up the cache,
+the closed policy with `gpt-5.6-luna`, validates every artifact, backs up the cache,
 and installs the private builds. An all-hero run refuses installation if any pinned
 eligible hero lacks a complete policy. Reusable artifacts live under
 `$XDG_STATE_HOME/deadlock-build-sync/artifacts` (or

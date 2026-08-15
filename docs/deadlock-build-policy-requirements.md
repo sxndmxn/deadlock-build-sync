@@ -1270,7 +1270,7 @@ model_eval:
   framework: DeepEval-with-production-validators
   prompt_version: 18
   kit_prompt_version: 3
-  models: [gpt-5.6-luna, gpt-5.6-sol]
+  models: [gpt-5.6-luna]
   reliability: 10-of-10-cases-and-30-of-30-production-budget-repetitions-admitted
 wheel_smoke:
   status: passed

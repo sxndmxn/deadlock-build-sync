@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 NARRATIVE_SCHEMA_VERSION = 6
 NARRATIVE_PROMPT_VERSION = 22
 DEFAULT_KIT_MODEL = "gpt-5.6-luna"
-DEFAULT_SYNTHESIS_MODEL = "gpt-5.6-sol"
+DEFAULT_SYNTHESIS_MODEL = "gpt-5.6-luna"
 NARRATIVE_FIELD_SURFACES = {
     "build_summary": ("reviewed_guide.summary",),
     "tactical_profile.primary_role": ("player.description",),
