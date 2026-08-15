@@ -1,6 +1,6 @@
 # Phase 3 — Sequence and deviation
 
-Status: component projection corrected, regenerated, audited, and installed
+Status: duplicate-free correction regenerated and audited; reinstall awaits Deadlock shutdown
 
 ## Outcome
 
@@ -80,13 +80,17 @@ eight-item set remains the final-inventory estimand, not the literal shopping qu
 - A later UI review established that the static Steam row cannot communicate component
   rebuys without duplicate cards. Candidate selection now rejects any expanded path
   with a repeated item ID and chooses the next supported coherent final inventory.
-- The 2026-08-15 regeneration admitted all 38 heroes. An independent replay matched
+- The earlier 2026-08-15 regeneration admitted all 38 heroes. An independent replay matched
   evidence, context, and projected CORE order for 38/38 heroes, resolved every path to
   its selected final eight, covered 190 component consumptions and seven legal rebuys,
   and found zero optional-row overlaps. The authorized stats-only install updated all
   38 managed builds from evidence `060bb289...5043cf4`; the decoded Steam cache matched
   every projected category, item order, annotation, and optional flag. Its recoverable
   backup is `20260815T165850Z`.
+- The duplicate-free regeneration produced evidence `b64fa1eb...f29e4cc` and admitted
+  38/38 heroes. Its audit found zero repeated CORE IDs, zero optional overlaps, exact
+  scheduler/projection agreement, 183 legal component consumptions, and 38 valid final
+  inventories. Reinstallation is deferred because Deadlock is running.
 - XGBoost 3.3 uses `tree_method=hist` with the resolved `device`; a real one-round CUDA
   probe prevents an `auto` run from silently selecting an unavailable GPU.
 

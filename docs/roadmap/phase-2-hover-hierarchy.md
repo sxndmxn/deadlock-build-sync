@@ -1,6 +1,6 @@
 # Phase 2 — Hover hierarchy
 
-Status: feedback correction implemented, audited, and installed
+Status: hover correction installed; redundant optional label removed pending reinstall
 
 ## Outcome
 
@@ -67,6 +67,9 @@ description.
 - The 2026-08-15 stats-only reinstall decoded cleanly for all 38 managed builds: every
   item retained exactly `PURCHASE WINDOW`, `WIN RATE`, and `PICK RATE`, with no generic
   mechanics label added.
+- The tier rectangle already exposes its optional state, so the next projection removes
+  the redundant `OPTIONAL` prefix and displays only `Excluded from Queue • Choose
+  deliberately.` Reinstallation is deferred while Deadlock is running.
 
 Traceability: [usage audit](../deadlock-build-usage-audit.md#phase-2-hover-hierarchy)
 and [annotation requirement](../deadlock-build-policy-requirements.md#req-rnd-006--keep-annotations-actionable-and-bounded).
