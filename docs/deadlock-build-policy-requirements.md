@@ -702,14 +702,16 @@ The key words **MUST**, **MUST NOT**, **REQUIRED**, **SHOULD**, **SHOULD NOT**, 
 - **Priority/stage:** `P0`
 - **Status:** `Verified`
 - **Requirement:** `CORE ITEMS` **MUST** be the first and only non-optional category and
-  contain exactly the eight-item coherent default path. `TIER 1` through `TIER 4`
-  **MUST** follow in order, each marked optional and containing up to ten adoption
-  reference items, with fewer when evidence is sparse. Every tier
-  item **MUST** be disjoint from CORE and **MUST** have at least 20 adopter matches.
-  Reference items **MUST NOT** all enter Queue. Prose such as “choose one” is not an
-  executable substitute.
+  contain the component-expanded purchase path that realizes the coherent eight-item
+  final inventory. Required components **MUST** precede their parents, including a
+  required rebuy after consumption. `TIER 1` through `TIER 4` **MUST** follow in order,
+  each marked optional and containing up to ten adoption reference items, with fewer
+  when evidence is sparse. Every tier item **MUST** be disjoint from the complete CORE
+  purchase path and **MUST** have at least 20 adopter matches. Reference items **MUST
+  NOT** all enter Queue. Prose such as “choose one” is not an executable substitute.
 - **Research basis:** [Machine semantics before prose](deadlock-strategy-description-research.md#machine-semantics-before-prose), F-09.
-- **Acceptance:** Decoded output shows optional flags and a default Queue that does not
+- **Acceptance:** Decoded output shows optional flags, every required component before
+  its parent, no CORE-path item in an optional row, and a default Queue that does not
   contain all alternatives.
 - **Proof:** Protobuf field and Queue-projection tests.
 - **Dependencies:** REQ-POL-003.

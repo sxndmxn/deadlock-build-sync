@@ -281,6 +281,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--xgb-pilot-validation-queries", type=int, default=2_000)
     parser.add_argument("--xgb-bootstrap-replicates", type=int, default=1_000)
     parser.add_argument(
+        "--xgb-device",
+        choices=("auto", "cpu", "cuda"),
+        default="auto",
+        help="XGBoost device; auto prefers CUDA and falls back to CPU",
+    )
+    parser.add_argument(
         "--output",
         type=Path,
         help="output path required by export-evidence",
@@ -347,6 +353,7 @@ def main(argv: list[str] | None = None) -> int:
                 pilot_train_queries=args.xgb_pilot_train_queries,
                 pilot_validation_queries=args.xgb_pilot_validation_queries,
                 bootstrap_replicates=args.xgb_bootstrap_replicates,
+                device=args.xgb_device,
             ),
         )
     if args.command in {"report", "all"}:

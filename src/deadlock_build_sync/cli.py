@@ -212,6 +212,12 @@ def build_parser() -> argparse.ArgumentParser:
     refresh.add_argument("--max-badge", type=positive_int, default=115)
     refresh.add_argument("--since", help="cohort lower timestamp in ISO-8601 form")
     refresh.add_argument("--as-of", help="frozen upper timestamp in ISO-8601 form")
+    refresh.add_argument(
+        "--xgb-device",
+        choices=("auto", "cpu", "cuda"),
+        default="auto",
+        help="XGBoost device; auto prefers CUDA and falls back to CPU",
+    )
     recommendation = subparsers.add_parser(
         "recommend",
         help="return a read-only next action for a deidentified state file",
@@ -549,6 +555,8 @@ def _run_refresh_evidence(args: argparse.Namespace) -> int:
         str(args.max_badge),
         "--output",
         str(output),
+        "--xgb-device",
+        args.xgb_device,
     ]
     for flag, value in (
         ("--run-id", args.run_id),

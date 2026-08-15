@@ -153,6 +153,7 @@ class ExperimentConfig:
     pilot_validation_queries: int = 2_000
     evaluation_batch_queries: int = 250
     bootstrap_replicates: int = 1_000
+    device: str = "auto"
 
 
 @dataclass(frozen=True)
@@ -634,10 +635,37 @@ def build_matrix(
     )
 
 
-def _model(spec: ModelSpec) -> Any:
+def _resolve_device(requested: str) -> str:
+    if requested not in {"auto", "cpu", "cuda"}:
+        raise ValueError("XGBoost device must be auto, cpu, or cuda")
+    if requested == "cpu":
+        return "cpu"
+    if not bool(xgb.build_info().get("USE_CUDA")):
+        if requested == "cuda":
+            raise RuntimeError("installed XGBoost package has no CUDA support")
+        return "cpu"
+    matrix = xgb.DMatrix(
+        np.asarray([[0.0], [1.0]], dtype=np.float32),
+        label=np.asarray([0.0, 1.0], dtype=np.float32),
+    )
+    try:
+        xgb.train(
+            {"device": "cuda", "tree_method": "hist", "verbosity": 0},
+            matrix,
+            num_boost_round=1,
+        )
+    except xgb.core.XGBoostError as error:
+        if requested == "cuda":
+            raise RuntimeError("XGBoost could not initialize a CUDA device") from error
+        return "cpu"
+    return "cuda"
+
+
+def _model(spec: ModelSpec, *, device: str) -> Any:
     parameters: dict[str, Any] = {
         "objective": spec.objective,
         "tree_method": "hist",
+        "device": device,
         "n_estimators": 400,
         "learning_rate": 0.05,
         "max_depth": spec.max_depth,
@@ -669,6 +697,7 @@ def fit_model(
     baseline: BaselineCounts,
     assets: list[Asset],
     by_id: dict[int, Asset],
+    device: str = "cpu",
 ) -> Any:
     x_train, y_train, qid_train, _ = build_matrix(
         train, baseline=baseline, assets=assets, by_id=by_id, sampled=True
@@ -676,7 +705,7 @@ def fit_model(
     x_validation, y_validation, qid_validation, _ = build_matrix(
         validation, baseline=baseline, assets=assets, by_id=by_id, sampled=True
     )
-    model = _model(spec)
+    model = _model(spec, device=device)
     model.fit(
         x_train,
         y_train,
@@ -1271,6 +1300,8 @@ def run_xgboost_experiment(
     paths: RunPaths, config: ExperimentConfig | None = None
 ) -> dict[str, Any]:
     config = config or ExperimentConfig()
+    device = _resolve_device(config.device)
+    print(f"XGBoost device: {device}", flush=True)
     output = paths.run / "xgboost"
     output.mkdir(parents=True, exist_ok=True)
     assets, by_id = _assets(paths)
@@ -1305,6 +1336,7 @@ def run_xgboost_experiment(
                     baseline=baseline,
                     assets=assets,
                     by_id=by_id,
+                    device=device,
                 )
                 records = evaluate_model(
                     model,
@@ -1366,6 +1398,7 @@ def run_xgboost_experiment(
                 baseline=baseline,
                 assets=assets,
                 by_id=by_id,
+                device=device,
             )
             validation_records = evaluate_model(
                 model,
@@ -1443,6 +1476,7 @@ def run_xgboost_experiment(
         "schema_version": 1,
         "seed": SEED,
         "config": asdict(config),
+        "resolved_device": device,
         "selected_model": asdict(selected_spec),
         "pilot_heroes": pilots,
         "hero_count": len(hero_ids),
@@ -1479,6 +1513,7 @@ def run_xgboost_experiment(
         "output": str(output),
         "selected_model": selected_spec.name,
         "hero_count": len(hero_ids),
+        "device": device,
         "bootstrap": bootstrap,
         "pass_gate": bool(gate["passed"]),
         "report": str(output / "XGBOOST_REPORT.md"),

@@ -1,12 +1,15 @@
 # Phase 3 — Sequence and deviation
 
-Status: implemented and installed; interactive Queue mechanics remain a client test
+Status: component projection corrected; fresh artifact generation and reinstall pending
 
 ## Outcome
 
 The offline pipeline emits an outcome-agnostic next-action policy that expands
 components, respects current inventory/economy, recovers after deviation, and abstains
 outside supported states.
+
+The static Steam CORE row uses that same component-expanded path. The separate
+eight-item set remains the final-inventory estimand, not the literal shopping queue.
 
 ## Decisions
 
@@ -22,6 +25,10 @@ outside supported states.
   ranking; `save` is returned when the supported next item is legal but unaffordable.
 - Keep the installed Steam build static. Dynamic decisions live in the sidecar/CLI;
   CORE remains the simple default when no live state is supplied.
+- Put every required component in CORE immediately before its parent and exclude every
+  CORE-path item from the optional tier rows. Preserve legitimate component rebuys.
+- Prefer CUDA automatically for XGBoost when a runtime probe succeeds; retain explicit
+  `cuda` and `cpu` overrides and record the resolved device in the experiment manifest.
 
 ## Work
 
@@ -42,6 +49,8 @@ outside supported states.
   flex changes, insufficient currency, sparse states, and stale state identity.
 - Live Queue acceptance for parent upgrades, manual deviation, component ownership, and
   imbue prompts only with explicit authorization.
+- Projection regression proving a component appears in CORE, remains outside the final
+  eight-item inventory, and cannot also appear in an optional row.
 
 ## Implementation record
 
@@ -55,8 +64,13 @@ outside supported states.
   buy, save, end, or abstain.
 - Recommendation tests cover component credit, saving, sold/off-path history, backoff,
   sparse/unknown states, and exact evidence identity. Steam is never accessed.
-- The authorized all-hero install preserved CORE as the only automatic static Queue;
-  live component/deviation behavior remains an interactive client acceptance check.
+- Live review on 2026-08-15 established that parent cards alone do not communicate the
+  intended component queue: all 38 reviewed heroes had required component IDs displayed
+  as optional. The shared projection now admits the validated component-expanded path;
+  the frozen 38-hero regression spans 9–17 CORE purchase actions with zero optional
+  overlap.
+- XGBoost 3.3 uses `tree_method=hist` with the resolved `device`; a real one-round CUDA
+  probe prevents an `auto` run from silently selecting an unavailable GPU.
 
 Traceability: [usage audit](../deadlock-build-usage-audit.md#phase-3-sequence-and-deviation-research),
 [deviation requirement](../deadlock-build-policy-requirements.md#req-pol-007--support-deviation-and-recalculation),

@@ -166,6 +166,10 @@ When build evidence is stale, refresh it before generation:
 uv run deadlock-build-sync refresh-evidence
 ```
 
+The evidence producer defaults to `--xgb-device auto`: it probes CUDA once, uses the
+GPU when available, and otherwise falls back to CPU. Use `--xgb-device cuda` to require
+CUDA or `--xgb-device cpu` for an intentional CPU run.
+
 The normal installation workflow remains one command. Close Deadlock, then run:
 
 ```bash

@@ -384,6 +384,13 @@ This is not enough to declare a defect. The client may correctly expand upgrade 
 
 Until that test passes on the pinned client, describe CORE as an observed final-item path, not a complete lane shopping script.
 
+Resolution recorded 2026-08-15: live review showed required components such as Extra
+Health for Fortitude and High-Velocity Rounds for Express Shot in Paradox's optional
+Tier 1 row rather than the automatic CORE path. The frozen full-roster audit found the
+same projection defect in all 38 heroes. The implementation now renders the existing
+component-expanded evidence path as CORE and excludes all of its item IDs from optional
+menus while retaining the eight-item set as final-inventory analytics.
+
 ## P2: tier rows lack actual situational evidence
 
 The tier rows are high-adoption price-tier menus. The policy explicitly abstains from claiming that adoption identifies a counter trigger. This is statistically honest.

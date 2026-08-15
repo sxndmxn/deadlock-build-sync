@@ -3,12 +3,14 @@ from collections import Counter
 import polars as pl
 
 from deadlock_build_sync.offline.xgb_ranker import (
+    MODEL_SPECS,
     Asset,
     BaselineCounts,
     PurchaseQuery,
     _apply_purchase,
     _expand_component_path,
     _gate,
+    _model,
     sample_queries,
     sampled_candidates,
 )
@@ -54,6 +56,13 @@ def test_sampling_is_deterministic_and_preserves_folds() -> None:
     assert first == second
     assert len(first) == 10
     assert all(query.fold == "test" for query in first)
+
+
+def test_model_uses_the_resolved_device() -> None:
+    model = _model(MODEL_SPECS[0], device="cuda")
+
+    assert model.get_params()["device"] == "cuda"
+    assert model.get_params()["tree_method"] == "hist"
 
 
 def test_candidate_group_contains_one_positive_and_no_owned_item() -> None:
