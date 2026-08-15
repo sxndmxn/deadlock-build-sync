@@ -56,3 +56,26 @@ Acceptance:
 - A fixture without landmark-at-risk data cannot emit `CURVE RESPONSE`.
 - A full-roster build can be generated and installed without model calls or generic
   tactical filler.
+
+## Close the stats-only review/install snapshot gap
+
+Goal: make a stats-only install and `status` agree on the exact snapshot without
+refetching mutable analytics between review and Steam mutation.
+
+Keep it small:
+
+- Persist the exact context, policies, and snapshot manifest produced by
+  `install --without-narratives` before entering the Steam write boundary.
+- Teach `status` that a deliberately narrative-free bundle is complete when its
+  manifest records that mode; do not require an empty or fake narrative artifact.
+- Never rebuild an installed identity from a later API response. Public analytics can
+  backfill even behind a fixed upper timestamp, so compare against the persisted
+  install manifest.
+
+Acceptance:
+
+- A stats-only install followed immediately by `status` reports current.
+- A fixture where an API response backfills after review does not relabel the already
+  installed coherent snapshot; it reports the newer evidence as a separate candidate.
+- The same-run context/policy identities in the artifact directory exactly match the
+  identities embedded in all managed Steam builds.
