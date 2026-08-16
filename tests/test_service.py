@@ -45,6 +45,7 @@ class FakeApi(DeadlockApi):
         self.client_version = 123
         self._ability_rows = ability_rows
         self._duration_points = duration_points
+        self.counter_stat_calls: list[bool] = []
         self._hero: dict[str, Any] = {
             "id": 12,
             "name": "Kelvin",
@@ -209,13 +210,26 @@ class FakeApi(DeadlockApi):
     def hero_counter_stats(
         self,
         *,
-        hero_id: int,
         min_unix_timestamp: int,
         same_lane: bool,
     ) -> list[dict[str, Any]]:
-        _ = hero_id, min_unix_timestamp
+        _ = min_unix_timestamp
+        self.counter_stat_calls.append(same_lane)
         return [
-            {"enemy_hero_id": 1, "matches": 100, "wins": 50, "same_lane": same_lane}
+            {
+                "hero_id": 12,
+                "enemy_hero_id": 1,
+                "matches": 100,
+                "wins": 50,
+                "same_lane": same_lane,
+            },
+            {
+                "hero_id": 99,
+                "enemy_hero_id": 12,
+                "matches": 90,
+                "wins": 40,
+                "same_lane": same_lane,
+            },
         ]
 
     @override
@@ -425,6 +439,12 @@ def test_generated_guide_is_snapshot_bound_policy_projection() -> None:
     )
 
     assert len(generated.guides) == len(generated.policies) == 1
+    assert api.counter_stat_calls == [True, False]
+    matchups = generated.contexts[0]["matchups"]
+    assert [row["hero_id"] for row in matchups["same_lane"]] == [12]
+    assert [row["hero_id"] for row in matchups["whole_enemy_team"]] == [12]
+    assert matchups["same_lane"][0]["scope"] == "same_lane"
+    assert matchups["whole_enemy_team"][0]["scope"] == "whole_enemy_team"
     guide = generated.guides[0]
     policy = generated.policies[0]
     assert guide.snapshot_id == generated.manifest.snapshot_id

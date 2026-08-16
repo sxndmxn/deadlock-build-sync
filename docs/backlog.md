@@ -1,34 +1,34 @@
 # Backlog
 
-## Opt-in execution tracing
+## Make item notes hero-relative or omit them
 
-Goal: make end-to-end data flow inspectable without scattering `print()` calls
-through every function or changing normal CLI output.
+Goal: every AI-authored item note must answer why that item belongs on that hero.
+Never force a note merely because an item appears in the deterministic build.
 
-Keep the first version small:
+Keep the contract narrow:
 
-- Add `--trace stages|calls` plus an equivalent environment variable.
-- `stages` records pipeline boundaries, artifact IDs, row counts, paths, durations,
-  and success/failure as JSON Lines.
-- `calls` uses Python's profiling hook to capture call, return, exception, and elapsed
-  time automatically for `deadlock_build_sync` modules only. Do not instrument each
-  function by hand.
-- Never record arguments, return values, account IDs, match IDs, inventory contents,
-  environment variables, or model prompts by default.
-- Write traces under the state directory in a timestamped run folder; print that path
-  once at command completion.
-- Keep tracing disabled by default and test that enabling it cannot change artifacts,
-  fingerprints, policy decisions, or Steam output.
+- Admit a note only when supplied evidence connects an item mechanic to a named hero
+  ability, an explicit scaling hook, or a documented limitation in that hero's kit.
+- Treat item mechanics as evidence for the relationship, not prose to paraphrase. The
+  native hover already explains what the item does.
+- Make action explanations an ordered optional subset of deterministic policy actions.
+  If no grounded hero-relative reason exists, omit the AI annotation and retain only
+  deterministic purchase-window and cohort statistics.
+- Require every admitted note to name the item and its hero-specific reference. Reject
+  generic usage advice, isolated tooltip descriptions, and near-copies of native item
+  text.
+- Keep models outside selection and ordering: they may explain an admitted relationship
+  but cannot add, remove, replace, or reorder build items.
 
 Acceptance:
 
-- A traced one-hero preview shows the path from evidence admission through policy,
-  projection, presentation, and protobuf serialization.
-- Every entered project function has a matching return or exception event.
-- Stage tracing adds negligible overhead; call tracing documents its expected debug-only
-  overhead and bounded file-size behavior.
-- A small trace summarizer renders the call tree and per-function elapsed time without
-  requiring changes to production functions.
+- The current Infernus `Dispel Magic` tooltip paraphrase is rejected; its replacement
+  must name a supplied Infernus-specific interaction or be omitted.
+- A hero/item fixture with a supplied ability synergy, kit-gap response, or scaling hook
+  renders one concise note describing that relationship.
+- A fixture with item mechanics but no hero-relative support renders no AI item note.
+- Full-roster prompt and reliability evals reject tooltip-only prose without weakening
+  existing policy, evidence, or byte-limit validation.
 
 ## Restore useful tactical signals
 
@@ -44,8 +44,9 @@ Keep the implementation evidence-first and deterministic:
   duration buckets remain labeled as descriptive associations and cannot drive it.
 - Render admitted spike/curve cards from typed policy data. If no card passes, omit
   the section instead of generating filler.
-- Keep item hover additions limited to `PURCHASE WINDOW`, `WIN RATE`, and `PICK RATE`;
-  rely on the game's native item description for mechanics.
+- Without an admitted hero-relative rationale, keep item hover additions limited to
+  `PURCHASE WINDOW`, `WIN RATE`, and `PICK RATE`; rely on the game's native item
+  description for mechanics.
 - Any optional Codex review uses `gpt-5.6-luna` only and cannot change deterministic
   item selection, order, labels, or admission decisions.
 

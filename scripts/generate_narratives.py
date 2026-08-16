@@ -34,7 +34,7 @@ SCHEMA_VERSION = NARRATIVE_SCHEMA_VERSION
 PROMPT_VERSION = NARRATIVE_PROMPT_VERSION
 REUSABLE_PROMPT_VERSIONS = frozenset({PROMPT_VERSION})
 KIT_SCHEMA_VERSION = 1
-KIT_PROMPT_VERSION = 3
+KIT_PROMPT_VERSION = 4
 DEFAULT_GENERATION_ATTEMPTS = 3
 CONDITION_PATTERN = re.compile(
     r"\b(?:after|before|if|once|only|save|hold|until|when|while|unless|then)\b"
@@ -71,11 +71,12 @@ CORRUPT_PROSE_PATTERN = re.compile(
 KIT_PROMPT = """
 Role: explain one Deadlock hero kit from a closed, patch-specific mechanics packet.
 
-Use only hero_description, hero_mechanics, abilities, and ability_policy. Preserve
-all supplied IDs and names. Explain each ability's tactical role and explicit
-scaling hooks. Treat the reached-state ability policy as a descriptive default,
-not proof that one universal order is optimal. Record uncertainty instead of
-inventing mechanics, numeric effects, combos, matchups, or item interactions.
+Use only hero_mechanics and ability_policy. The hero description and abilities are
+nested in hero_mechanics. Preserve all supplied IDs and names. Explain each
+ability's tactical role and explicit scaling hooks. Treat the reached-state ability
+policy as a descriptive default, not proof that one universal order is optimal.
+Record uncertainty instead of inventing mechanics, numeric effects, combos,
+matchups, or item interactions.
 
 The input intentionally excludes items and outcomes. Return only the
 schema-constrained JSON object.
@@ -95,6 +96,9 @@ Authority and scope:
   mechanic, numeric effect, combo, matchup, timing, target, or causal benefit.
 - A descriptive association may be called observed or associated only. Never
   claim an item causes wins or improves win probability.
+- Never use cause, causes, caused, guarantee, or guarantees anywhere in the
+  prose, including when paraphrasing a supplied mechanic. Use neutral mechanic
+  verbs such as triggers, applies, deals, grants, or reduces instead.
 - ending_duration_profile describes outcomes among games ending in each phase;
   it is not a live power curve and is not permission to stall a winnable game.
   When both phase labels are UNAVAILABLE, state that the cohort is unsupported
@@ -116,6 +120,9 @@ build_summary:
 
 action_explanations:
 - Return every supplied explainable action exactly once, in supplied order.
+- The output array length must equal the input explainable_actions length. The
+  nth output must copy the nth input's node_id and evidence_ref; never merge,
+  summarize, skip, or duplicate actions, even when several actions look similar.
 - Copy node_id and evidence_ref. The instruction must name that supplied action.
 - Keep every instruction within 165 UTF-8 bytes so the deterministic timing line
   can fit in the Steam hover.
@@ -125,10 +132,14 @@ action_explanations:
 
 category_summaries:
 - Return every supplied projection category exactly once, in supplied order.
-- Copy the category name and mention only items in that category.
+- Copy the category name. Each summary must name at least one item from that
+  category exactly as supplied and must not name any item from another category,
+  even as a comparison.
 - CORE ITEMS is the automatic Queue. TIER 1–4 are optional reference menus:
-  describe candidates conservatively, say to choose situationally, and never
-  imply buying all options or claim adoption proves a counter/trigger.
+  describe candidates conservatively and say to choose one situationally. Never
+  describe a tier menu as a combined purchase or claim adoption proves a
+  counter/trigger. Do not write "buy all", "buy every", "get all", "get every",
+  "purchase all", or "purchase every", including in a negated sentence.
 - For any other optional policy branch, retain its supplied observable condition
   and exact replacement. Never invent an unsupplied condition.
 - Finish every player-facing field with a complete sentence. No Markdown lists.
@@ -190,6 +201,62 @@ def bind_response_identity(
     return {**response, **{field: source.get(field) for field in fields}}
 
 
+def bind_response_structure(
+    response: dict[str, Any],
+    source: dict[str, Any],
+) -> dict[str, Any]:
+    """Restore positional policy identities without repairing structural omissions.
+
+    Returns:
+        A shallow response copy with source-owned row identities restored when the
+        model preserved exact array cardinality.
+
+    """
+    bound = {**response}
+    response_actions = response.get("action_explanations")
+    source_actions = source.get("explainable_actions")
+    if (
+        isinstance(response_actions, list)
+        and isinstance(source_actions, list)
+        and len(response_actions) == len(source_actions)
+        and all(isinstance(row, dict) for row in response_actions)
+        and all(isinstance(row, dict) for row in source_actions)
+    ):
+        bound["action_explanations"] = [
+            {
+                **response_row,
+                "node_id": source_row.get("node_id"),
+                "evidence_ref": source_row.get("evidence_ref"),
+            }
+            for response_row, source_row in zip(
+                [row for row in response_actions if isinstance(row, dict)],
+                [row for row in source_actions if isinstance(row, dict)],
+                strict=True,
+            )
+        ]
+    response_categories = response.get("category_summaries")
+    projection = source.get("projection")
+    source_categories = (
+        projection.get("categories") if isinstance(projection, dict) else None
+    )
+    if (
+        isinstance(response_categories, list)
+        and isinstance(source_categories, list)
+        and len(response_categories) == len(source_categories)
+        and all(isinstance(row, dict) for row in response_categories)
+        and all(isinstance(row, dict) for row in source_categories)
+    ):
+        bound["category_summaries"] = [
+            {**response_row, "category": source_row.get("name")}
+            for response_row, source_row in zip(
+                [row for row in response_categories if isinstance(row, dict)],
+                [row for row in source_categories if isinstance(row, dict)],
+                strict=True,
+            )
+        ]
+    return bound
+
+
 def generate_validated_response(
     model_input: dict[str, Any],
     validation_context: dict[str, Any],
@@ -222,6 +289,7 @@ def generate_validated_response(
                 validation_context,
                 stage.identity_fields,
             )
+            response = bind_response_structure(response, validation_context)
             if stage.normalizer is not None:
                 response = stage.normalizer(response)
             return stage.validator(response, validation_context)
@@ -387,8 +455,7 @@ def _selected_heroes(
 def _abilities(hero: dict[str, Any]) -> list[dict[str, Any]]:
     mechanics = hero.get("hero_mechanics")
     nested = mechanics.get("abilities") if isinstance(mechanics, dict) else None
-    abilities = nested if isinstance(nested, list) else hero.get("abilities")
-    return [ability for ability in abilities or [] if isinstance(ability, dict)]
+    return [ability for ability in nested or [] if isinstance(ability, dict)]
 
 
 def _ability_identity(ability: dict[str, Any]) -> tuple[int | None, str]:
@@ -470,10 +537,8 @@ def kit_context(hero: dict[str, Any]) -> dict[str, Any]:
     return {
         "hero_id": hero.get("hero_id"),
         "hero": hero.get("hero"),
-        "hero_description": hero.get("hero_description"),
         "kit_basis_sha256": hero.get("kit_basis_sha256"),
         "hero_mechanics": hero.get("hero_mechanics"),
-        "abilities": _abilities(hero),
         "ability_policy": hero.get("ability_policy"),
     }
 
@@ -481,6 +546,7 @@ def kit_context(hero: dict[str, Any]) -> dict[str, Any]:
 def synthesis_context(
     hero: dict[str, Any],
     kit_profile: dict[str, Any],
+    item_mechanics: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
     """Return the smallest closed packet needed to explain the final policy.
 
@@ -523,6 +589,13 @@ def synthesis_context(
             if isinstance(item.get("item_id"), int)
         }.values()
     )
+    selected_mechanics = [
+        {
+            **item,
+            "mechanics": item_mechanics.get(str(item["item_id"]), {}),
+        }
+        for item in selected_mechanics
+    ]
     policy = hero.get("policy")
     policy_summary = None
     if isinstance(policy, dict):
@@ -535,6 +608,10 @@ def synthesis_context(
                 "abstentions",
             )
         }
+    hero_mechanics = hero.get("hero_mechanics")
+    hero_description = (
+        hero_mechanics.get("description") if isinstance(hero_mechanics, dict) else None
+    )
     return {
         key: hero.get(key)
         for key in (
@@ -544,7 +621,6 @@ def synthesis_context(
             "policy_id",
             "context_sha256",
             "narrative_basis_sha256",
-            "hero_description",
             "ability_policy",
             "ending_duration_profile",
             "core",
@@ -553,6 +629,7 @@ def synthesis_context(
             "interpretation_constraints",
         )
     } | {
+        "hero_description": hero_description,
         "policy_summary": policy_summary,
         "selected_action_mechanics": selected_mechanics,
         "preliminary_kit_analysis": kit_profile,
@@ -1230,7 +1307,11 @@ def main(argv: list[str] | None = None) -> int:
                 f"[{index}/{len(selected)}] Synthesis ({args.model}): {hero.get('hero')}",
                 file=sys.stderr,
             )
-            model_context = synthesis_context(hero, kit_profile)
+            model_context = synthesis_context(
+                hero,
+                kit_profile,
+                source["item_mechanics"],
+            )
             generated[hero_id] = generate_validated_response(
                 model_context,
                 hero,

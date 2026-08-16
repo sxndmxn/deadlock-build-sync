@@ -17,10 +17,11 @@ def test_load_cases_selects_requested_heroes(tmp_path: Path) -> None:
     context_path = tmp_path / "context.json"
     context_path.write_text(
         json.dumps({
+            "item_mechanics": {"101": {"cost": 500}},
             "heroes": [
                 {"hero_id": 12, "hero": "Kelvin"},
                 {"hero_id": 19, "hero": "Shiv"},
-            ]
+            ],
         }),
         encoding="utf-8",
     )
@@ -29,11 +30,15 @@ def test_load_cases_selects_requested_heroes(tmp_path: Path) -> None:
 
     assert [case.name for case in cases] == ["Shiv", "Kelvin"]
     assert cases[0].hero["hero_id"] == 19
+    assert cases[0].item_mechanics["101"] == {"cost": 500}
 
 
 def test_load_cases_reports_missing_heroes(tmp_path: Path) -> None:
     context_path = tmp_path / "context.json"
-    context_path.write_text(json.dumps({"heroes": []}), encoding="utf-8")
+    context_path.write_text(
+        json.dumps({"item_mechanics": {}, "heroes": []}),
+        encoding="utf-8",
+    )
 
     with pytest.raises(narrative_eval.NarrativeEvalError, match="missing hero"):
         narrative_eval.load_cases(context_path, ["Kelvin"])
@@ -81,7 +86,17 @@ def test_generate_test_case_calls_both_production_stages(
         narrative_eval.SCHEMA_PATH,
     ]
     assert [stage.model for _, stage in calls] == ["kit-model", "synthesis-model"]
-    assert all(stage.max_attempts == 1 for _, stage in calls)
+    assert calls[1][1].identity_fields == (
+        "hero_id",
+        "snapshot_id",
+        "policy_id",
+        "context_sha256",
+        "narrative_basis_sha256",
+    )
+    assert all(
+        stage.max_attempts == generate_narratives.DEFAULT_GENERATION_ATTEMPTS
+        for _, stage in calls
+    )
     assert all(
         stage.timeout_seconds == narrative_eval.EVAL_TIMEOUT_SECONDS
         for _, stage in calls

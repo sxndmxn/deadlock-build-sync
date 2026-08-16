@@ -30,7 +30,7 @@ def test_all_analytics_queries_use_the_same_rank_range(
     api.item_stats(hero_id=1, min_unix_timestamp=123, min_matches=10)
     api.ability_order_stats(hero_id=1, min_unix_timestamp=123, min_matches=20)
     api.hero_stats_by_duration(min_unix_timestamp=123)
-    api.hero_counter_stats(hero_id=1, min_unix_timestamp=123, same_lane=True)
+    api.hero_counter_stats(min_unix_timestamp=123, same_lane=True)
 
     assert calls
     assert all(
@@ -49,6 +49,10 @@ def test_all_analytics_queries_use_the_same_rank_range(
     assert [params["max_duration_s"] for params in durations] == [
         maximum_exclusive - 1 for _, _, maximum_exclusive in HERO_DURATION_BUCKETS
     ]
+    counters = next(
+        params for path, params in calls if path.endswith("hero-counter-stats")
+    )
+    assert "hero_id" not in counters
 
 
 def test_resolves_one_available_version_and_pins_every_asset_request(

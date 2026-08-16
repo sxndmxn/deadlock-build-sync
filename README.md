@@ -121,6 +121,47 @@ uv pip check
 uv build
 ```
 
+## Execution tracing
+
+Tracing is disabled by default. Add `--trace stages` for low-overhead pipeline
+boundaries or `--trace calls` for the complete in-package Python call flow:
+
+```bash
+# Readable stage boundaries and allowlisted artifact/count metadata
+uv run deadlock-build-sync preview --hero kelvin --trace stages
+
+# Debug-only call, return, exception, and inclusive timing events
+uv run deadlock-build-sync preview --hero kelvin --trace calls
+```
+
+The flag works before or after the command. Set
+`DEADLOCK_BUILD_SYNC_TRACE=stages` or `DEADLOCK_BUILD_SYNC_TRACE=calls` for the
+equivalent environment-driven behavior. At completion, the CLI prints the trace
+run directory once to stderr, leaving stdout—including preview JSON—unchanged.
+Runs are stored under
+`$XDG_STATE_HOME/deadlock-build-sync/traces/<timestamp>/trace.jsonl` (or the
+corresponding `~/.local/state` path). Starting a trace retains the latest three
+application-owned trace runs and removes older recognized run directories; unrelated
+directories and symlinks are never pruned.
+
+Call tracing uses Python's profiling hook for `deadlock_build_sync` modules only.
+An exception-only trace hook supplies exception type and failure status; neither
+hook records arguments, return values, exception messages, account or match IDs,
+inventories, environment contents, or model prompts. Preview traverses evidence
+admission, policy construction, projection, presentation, and pure protobuf
+serialization without reading or changing Steam data.
+
+`stages` is intended for routine diagnostics. `calls` writes an event for every
+entered project function and is deliberately debug-only because profiling and
+per-event JSONL I/O add noticeable overhead. Each trace is capped at 100 MiB; a
+`trace_truncated` event marks the cap and later events are omitted. Render a bounded
+tree and per-function inclusive timings without changing production functions:
+
+```bash
+uv run deadlock-build-sync trace-summary \
+  ~/.local/state/deadlock-build-sync/traces/<timestamp>
+```
+
 ## Prompt evaluation
 
 DeepEval exercises the exact production kit-analysis and closed-policy explanation
@@ -268,6 +309,7 @@ uv run python scripts/generate_narratives.py \
   --output generated/narratives.json
 
 # 3. Review strategy-context.json, policies.json, and narratives.json, then preview.
+#    strategy-context.json is compact; pipe it through `jaq .` for formatted review.
 uv run deadlock-build-sync preview --hero kelvin
 
 # 4. Install all private builds after closing Deadlock

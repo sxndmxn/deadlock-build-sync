@@ -262,6 +262,7 @@ def test_sync_generates_artifacts_and_installs_without_extra_flags(
         guides=[guide],
         policies=[],
         contexts=[context],
+        item_mechanics={},
         skipped_heroes=(),
         exclusions=(),
         eligible_hero_ids=frozenset({12}),

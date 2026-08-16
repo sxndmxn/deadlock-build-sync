@@ -232,6 +232,12 @@ select = ["ALL"]
   "too-many-boolean-expressions", # Tag identity is admitted as one closed contract.
   "too-many-branches", # Validation reports exact malformed artifact conditions.
 ]
+"src/deadlock_build_sync/tracing.py" = [
+  "complex-structure", # The streaming summarizer validates and routes every event shape.
+  "too-many-branches",
+  "too-many-locals",
+  "too-many-statements",
+]
 "src/deadlock_build_sync/service.py" = [
   "complex-structure", # Cohort collection and policy construction enforce staged abstentions.
   "too-many-arguments", # Structured skip reporting retains hero identity and reason.

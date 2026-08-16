@@ -10,6 +10,7 @@ from deadlock_build_sync.artifacts import (
     ArtifactError,
     FingerprintLayers,
     atomic_write_bytes,
+    atomic_write_json,
     build_policy_artifact,
     load_fingerprinted_json,
     validate_hero_document,
@@ -78,6 +79,15 @@ def test_exact_artifact_compatibility_rejects_mode_and_prompt_changes() -> None:
         actual.assert_reusable_with(
             compatibility(match_mode="unranked", prompt_version=16)
         )
+
+
+def test_compact_json_round_trips_without_indentation(tmp_path: Path) -> None:
+    target = tmp_path / "strategy-context.json"
+    document = {"heroes": [{"hero_id": 12}], "label": "Kelvin"}
+
+    atomic_write_json(target, document, compact=True)
+
+    assert target.read_bytes() == (b'{"heroes":[{"hero_id":12}],"label":"Kelvin"}\n')
 
 
 def test_document_completeness_rejects_missing_duplicates_and_dangling_refs() -> None:
