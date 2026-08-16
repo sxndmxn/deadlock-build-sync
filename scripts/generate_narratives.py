@@ -3,11 +3,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -36,6 +40,9 @@ REUSABLE_PROMPT_VERSIONS = frozenset({PROMPT_VERSION})
 KIT_SCHEMA_VERSION = 1
 KIT_PROMPT_VERSION = 4
 DEFAULT_GENERATION_ATTEMPTS = 3
+DEFAULT_GENERATION_CONCURRENCY = 8
+DEFAULT_RATE_LIMIT_BACKOFF_SECONDS = 1.0
+MAX_RATE_LIMIT_BACKOFF_SECONDS = 60.0
 CONDITION_PATTERN = re.compile(
     r"\b(?:after|before|if|once|only|save|hold|until|when|while|unless|then)\b"
     r"|rather than|as soon as",
@@ -66,6 +73,15 @@ ANALYTICS_LEAK_PATTERN = re.compile(
 CORRUPT_PROSE_PATTERN = re.compile(
     r"[\u200b-\u200f\u202a-\u202e\u2060-\u206f\u4e00-\u9fff]"
     r"|(?<=[A-Za-z])\d+(?=\W|$)"
+)
+RATE_LIMIT_PATTERN = re.compile(
+    r"\b(?:429|rate[ -]?limit(?:ed|ing)?|too many requests)\b",
+    re.IGNORECASE,
+)
+RETRY_AFTER_PATTERN = re.compile(
+    r"(?:retry[ -]?after|try again in)\s*(?::|=)?\s*"
+    r"(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>milliseconds?|ms|seconds?|s)?",
+    re.IGNORECASE,
 )
 
 KIT_PROMPT = """
@@ -165,6 +181,117 @@ class GenerationStage:
     normalizer: Callable[[dict[str, Any]], dict[str, Any]] | None = None
 
 
+@dataclass(frozen=True)
+class GenerationRun:
+    """Immutable inputs for one concurrent artifact-generation run."""
+
+    source: dict[str, Any]
+    output: Path
+    kit_output: Path
+    schema: Path
+    kit_schema: Path
+    kit_model: str | None
+    synthesis_model: str | None
+    max_attempts: int
+    concurrency: int
+    force: bool
+    requested_hero_ids: set[int]
+
+
+class _RequestLimiter:
+    """Bound concurrent Codex calls and coordinate rate-limit backpressure."""
+
+    def __init__(self, max_concurrency: int) -> None:
+        if max_concurrency < 1:
+            raise ValueError("max_concurrency must be at least one")
+        self._max_concurrency = max_concurrency
+        self._current_limit = max_concurrency
+        self._in_flight = 0
+        self._not_before = 0.0
+        self._successful_requests = 0
+        self._condition = threading.Condition()
+
+    @property
+    def current_limit(self) -> int:
+        with self._condition:
+            return self._current_limit
+
+    def acquire(self) -> None:
+        with self._condition:
+            while True:
+                delay = self._not_before - time.monotonic()
+                if self._in_flight < self._current_limit and delay <= 0:
+                    self._in_flight += 1
+                    return
+                self._condition.wait(timeout=delay if delay > 0 else None)
+
+    def release(
+        self,
+        error: GenerationError | None,
+        *,
+        attempt: int,
+    ) -> float:
+        """Release one request and return any local retry delay.
+
+        Returns:
+            Seconds the affected pipeline should wait before a local retry.
+
+        Raises:
+            RuntimeError: If no request slot is currently held.
+
+        """
+        with self._condition:
+            if self._in_flight < 1:
+                raise RuntimeError("cannot release a request that was not acquired")
+            self._in_flight -= 1
+            delay = 0.0
+            if error is not None and _is_rate_limit_error(error):
+                supplied_delay = _retry_after_seconds(error)
+                base_delay = (
+                    supplied_delay
+                    if supplied_delay is not None
+                    else min(
+                        DEFAULT_RATE_LIMIT_BACKOFF_SECONDS * (2 ** (attempt - 1)),
+                        MAX_RATE_LIMIT_BACKOFF_SECONDS,
+                    )
+                )
+                jitter_ceiling = min(1.0, max(0.1, base_delay * 0.25))
+                delay = base_delay + random.uniform(  # ruff: ignore[suspicious-non-cryptographic-random-usage]
+                    0.0, jitter_ceiling
+                )
+                self._not_before = max(self._not_before, time.monotonic() + delay)
+                self._current_limit = max(1, self._current_limit // 2)
+                self._successful_requests = 0
+            elif error is not None:
+                delay = random.uniform(  # ruff: ignore[suspicious-non-cryptographic-random-usage]
+                    0.05,
+                    min(0.5, 0.1 * attempt),
+                )
+            elif (
+                self._current_limit < self._max_concurrency
+                and time.monotonic() >= self._not_before
+            ):
+                self._successful_requests += 1
+                if self._successful_requests >= self._current_limit:
+                    self._current_limit += 1
+                    self._successful_requests = 0
+            self._condition.notify_all()
+            return delay
+
+
+def _is_rate_limit_error(error: GenerationError) -> bool:
+    return RATE_LIMIT_PATTERN.search(str(error)) is not None
+
+
+def _retry_after_seconds(error: GenerationError) -> float | None:
+    match = RETRY_AFTER_PATTERN.search(str(error))
+    if match is None:
+        return None
+    delay = float(match.group("value"))
+    unit = (match.group("unit") or "seconds").casefold()
+    return delay / 1000 if unit.startswith("m") else delay
+
+
 def _mentions_item(text: str, item_name: str) -> bool:
     return re.search(rf"(?<!\w){re.escape(item_name)}(?!\w)", text) is not None
 
@@ -261,6 +388,8 @@ def generate_validated_response(
     model_input: dict[str, Any],
     validation_context: dict[str, Any],
     stage: GenerationStage,
+    *,
+    request_limiter: _RequestLimiter | None = None,
 ) -> dict[str, Any]:
     """Generate and validate one response with bounded retries.
 
@@ -274,8 +403,12 @@ def generate_validated_response(
     """
     if stage.max_attempts < 1:
         raise ValueError("max_attempts must be at least one")
+    limiter = request_limiter or _RequestLimiter(1)
     last_error: GenerationError | None = None
     for attempt in range(1, stage.max_attempts + 1):
+        limiter.acquire()
+        request_error: GenerationError | None = None
+        response: dict[str, Any] = {}
         try:
             response = run_codex(
                 model_input,
@@ -284,6 +417,22 @@ def generate_validated_response(
                 prompt=stage.prompt,
                 timeout_seconds=stage.timeout_seconds,
             )
+        except GenerationError as error:
+            request_error = error
+        finally:
+            retry_delay = limiter.release(request_error, attempt=attempt)
+        if request_error is not None:
+            last_error = request_error
+            if attempt < stage.max_attempts:
+                print(
+                    f"retry {stage.label} ({attempt + 1}/{stage.max_attempts}) "
+                    f"after {retry_delay:.2f}s: {request_error}",
+                    file=sys.stderr,
+                )
+                if not _is_rate_limit_error(request_error):
+                    time.sleep(retry_delay)
+            continue
+        try:
             response = bind_response_identity(
                 response,
                 validation_context,
@@ -296,10 +445,16 @@ def generate_validated_response(
         except GenerationError as error:
             last_error = error
             if attempt < stage.max_attempts:
+                retry_delay = random.uniform(  # ruff: ignore[suspicious-non-cryptographic-random-usage]
+                    0.05,
+                    min(0.5, 0.1 * attempt),
+                )
                 print(
-                    f"retry {stage.label} ({attempt + 1}/{stage.max_attempts}): {error}",
+                    f"retry {stage.label} ({attempt + 1}/{stage.max_attempts}) "
+                    f"after {retry_delay:.2f}s: {error}",
                     file=sys.stderr,
                 )
+                time.sleep(retry_delay)
     raise GenerationError(
         f"{stage.label} failed after {stage.max_attempts} attempt(s): {last_error}"
     ) from last_error
@@ -403,6 +558,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=positive_int,
         default=DEFAULT_GENERATION_ATTEMPTS,
         help=f"generation attempts per stage (default: {DEFAULT_GENERATION_ATTEMPTS})",
+    )
+    parser.add_argument(
+        "--concurrency",
+        type=positive_int,
+        default=DEFAULT_GENERATION_CONCURRENCY,
+        metavar="N",
+        help=(
+            "maximum concurrent hero pipelines "
+            f"(default: {DEFAULT_GENERATION_CONCURRENCY})"
+        ),
     )
     parser.add_argument("--force", action="store_true")
     return parser.parse_args(argv)
@@ -1233,6 +1398,142 @@ def validated_reusable_entries(
     return reusable
 
 
+def _generate_selected_heroes(
+    selected: list[dict[str, Any]],
+    generated: dict[int, dict[str, Any]],
+    kit_profiles: dict[int, dict[str, Any]],
+    run: GenerationRun,
+) -> None:
+    """Generate independent hero pipelines concurrently with atomic checkpoints.
+
+    Raises:
+        GenerationError: If one or more hero pipelines exhaust their retries.
+
+    """
+    selected_count = len(selected)
+    positions = {int(hero["hero_id"]): index for index, hero in enumerate(selected, 1)}
+    pending: list[dict[str, Any]] = []
+    for hero in selected:
+        hero_id = int(hero["hero_id"])
+        if not run.force and hero_id in generated:
+            print(
+                f"[{positions[hero_id]}/{selected_count}] reuse {hero.get('hero')}",
+                file=sys.stderr,
+            )
+        else:
+            pending.append(hero)
+    if not pending:
+        return
+
+    artifact_lock = threading.Lock()
+    request_limiter = _RequestLimiter(run.concurrency)
+
+    def generate_hero(hero: dict[str, Any]) -> None:
+        hero_id = int(hero["hero_id"])
+        position = positions[hero_id]
+        kit_profile = kit_profiles.get(hero_id)
+        if run.force or kit_profile is None:
+            print(
+                f"[{position}/{selected_count}] Kit ({run.kit_model}): "
+                f"{hero.get('hero')}",
+                file=sys.stderr,
+            )
+            kit_profile = generate_validated_response(
+                kit_context(hero),
+                hero,
+                GenerationStage(
+                    schema_path=run.kit_schema,
+                    model=run.kit_model,
+                    prompt=KIT_PROMPT,
+                    identity_fields=("hero_id", "kit_basis_sha256"),
+                    validator=validate_kit_response,
+                    label=f"kit analysis for {hero.get('hero')}",
+                    max_attempts=run.max_attempts,
+                ),
+                request_limiter=request_limiter,
+            )
+            with artifact_lock:
+                kit_profiles[hero_id] = kit_profile
+                _write_artifact(
+                    run.kit_output,
+                    _kit_artifact_document(
+                        run.source, kit_profiles, model=run.kit_model
+                    ),
+                )
+        print(
+            f"[{position}/{selected_count}] Synthesis ({run.synthesis_model}): "
+            f"{hero.get('hero')}",
+            file=sys.stderr,
+        )
+        model_context = synthesis_context(
+            hero,
+            kit_profile,
+            run.source["item_mechanics"],
+        )
+        narrative = generate_validated_response(
+            model_context,
+            hero,
+            GenerationStage(
+                schema_path=run.schema,
+                model=run.synthesis_model,
+                prompt=PROMPT,
+                identity_fields=(
+                    "hero_id",
+                    "snapshot_id",
+                    "policy_id",
+                    "context_sha256",
+                    "narrative_basis_sha256",
+                ),
+                validator=validate_response,
+                label=f"narrative synthesis for {hero.get('hero')}",
+                max_attempts=run.max_attempts,
+                normalizer=normalize_narrative_response,
+            ),
+            request_limiter=request_limiter,
+        )
+        with artifact_lock:
+            generated[hero_id] = narrative
+            _write_artifact(
+                run.output,
+                _artifact_document(
+                    run.source,
+                    generated,
+                    requested_hero_ids=run.requested_hero_ids,
+                    kit_model=run.kit_model,
+                    synthesis_model=run.synthesis_model,
+                ),
+            )
+
+    failures: dict[int, GenerationError] = {}
+    worker_count = min(run.concurrency, len(pending))
+    print(
+        f"Generating {len(pending)} hero pipeline(s) with up to "
+        f"{worker_count} concurrent worker(s).",
+        file=sys.stderr,
+    )
+    with ThreadPoolExecutor(
+        max_workers=worker_count,
+        thread_name_prefix="deadlock-narrative",
+    ) as executor:
+        futures = {
+            executor.submit(generate_hero, hero): int(hero["hero_id"])
+            for hero in pending
+        }
+        for future in as_completed(futures):
+            hero_id = futures[future]
+            try:
+                future.result()
+            except GenerationError as error:
+                failures[hero_id] = error
+    if failures:
+        failure_details = "; ".join(
+            f"{source_hero.get('hero')}: {failures[hero_id]}"
+            for source_hero in selected
+            if (hero_id := int(source_hero["hero_id"])) in failures
+        )
+        raise GenerationError(f"hero generation failed: {failure_details}")
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args() if argv is None else parse_args(argv)
     try:
@@ -1267,81 +1568,24 @@ def main(argv: list[str] | None = None) -> int:
             _existing_entries(kit_output),
             source_heroes,
         )
-        for index, hero in enumerate(selected, start=1):
-            hero_id = int(hero["hero_id"])
-            if not args.force and hero_id in generated:
-                print(
-                    f"[{index}/{len(selected)}] reuse {hero.get('hero')}",
-                    file=sys.stderr,
-                )
-                continue
-            kit_profile = kit_profiles.get(hero_id)
-            if args.force or kit_profile is None:
-                print(
-                    f"[{index}/{len(selected)}] Kit ({args.kit_model}): {hero.get('hero')}",
-                    file=sys.stderr,
-                )
-                kit_profile = generate_validated_response(
-                    kit_context(hero),
-                    hero,
-                    GenerationStage(
-                        schema_path=kit_schema,
-                        model=args.kit_model,
-                        prompt=KIT_PROMPT,
-                        identity_fields=("hero_id", "kit_basis_sha256"),
-                        validator=validate_kit_response,
-                        label=f"kit analysis for {hero.get('hero')}",
-                        max_attempts=args.max_attempts,
-                    ),
-                )
-                kit_profiles[hero_id] = kit_profile
-                _write_artifact(
-                    kit_output,
-                    _kit_artifact_document(
-                        source,
-                        kit_profiles,
-                        model=args.kit_model,
-                    ),
-                )
-            print(
-                f"[{index}/{len(selected)}] Synthesis ({args.model}): {hero.get('hero')}",
-                file=sys.stderr,
-            )
-            model_context = synthesis_context(
-                hero,
-                kit_profile,
-                source["item_mechanics"],
-            )
-            generated[hero_id] = generate_validated_response(
-                model_context,
-                hero,
-                GenerationStage(
-                    schema_path=args.schema,
-                    model=args.model,
-                    prompt=PROMPT,
-                    identity_fields=(
-                        "hero_id",
-                        "snapshot_id",
-                        "policy_id",
-                        "context_sha256",
-                        "narrative_basis_sha256",
-                    ),
-                    validator=validate_response,
-                    label=f"narrative synthesis for {hero.get('hero')}",
-                    max_attempts=args.max_attempts,
-                    normalizer=normalize_narrative_response,
-                ),
-            )
-            _write_artifact(
-                args.output,
-                _artifact_document(
-                    source,
-                    generated,
-                    requested_hero_ids=selected_ids,
-                    kit_model=args.kit_model,
-                    synthesis_model=args.model,
-                ),
-            )
+        _generate_selected_heroes(
+            selected,
+            generated,
+            kit_profiles,
+            GenerationRun(
+                source=source,
+                output=args.output,
+                kit_output=kit_output,
+                schema=args.schema,
+                kit_schema=kit_schema,
+                kit_model=args.kit_model,
+                synthesis_model=args.model,
+                max_attempts=args.max_attempts,
+                concurrency=args.concurrency,
+                force=args.force,
+                requested_hero_ids=selected_ids,
+            ),
+        )
         _write_artifact(
             kit_output,
             _kit_artifact_document(source, kit_profiles, model=args.kit_model),

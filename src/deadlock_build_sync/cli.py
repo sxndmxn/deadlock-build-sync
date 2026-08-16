@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 
 from scripts.generate_narratives import (
     DEFAULT_GENERATION_ATTEMPTS,
+    DEFAULT_GENERATION_CONCURRENCY,
     positive_int,
 )
 from scripts.generate_narratives import main as generate_narratives_main
@@ -284,6 +285,16 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "generation/validation attempts per model stage "
             f"(default: {DEFAULT_GENERATION_ATTEMPTS})"
+        ),
+    )
+    sync.add_argument(
+        "--concurrency",
+        type=positive_int,
+        default=DEFAULT_GENERATION_CONCURRENCY,
+        metavar="N",
+        help=(
+            "maximum concurrent hero narrative pipelines "
+            f"(default: {DEFAULT_GENERATION_CONCURRENCY})"
         ),
     )
 
@@ -569,6 +580,8 @@ def _run_sync(args: argparse.Namespace) -> int:
         args.model,
         "--max-attempts",
         str(args.max_attempts),
+        "--concurrency",
+        str(args.concurrency),
     ]
     if args.force_narratives:
         generation_args.append("--force")

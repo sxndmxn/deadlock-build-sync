@@ -28,6 +28,7 @@ from deadlock_build_sync.snapshot import (
     OutcomePolicy,
     SnapshotManifest,
 )
+from scripts.generate_narratives import DEFAULT_GENERATION_CONCURRENCY
 
 
 def test_sync_defaults_to_every_eligible_hero_and_staged_models() -> None:
@@ -38,6 +39,7 @@ def test_sync_defaults_to_every_eligible_hero_and_staged_models() -> None:
     assert args.kit_model == DEFAULT_KIT_MODEL
     assert args.model == DEFAULT_SYNTHESIS_MODEL
     assert args.max_attempts == 3
+    assert args.concurrency == DEFAULT_GENERATION_CONCURRENCY
 
 
 def test_status_is_read_only_and_supports_json() -> None:
@@ -356,6 +358,8 @@ def test_sync_generates_artifacts_and_installs_without_extra_flags(
     assert DEFAULT_KIT_MODEL in generation_args
     assert "--model" in generation_args
     assert DEFAULT_SYNTHESIS_MODEL in generation_args
+    assert "--concurrency" in generation_args
+    assert str(DEFAULT_GENERATION_CONCURRENCY) in generation_args
 
 
 @pytest.mark.parametrize("command", ["preview", "install"])
