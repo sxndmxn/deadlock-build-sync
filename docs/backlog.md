@@ -1,5 +1,40 @@
 # Backlog
 
+## Generate hero narratives concurrently
+
+Goal: fan out independent hero-generation pipelines asynchronously instead of
+waiting for all kit and synthesis calls one hero at a time. Permit full-roster
+concurrency when Codex service limits allow it, with a bounded default that avoids
+turning rate limits into repeated failures.
+
+Keep the safety and reproducibility contracts intact:
+
+- Run each hero's kit stage before that hero's synthesis stage, while allowing
+  different heroes to progress concurrently.
+- Use bounded, configurable concurrency with rate-limit backpressure, jittered
+  retries, and `Retry-After` support; do not assume 38 simultaneous requests are
+  always accepted by the service.
+- Preserve per-stage fingerprints and reuse compatible completed artifacts after a
+  retry or interrupted run.
+- Validate every response independently and write progress atomically. One rejected
+  hero must not corrupt or discard already validated hero artifacts.
+- Preserve deterministic roster ordering in the final artifact regardless of request
+  completion order.
+- Keep the all-roster admission gate before Steam mutation: no cache write occurs
+  until every eligible hero has a valid kit and synthesis result.
+
+Acceptance:
+
+- A concurrency test proves more than one independent hero request can be in flight
+  while synthesis never starts before its matching kit result.
+- A simulated 429 lowers request pressure and retries only the affected work without
+  losing completed artifacts.
+- An interrupted run reuses every fingerprint-compatible stage on restart.
+- Serial and concurrent runs over fixed fixtures produce the same ordered artifact
+  identities and validation results.
+- A full-roster benchmark records wall-clock improvement and peak concurrency without
+  performing a live Steam write.
+
 ## Make item notes hero-relative or omit them
 
 Goal: every AI-authored item note must answer why that item belongs on that hero.

@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 from dataclasses import replace
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -26,6 +28,9 @@ from deadlock_build_sync.policy import (
     validate_policy,
 )
 from deadlock_build_sync.snapshot import EvidenceUnit
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 SNAPSHOT_ID = "a" * 64
 
@@ -219,6 +224,32 @@ def test_policy_rejects_unknown_kind_and_edited_fingerprint() -> None:
     payload = branching_policy().as_dict()
     payload["variant"] = "edited"
     with pytest.raises(PolicyError, match="fingerprint"):
+        BuildPolicy.from_dict(payload)
+
+
+@pytest.mark.parametrize(
+    ("mutation", "error"),
+    [
+        (lambda payload: payload.update(unexpected=True), "malformed build policy"),
+        (
+            lambda payload: payload["nodes"][0].update(unexpected=True),
+            "malformed policy node",
+        ),
+        (lambda payload: payload.update(hero_id="12"), "malformed build policy"),
+        (
+            lambda payload: payload["nodes"][0].update(optional=1),
+            "malformed policy node",
+        ),
+    ],
+)
+def test_policy_codec_rejects_extra_fields_and_primitive_coercion(
+    mutation: Callable[[dict[str, Any]], None],
+    error: str,
+) -> None:
+    payload = branching_policy().as_dict()
+    mutation(payload)
+
+    with pytest.raises(PolicyError, match=error):
         BuildPolicy.from_dict(payload)
 
 

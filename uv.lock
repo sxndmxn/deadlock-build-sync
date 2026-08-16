@@ -185,6 +185,19 @@ wheels = [
 ]
 
 [[package]]
+name = "cattrs"
+version = "26.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "attrs" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a0/ec/ba18945e7d6e55a58364d9fb2e46049c1c2998b3d805f19b703f14e81057/cattrs-26.1.0.tar.gz", hash = "sha256:fa239e0f0ec0715ba34852ce813986dfed1e12117e209b816ab87401271cdd40", size = 495672, upload-time = "2026-02-18T22:15:19.406Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/80/56/60547f7801b97c67e97491dc3d9ade9fbccbd0325058fd3dfcb2f5d98d90/cattrs-26.1.0-py3-none-any.whl", hash = "sha256:d1e0804c42639494d469d08d4f26d6b9de9b8ab26b446db7b5f8c2e97f7c3096", size = 73054, upload-time = "2026-02-18T22:15:17.958Z" },
+]
+
+[[package]]
 name = "certifi"
 version = "2026.7.22"
 source = { registry = "https://pypi.org/simple" }
@@ -355,13 +368,14 @@ name = "deadlock-build-sync"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "cattrs" },
+    { name = "httpx" },
     { name = "keyvalues3" },
 ]
 
 [package.optional-dependencies]
 analysis = [
     { name = "duckdb" },
-    { name = "httpx" },
     { name = "matplotlib" },
     { name = "numpy" },
     { name = "polars" },
@@ -379,7 +393,6 @@ test = [
 dev = [
     { name = "deepeval" },
     { name = "duckdb" },
-    { name = "httpx" },
     { name = "matplotlib" },
     { name = "numpy" },
     { name = "polars" },
@@ -395,8 +408,9 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "cattrs", specifier = ">=26.1,<27" },
     { name = "duckdb", marker = "extra == 'analysis'", specifier = "==1.5.5" },
-    { name = "httpx", marker = "extra == 'analysis'", specifier = ">=0.28,<0.29" },
+    { name = "httpx", specifier = ">=0.28,<0.29" },
     { name = "keyvalues3", specifier = ">=0.7,<0.8" },
     { name = "matplotlib", marker = "extra == 'analysis'", specifier = ">=3.10,<3.11" },
     { name = "numpy", marker = "extra == 'analysis'", specifier = ">=2.3,<2.4" },
@@ -414,7 +428,6 @@ provides-extras = ["analysis", "test"]
 dev = [
     { name = "deepeval", specifier = "==4.1.1" },
     { name = "duckdb", specifier = "==1.5.5" },
-    { name = "httpx", specifier = ">=0.28,<0.29" },
     { name = "matplotlib", specifier = ">=3.10,<3.11" },
     { name = "numpy", specifier = ">=2.3,<2.4" },
     { name = "polars", specifier = ">=1.33,<1.34" },

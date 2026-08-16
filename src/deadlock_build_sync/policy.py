@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
-from typing import Any, cast
+from typing import Any
 
 from .mechanics import (
     AbilityAction,
@@ -56,26 +56,6 @@ _CAUSAL_PHRASES = (
 )
 
 
-def _require_dict(value: object, name: str) -> dict[str, Any]:
-    if not isinstance(value, dict):
-        raise PolicyError(f"{name} must be an object")
-    return cast("dict[str, Any]", value)
-
-
-def _require_dict_list(value: object, name: str) -> list[dict[str, Any]]:
-    if not isinstance(value, list):
-        raise PolicyError(f"{name} must be an array")
-    return [_require_dict(nested, name) for nested in value]
-
-
-def _require_str_list(value: object, name: str) -> list[str]:
-    if not isinstance(value, list) or not all(
-        isinstance(nested, str) for nested in value
-    ):
-        raise PolicyError(f"{name} must be a string array")
-    return cast("list[str]", value)
-
-
 @dataclass(frozen=True)
 class EvidenceClaim:
     claim_id: str
@@ -120,21 +100,9 @@ class EvidenceClaim:
             raise PolicyError(f"claim {self.claim_id} denominator differs from support")
 
     def as_dict(self) -> dict[str, Any]:
-        return {
-            "claim_id": self.claim_id,
-            "claim_class": self.claim_class.value,
-            "snapshot_id": self.snapshot_id,
-            "cohort": self.cohort,
-            "unit": self.unit.value,
-            "support": self.support,
-            "mechanics_refs": list(self.mechanics_refs),
-            "language_ceiling": sorted(self.language_ceiling),
-            "numerator": self.numerator,
-            "denominator": self.denominator,
-            "estimate": self.estimate,
-            "interval": list(self.interval) if self.interval is not None else None,
-            "comparison_baseline": self.comparison_baseline,
-        }
+        from .policy_codec import unstructure_evidence_claim
+
+        return unstructure_evidence_claim(self)
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> EvidenceClaim:
@@ -147,55 +115,9 @@ class EvidenceClaim:
             PolicyError: If enum values or quantitative fields are malformed.
 
         """
-        cohort = _require_dict(value.get("cohort"), "cohort")
-        mechanics_refs = _require_str_list(
-            value.get("mechanics_refs"),
-            "mechanics_refs",
-        )
-        language_ceiling = _require_str_list(
-            value.get("language_ceiling"),
-            "language_ceiling",
-        )
-        try:
-            raw_interval = value.get("interval")
-            interval = (
-                (float(raw_interval[0]), float(raw_interval[1]))
-                if isinstance(raw_interval, list) and len(raw_interval) == 2
-                else None
-            )
-            return cls(
-                claim_id=str(value["claim_id"]),
-                claim_class=ClaimClass(str(value["claim_class"])),
-                snapshot_id=str(value["snapshot_id"]),
-                cohort=cohort,
-                unit=EvidenceUnit(str(value["unit"])),
-                support=int(value["support"]),
-                mechanics_refs=tuple(mechanics_refs),
-                language_ceiling=frozenset(language_ceiling),
-                numerator=(
-                    int(value["numerator"])
-                    if value.get("numerator") is not None
-                    else None
-                ),
-                denominator=(
-                    int(value["denominator"])
-                    if value.get("denominator") is not None
-                    else None
-                ),
-                estimate=(
-                    float(value["estimate"])
-                    if value.get("estimate") is not None
-                    else None
-                ),
-                interval=interval,
-                comparison_baseline=(
-                    float(value["comparison_baseline"])
-                    if value.get("comparison_baseline") is not None
-                    else None
-                ),
-            )
-        except (KeyError, TypeError, ValueError) as error:
-            raise PolicyError(f"malformed evidence claim: {error}") from error
+        from .policy_codec import structure_evidence_claim
+
+        return structure_evidence_claim(value)
 
     def validate_sentence(self, sentence: str) -> None:
         """Enforce the deterministic prose ceiling for this claim.
@@ -310,11 +232,9 @@ class Guard:
         return False
 
     def as_dict(self) -> dict[str, Any]:
-        return {
-            "field": self.field,
-            "operator": self.operator.value,
-            "value": self.value,
-        }
+        from .policy_codec import unstructure_guard
+
+        return unstructure_guard(self)
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> Guard:
@@ -327,14 +247,9 @@ class Guard:
             PolicyError: If required fields or the operator are invalid.
 
         """
-        try:
-            return cls(
-                field=str(value["field"]),
-                operator=GuardOperator(str(value["operator"])),
-                value=value.get("value"),
-            )
-        except (KeyError, ValueError) as error:
-            raise PolicyError(f"malformed policy guard: {error}") from error
+        from .policy_codec import structure_guard
+
+        return structure_guard(value)
 
 
 @dataclass(frozen=True)
@@ -367,19 +282,9 @@ class Branch:
         return bool(self.guards) and all(guard.matches(state) for guard in self.guards)
 
     def as_dict(self) -> dict[str, Any]:
-        guards = self.guards
-        when: str | dict[str, Any] | list[dict[str, Any]]
-        if not guards:
-            when = "default"
-        elif len(guards) == 1:
-            when = guards[0].as_dict()
-        else:
-            when = [guard.as_dict() for guard in guards]
-        return {
-            "next": self.next_id,
-            "when": when,
-            "priority": self.priority,
-        }
+        from .policy_codec import unstructure_branch
+
+        return unstructure_branch(self)
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> Branch:
@@ -392,32 +297,9 @@ class Branch:
             PolicyError: If the branch has no valid successor/guard.
 
         """
-        try:
-            raw_guard = value.get("when")
-            if raw_guard == "default":
-                guard = None
-                additional_guards: tuple[Guard, ...] = ()
-            elif isinstance(raw_guard, dict):
-                guard = Guard.from_dict(raw_guard)
-                additional_guards = ()
-            elif isinstance(raw_guard, list) and raw_guard:
-                parsed = tuple(
-                    Guard.from_dict(_require_dict(item, "branch guard"))
-                    for item in raw_guard
-                )
-                guard = parsed[0]
-                additional_guards = parsed[1:]
-            else:
-                raise PolicyError("branch must use a guard or default")
-            raw_priority = value.get("priority")
-            return cls(
-                next_id=str(value["next"]),
-                guard=guard,
-                priority=int(raw_priority) if raw_priority is not None else None,
-                additional_guards=additional_guards,
-            )
-        except (KeyError, TypeError, ValueError) as error:
-            raise PolicyError(f"malformed policy branch: {error}") from error
+        from .policy_codec import structure_branch
+
+        return structure_branch(value)
 
 
 @dataclass(frozen=True)
@@ -489,27 +371,9 @@ class PolicyNode:
         return (self.next_id,) if self.next_id is not None else ()
 
     def as_dict(self) -> dict[str, Any]:
-        return {
-            "id": self.node_id,
-            "kind": self.kind.value,
-            "next": self.next_id,
-            "evidence_ref": self.evidence_ref,
-            "item_id": self.item_id,
-            "ability_id": self.ability_id,
-            "level": self.level,
-            "branches": [branch.as_dict() for branch in self.branches],
-            "optional": self.optional,
-            "required_flex_slots": self.required_flex_slots,
-            "sell_priority": self.sell_priority,
-            "imbue_target_ability_id": self.imbue_target_ability_id,
-            "imbue_qualifier": self.imbue_qualifier,
-            "allow_ultimate_imbue": self.allow_ultimate_imbue,
-            "unlocks_flex_slots": self.unlocks_flex_slots,
-            "earliest_time_s": self.earliest_time_s,
-            "latest_time_s": self.latest_time_s,
-            "recalculation_next": self.recalculation_next,
-            "annotation": self.annotation,
-        }
+        from .policy_codec import unstructure_policy_node
+
+        return unstructure_policy_node(self)
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> PolicyNode:
@@ -522,49 +386,9 @@ class PolicyNode:
             PolicyError: If the kind is unknown or fields are malformed.
 
         """
-        raw_branches = _require_dict_list(value.get("branches", []), "branches")
-        try:
-            branches = tuple(Branch.from_dict(branch) for branch in raw_branches)
+        from .policy_codec import structure_policy_node
 
-            def optional_int(name: str) -> int | None:
-                nested = value.get(name)
-                return int(nested) if nested is not None else None
-
-            return cls(
-                node_id=str(value["id"]),
-                kind=NodeKind(str(value["kind"])),
-                next_id=(str(value["next"]) if value.get("next") is not None else None),
-                evidence_ref=(
-                    str(value["evidence_ref"])
-                    if value.get("evidence_ref") is not None
-                    else None
-                ),
-                item_id=optional_int("item_id"),
-                ability_id=optional_int("ability_id"),
-                level=optional_int("level"),
-                branches=branches,
-                optional=bool(value.get("optional")),
-                required_flex_slots=int(value.get("required_flex_slots", 0)),
-                sell_priority=optional_int("sell_priority"),
-                imbue_target_ability_id=optional_int("imbue_target_ability_id"),
-                imbue_qualifier=(
-                    str(value["imbue_qualifier"])
-                    if value.get("imbue_qualifier") is not None
-                    else None
-                ),
-                allow_ultimate_imbue=bool(value.get("allow_ultimate_imbue", True)),
-                unlocks_flex_slots=optional_int("unlocks_flex_slots"),
-                earliest_time_s=optional_int("earliest_time_s"),
-                latest_time_s=optional_int("latest_time_s"),
-                recalculation_next=(
-                    str(value["recalculation_next"])
-                    if value.get("recalculation_next") is not None
-                    else None
-                ),
-                annotation=str(value.get("annotation") or ""),
-            )
-        except (KeyError, TypeError, ValueError) as error:
-            raise PolicyError(f"malformed policy node: {error}") from error
+        return structure_policy_node(value)
 
 
 class AbstentionReason(StrEnum):
@@ -675,30 +499,9 @@ class BuildPolicy:
         return sha256_json(self.as_dict(include_policy_id=False))
 
     def as_dict(self, *, include_policy_id: bool = True) -> dict[str, Any]:
-        payload: dict[str, Any] = {
-            "schema_version": self.schema_version,
-            "hero_id": self.hero_id,
-            "variant": self.variant,
-            "invariant_kit_id": self.invariant_kit_id,
-            "strategic_role": self.strategic_role,
-            "snapshot_id": self.snapshot_id,
-            "entry": self.entry,
-            "nodes": [node.as_dict() for node in self.nodes],
-            "ability_plan": [node.as_dict() for node in self.ability_plan],
-            "evidence": [claim.as_dict() for claim in self.evidence],
-            "abstentions": [
-                {
-                    "reason": abstention.reason.value,
-                    "detail": abstention.detail,
-                    "node_id": abstention.node_id,
-                }
-                for abstention in self.abstentions
-            ],
-            "counter_cards": [card.as_dict() for card in self.counter_cards],
-        }
-        if include_policy_id:
-            payload["policy_id"] = self.policy_id
-        return payload
+        from .policy_codec import unstructure_build_policy
+
+        return unstructure_build_policy(self, include_policy_id=include_policy_id)
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> BuildPolicy:
@@ -711,58 +514,9 @@ class BuildPolicy:
             PolicyError: If structure, enums, identity, or fingerprint are invalid.
 
         """
-        raw_nodes = _require_dict_list(value.get("nodes"), "nodes")
-        raw_ability_plan = _require_dict_list(
-            value.get("ability_plan", []),
-            "ability_plan",
-        )
-        raw_evidence = _require_dict_list(value.get("evidence"), "evidence")
-        raw_abstentions = _require_dict_list(
-            value.get("abstentions", []),
-            "abstentions",
-        )
-        raw_counter_cards = _require_dict_list(
-            value.get("counter_cards", []),
-            "counter_cards",
-        )
-        try:
-            policy = cls(
-                schema_version=int(value["schema_version"]),
-                hero_id=int(value["hero_id"]),
-                variant=str(value["variant"]),
-                invariant_kit_id=str(value["invariant_kit_id"]),
-                strategic_role=str(value["strategic_role"]),
-                snapshot_id=str(value["snapshot_id"]),
-                entry=str(value["entry"]),
-                nodes=tuple(PolicyNode.from_dict(node) for node in raw_nodes),
-                evidence=tuple(
-                    EvidenceClaim.from_dict(claim) for claim in raw_evidence
-                ),
-                ability_plan=tuple(
-                    PolicyNode.from_dict(node) for node in raw_ability_plan
-                ),
-                abstentions=tuple(
-                    Abstention(
-                        reason=AbstentionReason(str(abstention["reason"])),
-                        detail=str(abstention["detail"]),
-                        node_id=(
-                            str(abstention["node_id"])
-                            if abstention.get("node_id") is not None
-                            else None
-                        ),
-                    )
-                    for abstention in raw_abstentions
-                ),
-                counter_cards=tuple(
-                    CounterCard.from_dict(card) for card in raw_counter_cards
-                ),
-            )
-        except (KeyError, TypeError, ValueError) as error:
-            raise PolicyError(f"malformed build policy: {error}") from error
-        expected = value.get("policy_id")
-        if expected is not None and expected != policy.policy_id:
-            raise PolicyError("policy fingerprint does not match its contents")
-        return policy
+        from .policy_codec import structure_build_policy
+
+        return structure_build_policy(value)
 
 
 @dataclass(frozen=True)
@@ -1072,19 +826,9 @@ class CounterCard:
             A JSON-compatible counter-card object.
 
         """
-        return {
-            "threat": self.threat,
-            "item_id": self.item_id,
-            "comparator_item_id": self.comparator_item_id,
-            "enemy_hero_id": self.enemy_hero_id,
-            "mechanic_ref": self.mechanic_ref,
-            "legal_timing": self.legal_timing,
-            "alternative": self.alternative,
-            "replacement": self.replacement,
-            "execution_mode": self.execution_mode,
-            "failure_condition": self.failure_condition,
-            "evidence_ref": self.evidence_ref,
-        }
+        from .policy_codec import unstructure_counter_card
+
+        return unstructure_counter_card(self)
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> CounterCard:
@@ -1097,23 +841,9 @@ class CounterCard:
             PolicyError: If the object is incomplete or malformed.
 
         """
-        try:
-            enemy = value.get("enemy_hero_id")
-            return cls(
-                threat=str(value["threat"]),
-                item_id=int(value["item_id"]),
-                comparator_item_id=int(value["comparator_item_id"]),
-                mechanic_ref=str(value["mechanic_ref"]),
-                legal_timing=str(value["legal_timing"]),
-                alternative=str(value["alternative"]),
-                replacement=str(value["replacement"]),
-                execution_mode=str(value["execution_mode"]),
-                failure_condition=str(value["failure_condition"]),
-                evidence_ref=str(value["evidence_ref"]),
-                enemy_hero_id=int(enemy) if enemy is not None else None,
-            )
-        except (KeyError, TypeError, ValueError) as error:
-            raise PolicyError(f"malformed counter card: {error}") from error
+        from .policy_codec import structure_counter_card
+
+        return structure_counter_card(value)
 
 
 @dataclass(frozen=True)

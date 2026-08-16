@@ -29,6 +29,8 @@ classifiers = [
   "Topic :: Games/Entertainment",
 ]
 dependencies = [
+  "cattrs>=26.1,<27",
+  "httpx>=0.28,<0.29",
   "keyvalues3>=0.7,<0.8",
 ]
 
@@ -41,7 +43,6 @@ Repository = "https://github.com/sxndmxn/deadlock-build-sync"
 [project.optional-dependencies]
 analysis = [
   "duckdb==1.5.5",
-  "httpx>=0.28,<0.29",
   "matplotlib>=3.10,<3.11",
   "numpy>=2.3,<2.4",
   "polars>=1.33,<1.34",
@@ -62,7 +63,6 @@ deadlock-build-sync = "deadlock_build_sync.cli:main"
 dev = [
   "duckdb==1.5.5",
   "deepeval==4.1.1",
-  "httpx>=0.28,<0.29",
   "matplotlib>=3.10,<3.11",
   "numpy>=2.3,<2.4",
   "polars>=1.33,<1.34",
@@ -215,6 +215,8 @@ select = ["ALL"]
 ]
 "src/deadlock_build_sync/policy.py" = [
   "complex-structure", # Graph, guard, and legal-state validation are exhaustive by design.
+  "docstring-extraneous-exception", # Lazy codec delegates raise the documented PolicyError.
+  "import-outside-top-level", # Lazy codec imports avoid a model/codec import cycle.
   "too-many-return-statements", # Typed guard dispatch has one terminal per operator.
   "too-many-statements-in-try-clause", # Mechanics errors are translated at one boundary.
 ]
