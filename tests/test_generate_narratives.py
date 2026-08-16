@@ -16,8 +16,8 @@ def packet_and_response() -> tuple[dict[str, Any], dict[str, Any]]:
         "context_sha256": "3" * 64,
         "kit_basis_sha256": "4" * 64,
         "narrative_basis_sha256": "5" * 64,
-        "hero_description": {"role": "Protect allies", "playstyle": "Control space"},
         "hero_mechanics": {
+            "description": {"role": "Protect allies", "playstyle": "Control space"},
             "abilities": [
                 {"id": ability_id, "name": name, "description": {"desc": name}}
                 for ability_id, name in (
@@ -26,7 +26,7 @@ def packet_and_response() -> tuple[dict[str, Any], dict[str, Any]]:
                     (30, "Ice Path"),
                     (40, "Frozen Shelter"),
                 )
-            ]
+            ],
         },
         "ability_policy": {
             "language_ceiling": "descriptive default projection, not a universal path",
@@ -166,7 +166,7 @@ def packet_and_response() -> tuple[dict[str, Any], dict[str, Any]]:
 
 
 def test_generator_uses_installer_prompt_version() -> None:
-    assert generate_narratives.PROMPT_VERSION == NARRATIVE_PROMPT_VERSION == 22
+    assert generate_narratives.PROMPT_VERSION == NARRATIVE_PROMPT_VERSION == 23
 
 
 def test_kit_context_excludes_items_outcomes_and_policy() -> None:
@@ -175,7 +175,9 @@ def test_kit_context_excludes_items_outcomes_and_policy() -> None:
     context = generate_narratives.kit_context(packet)
 
     assert context["kit_basis_sha256"] == "4" * 64
-    assert len(context["abilities"]) == 4
+    assert len(context["hero_mechanics"]["abilities"]) == 4
+    assert "abilities" not in context
+    assert "hero_description" not in context
     assert "projection" not in context
     assert "ending_duration_profile" not in context
     assert "policy" not in context
@@ -186,20 +188,23 @@ def test_synthesis_context_contains_only_selected_policy_evidence() -> None:
     source["policy"]["variant"] = "control"
     source["tiers"] = {
         "TIER 1": [
-            {"item_id": 101, "item": "Frost Core", "mechanics": {"cost": 500}},
-            {"item_id": 999, "item": "Unused", "mechanics": {"cost": 999}},
+            {"item_id": 101, "item": "Frost Core"},
+            {"item_id": 999, "item": "Unused"},
         ]
     }
 
     context = generate_narratives.synthesis_context(
         source,
         {"hero_id": 12, "kit_basis_sha256": "4" * 64},
+        {"101": {"cost": 500}, "999": {"cost": 999}},
     )
 
     assert "tiers" not in context
     assert "matchups" not in context
     assert "policy" not in context
     assert [item["item_id"] for item in context["selected_action_mechanics"]] == [101]
+    assert context["selected_action_mechanics"][0]["mechanics"] == {"cost": 500}
+    assert context["hero_description"]["role"] == "Protect allies"
     assert context["policy_summary"]["variant"] == "control"
 
 
@@ -218,7 +223,7 @@ def test_validates_closed_policy_explanation() -> None:
 
     validated = generate_narratives.validate_response(response, packet)
 
-    assert validated["prompt_version"] == 22
+    assert validated["prompt_version"] == 23
 
 
 def test_rejects_core_instruction_over_utf8_byte_budget() -> None:
@@ -393,6 +398,32 @@ def test_normalizes_only_sentence_endings() -> None:
     assert normalized["build_summary"] == "A complete default plan."
     assert normalized["action_explanations"][0]["instruction"] == "Use Frost Core."
     assert response["build_summary"] == "A complete default plan"
+
+
+def test_binds_source_owned_row_identities_without_repairing_omissions() -> None:
+    packet, response = packet_and_response()
+    response["action_explanations"][0]["node_id"] = "changed"
+    response["action_explanations"][0]["evidence_ref"] = "changed"
+    response["category_summaries"][0]["category"] = "changed"
+
+    bound = generate_narratives.bind_response_structure(response, packet)
+
+    assert bound["action_explanations"][0]["node_id"] == "core"
+    assert bound["action_explanations"][0]["evidence_ref"] == "item/101/purchase-events"
+    assert bound["category_summaries"][0]["category"] == "CORE — DEFAULT QUEUE"
+
+    truncated = {
+        **response,
+        "action_explanations": response["action_explanations"][:-1],
+    }
+    assert (
+        len(
+            generate_narratives.bind_response_structure(truncated, packet)[
+                "action_explanations"
+            ]
+        )
+        == 1
+    )
 
 
 def test_generation_retries_semantic_failure(

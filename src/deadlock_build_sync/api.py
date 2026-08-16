@@ -461,20 +461,18 @@ class DeadlockApi:
     def hero_counter_stats(
         self,
         *,
-        hero_id: int,
         min_unix_timestamp: int,
         same_lane: bool,
     ) -> list[dict[str, Any]]:
         data = self.get_json(
             "/v1/analytics/hero-counter-stats",
             self._analytic_parameters(
-                hero_id=hero_id,
                 min_unix_timestamp=min_unix_timestamp,
                 same_lane_filter=same_lane,
             ),
         )
         if not isinstance(data, list):
-            raise ApiError(f"counter stats response for hero {hero_id} was not a list")
+            raise ApiError("counter stats response was not a list")
         return [row for row in data if isinstance(row, dict)]
 
     def epochs_for_patch(self, patch: Patch) -> EpochSet:

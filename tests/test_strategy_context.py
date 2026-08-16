@@ -22,6 +22,7 @@ from deadlock_build_sync.strategy_context import (
     CONTEXT_SCHEMA_VERSION,
     StrategyContextError,
     build_hero_strategy_context,
+    build_item_mechanics_catalog,
     build_strategy_context_document,
     calculate_context_sha256,
     calculate_kit_basis_sha256,
@@ -179,8 +180,10 @@ def test_exports_structured_mechanics_and_real_ability_timeline() -> None:
         ability_timeline=timeline(),
     )
 
-    assert context["hero_description"]["role"] == "Protect allies."
-    assert context["abilities"][0]["name"] == "Grenade"
+    assert context["hero_mechanics"]["description"]["role"] == "Protect allies."
+    assert context["hero_mechanics"]["abilities"][0]["name"] == "Grenade"
+    assert context["item_mechanics_ids"] == [101]
+    assert "mechanics" not in context["tiers"]["I"][0]
     assert context["tiers"]["I"][0]["slot"] == "SPIRIT"
     assert context["tiers"]["I"][0]["unit"] == "purchase_event"
     assert (
@@ -223,11 +226,14 @@ def test_document_binds_snapshot_coverage_and_fingerprints() -> None:
         Patch("Patch", 123, "2026-01-01T00:00:00Z"),
         [context],
         manifest=live_manifest,
+        item_mechanics=build_item_mechanics_catalog(assets(), {101}),
         requested_hero_ids={12, 13},
         exclusions=((13, "incomplete mechanics"),),
     )
 
     assert document["schema_version"] == CONTEXT_SCHEMA_VERSION
+    assert list(document["item_mechanics"]) == ["101"]
+    assert "mechanics" not in document["heroes"][0]["tiers"]["I"][0]
     assert document["filters"]["match_mode"] == "ranked"
     assert document["exclusions"] == [{"hero_id": 13, "reason": "incomplete mechanics"}]
     assert document["source_context_sha256"] == calculate_source_context_sha256(
@@ -236,9 +242,23 @@ def test_document_binds_snapshot_coverage_and_fingerprints() -> None:
     validate_strategy_context_document(document)
 
     edited = deepcopy(document)
-    edited["heroes"][0]["hero_description"]["role"] = "Edited"
+    edited["heroes"][0]["hero_mechanics"]["description"]["role"] = "Edited"
     with pytest.raises(StrategyContextError, match="kit basis was edited"):
         validate_strategy_context_document(edited)
+
+    mechanics_edited = deepcopy(document)
+    mechanics_edited["item_mechanics"]["101"]["tampered"] = True
+    with pytest.raises(StrategyContextError, match="item mechanics were edited"):
+        validate_strategy_context_document(mechanics_edited)
+
+    duplicated = deepcopy(document)
+    duplicated["heroes"][0]["abilities"] = []
+    duplicated["heroes"][0]["context_sha256"] = calculate_context_sha256(
+        duplicated["heroes"][0]
+    )
+    duplicated["source_context_sha256"] = calculate_source_context_sha256(duplicated)
+    with pytest.raises(StrategyContextError, match="duplicate hero mechanics"):
+        validate_strategy_context_document(duplicated)
 
 
 def test_narrative_basis_changes_when_claim_bearing_analytics_change() -> None:
@@ -281,5 +301,6 @@ def test_document_rejects_unaccounted_requested_hero() -> None:
             Patch("Patch", 123, "2026-01-01T00:00:00Z"),
             [context],
             manifest=live_manifest,
+            item_mechanics=build_item_mechanics_catalog(assets(), {101}),
             requested_hero_ids={12, 13},
         )

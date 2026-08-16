@@ -6,7 +6,7 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from scripts.generate_narratives import (
     DEFAULT_GENERATION_ATTEMPTS,
@@ -40,18 +40,52 @@ from .narratives import (
     load_narrative_catalog,
 )
 from .presentation import build_presentation
-from .protobuf import describe_guide
+from .protobuf import describe_guide, encode_hero_build
 from .ranks import DEFAULT_RANK_RANGE, Rank, RankRange
 from .recommendation import DecisionState, RecommendationError, recommend
 from .service import GuideError, generate_guides
 from .snapshot import EpochBoundary, EpochSet, MatchMode
 from .steam_identity import local_steam_persona
 from .strategy_context import build_strategy_context_document
+from .tracing import (
+    TRACE_ENVIRONMENT_VARIABLE,
+    TraceError,
+    TraceMode,
+    TraceSession,
+    record_stage_facts,
+    render_trace_summary,
+)
 
 if TYPE_CHECKING:
+    from .purchase_guide import PurchaseGuide
     from .service import GeneratedGuides
 
 DEFAULT_NARRATIVE_PATH = Path("generated/narratives.json")
+
+
+def _trace_mode(value: str) -> TraceMode:
+    try:
+        return TraceMode.parse(value)
+    except TraceError as error:
+        raise argparse.ArgumentTypeError(str(error)) from error
+
+
+def _trace_argument(
+    parser: argparse.ArgumentParser,
+    *,
+    default: TraceMode | str | None,
+) -> None:
+    parser.add_argument(
+        "--trace",
+        type=_trace_mode,
+        choices=tuple(TraceMode),
+        default=default,
+        metavar="{stages,calls}",
+        help=(
+            "write a value-free execution trace "
+            f"(environment: {TRACE_ENVIRONMENT_VARIABLE})"
+        ),
+    )
 
 
 def _common_location_arguments(parser: argparse.ArgumentParser) -> None:
@@ -163,6 +197,8 @@ def build_parser() -> argparse.ArgumentParser:
         prog="deadlock-build-sync",
         description="Generate private analytics-driven Deadlock hero builds.",
     )
+    environment_trace = os.environ.get(TRACE_ENVIRONMENT_VARIABLE) or None
+    _trace_argument(parser, default=environment_trace)
     parser.add_argument("--api-base-url", default=DEFAULT_API_BASE_URL)
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -305,6 +341,32 @@ def build_parser() -> argparse.ArgumentParser:
     restore = subparsers.add_parser("restore", help="restore a backed-up build cache")
     _common_location_arguments(restore)
     restore.add_argument("--latest", action="store_true", required=True)
+
+    trace_summary = subparsers.add_parser(
+        "trace-summary",
+        help="render a trace call tree and per-function inclusive time",
+    )
+    trace_summary.add_argument("path", type=Path, help="trace directory or JSONL file")
+    trace_summary.add_argument(
+        "--max-nodes",
+        type=positive_int,
+        default=200,
+        help="maximum call-tree nodes to print (default: 200)",
+    )
+
+    for command_parser in (
+        sync,
+        status,
+        refresh,
+        recommendation,
+        preview,
+        install,
+        install_artifacts,
+        export_context,
+        restore,
+        trace_summary,
+    ):
+        _trace_argument(command_parser, default=argparse.SUPPRESS)
     return parser
 
 
@@ -379,7 +441,14 @@ def _build_evidence_path(args: argparse.Namespace) -> Path:
 
 def _build_evidence(args: argparse.Namespace) -> tuple[Path, BuildEvidenceCatalog]:
     path = _build_evidence_path(args)
-    return path, load_build_evidence(path)
+    evidence = load_build_evidence(path)
+    record_stage_facts(
+        "evidence.admission",
+        path=path,
+        artifact_id=evidence.artifact_id,
+        hero_count=len(evidence.heroes),
+    )
+    return path, evidence
 
 
 def _write_strategy_context(path: Path, generated: GeneratedGuides) -> None:
@@ -387,10 +456,11 @@ def _write_strategy_context(path: Path, generated: GeneratedGuides) -> None:
         generated.patch,
         generated.contexts,
         manifest=generated.manifest,
+        item_mechanics=generated.item_mechanics,
         requested_hero_ids=_requested_hero_ids(generated),
         exclusions=generated.exclusions,
     )
-    atomic_write_json(path, document)
+    atomic_write_json(path, document, compact=True)
 
 
 def _requested_hero_ids(generated: GeneratedGuides) -> set[int]:
@@ -409,12 +479,52 @@ def _write_policy_artifact(path: Path, generated: GeneratedGuides) -> None:
     atomic_write_json(path, document)
 
 
+def _record_generated_facts(generated: GeneratedGuides) -> None:
+    record_stage_facts(
+        "guide.generation",
+        guide_count=len(generated.guides),
+        policy_count=len(generated.policies),
+        context_count=len(generated.contexts),
+        skipped_count=len(generated.exclusions),
+        snapshot_id=generated.manifest.snapshot_id,
+    )
+
+
+def _describe_preview_guide(
+    guide: PurchaseGuide,
+    generated: GeneratedGuides,
+    *,
+    account_id: int,
+) -> dict[str, Any]:
+    presentation = build_presentation(
+        guide,
+        patch_title=generated.patch.title,
+        patch_published_at=generated.patch.published_at,
+        rank_range=generated.rank_range,
+    )
+    # Preview traverses the pure serializer so it validates the same presentation
+    # boundary as installation without reading or changing Steam data.
+    encode_hero_build(
+        presentation,
+        build_id=1,
+        account_id=account_id,
+        timestamp=0,
+    )
+    return describe_guide(guide, presentation=presentation)
+
+
 def _run_sync(args: argparse.Namespace) -> int:
     artifact_directory = _sync_artifact_directory(args.artifacts)
     evidence_path = _build_evidence_path(args)
     evidence = require_current_build_evidence(
         evidence_path,
         DeadlockApi(args.api_base_url),
+    )
+    record_stage_facts(
+        "evidence.freshness",
+        path=evidence_path,
+        artifact_id=evidence.artifact_id,
+        hero_count=len(getattr(evidence, "heroes", {})),
     )
     location = _location(args)
     if deadlock_is_running():
@@ -427,6 +537,7 @@ def _run_sync(args: argparse.Namespace) -> int:
         hero_query=args.hero,
         all_heroes=args.all or args.hero is None,
     )
+    _record_generated_facts(generated)
     _report_skipped(generated)
     if not generated.guides:
         raise GuideError("no heroes had complete reliable analytics")
@@ -442,6 +553,8 @@ def _run_sync(args: argparse.Namespace) -> int:
     narrative_path = artifact_directory / "narratives.json"
     _write_strategy_context(context_path, generated)
     _write_policy_artifact(policy_path, generated)
+    record_stage_facts("artifact.write", path=context_path)
+    record_stage_facts("artifact.write", path=policy_path)
 
     generation_args = [
         "--input",
@@ -461,6 +574,7 @@ def _run_sync(args: argparse.Namespace) -> int:
         generation_args.append("--force")
     if generate_narratives_main(generation_args) != 0:
         raise NarrativeError("Codex narrative generation failed")
+    record_stage_facts("artifact.write", path=narrative_path)
 
     catalog = load_narrative_catalog(narrative_path)
     guides = [
@@ -478,6 +592,13 @@ def _run_sync(args: argparse.Namespace) -> int:
         snapshot_manifest=generated.manifest.as_dict(),
         expected_hero_ids=set(generated.eligible_hero_ids),
         allow_subset=generated.subset_selected,
+    )
+    record_stage_facts(
+        "steam.install",
+        guide_count=len(result.build_ids),
+        created=result.created,
+        updated=result.updated,
+        snapshot_id=result.snapshot_id,
     )
     print(
         f"Synced {len(result.build_ids)} private guide(s): "
@@ -519,6 +640,11 @@ def _run_status(args: argparse.Namespace) -> int:
         DeadlockApi(args.api_base_url),
         cache_path=cache_path,
         account_id=account_id,
+    )
+    record_stage_facts(
+        "status",
+        row_count=len(report.stages),
+        exit_code=report.exit_code,
     )
     if args.json:
         print(json.dumps(report.as_dict(), indent=2, ensure_ascii=False))
@@ -568,6 +694,12 @@ def _run_refresh_evidence(args: argparse.Namespace) -> int:
     result = offline_main(forwarded)
     if result == 0:
         loaded = load_build_evidence(output)
+        record_stage_facts(
+            "evidence.admission",
+            path=output,
+            artifact_id=loaded.artifact_id,
+            hero_count=len(getattr(loaded, "heroes", {})),
+        )
         print(f"Build evidence: {output} ({loaded.artifact_id})")
     return result
 
@@ -581,6 +713,12 @@ def _run_recommend(args: argparse.Namespace) -> int:
     evidence = require_current_build_evidence(
         evidence_path,
         DeadlockApi(args.api_base_url),
+    )
+    record_stage_facts(
+        "evidence.freshness",
+        path=evidence_path,
+        artifact_id=evidence.artifact_id,
+        hero_count=len(getattr(evidence, "heroes", {})),
     )
     state = DecisionState.from_file(args.state.expanduser().resolve())
     pinned_api = DeadlockApi(
@@ -605,6 +743,7 @@ def _run_preview(args: argparse.Namespace) -> int:
         all_heroes=args.all,
         narrative_catalog=_catalog(args),
     )
+    _record_generated_facts(generated)
     _report_skipped(generated)
     payload = {
         "account_id": location.account_id,
@@ -625,18 +764,19 @@ def _run_preview(args: argparse.Namespace) -> int:
         },
         "policies": [policy.as_dict() for policy in generated.policies],
         "guides": [
-            describe_guide(
+            _describe_preview_guide(
                 guide,
-                presentation=build_presentation(
-                    guide,
-                    patch_title=generated.patch.title,
-                    patch_published_at=generated.patch.published_at,
-                    rank_range=generated.rank_range,
-                ),
+                generated,
+                account_id=location.account_id,
             )
             for guide in generated.guides
         ],
     }
+    record_stage_facts(
+        "preview.output",
+        guide_count=len(generated.guides),
+        policy_count=len(generated.policies),
+    )
     print(json.dumps(payload, indent=2, ensure_ascii=False))
     return 0
 
@@ -656,6 +796,7 @@ def _run_install(args: argparse.Namespace) -> int:
         all_heroes=args.all,
         narrative_catalog=_catalog(args),
     )
+    _record_generated_facts(generated)
     _report_skipped(generated)
     result = install_guides(
         location,
@@ -668,6 +809,13 @@ def _run_install(args: argparse.Namespace) -> int:
         snapshot_manifest=generated.manifest.as_dict(),
         expected_hero_ids=set(generated.eligible_hero_ids),
         allow_subset=generated.subset_selected,
+    )
+    record_stage_facts(
+        "steam.install",
+        guide_count=len(result.build_ids),
+        created=result.created,
+        updated=result.updated,
+        snapshot_id=result.snapshot_id,
     )
     print(
         f"Installed {len(result.build_ids)} private guide(s): "
@@ -711,6 +859,13 @@ def _run_install_artifacts(args: argparse.Namespace) -> int:
         narrative_path,
         build_evidence_path,
     )
+    record_stage_facts(
+        "artifact.admission",
+        path=artifact_directory,
+        guide_count=len(bundle.guides),
+        skipped_count=len(bundle.exclusions),
+        snapshot_id=str(bundle.snapshot_manifest["snapshot_id"]),
+    )
     for hero_id, reason in bundle.exclusions:
         print(f"Skipped hero {hero_id}: {reason}", file=sys.stderr)
     persona = args.persona or local_steam_persona(location.account_id)
@@ -729,6 +884,13 @@ def _run_install_artifacts(args: argparse.Namespace) -> int:
         snapshot_manifest=bundle.snapshot_manifest,
         expected_hero_ids=set(bundle.expected_hero_ids),
         allow_subset=False,
+    )
+    record_stage_facts(
+        "steam.install",
+        guide_count=len(result.build_ids),
+        created=result.created,
+        updated=result.updated,
+        snapshot_id=result.snapshot_id,
     )
     print(
         f"Installed {len(result.build_ids)} reviewed private guide(s): "
@@ -768,17 +930,21 @@ def _run_export_context(args: argparse.Namespace) -> int:
         hero_query=args.hero,
         all_heroes=args.all,
     )
+    _record_generated_facts(generated)
     _report_skipped(generated)
     document = build_strategy_context_document(
         generated.patch,
         generated.contexts,
         manifest=generated.manifest,
+        item_mechanics=generated.item_mechanics,
         requested_hero_ids=_requested_hero_ids(generated),
         exclusions=generated.exclusions,
     )
-    atomic_write_json(args.output, document)
+    atomic_write_json(args.output, document, compact=True)
+    record_stage_facts("artifact.write", path=args.output)
     policy_output = args.policy_output or args.output.with_name("policies.json")
     _write_policy_artifact(policy_output, generated)
+    record_stage_facts("artifact.write", path=policy_output)
     print(f"Exported {len(generated.contexts)} hero context(s): {args.output}")
     print(f"Policies: {policy_output}")
     print(f"Build evidence: {evidence_path} ({evidence.artifact_id})")
@@ -794,9 +960,12 @@ def _run_restore(args: argparse.Namespace) -> int:
     return 0
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = build_parser()
-    args = parser.parse_args(argv)
+def _run_trace_summary(args: argparse.Namespace) -> int:
+    print(render_trace_summary(args.path.expanduser(), max_nodes=args.max_nodes))
+    return 0
+
+
+def _dispatch(args: argparse.Namespace) -> int:
     handlers = {
         "sync": _run_sync,
         "status": _run_status,
@@ -807,9 +976,14 @@ def main(argv: list[str] | None = None) -> int:
         "install-artifacts": _run_install_artifacts,
         "export-context": _run_export_context,
         "restore": _run_restore,
+        "trace-summary": _run_trace_summary,
     }
+    return handlers[args.command](args)
+
+
+def _run_command(args: argparse.Namespace) -> int:
     try:
-        return handlers[args.command](args)
+        return _dispatch(args)
     except (
         ApiError,
         CacheError,
@@ -822,6 +996,23 @@ def main(argv: list[str] | None = None) -> int:
     ) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.trace is None:
+        return _run_command(args)
+
+    session = TraceSession(args.trace, args.command)
+    try:
+        with session:
+            result = _run_command(args)
+            session.finish(result)
+    finally:
+        if session.directory is not None:
+            print(f"Trace: {session.directory}", file=sys.stderr)
+    return result
 
 
 if __name__ == "__main__":

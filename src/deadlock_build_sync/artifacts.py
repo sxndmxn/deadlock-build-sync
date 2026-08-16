@@ -300,9 +300,22 @@ def atomic_write_bytes(path: Path, content: bytes) -> None:
             temporary.unlink(missing_ok=True)
 
 
-def atomic_write_json(path: Path, document: dict[str, Any]) -> None:
-    """Serialize canonical reviewable JSON through the durable artifact boundary."""
-    content = json.dumps(document, indent=2, ensure_ascii=False).encode() + b"\n"
+def atomic_write_json(
+    path: Path,
+    document: dict[str, Any],
+    *,
+    compact: bool = False,
+) -> None:
+    """Serialize JSON through the durable artifact boundary."""
+    if compact:
+        serialized = json.dumps(
+            document,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+    else:
+        serialized = json.dumps(document, indent=2, ensure_ascii=False)
+    content = serialized.encode() + b"\n"
     atomic_write_bytes(path, content)
 
 

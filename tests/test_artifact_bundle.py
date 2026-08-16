@@ -284,6 +284,8 @@ def _write_bundle(root: Path) -> tuple[Path, Path, Path, Path]:
         "hero_id": 12,
         "hero": "Kelvin",
         "hero_mechanics": {"class_name": "hero_kelvin"},
+        "item_mechanics_ids": [],
+        "item_mechanics_sha256": sha256_json({}),
         "snapshot_id": manifest.snapshot_id,
         "policy_id": policy.policy_id,
         "ability_policy": {
@@ -327,6 +329,7 @@ def _write_bundle(root: Path) -> tuple[Path, Path, Path, Path]:
         "filters": {"match_mode": "ranked", "game_mode": "normal"},
         "requested_hero_ids": [12],
         "exclusions": [],
+        "item_mechanics": {},
         "heroes": [hero],
     }
     context["source_context_sha256"] = calculate_source_context_sha256(context)

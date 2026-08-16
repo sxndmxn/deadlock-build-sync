@@ -48,7 +48,7 @@ from .purchase_guide import (
 )
 from .renderer import ProjectionIdentity, project_policy_to_guide
 from .snapshot import EvidenceUnit
-from .strategy_context import build_hero_strategy_context
+from .strategy_context import build_hero_strategy_context, build_item_mechanics_catalog
 
 if TYPE_CHECKING:
     from .api import DeadlockApi, HeroDurationStat, Patch
@@ -70,6 +70,7 @@ class GeneratedGuides:
     guides: list[PurchaseGuide]
     policies: list[BuildPolicy]
     contexts: list[dict[str, Any]]
+    item_mechanics: dict[str, dict[str, Any]]
     skipped_heroes: tuple[str, ...]
     exclusions: tuple[tuple[int, str], ...]
     eligible_hero_ids: frozenset[int]
@@ -510,20 +511,23 @@ def _build_policy(
     return policy, validation
 
 
-def _normalized_matchups(
-    same_lane: list[dict[str, Any]],
-    whole_team: list[dict[str, Any]],
-) -> dict[str, list[dict[str, Any]]]:
-    return {
-        "same_lane": [
-            {**row, "scope": "same_lane", "unit": "hero_enemy_pair"}
-            for row in same_lane
-        ],
-        "whole_enemy_team": [
-            {**row, "scope": "whole_enemy_team", "unit": "hero_enemy_pair"}
-            for row in whole_team
-        ],
-    }
+def _matchups_by_hero(
+    rows: list[dict[str, Any]],
+    *,
+    scope: str,
+) -> dict[int, list[dict[str, Any]]]:
+    grouped: dict[int, list[dict[str, Any]]] = {}
+    for row in rows:
+        hero_id = row.get("hero_id")
+        enemy_hero_id = row.get("enemy_hero_id")
+        if not isinstance(hero_id, int) or not isinstance(enemy_hero_id, int):
+            continue
+        grouped.setdefault(hero_id, []).append({
+            **row,
+            "scope": scope,
+            "unit": "hero_enemy_pair",
+        })
+    return grouped
 
 
 def generate_guides(
@@ -583,6 +587,20 @@ def generate_guides(
     analysis_start = api.analysis_start_timestamp(patch)
     duration_curves = api.hero_stats_by_duration(min_unix_timestamp=analysis_start)
     duration_distribution = _duration_distribution(heroes, duration_curves)
+    same_lane_matchups = _matchups_by_hero(
+        api.hero_counter_stats(
+            min_unix_timestamp=analysis_start,
+            same_lane=True,
+        ),
+        scope="same_lane",
+    )
+    whole_team_matchups = _matchups_by_hero(
+        api.hero_counter_stats(
+            min_unix_timestamp=analysis_start,
+            same_lane=False,
+        ),
+        scope="whole_enemy_team",
+    )
     persona = api.steam_persona(account_id)
 
     inputs_by_hero: list[_HeroInputs] = []
@@ -595,16 +613,6 @@ def generate_guides(
             hero_id=hero_id,
             min_unix_timestamp=analysis_start,
             min_matches=1,
-        )
-        same_lane = api.hero_counter_stats(
-            hero_id=hero_id,
-            min_unix_timestamp=analysis_start,
-            same_lane=True,
-        )
-        whole_team = api.hero_counter_stats(
-            hero_id=hero_id,
-            min_unix_timestamp=analysis_start,
-            same_lane=False,
         )
         ability_path = select_ability_path(ability_rows)
         try:
@@ -667,7 +675,10 @@ def generate_guides(
                 kit,
                 timeline,
                 duration_curve,
-                _normalized_matchups(same_lane, whole_team),
+                {
+                    "same_lane": same_lane_matchups.get(hero_id, []),
+                    "whole_enemy_team": whole_team_matchups.get(hero_id, []),
+                },
                 build_evidence.heroes[hero_id].situational_policy,
             )
         )
@@ -750,6 +761,14 @@ def generate_guides(
         guides=guides,
         policies=policies,
         contexts=contexts,
+        item_mechanics=build_item_mechanics_catalog(
+            assets,
+            {
+                item_id
+                for context in contexts
+                for item_id in context["item_mechanics_ids"]
+            },
+        ),
         skipped_heroes=tuple(skipped_heroes),
         exclusions=tuple(exclusions),
         eligible_hero_ids=frozenset(int(hero["id"]) for hero in heroes),

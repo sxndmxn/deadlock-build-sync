@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from time import monotonic
 from typing import Any
@@ -46,6 +46,7 @@ class NarrativeCase:
 
     hero: dict[str, Any]
     regression: str
+    item_mechanics: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     @property
     def name(self) -> str:
@@ -58,7 +59,9 @@ class NarrativeCase:
         return str(self.hero.get("hero") or self.hero.get("hero_id") or "unknown")
 
 
-def _load_context(path: Path) -> list[dict[str, Any]]:
+def _load_context(
+    path: Path,
+) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
     try:
         document = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
@@ -70,7 +73,13 @@ def _load_context(path: Path) -> list[dict[str, Any]]:
         isinstance(hero, dict) for hero in heroes
     ):
         raise NarrativeEvalError(f"{path} does not contain a valid heroes array")
-    return heroes
+    item_mechanics = document.get("item_mechanics")
+    if not isinstance(item_mechanics, dict) or not all(
+        isinstance(key, str) and isinstance(value, dict)
+        for key, value in item_mechanics.items()
+    ):
+        raise NarrativeEvalError(f"{path} does not contain valid item mechanics")
+    return heroes, item_mechanics
 
 
 def load_cases(
@@ -89,10 +98,8 @@ def load_cases(
     requested = hero_names if hero_names is not None else list(DEFAULT_CASES)
     if not requested or any(not name.strip() for name in requested):
         raise NarrativeEvalError("evaluation hero names must be non-empty strings")
-    heroes_by_name = {
-        str(hero.get("hero") or "").casefold(): hero
-        for hero in _load_context(context_path)
-    }
+    heroes, item_mechanics = _load_context(context_path)
+    heroes_by_name = {str(hero.get("hero") or "").casefold(): hero for hero in heroes}
     missing = [name for name in requested if name.casefold() not in heroes_by_name]
     if missing:
         raise NarrativeEvalError(
@@ -102,6 +109,7 @@ def load_cases(
         NarrativeCase(
             hero=heroes_by_name[name.casefold()],
             regression=DEFAULT_CASES.get(name, "configured case"),
+            item_mechanics=item_mechanics,
         )
         for name in requested
     ]
@@ -125,6 +133,7 @@ def generate_test_case(
         model=model,
         kit_model=kit_model,
         timeout_seconds=timeout_seconds,
+        max_attempts=generate_narratives.DEFAULT_GENERATION_ATTEMPTS,
     )
     return LLMTestCase(
         name=case.name,
@@ -175,7 +184,11 @@ def _generate_staged_response(
             timeout_seconds=timeout_seconds,
         ),
     )
-    synthesis_context = generate_narratives.synthesis_context(case.hero, kit_profile)
+    synthesis_context = generate_narratives.synthesis_context(
+        case.hero,
+        kit_profile,
+        case.item_mechanics,
+    )
     response = generate_narratives.generate_validated_response(
         synthesis_context,
         case.hero,
@@ -185,6 +198,8 @@ def _generate_staged_response(
             prompt=generate_narratives.PROMPT,
             identity_fields=(
                 "hero_id",
+                "snapshot_id",
+                "policy_id",
                 "context_sha256",
                 "narrative_basis_sha256",
             ),
