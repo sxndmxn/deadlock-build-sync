@@ -44,6 +44,7 @@ def manifest() -> SnapshotManifest:
         game_mode="normal",
         rank_range=DEFAULT_RANK_RANGE.as_dict(),
         rank_labels_sha256="ranks",
+        build_tags_sha256="b" * 64,
         patch={"identity": "patch"},
         epochs=EpochSet(boundary, boundary, boundary, boundary),
         outcome_policy=OutcomePolicy(),
@@ -136,6 +137,16 @@ def guide(item: GuideItem) -> PurchaseGuide:
         client_version=123,
         match_mode="ranked",
         rank_identity="Mystic–Emissary",
+        build_tag_ids=(1, 2, 3),
+        build_tag_classes=(
+            "citadel_build_tag_weapon",
+            "citadel_build_tag_damage",
+            "citadel_build_tag_complexity_2",
+        ),
+        build_tag_labels=("Weapon", "Damage", "For Intermediate Players"),
+        build_tag_catalog_sha256="b" * 64,
+        build_archetype="Weapon Damage",
+        as_of_timestamp=200,
     )
 
 

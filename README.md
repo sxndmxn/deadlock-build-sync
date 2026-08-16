@@ -11,6 +11,7 @@ Design evidence and implementation contracts:
 
 - [Strategy-description research](docs/deadlock-strategy-description-research.md) — source evidence, analytical rationale, and build-policy findings.
 - [Build-policy requirements](docs/deadlock-build-policy-requirements.md) — staged normative requirements, acceptance criteria, and verification evidence.
+- [Build usage audit](docs/deadlock-build-usage-audit.md) — live-client findings and the five linked implementation phase briefs.
 
 Every run resolves one client version, freezes one as-of cutoff, and records
 Ranked or Unranked as an explicit cohort identity. Exact response bytes, patch
@@ -26,9 +27,10 @@ The rich output is a typed, snapshot-bound policy graph:
 - A coherent eight-item final-inventory path selected by joint player-match support,
   ordered by observed acquisition time, and kept within the hero's median final net
   worth.
-- Four ten-item price-tier reference menus selected by true player-match adoption and
-  ordered left to right by observed first-ownership net worth. Outcome rate is
-  descriptive only and never selects or orders an item.
+- Four compact price-tier reference menus selected by true player-match adoption and
+  ordered left to right by observed first-ownership net worth. They exclude CORE,
+  require at least 20 buyer matches, and stay sparse when fewer than ten choices pass.
+  Outcome rate is descriptive only and never selects or orders an item.
 - Evidence objects that name their actual unit and claim class. Item adoption uses
   unique first ownership over eligible player-matches; adopter outcome rate remains
   descriptive—not an item effect or causal win-rate improvement.
@@ -39,12 +41,12 @@ The rich output is a typed, snapshot-bound policy graph:
 
 Steam receives five rows in a fixed order: `CORE ITEMS`, `TIER 1`, `TIER 2`,
 `TIER 3`, and `TIER 4`. Only the eight-item core enters Queue. Each tier row is an
-optional ten-item reference menu, not a claim that all ten items should be bought or
-that popularity proves a situational counter. Standard row descriptions stay short,
-and each evidence-backed item shows only its observed purchase window, adopter win
-rate, and player-match pick rate. Deterministic code validates the core against
-components, slots, active bindings, flex unlocks, ability currency, and current
-item/ability qualifiers before serialization.
+optional, non-CORE reference menu of up to ten supported items, not a claim that
+every item should be bought or that popularity proves a situational counter. CORE
+hovers lead with validated hero-specific instructions; all hovers keep timing and
+adoption subordinate and omit raw outcome rates. Deterministic code validates the
+core against components, slots, active bindings, flex unlocks, ability currency, and
+current item/ability qualifiers before serialization.
 
 Codex writes explanations only after those decisions are closed. The narrative
 artifact must copy the exact snapshot, policy, action, evidence, and projection
@@ -85,6 +87,19 @@ player-match analysis pipeline. Its default location is
 incompatible patch, client, asset, rank-label, rank-range, mode, epoch, cutoff, or
 roster identities; it never falls back to aggregate purchase-event rankings.
 
+The offline producer is part of this repository, while its data-science dependencies
+remain optional. Install them only on a machine that refreshes evidence:
+
+```bash
+uv tool install '.[analysis]'
+deadlock-build-sync refresh-evidence
+```
+
+`refresh-evidence` downloads and analyzes the frozen public cohort, writes its run
+under `$XDG_STATE_HOME/deadlock-build-sync/offline`, then atomically hands one
+validated `build-evidence.json` to the artifact directory. It never discovers,
+reads, or writes Steam data.
+
 Steam discovery supports native (`~/.local/share/Steam`), legacy
 (`~/.steam/steam` and `~/.steam/root`), Flatpak, and Snap installations. A
 legacy symlink to the native installation is deduplicated. If more than one
@@ -111,7 +126,8 @@ uv build
 DeepEval exercises the exact production kit-analysis and closed-policy explanation
 stages against representative heroes from the latest exported context. It reports
 the production contract, complete policy/category coverage, evidence-language
-ceiling, and repeated-generation structural stability separately:
+ceiling, projection utilization, and repeated-generation structural stability
+separately:
 
 ```bash
 uv run deepeval test run tests/evals/test_narrative_prompt.py
@@ -135,7 +151,26 @@ events; and monitoring/rollback rules. See the
 
 ## Patch workflow
 
-The normal workflow is one command. Close Deadlock, then run:
+Check the whole artifact chain first. This command is read-only:
+
+```bash
+uv run deadlock-build-sync status
+```
+
+It reports build evidence, strategy context, policies, narratives, the reviewed
+bundle, and installed managed builds separately. Exit 0 means current, exit 2 means
+regeneration is required, and exit 1 means an input is malformed or unavailable.
+When build evidence is stale, refresh it before generation:
+
+```bash
+uv run deadlock-build-sync refresh-evidence
+```
+
+The evidence producer defaults to `--xgb-device auto`: it probes CUDA once, uses the
+GPU when available, and otherwise falls back to CPU. Use `--xgb-device cuda` to require
+CUDA or `--xgb-device cpu` for an intentional CPU run.
+
+The normal installation workflow remains one command. Close Deadlock, then run:
 
 ```bash
 uv run deadlock-build-sync sync
@@ -143,7 +178,7 @@ uv run deadlock-build-sync sync
 
 `sync` discovers the local Steam account, generates every eligible hero from one
 coherent snapshot, builds an ability-only kit profile with `gpt-5.6-luna`, explains
-the closed policy with `gpt-5.6-sol`, validates every artifact, backs up the cache,
+the closed policy with `gpt-5.6-luna`, validates every artifact, backs up the cache,
 and installs the private builds. An all-hero run refuses installation if any pinned
 eligible hero lacks a complete policy. Reusable artifacts live under
 `$XDG_STATE_HOME/deadlock-build-sync/artifacts` (or
@@ -152,6 +187,49 @@ eligible hero lacks a complete policy. Reusable artifacts live under
 `--force-narratives` to regenerate both model stages. A failed model or
 semantic-validation attempt is retried up to three times per stage; change that
 bound with `--max-attempts N`.
+
+For a read-only next-purchase decision after an in-match deviation, supply a
+deidentified state document matching
+[`schemas/decision-state.schema.json`](schemas/decision-state.schema.json):
+
+```json
+{
+  "schema_version": 1,
+  "build_evidence_id": "<64-character artifact id>",
+  "client_version": 6677,
+  "patch_identity": "<patch identity>",
+  "match_mode": "Ranked",
+  "game_mode": "Normal",
+  "hero_id": 12,
+  "clock_s": 900,
+  "average_badge": 90,
+  "liquid_souls": 1250,
+  "purchases": [101],
+  "inventory": {
+    "items": [101],
+    "components": [],
+    "open_slots": 8,
+    "flex_slots": 0,
+    "active_bindings": 0
+  },
+  "learned_abilities": [1, 2],
+  "enemy_hero_ids": [],
+  "enemy_item_ids": [],
+  "allied_hero_ids": [],
+  "objectives": [],
+  "threats": []
+}
+```
+
+```bash
+uv run deadlock-build-sync recommend --state state.json
+```
+
+The result is `buy`, `save`, `end`, or `abstain`, with policy identity, support,
+backoff level, and component-aware incremental cost. It never mutates Steam and
+never treats next-action imitation as an item-effect claim. Explicit `threats`
+remain supported; pinned enemy-item mechanics add only conservative threat labels,
+and unknown items or conflicting situational branches fail closed.
 
 ### What is cached
 
@@ -242,11 +320,11 @@ in-game description.
   fingerprints bound to the complete source manifest.
 
 Every hero requires a supported, mechanically legal eight-item core at or below its
-median final net worth, ten adoption-ranked items in each price tier, complete current
-mechanics, a complete ability projection, a duration estimate or explicit duration
-abstention, and policy validation. Core items may intentionally reappear in their
-native tier row. Every omission receives a structured exclusion; all-hero installation
-fails on any exclusion rather than silently shipping a partial roster.
+median final net worth, at least one adequately supported non-CORE option in each
+price tier, complete current mechanics, a complete ability projection, a duration
+estimate or explicit duration abstention, and policy validation. Every omission
+receives a structured exclusion; all-hero installation fails on any exclusion rather
+than silently shipping a partial roster.
 
 The Codex response is constrained by
 [`schemas/narrative-response.schema.json`](schemas/narrative-response.schema.json).

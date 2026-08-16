@@ -13,7 +13,12 @@
     "tactical_profile": {
       "type": "object",
       "properties": {
-        "primary_role": {"type": "string", "minLength": 3, "maxLength": 100},
+        "primary_role": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 100,
+          "pattern": "[.!?]$"
+        },
         "fight_role": {"type": "string", "minLength": 20, "maxLength": 350},
         "economy_plan": {"type": "string", "minLength": 20, "maxLength": 350},
         "ending_duration_interpretation": {
@@ -64,7 +69,7 @@
         "properties": {
           "node_id": {"type": "string", "minLength": 1},
           "evidence_ref": {"type": "string", "minLength": 1},
-          "instruction": {"type": "string", "minLength": 20, "maxLength": 400}
+          "instruction": {"type": "string", "minLength": 20, "maxLength": 165}
         },
         "required": ["node_id", "evidence_ref", "instruction"],
         "additionalProperties": false

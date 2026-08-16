@@ -49,7 +49,25 @@ def write_catalog(path: Path, **overrides: object) -> None:
         "policy_id": POLICY_ID,
         "context_sha256": CONTEXT_ID,
         "narrative_basis_sha256": BASIS_ID,
+        "tactical_profile": {
+            "primary_role": "control support",
+            "fight_role": "Protect allied pressure and control committed enemies.",
+            "economy_plan": "Take safe income, then group around allied pressure.",
+            "ending_duration_interpretation": {
+                "estimand": "test",
+                "strongest_phase": "test",
+                "weakest_phase": "test",
+                "plan": "Keep converting supported control windows.",
+            },
+        },
         "build_summary": "Play around the closed policy and recalculate on triggers.",
+        "action_explanations": [
+            {
+                "node_id": "core-1",
+                "evidence_ref": "core-evidence",
+                "instruction": "Use Frost Core to establish the default control plan.",
+            }
+        ],
         "category_summaries": [
             {
                 "category": "CORE — DEFAULT QUEUE",
@@ -89,15 +107,66 @@ def test_applies_exact_snapshot_policy_and_projection_narrative(tmp_path: Path) 
         {
             "context_sha256": CONTEXT_ID,
             "narrative_basis_sha256": BASIS_ID,
+            "explainable_actions": [
+                {
+                    "node_id": "core-1",
+                    "action_id": 101,
+                    "action": "Frost Core",
+                    "evidence_ref": "core-evidence",
+                }
+            ],
         },
         PATCH,
         load_narrative_catalog(path),
     )
 
     assert updated.summary.startswith("Play around")
+    assert updated.tactical_profile is not None
+    assert updated.tactical_profile.primary_role == "control support"
+    assert updated.core_items[0].annotation.startswith("Use Frost Core")
     assert updated.categories[0].description.startswith("Use Frost Core")
     assert updated.categories[1].optional
     assert updated.categories[1].items[0].item_id == 102
+
+
+def test_applies_exact_conditional_action_to_optional_hover(tmp_path: Path) -> None:
+    path = tmp_path / "narratives.json"
+    write_catalog(path)
+    document = json.loads(path.read_text(encoding="utf-8"))
+    document["heroes"][0]["action_explanations"].append({
+        "node_id": "situational-1",
+        "evidence_ref": "counter-evidence",
+        "instruction": (
+            "If enemy 7's spirit pressure is material, choose Barrier over Frost "
+            "Core; activate before contact; skip unless observed."
+        ),
+    })
+    path.write_text(json.dumps(document), encoding="utf-8")
+    context = {
+        "context_sha256": CONTEXT_ID,
+        "narrative_basis_sha256": BASIS_ID,
+        "explainable_actions": [
+            {
+                "node_id": "core-1",
+                "action_id": 101,
+                "action": "Frost Core",
+                "evidence_ref": "core-evidence",
+            },
+            {
+                "node_id": "situational-1",
+                "action_id": 102,
+                "action": "Barrier",
+                "evidence_ref": "counter-evidence",
+                "conditional_contract": {"threat": "spirit_pressure"},
+            },
+        ],
+    }
+
+    updated = apply_narrative(guide(), context, PATCH, load_narrative_catalog(path))
+
+    optional = updated.categories[1].items[0]
+    assert optional.annotation.startswith("If enemy 7's spirit pressure")
+    assert updated.tiers[1][1] == optional
 
 
 @pytest.mark.parametrize(
@@ -115,7 +184,18 @@ def test_rejects_changed_context_or_basis(
 ) -> None:
     path = tmp_path / "narratives.json"
     write_catalog(path)
-    context = {"context_sha256": CONTEXT_ID, "narrative_basis_sha256": BASIS_ID}
+    context = {
+        "context_sha256": CONTEXT_ID,
+        "narrative_basis_sha256": BASIS_ID,
+        "explainable_actions": [
+            {
+                "node_id": "core-1",
+                "action_id": 101,
+                "action": "Frost Core",
+                "evidence_ref": "core-evidence",
+            }
+        ],
+    }
     context[field] = value
 
     with pytest.raises(NarrativeError, match=error):

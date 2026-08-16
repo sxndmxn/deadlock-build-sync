@@ -26,6 +26,11 @@ from .cache import (
     install_guides,
     restore_latest,
 )
+from .freshness import (
+    FreshnessError,
+    build_freshness_report,
+    require_current_build_evidence,
+)
 from .narratives import (
     DEFAULT_KIT_MODEL,
     DEFAULT_SYNTHESIS_MODEL,
@@ -34,8 +39,10 @@ from .narratives import (
     apply_narrative,
     load_narrative_catalog,
 )
+from .presentation import build_presentation
 from .protobuf import describe_guide
 from .ranks import DEFAULT_RANK_RANGE, Rank, RankRange
+from .recommendation import DecisionState, RecommendationError, recommend
 from .service import GuideError, generate_guides
 from .snapshot import EpochBoundary, EpochSet, MatchMode
 from .steam_identity import local_steam_persona
@@ -181,6 +188,43 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="directory for reusable context, kit, and narrative artifacts",
     )
+
+    status = subparsers.add_parser(
+        "status",
+        help="check evidence, artifacts, and installed managed builds without changes",
+    )
+    _common_location_arguments(status)
+    status.add_argument(
+        "--artifacts",
+        type=Path,
+        help="artifact directory (default: user state directory)",
+    )
+    status.add_argument(
+        "--json", action="store_true", help="emit machine-readable JSON"
+    )
+    refresh = subparsers.add_parser(
+        "refresh-evidence",
+        help="rebuild current deidentified evidence without reading or writing Steam",
+    )
+    refresh.add_argument("--artifacts", type=Path, help="artifact output directory")
+    refresh.add_argument("--run-id", help="stable offline run identifier")
+    refresh.add_argument("--min-badge", type=positive_int, default=71)
+    refresh.add_argument("--max-badge", type=positive_int, default=115)
+    refresh.add_argument("--since", help="cohort lower timestamp in ISO-8601 form")
+    refresh.add_argument("--as-of", help="frozen upper timestamp in ISO-8601 form")
+    refresh.add_argument(
+        "--xgb-device",
+        choices=("auto", "cpu", "cuda"),
+        default="auto",
+        help="XGBoost device; auto prefers CUDA and falls back to CPU",
+    )
+    recommendation = subparsers.add_parser(
+        "recommend",
+        help="return a read-only next action for a deidentified state file",
+    )
+    recommendation.add_argument("--state", type=Path, required=True)
+    recommendation.add_argument("--build-evidence", type=Path)
+    recommendation.add_argument("--artifacts", type=Path)
     sync.add_argument(
         "--kit-model",
         default=DEFAULT_KIT_MODEL,
@@ -366,11 +410,16 @@ def _write_policy_artifact(path: Path, generated: GeneratedGuides) -> None:
 
 
 def _run_sync(args: argparse.Namespace) -> int:
+    artifact_directory = _sync_artifact_directory(args.artifacts)
+    evidence_path = _build_evidence_path(args)
+    evidence = require_current_build_evidence(
+        evidence_path,
+        DeadlockApi(args.api_base_url),
+    )
     location = _location(args)
     if deadlock_is_running():
         raise CacheError("Deadlock is running; close it before syncing private builds")
 
-    evidence_path, evidence = _build_evidence(args)
     generated = generate_guides(
         _api(args, evidence),
         build_evidence=evidence,
@@ -387,7 +436,6 @@ def _run_sync(args: argparse.Namespace) -> int:
             + ", ".join(generated.skipped_heroes)
         )
 
-    artifact_directory = _sync_artifact_directory(args.artifacts)
     context_path = artifact_directory / "strategy-context.json"
     policy_path = artifact_directory / "policies.json"
     kit_path = artifact_directory / "kit-profiles.json"
@@ -455,6 +503,97 @@ def _run_sync(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_status(args: argparse.Namespace) -> int:
+    artifact_directory = _sync_artifact_directory(args.artifacts)
+    cache_path: Path | None = None
+    account_id: int | None = None
+    try:
+        location = _location(args)
+    except CacheError:
+        pass
+    else:
+        cache_path = location.cache_path
+        account_id = location.account_id
+    report = build_freshness_report(
+        artifact_directory,
+        DeadlockApi(args.api_base_url),
+        cache_path=cache_path,
+        account_id=account_id,
+    )
+    if args.json:
+        print(json.dumps(report.as_dict(), indent=2, ensure_ascii=False))
+    else:
+        label = {
+            0: "CURRENT",
+            1: "INVALID OR UNAVAILABLE — intervention required",
+            2: "STALE — regeneration required",
+        }[report.exit_code]
+        print(label)
+        print(
+            f"Latest: client {report.latest_client_version} • "
+            f"{report.latest_patch.title} ({report.latest_patch.published_at})"
+        )
+        for stage in report.stages:
+            print(f"{stage.name}: {stage.state.value} — {stage.detail}")
+    return report.exit_code
+
+
+def _run_refresh_evidence(args: argparse.Namespace) -> int:
+    try:
+        from .offline.cli import main as offline_main
+    except ImportError as error:
+        raise GuideError(
+            "refresh-evidence requires the analysis dependencies; "
+            "install deadlock-build-sync[analysis]"
+        ) from error
+    output = _sync_artifact_directory(args.artifacts) / "build-evidence.json"
+    forwarded = [
+        "all",
+        "--min-rank",
+        str(args.min_badge),
+        "--max-rank",
+        str(args.max_badge),
+        "--output",
+        str(output),
+        "--xgb-device",
+        args.xgb_device,
+    ]
+    for flag, value in (
+        ("--run-id", args.run_id),
+        ("--since", args.since),
+        ("--as-of", args.as_of),
+    ):
+        if value:
+            forwarded.extend((flag, str(value)))
+    result = offline_main(forwarded)
+    if result == 0:
+        loaded = load_build_evidence(output)
+        print(f"Build evidence: {output} ({loaded.artifact_id})")
+    return result
+
+
+def _run_recommend(args: argparse.Namespace) -> int:
+    evidence_path = (
+        args.build_evidence.expanduser().resolve()
+        if args.build_evidence is not None
+        else _sync_artifact_directory(args.artifacts) / "build-evidence.json"
+    )
+    evidence = require_current_build_evidence(
+        evidence_path,
+        DeadlockApi(args.api_base_url),
+    )
+    state = DecisionState.from_file(args.state.expanduser().resolve())
+    pinned_api = DeadlockApi(
+        args.api_base_url,
+        client_version=evidence.client_version,
+        as_of_timestamp=evidence.as_of_timestamp,
+        epochs=evidence.epochs,
+    )
+    decision = recommend(evidence, state, pinned_api.items())
+    print(json.dumps(decision.as_dict(), indent=2, ensure_ascii=False))
+    return 0
+
+
 def _run_preview(args: argparse.Namespace) -> int:
     location = _location(args)
     evidence_path, evidence = _build_evidence(args)
@@ -485,7 +624,18 @@ def _run_preview(args: argparse.Namespace) -> int:
             "narrative": str(args.narratives) if args.narratives else None,
         },
         "policies": [policy.as_dict() for policy in generated.policies],
-        "guides": [describe_guide(guide) for guide in generated.guides],
+        "guides": [
+            describe_guide(
+                guide,
+                presentation=build_presentation(
+                    guide,
+                    patch_title=generated.patch.title,
+                    patch_published_at=generated.patch.published_at,
+                    rank_range=generated.rank_range,
+                ),
+            )
+            for guide in generated.guides
+        ],
     }
     print(json.dumps(payload, indent=2, ensure_ascii=False))
     return 0
@@ -649,6 +799,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     handlers = {
         "sync": _run_sync,
+        "status": _run_status,
+        "refresh-evidence": _run_refresh_evidence,
+        "recommend": _run_recommend,
         "preview": _run_preview,
         "install": _run_install,
         "install-artifacts": _run_install_artifacts,
@@ -661,7 +814,9 @@ def main(argv: list[str] | None = None) -> int:
         ApiError,
         CacheError,
         GuideError,
+        FreshnessError,
         NarrativeError,
+        RecommendationError,
         OSError,
         ValueError,
     ) as error:

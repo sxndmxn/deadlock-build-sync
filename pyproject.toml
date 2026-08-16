@@ -39,6 +39,18 @@ Issues = "https://github.com/sxndmxn/deadlock-build-sync/issues"
 Repository = "https://github.com/sxndmxn/deadlock-build-sync"
 
 [project.optional-dependencies]
+analysis = [
+  "duckdb==1.5.5",
+  "httpx>=0.28,<0.29",
+  "matplotlib>=3.10,<3.11",
+  "numpy>=2.3,<2.4",
+  "polars>=1.33,<1.34",
+  "pyarrow>=21,<22",
+  "pytz>=2025.2",
+  "scikit-learn>=1.7,<1.8",
+  "scipy>=1.16,<1.17",
+  "xgboost>=3.3,<3.4",
+]
 test = [
   "pytest>=8.3",
 ]
@@ -48,10 +60,20 @@ deadlock-build-sync = "deadlock_build_sync.cli:main"
 
 [dependency-groups]
 dev = [
+  "duckdb==1.5.5",
   "deepeval==4.1.1",
+  "httpx>=0.28,<0.29",
+  "matplotlib>=3.10,<3.11",
+  "numpy>=2.3,<2.4",
+  "polars>=1.33,<1.34",
+  "pyarrow>=21,<22",
   "pytest>=8.3",
+  "pytz>=2025.2",
   "ruff>=0.16.0",
+  "scikit-learn>=1.7,<1.8",
+  "scipy>=1.16,<1.17",
   "ty>=0.0.64",
+  "xgboost>=3.3,<3.4",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -149,7 +171,11 @@ select = ["ALL"]
   "too-many-statements-in-try-clause",
   "raise-within-try", # Validation failures are recovered by the surrounding transaction.
 ]
-"src/deadlock_build_sync/cli.py" = ["print"]
+"src/deadlock_build_sync/cli.py" = [
+  "import-outside-top-level", # Optional analysis dependencies stay lazy.
+  "print",
+  "too-many-statements", # The flat CLI keeps every user command visible in one parser.
+]
 "src/deadlock_build_sync/evaluation.py" = [
   "complex-structure", # Evaluation and rollback gates report each independent failure mode.
   "too-many-branches", # Monitoring retains explicit rollback, refusal, and alert precedence.
@@ -164,6 +190,28 @@ select = ["ALL"]
 ]
 "src/deadlock_build_sync/narratives.py" = [
   "complex-structure", # Artifact admission reports each identity and coverage failure explicitly.
+  "too-many-boolean-expressions",
+  "too-many-branches",
+  "too-many-locals",
+  "too-many-statements",
+]
+"src/deadlock_build_sync/offline/*.py" = [
+  "complex-structure", # Analytical stages keep their computations together for reproducibility.
+  "docstring-missing-exception",
+  "docstring-missing-returns",
+  "hardcoded-sql-expression", # SQL is local and built only from pinned constants/validated integer IDs.
+  "manual-list-comprehension",
+  "print", # The long-running producer emits CLI progress directly.
+  "subprocess-without-shell-equals-true", # Git arguments are fixed and the executable path is resolved.
+  "suspicious-subprocess-import", # Producer records Git identity with a resolved executable and shell disabled.
+  "too-many-arguments",
+  "too-many-locals",
+  "too-many-positional-arguments",
+  "too-many-statements",
+  "too-many-statements-in-try-clause",
+  "type-check-without-type-error", # Malformed artifact values are domain validation failures.
+  "typing-only-first-party-import",
+  "typing-only-standard-library-import",
 ]
 "src/deadlock_build_sync/policy.py" = [
   "complex-structure", # Graph, guard, and legal-state validation are exhaustive by design.
@@ -175,9 +223,13 @@ select = ["ALL"]
   "complex-structure",
   "too-many-locals",
 ]
+"src/deadlock_build_sync/renderer.py" = [
+  "complex-structure", # Projection validates layout and Queue semantics together.
+]
 "src/deadlock_build_sync/strategy_context.py" = [
   "complex-structure", # Artifact admission checks every completeness/fingerprint gate.
   "too-many-arguments", # Closed evidence packet inputs remain explicit at export.
+  "too-many-boolean-expressions", # Tag identity is admitted as one closed contract.
   "too-many-branches", # Validation reports exact malformed artifact conditions.
 ]
 "src/deadlock_build_sync/service.py" = [
@@ -192,6 +244,13 @@ select = ["ALL"]
   "float-equality-comparison",
   "implicit-namespace-package",
   "private-member-access", # Fault-injection tests exercise internal safety boundaries.
+  "pytest-composite-assertion",
+]
+"tests/offline/*.py" = [
+  "assert",
+  "boolean-positional-value-in-call", # Compact fixtures mirror the frozen analytical dataclasses.
+  "float-equality-comparison",
+  "import-private-name", # Unit tests exercise pure producer helpers directly.
   "pytest-composite-assertion",
 ]
 

@@ -12,7 +12,9 @@ from deadlock_build_sync.mechanics import (
     ability_definitions_from_kit,
     build_hero_mechanics,
     classify_item_threat_responses,
+    classify_observed_item_threats,
     purchase_item,
+    schedule_component_path,
     sell_item,
     validate_ability_timeline,
     validate_imbue,
@@ -102,6 +104,46 @@ def test_item_graph_handles_branches_cost_credit_and_component_consumption() -> 
     assert graph.incremental_cash_cost(2, (1,)) == 750
     assert graph.total_tree_investment(2) == 1250
     assert purchase_item(graph, InventoryState((1,)), 2).owned == (2,)
+
+
+def test_component_schedule_moves_an_early_component_before_prior_core() -> None:
+    graph = ItemGraph.from_assets([
+        item(1, "early_component"),
+        item(2, "first_core"),
+        item(3, "late_upgrade", components=["early_component"]),
+    ])
+
+    path = schedule_component_path(
+        graph,
+        (2, 3),
+        {
+            1: (6_000.0, 300.0, 1),
+            2: (9_000.0, 500.0, 2),
+            3: (19_000.0, 1_200.0, 3),
+        },
+    )
+
+    assert path == (1, 2, 3)
+
+
+def test_component_schedule_rebuys_only_after_the_first_copy_is_consumed() -> None:
+    graph = ItemGraph.from_assets([
+        item(1, "shared_component"),
+        item(2, "first_upgrade", components=["shared_component"]),
+        item(3, "second_upgrade", components=["shared_component"]),
+    ])
+
+    path = schedule_component_path(
+        graph,
+        (2, 3),
+        {
+            1: (2_000.0, 100.0, 1),
+            2: (8_000.0, 500.0, 2),
+            3: (16_000.0, 1_000.0, 3),
+        },
+    )
+
+    assert path == (1, 2, 1, 3)
 
 
 @pytest.mark.parametrize(
@@ -253,3 +295,31 @@ def test_threat_classes_require_explicit_item_mechanics(
     asset["description"] = {"desc": description}
 
     assert expected in classify_item_threat_responses(asset)
+
+
+@pytest.mark.parametrize(
+    ("description", "expected"),
+    [
+        ("Restore Health to an ally.", "healing"),
+        ("Gain Weapon Damage.", "bullet_pressure"),
+        ("Gain Spirit Power.", "spirit_pressure"),
+        ("Apply a Stun after a delay.", "control"),
+        ("Teleport to the target.", "mobility_escape"),
+        ("Shield an ally.", "ally_protection"),
+    ],
+)
+def test_observed_enemy_item_threats_require_explicit_mechanics(
+    description: str,
+    expected: str,
+) -> None:
+    asset = item(99, "threat")
+    asset["description"] = {"desc": description}
+
+    assert expected in classify_observed_item_threats(asset)
+
+
+def test_anti_heal_is_not_mislabeled_as_enemy_healing() -> None:
+    asset = item(99, "anti_heal")
+    asset["description"] = {"desc": "Applies healing reduction."}
+
+    assert "healing" not in classify_observed_item_threats(asset)

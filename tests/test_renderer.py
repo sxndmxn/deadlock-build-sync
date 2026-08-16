@@ -1,3 +1,4 @@
+from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -15,6 +16,7 @@ from deadlock_build_sync.policy import (
     PolicyNode,
     ValidationContext,
 )
+from deadlock_build_sync.presentation import build_presentation
 from deadlock_build_sync.protobuf import ProtoField, encode_hero_build, parse_fields
 from deadlock_build_sync.purchase_guide import PurchaseGuide
 from deadlock_build_sync.renderer import (
@@ -141,13 +143,19 @@ def projected_guide(annotation: str | None = None) -> PurchaseGuide:
 
 def _build_details(guide: PurchaseGuide) -> list[ProtoField]:
     build = encode_hero_build(
-        guide,
+        build_presentation(
+            replace(
+                guide,
+                build_tag_ids=(1, 2, 3),
+                build_archetype="Spirit Damage",
+                as_of_timestamp=1_767_225_600,
+            ),
+            patch_title="Patch",
+            patch_published_at="2026-08-08T00:00:00Z",
+        ),
         build_id=2,
         account_id=3,
-        persona="Player",
         timestamp=4,
-        patch_title="Patch",
-        patch_published_at="2026-08-08T00:00:00Z",
     )
     details = next(
         field.value
@@ -207,13 +215,19 @@ def test_description_identifies_snapshot_policy_client_mode_rank_and_claim_limit
     None
 ):
     build = encode_hero_build(
-        projected_guide(),
+        build_presentation(
+            replace(
+                projected_guide(),
+                build_tag_ids=(1, 2, 3),
+                build_archetype="Spirit Damage",
+                as_of_timestamp=1_767_225_600,
+            ),
+            patch_title="Patch",
+            patch_published_at="2026-08-08T00:00:00Z",
+        ),
         build_id=2,
         account_id=3,
-        persona="Player",
         timestamp=4,
-        patch_title="Patch",
-        patch_published_at="2026-08-08T00:00:00Z",
     )
     description = next(
         field.value.decode()
@@ -222,10 +236,10 @@ def test_description_identifies_snapshot_policy_client_mode_rank_and_claim_limit
     )
 
     assert f"Snapshot: {SNAPSHOT}." in description
-    assert "Client: 12345." in description
-    assert "Matchmaking: RANKED" in description
+    assert "client 12345." in description
+    assert "Ranked" in description
     assert "Phantom I [91]–Eternus VI [116]" in description
-    assert "not item effects or causation" in description
+    assert "no causal item effect" in description
 
 
 @pytest.mark.parametrize(

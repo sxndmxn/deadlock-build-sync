@@ -7,6 +7,7 @@ from deadlock_build_sync.purchase_guide import (
     build_purchase_guide,
     choose_adaptive_bucket_increment,
     format_purchase_window,
+    tactical_item_annotation,
     wilson_score_interval,
 )
 
@@ -35,16 +36,22 @@ def evidence_item(
 
 def test_evidence_item_annotation_is_compact_player_facing_copy() -> None:
     assert evidence_item().annotation == (
-        "Purchase window: 4k–14k souls\nWin rate: 49.0%\nPick rate: 80.6%"
+        "PURCHASE WINDOW: 4k–14k souls\nWIN RATE: 49.0%\nPICK RATE: 80.6%"
     )
 
 
 def test_collapsed_and_missing_purchase_windows_remain_readable() -> None:
     assert evidence_item(q25=1_553, q75=2_449).annotation.startswith(
-        "Purchase window: about 2k souls\n"
+        "PURCHASE WINDOW: about 2k souls\n"
     )
+
+
+def test_tactical_copy_keeps_the_complete_stats_block() -> None:
+    item = evidence_item()
+
+    assert tactical_item_annotation("x" * 165, item).endswith(item.annotation)
     assert evidence_item(q25=None, q75=None).annotation.startswith(
-        "Purchase window: unavailable\n"
+        "PURCHASE WINDOW: unavailable\n"
     )
 
 

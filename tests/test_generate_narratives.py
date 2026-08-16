@@ -75,11 +75,26 @@ def packet_and_response() -> tuple[dict[str, Any], dict[str, Any]]:
                 "evidence_ref": "item/102/purchase-events",
                 "claim_class": "descriptive",
                 "language_ceiling": ["observed"],
-                "mechanics_refs": ["item/102"],
+                "mechanics_refs": ["item/102/burst-response"],
                 "annotation": (
-                    "If burst is material, choose Reactive Barrier instead of Frost Core; "
-                    "use before committing; skip unless burst is observed."
+                    "If enemy 7's spirit pressure is material, choose Reactive Barrier "
+                    "instead of Frost Core; use before committing; skip unless observed."
                 ),
+                "conditional_contract": {
+                    "threat": "spirit_pressure",
+                    "item_id": 102,
+                    "item": "Reactive Barrier",
+                    "comparator_item_id": 101,
+                    "comparator_item": "Frost Core",
+                    "enemy_hero_id": 7,
+                    "mechanic_ref": "item/102/burst-response",
+                    "legal_timing": "same observed decision opportunity",
+                    "alternative": "Frost Core or save",
+                    "replacement": "Choose Reactive Barrier instead of Frost Core.",
+                    "execution_mode": "Use before committing.",
+                    "failure_condition": "Skip unless spirit pressure is observed.",
+                    "evidence_ref": "item/102/purchase-events",
+                },
             },
         ],
         "projection": {
@@ -104,7 +119,7 @@ def packet_and_response() -> tuple[dict[str, Any], dict[str, Any]]:
         "context_sha256": "3" * 64,
         "narrative_basis_sha256": "5" * 64,
         "tactical_profile": {
-            "primary_role": "control support",
+            "primary_role": "Control support.",
             "fight_role": "Protect allied pressure and control committed enemies.",
             "economy_plan": "Take safe income, then group when allied pressure is ready.",
             "ending_duration_interpretation": {
@@ -128,8 +143,8 @@ def packet_and_response() -> tuple[dict[str, Any], dict[str, Any]]:
                 "node_id": "counter",
                 "evidence_ref": "item/102/purchase-events",
                 "instruction": (
-                    "If burst is observed, choose Reactive Barrier before committing; "
-                    "skip it unless that threat is material."
+                    "If enemy 7's spirit pressure is observed, choose Reactive Barrier over "
+                    "Frost Core; use before committing; skip unless material."
                 ),
             },
         ],
@@ -151,7 +166,7 @@ def packet_and_response() -> tuple[dict[str, Any], dict[str, Any]]:
 
 
 def test_generator_uses_installer_prompt_version() -> None:
-    assert generate_narratives.PROMPT_VERSION == NARRATIVE_PROMPT_VERSION == 19
+    assert generate_narratives.PROMPT_VERSION == NARRATIVE_PROMPT_VERSION == 22
 
 
 def test_kit_context_excludes_items_outcomes_and_policy() -> None:
@@ -203,11 +218,17 @@ def test_validates_closed_policy_explanation() -> None:
 
     validated = generate_narratives.validate_response(response, packet)
 
-    assert validated["prompt_version"] == 19
-    assert [row["node_id"] for row in validated["action_explanations"]] == [
-        "core",
-        "counter",
-    ]
+    assert validated["prompt_version"] == 22
+
+
+def test_rejects_core_instruction_over_utf8_byte_budget() -> None:
+    packet, response = packet_and_response()
+    response["action_explanations"][0]["instruction"] = (
+        "Use Frost Core " + "é" * 80 + "."
+    )
+
+    with pytest.raises(generate_narratives.GenerationError, match="165-byte"):
+        generate_narratives.validate_response(response, packet)
 
 
 def test_rejects_changed_snapshot_or_policy() -> None:
@@ -253,6 +274,46 @@ def test_rejects_optional_category_without_observable_condition() -> None:
     )
 
     with pytest.raises(generate_narratives.GenerationError, match="optional trigger"):
+        generate_narratives.validate_response(response, packet)
+
+
+@pytest.mark.parametrize(
+    ("instruction", "reason"),
+    [
+        (
+            "If enemy 7's spirit pressure is observed, choose Reactive Barrier over the default; use it; skip unless material.",
+            "comparator",
+        ),
+        (
+            "Against enemy 7's spirit pressure, choose Reactive Barrier over Frost Core; use it; skip unless material.",
+            "trigger",
+        ),
+        (
+            "If enemy 7's spirit pressure is observed, take Reactive Barrier with Frost Core; use it; skip unless material.",
+            "replacement",
+        ),
+        (
+            "If enemy 7's spirit pressure is observed, choose Reactive Barrier over Frost Core; keep observing; skip unless material.",
+            "execution",
+        ),
+        (
+            "If enemy 7's spirit pressure is observed, choose Reactive Barrier over Frost Core; use it while material.",
+            "failure condition",
+        ),
+        (
+            "If enemy 7's spirit pressure and healing are observed, choose Reactive Barrier over Frost Core; use it; skip unless material.",
+            "invented a threat",
+        ),
+    ],
+)
+def test_rejects_incomplete_or_invented_conditional_contract(
+    instruction: str,
+    reason: str,
+) -> None:
+    packet, response = packet_and_response()
+    response["action_explanations"][1]["instruction"] = instruction
+
+    with pytest.raises(generate_narratives.GenerationError, match=reason):
         generate_narratives.validate_response(response, packet)
 
 
@@ -302,6 +363,23 @@ def test_rejects_changed_ending_duration_estimand() -> None:
     ] = "MID (30–45m)"
 
     with pytest.raises(generate_narratives.GenerationError, match="strongest_phase"):
+        generate_narratives.validate_response(response, packet)
+
+
+@pytest.mark.parametrize(
+    "primary_role",
+    [
+        "Protect allies and control committed enemies",
+        "Protect allies or56.",
+        "Protect allies 和 control enemies.",
+        "Protect allies\u2060 and control enemies.",
+    ],
+)
+def test_rejects_incomplete_or_corrupted_primary_role(primary_role: str) -> None:
+    packet, response = packet_and_response()
+    response["tactical_profile"]["primary_role"] = primary_role
+
+    with pytest.raises(generate_narratives.GenerationError, match=r"primary role"):
         generate_narratives.validate_response(response, packet)
 
 

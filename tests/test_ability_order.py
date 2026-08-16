@@ -26,12 +26,12 @@ def test_selects_default_from_all_reached_prefixes() -> None:
     assert selected is not None
     assert selected.ability_ids == PATH_A
     assert selected.matches == 199
-    assert selected.pick_rate == pytest.approx(199 / 699)
-    assert selected.win_rate == pytest.approx(134 / 199)
+    assert selected.final_branch_support_share == pytest.approx(199 / 699)
+    assert selected.observed_final_branch_outcome_rate == pytest.approx(134 / 199)
     assert selected.complete_path_matches == 199
     assert selected.decision_support[0] == 699
     assert selected.annotation == (
-        "State-conditioned projection | final support 199 | observed outcome rate 67.3%"
+        "State-composed observed default • tail support n=199 • observational."
     )
 
 
@@ -59,3 +59,20 @@ def test_pools_equivalent_reached_states_and_keeps_sparse_legal_tail() -> None:
     assert selected.ability_ids == PATH_A
     assert selected.decision_support[-1] == 3
     assert selected.selection == "MOST_SUPPORTED_LEGAL_STATE"
+
+
+def test_state_composed_label_is_truthful_when_no_exact_path_was_observed() -> None:
+    observed = (
+        (1, 3, 3, 2, 4, 2, 4, 3, 2, 1, 4, 4, 3, 1, 2, 1),
+        (1, 3, 3, 2, 1, 2, 4, 4, 2, 4, 3, 1, 2, 3, 4, 1),
+        (3, 4, 1, 1, 2, 3, 4, 4, 2, 2, 3, 3, 1, 2, 1, 4),
+    )
+    selected = select_ability_path([
+        path(*ability_ids, matches=matches, wins=matches // 2)
+        for ability_ids, matches in zip(observed, (60, 60, 66), strict=True)
+    ])
+
+    assert selected is not None
+    assert selected.ability_ids not in observed
+    assert "State-composed observed default" in selected.annotation
+    assert "complete path" not in selected.annotation.casefold()

@@ -6,6 +6,7 @@ from collections import Counter
 from typing import TYPE_CHECKING, Any
 
 from .artifacts import FingerprintLayers
+from .build_tags import AXIS_CLASSES, COMPLEXITY_CLASS, FUNCTION_CLASSES
 from .mechanics import build_hero_mechanics, extract_asset_mechanics
 from .power_curve import summarize_ending_duration_profile
 from .purchase_guide import format_purchase_window
@@ -17,14 +18,45 @@ if TYPE_CHECKING:
     from .purchase_guide import PurchaseGuide
     from .snapshot import SnapshotManifest
 
-CONTEXT_SCHEMA_VERSION = 7
+CONTEXT_SCHEMA_VERSION = 8
 KIT_BASIS_SCHEMA_VERSION = 2
-NARRATIVE_BASIS_SCHEMA_VERSION = 5
+NARRATIVE_BASIS_SCHEMA_VERSION = 6
 TIER_LABELS = {1: "I", 2: "II", 3: "III", 4: "IV"}
 
 
 class StrategyContextError(ValueError):
     """Raised when an exported strategy context is malformed or was edited."""
+
+
+def _validate_build_identity(entry: dict[str, Any], manifest: dict[str, Any]) -> None:
+    projection = entry.get("projection")
+    build = projection.get("build") if isinstance(projection, dict) else None
+    if not isinstance(build, dict):
+        raise StrategyContextError("strategy context has no build identity")
+    ids = build.get("tag_ids")
+    classes = build.get("tag_classes")
+    labels = build.get("tag_labels")
+    valid = (
+        isinstance(ids, list)
+        and len(ids) == 3
+        and all(isinstance(value, int) and value > 0 for value in ids)
+        and len(set(ids)) == 3
+        and isinstance(classes, list)
+        and len(classes) == 3
+        and isinstance(labels, list)
+        and len(labels) == 3
+    )
+    if not valid:
+        raise StrategyContextError("strategy context has invalid build tags")
+    if (
+        classes[0] not in AXIS_CLASSES
+        or classes[1] not in FUNCTION_CLASSES
+        or classes[2] != COMPLEXITY_CLASS
+        or build.get("tag_catalog_sha256") != manifest.get("build_tags_sha256")
+        or not isinstance(build.get("archetype"), str)
+        or not build["archetype"].strip()
+    ):
+        raise StrategyContextError("strategy context has invalid build tags")
 
 
 def _canonical_hash(value: Any) -> str:
@@ -159,6 +191,7 @@ def validate_strategy_context_document(document: dict[str, Any]) -> None:
             raise StrategyContextError(
                 f"strategy context snapshot differs for {hero_name}"
             )
+        _validate_build_identity(entry, manifest)
         if entry.get("kit_basis_sha256") != calculate_kit_basis_sha256(entry):
             raise StrategyContextError(
                 f"strategy context kit basis was edited for {hero_name}; "
@@ -230,9 +263,48 @@ def _ability_policy(
         "all_valid_telemetry_appearances": path.cohort_matches,
         "complete_path_appearances": path.complete_path_matches,
         "final_branch_support": path.matches,
-        "observed_final_branch_outcome_rate": path.win_rate,
+        "observed_final_branch_outcome_rate": path.observed_final_branch_outcome_rate,
         "steps": steps,
     }
+
+
+def _explainable_actions(
+    policy: BuildPolicy | None,
+    assets_by_id: dict[int, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    if policy is None:
+        return []
+    claims = {claim.claim_id: claim for claim in policy.evidence}
+    counter_cards = {card.evidence_ref: card for card in policy.counter_cards}
+    result: list[dict[str, Any]] = []
+    for node in policy.nodes:
+        if node.evidence_ref is None:
+            continue
+        claim = claims[node.evidence_ref]
+        action_id = node.item_id if node.item_id is not None else node.ability_id
+        asset = assets_by_id.get(action_id or -1, {})
+        action: dict[str, Any] = {
+            "node_id": node.node_id,
+            "kind": node.kind.value,
+            "action_id": action_id,
+            "action": str(asset.get("name") or action_id or node.node_id),
+            "evidence_ref": node.evidence_ref,
+            "claim_class": claim.claim_class.value,
+            "language_ceiling": sorted(claim.language_ceiling),
+            "mechanics_refs": list(claim.mechanics_refs),
+            "annotation": node.annotation,
+        }
+        card = counter_cards.get(node.evidence_ref)
+        if card is not None:
+            contract = card.as_dict()
+            comparator = assets_by_id.get(card.comparator_item_id, {})
+            contract["item"] = str(asset.get("name") or f"Item {card.item_id}")
+            contract["comparator_item"] = str(
+                comparator.get("name") or f"Item {card.comparator_item_id}"
+            )
+            action["conditional_contract"] = contract
+        result.append(action)
+    return result
 
 
 def _ending_duration_evidence(
@@ -334,32 +406,16 @@ def build_hero_strategy_context(
         tiers[TIER_LABELS[tier]] = tier_items
 
     ending_profile = _ending_duration_evidence(duration_curve, duration_distribution)
-    claims = (
-        {claim.claim_id: claim for claim in policy.evidence}
-        if policy is not None
-        else {}
-    )
-    explainable_actions = []
-    if policy is not None:
-        for node in policy.nodes:
-            if node.evidence_ref is None:
-                continue
-            claim = claims[node.evidence_ref]
-            action_id = node.item_id if node.item_id is not None else node.ability_id
-            asset = assets_by_id.get(action_id or -1, {})
-            explainable_actions.append({
-                "node_id": node.node_id,
-                "kind": node.kind.value,
-                "action_id": action_id,
-                "action": str(asset.get("name") or action_id or node.node_id),
-                "evidence_ref": node.evidence_ref,
-                "claim_class": claim.claim_class.value,
-                "language_ceiling": sorted(claim.language_ceiling),
-                "mechanics_refs": list(claim.mechanics_refs),
-                "annotation": node.annotation,
-            })
+    explainable_actions = _explainable_actions(policy, assets_by_id)
     projected = projection or guide
     projection_context = {
+        "build": {
+            "archetype": projected.build_archetype,
+            "tag_ids": list(projected.build_tag_ids),
+            "tag_classes": list(projected.build_tag_classes),
+            "tag_labels": list(projected.build_tag_labels),
+            "tag_catalog_sha256": projected.build_tag_catalog_sha256,
+        },
         "categories": [
             {
                 "name": category.name,
@@ -379,8 +435,9 @@ def build_hero_strategy_context(
             for category in projected.rendered_categories
         ],
         "semantics": (
-            "CORE ITEMS is the only non-optional Queue row. TIER 1–4 are optional "
-            "adoption reference menus and never automatic purchases."
+            "CORE ITEMS is the component-expanded non-optional Queue path. "
+            "TIER 1–4 are optional adoption reference menus and never automatic "
+            "purchases."
         ),
     }
     context: dict[str, Any] = {
@@ -397,6 +454,9 @@ def build_hero_strategy_context(
             "selection": "highest joint-support legal eight-item final inventory within median final net worth",
             "item_ids_in_observed_acquisition_order": [
                 item.item_id for item in guide.core_items
+            ],
+            "component_expanded_purchase_path": [
+                item.item_id for item in (guide.core_purchase_items or guide.core_items)
             ],
             "joint_player_matches": guide.core_joint_matches,
             "joint_share": guide.core_joint_share,
@@ -434,7 +494,7 @@ def build_hero_strategy_context(
             "Observed adopter outcomes and ending-duration profiles are descriptive associations, not item effects or live power curves.",
             "Ability actions use reached-state support and exact legal levels; price tiers are not ability quarters.",
             "Only mechanics-backed, state-observable policy branches may be explained.",
-            "CORE ITEMS is the only automatic Queue; TIER 1–4 are optional reference menus and do not prove a situational trigger.",
+            "CORE ITEMS is the component-expanded automatic Queue path; TIER 1–4 are optional reference menus and do not prove a situational trigger.",
             "Do not invent mechanics, numeric effects, threats, combos, or matchups absent from this packet.",
         ],
     }

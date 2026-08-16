@@ -549,14 +549,14 @@ The key words **MUST**, **MUST NOT**, **REQUIRED**, **SHOULD**, **SHOULD NOT**, 
 - **Requirement:** For each hero, production **MUST** choose the highest-joint-support
   legal eight-item reconstructed final-inventory candidate whose catalog investment does
   not exceed the hero's cohort median final net worth. The core **MUST** be ordered by
-  median first-ownership time. Each Tier I–IV menu **MUST** contain the ten items with
-  highest unique player-match adoption, then display them left to right by median valid
-  pre-purchase net worth, median time, and item ID, with missing net worth last. Outcome
-  rate **MUST NOT** select or order items. Core duplication in a native tier menu is
-  intentional.
-- **Acceptance:** Fixtures prove exact 8/10/10/10/10 cardinality, budget fallback,
-  deterministic ties, net-worth ordering, missing-value placement, and outcome
-  independence.
+  median first-ownership time. Each Tier I–IV menu **MUST** exclude CORE, require at
+  least 20 adopting player-matches, select up to ten items by unique player-match
+  adoption, then display them left to right by median valid pre-purchase net worth,
+  median time, and item ID, with missing net worth last. Outcome rate **MUST NOT**
+  select or order items, and weak items **MUST NOT** be added as filler.
+- **Acceptance:** Fixtures prove an exact eight-item core, one-through-ten optional-row
+  cardinality, CORE disjointness, support and budget fallback, deterministic ties,
+  net-worth ordering, missing-value placement, and outcome independence.
 - **Proof:** Build-evidence selection, service projection, and renderer tests.
 - **Dependencies:** REQ-ANA-001, REQ-ANA-004, REQ-ANA-005, REQ-MEC-004, REQ-MEC-007.
 
@@ -702,13 +702,22 @@ The key words **MUST**, **MUST NOT**, **REQUIRED**, **SHOULD**, **SHOULD NOT**, 
 - **Priority/stage:** `P0`
 - **Status:** `Verified`
 - **Requirement:** `CORE ITEMS` **MUST** be the first and only non-optional category and
-  contain exactly the eight-item coherent default path. `TIER 1` through `TIER 4`
-  **MUST** follow in order, each marked optional and containing exactly ten adoption
-  reference items. Reference items **MUST NOT** all enter Queue. Prose such as “choose
-  one” is not an executable substitute.
+  contain the component-expanded purchase path that realizes the coherent eight-item
+  final inventory. The complete row **MUST** be scheduled by observed first-ownership
+  net worth subject to hard legality constraints. Required components **MUST** precede
+  their parents, final items **MUST** retain their evidence order, and no item card
+  **MAY** appear more than once. A final-inventory candidate that requires a component
+  rebuy is ineligible for the static Steam row. `TIER 1` through `TIER 4` **MUST**
+  follow in order,
+  each marked optional and containing up to ten adoption reference items, with fewer
+  when evidence is sparse. Every tier item **MUST** be disjoint from the complete CORE
+  purchase path and **MUST** have at least 20 adopter matches. Reference items **MUST
+  NOT** all enter Queue. Prose such as “choose one” is not an executable substitute.
 - **Research basis:** [Machine semantics before prose](deadlock-strategy-description-research.md#machine-semantics-before-prose), F-09.
-- **Acceptance:** Decoded output shows optional flags and a default Queue that does not
-  contain all alternatives.
+- **Acceptance:** Decoded output shows optional flags, timing-prioritized left-to-right
+  order, every required component before its parent, legal capacity/active counts,
+  no repeated CORE item, no CORE-path item in an optional row, and a default Queue
+  that does not contain all alternatives.
 - **Proof:** Protobuf field and Queue-projection tests.
 - **Dependencies:** REQ-POL-003.
 
@@ -771,15 +780,19 @@ The key words **MUST**, **MUST NOT**, **REQUIRED**, **SHOULD**, **SHOULD NOT**, 
   choice/replacement, proactive/reactive execution where relevant, and failure condition
   within Valve UI limits. Optional tier reference menus **MUST** instead identify their
   non-automatic reference semantics and **MUST NOT** invent a trigger from adoption.
-  Evidence-backed standard-layout tiles **MUST** show only the observed 25th–75th
-  percentile first-ownership net-worth window rounded to the nearest 1,000 souls, the
-  observed outcome rate among adopters, and first-ownership adoption among eligible
-  player-matches. Denominators, coverage, medians, and statistical caveats belong in the
-  evidence artifact and guide description/sidecar, not duplicated on every tile.
+  Evidence-backed CORE tiles **MUST** lead with the exact validated hero-specific action
+  instruction when the complete annotation fits. Every item **MUST** retain the compact
+  `PURCHASE WINDOW`, `WIN RATE`, and `PICK RATE` analytics block. `WIN RATE` is the raw
+  buyer outcome and **MUST NOT** be described causally; `PICK RATE` is unique
+  hero-player-match purchase adoption. Optional reference tiles **MUST NOT** repeat
+  mechanics already visible in Valve's native tooltip. Denominators, coverage, medians,
+  and statistical caveats belong in the evidence artifact and guide
+  description/sidecar, not duplicated on every tile.
 - **Research basis:** [Keep the menu small and actionable](deadlock-strategy-description-research.md#keep-the-menu-small-and-actionable).
-- **Acceptance:** Golden annotations fit length/encoding limits, standard item tiles use
-  the three-line `Purchase window` / `Win rate` / `Pick rate` presentation, and
-  executable policy branches preserve their required tactical fields.
+- **Acceptance:** Generated CORE instructions fit 165 UTF-8 bytes, complete annotations
+  fit 240 bytes, CORE action identity is exact when included, the complete three-line
+  stats block is never displaced, and unreviewed optional hovers contain no generated
+  mechanics description.
 - **Proof:** Renderer snapshot and Unicode/length tests.
 - **Dependencies:** REQ-ANA-012.
 
@@ -1262,7 +1275,7 @@ model_eval:
   framework: DeepEval-with-production-validators
   prompt_version: 18
   kit_prompt_version: 3
-  models: [gpt-5.6-luna, gpt-5.6-sol]
+  models: [gpt-5.6-luna]
   reliability: 10-of-10-cases-and-30-of-30-production-budget-repetitions-admitted
 wheel_smoke:
   status: passed

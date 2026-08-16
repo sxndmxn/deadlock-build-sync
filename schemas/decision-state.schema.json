@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/sxndmxn/deadlock-build-sync/schemas/decision-state.schema.json",
+  "title": "Deadlock build recommendation decision state",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "build_evidence_id",
+    "client_version",
+    "patch_identity",
+    "match_mode",
+    "game_mode",
+    "hero_id",
+    "clock_s",
+    "average_badge",
+    "liquid_souls",
+    "purchases",
+    "inventory",
+    "learned_abilities"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "build_evidence_id": {"$ref": "#/$defs/sha256"},
+    "client_version": {"type": "integer", "minimum": 1},
+    "patch_identity": {"$ref": "#/$defs/sha256"},
+    "match_mode": {"type": "string", "minLength": 1},
+    "game_mode": {"type": "string", "minLength": 1},
+    "hero_id": {"type": "integer", "minimum": 1},
+    "clock_s": {"type": "integer", "minimum": 0},
+    "average_badge": {"type": "integer", "minimum": 1},
+    "liquid_souls": {"type": "integer", "minimum": 0},
+    "purchases": {"$ref": "#/$defs/id_list"},
+    "inventory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "items",
+        "components",
+        "open_slots",
+        "flex_slots",
+        "active_bindings"
+      ],
+      "properties": {
+        "items": {"$ref": "#/$defs/unique_id_list"},
+        "components": {"$ref": "#/$defs/unique_id_list"},
+        "open_slots": {"type": "integer", "minimum": 0},
+        "flex_slots": {"type": "integer", "minimum": 0},
+        "active_bindings": {"type": "integer", "minimum": 0, "maximum": 4}
+      }
+    },
+    "learned_abilities": {"$ref": "#/$defs/unique_id_list"},
+    "enemy_hero_ids": {"$ref": "#/$defs/unique_id_list"},
+    "enemy_item_ids": {"$ref": "#/$defs/unique_id_list"},
+    "allied_hero_ids": {"$ref": "#/$defs/unique_id_list"},
+    "objectives": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "uniqueItems": true
+    },
+    "threats": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "healing",
+          "bullet_pressure",
+          "spirit_pressure",
+          "control",
+          "mobility_escape",
+          "ally_protection",
+          "active_slot_burden"
+        ]
+      },
+      "uniqueItems": true
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "id_list": {
+      "type": "array",
+      "items": {"type": "integer", "minimum": 1}
+    },
+    "unique_id_list": {
+      "type": "array",
+      "items": {"type": "integer", "minimum": 1},
+      "uniqueItems": true
+    }
+  }
+}

@@ -48,6 +48,7 @@ def _manifest(evidence: dict[str, Any], raw_evidence: bytes) -> SnapshotManifest
         game_mode="normal",
         rank_range=rank_range,
         rank_labels_sha256="a" * 64,
+        build_tags_sha256="b" * 64,
         patch=PATCH.as_dict(),
         epochs=EpochSet(boundary, boundary, boundary, boundary),
         outcome_policy=OutcomePolicy(),
@@ -68,7 +69,7 @@ def _manifest(evidence: dict[str, Any], raw_evidence: bytes) -> SnapshotManifest
                 {
                     "artifact_id": evidence["artifact_id"],
                     "hero_count": 1,
-                    "method": "reconstructed-final-inventory-v2",
+                    "method": "reconstructed-final-inventory-v3",
                 },
                 datetime.now(UTC).isoformat(),
                 hashlib.sha256(raw_evidence).hexdigest(),
@@ -144,7 +145,21 @@ def _projection() -> dict[str, Any]:
                 for offset in range(count)
             ],
         })
-    return {"categories": rows, "semantics": "CORE only; tiers are optional."}
+    return {
+        "build": {
+            "archetype": "Weapon Damage",
+            "tag_ids": [1, 2, 3],
+            "tag_classes": [
+                "citadel_build_tag_weapon",
+                "citadel_build_tag_damage",
+                "citadel_build_tag_complexity_2",
+            ],
+            "tag_labels": ["Weapon", "Damage", "For Intermediate Players"],
+            "tag_catalog_sha256": "b" * 64,
+        },
+        "categories": rows,
+        "semantics": "CORE only; tiers are optional.",
+    }
 
 
 def _build_evidence() -> dict[str, Any]:
@@ -177,13 +192,14 @@ def _build_evidence() -> dict[str, Any]:
             })
     boundary = EpochBoundary(PATCH.identity, 100)
     payload = {
-        "schema_version": 1,
+        "schema_version": 2,
         "producer": "fixture",
         "method": {
-            "version": "reconstructed-final-inventory-v2",
+            "version": "reconstructed-final-inventory-v3",
             "core_item_count": 8,
             "core_candidate_limit": 64,
             "minimum_core_support": 20,
+            "minimum_tier_support": 20,
             "tier_item_count": 10,
         },
         "cohort": {
@@ -213,6 +229,43 @@ def _build_evidence() -> dict[str, Any]:
                     }
                 ],
                 "items": items,
+                "sequence_policy": {
+                    "version": 3,
+                    "minimum_support": 20,
+                    "production_model": "deterministic_backoff",
+                    "component_expanded_default_path": list(range(1001, 1009)),
+                    "transitions": [
+                        {
+                            "level": "popularity",
+                            "first_item_id": 0,
+                            "previous_item_id": 0,
+                            "position": 0,
+                            "next_item_id": 1001,
+                            "support": 50,
+                            "context_support": 100,
+                        }
+                    ],
+                    "evaluation": {"chronological_fold": "test"},
+                    "challenger": {
+                        "evaluated": True,
+                        "passed": False,
+                        "promoted": False,
+                    },
+                },
+                "situational_policy": {
+                    "version": 1,
+                    "threat_vocabulary": [
+                        "active_slot_burden",
+                        "ally_protection",
+                        "bullet_pressure",
+                        "control",
+                        "healing",
+                        "mobility_escape",
+                        "spirit_pressure",
+                    ],
+                    "branches": [],
+                    "abstentions": ["No branch passed every gate."],
+                },
             }
         ],
     }
@@ -254,6 +307,15 @@ def _write_bundle(root: Path) -> tuple[Path, Path, Path, Path]:
             "core_target_cost": 27_200,
         },
         "projection": _projection(),
+        "explainable_actions": [
+            {
+                "node_id": f"core-{index}",
+                "action_id": item_id,
+                "action": f"Item {item_id}",
+                "evidence_ref": f"core-evidence-{index}",
+            }
+            for index, item_id in enumerate(range(1001, 1009), start=1)
+        ],
     }
     hero["kit_basis_sha256"] = calculate_kit_basis_sha256(hero)
     hero["narrative_basis_sha256"] = calculate_narrative_basis_sha256(hero)
@@ -294,7 +356,22 @@ def _write_bundle(root: Path) -> tuple[Path, Path, Path, Path]:
                 "policy_id": policy.policy_id,
                 "context_sha256": hero["context_sha256"],
                 "narrative_basis_sha256": hero["narrative_basis_sha256"],
+                "tactical_profile": {
+                    "primary_role": "control support",
+                    "fight_role": "Control committed fights around allied pressure.",
+                    "economy_plan": "Take safe income before grouping for objectives.",
+                },
                 "build_summary": "Use the reviewed coherent core.",
+                "action_explanations": [
+                    {
+                        "node_id": f"core-{index}",
+                        "evidence_ref": f"core-evidence-{index}",
+                        "instruction": (
+                            f"Use Item {item_id} at its observed place in the core."
+                        ),
+                    }
+                    for index, item_id in enumerate(range(1001, 1009), start=1)
+                ],
                 "category_summaries": [
                     {"category": name, "summary": f"Reviewed summary for {name}."}
                     for name in ("CORE ITEMS", "TIER 1", "TIER 2", "TIER 3", "TIER 4")
@@ -334,13 +411,19 @@ def test_loads_exact_reviewed_bundle_without_analytics_refetch(tmp_path: Path) -
     ]
     assert guide.summary == "Use the reviewed coherent core."
     assert guide.rendered_categories[0].description == (
-        "Automatic purchase path, purchased left to right."
+        "AUTO QUEUE • Default path, buy left→right."
     )
     assert guide.rendered_categories[1].description == (
-        "Optional choices, ordered left to right by observed purchase window."
+        "Excluded from Queue • Choose deliberately."
     )
     assert guide.rendered_categories[0].items[0].annotation == (
-        "Purchase window: 4k–14k souls\nWin rate: 50.0%\nPick rate: 80.0%"
+        "Use Item 1001 at its observed place in the core.\n"
+        "PURCHASE WINDOW: 4k–14k souls\n"
+        "WIN RATE: 50.0%\n"
+        "PICK RATE: 80.0%"
+    )
+    assert guide.rendered_categories[1].items[0].annotation == (
+        "PURCHASE WINDOW: 4k–14k souls\nWIN RATE: 50.0%\nPICK RATE: 80.0%"
     )
     assert guide.ability_path is not None
     assert len(guide.ability_path.ability_ids) == 16

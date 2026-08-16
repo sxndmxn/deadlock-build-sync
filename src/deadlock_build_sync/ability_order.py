@@ -22,8 +22,8 @@ class AbilityPath:
     selection: str = "MOST_SUPPORTED_LEGAL_STATE"
 
     @property
-    def pick_rate(self) -> float:
-        """Final-branch support share for legacy callers.
+    def final_branch_support_share(self) -> float:
+        """Final-branch support divided by valid telemetry appearances.
 
         Returns:
             Selected final decision support divided by valid telemetry appearances.
@@ -32,8 +32,8 @@ class AbilityPath:
         return self.matches / self.cohort_matches if self.cohort_matches else 0.0
 
     @property
-    def win_rate(self) -> float:
-        """Descriptive outcome rate for the selected final continuation.
+    def observed_final_branch_outcome_rate(self) -> float:
+        """Descriptive outcome rate for the final continuation.
 
         Returns:
             Raw wins divided by support.
@@ -42,10 +42,20 @@ class AbilityPath:
         return self.wins / self.matches if self.matches else 0.0
 
     @property
+    def minimum_decision_support(self) -> int:
+        """Support at the weakest reached decision in the projection."""
+        return min(self.decision_support, default=self.matches)
+
+    @property
     def annotation(self) -> str:
+        prefix = (
+            "Low-support tail • "
+            if self.minimum_decision_support < LOW_ABILITY_DECISION_SUPPORT
+            else ""
+        )
         return (
-            f"State-conditioned projection | final support {self.matches:,} | "
-            f"observed outcome rate {self.win_rate * 100:.1f}%"
+            f"{prefix}State-composed observed default • tail support "
+            f"n={self.matches:,} • observational."
         )
 
 

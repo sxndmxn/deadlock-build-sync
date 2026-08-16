@@ -1,6 +1,8 @@
 import struct
+from dataclasses import replace
 
 from deadlock_build_sync.ability_order import AbilityPath
+from deadlock_build_sync.presentation import BuildPresentation, build_presentation
 from deadlock_build_sync.protobuf import (
     MANAGED_MARKER,
     encode_hero_build,
@@ -15,17 +17,34 @@ from deadlock_build_sync.purchase_guide import GuideItem, PurchaseGuide, Purchas
 def sample_guide() -> PurchaseGuide:
     window = PurchaseWindow(5000, 10000, 100, 60, 0.6, 0.5)
     item = GuideItem(123, "Test Item", 1, 200, 0.55, 0.48, 1.0, (window,))
-    return PurchaseGuide(12, "Kelvin", "hero_kelvin", {1: (item,), 2: (), 3: (), 4: ()})
+    return PurchaseGuide(
+        12,
+        "Kelvin",
+        "hero_kelvin",
+        {1: (item,), 2: (), 3: (), 4: ()},
+        build_tag_ids=(1, 2, 3),
+        build_archetype="Spirit Damage",
+        as_of_timestamp=1_767_225_600,
+        client_version=123,
+        match_mode="ranked",
+    )
+
+
+def presentation(
+    guide: PurchaseGuide, patch_title: str = "Test Patch"
+) -> BuildPresentation:
+    return build_presentation(
+        guide,
+        patch_title=patch_title,
+        patch_published_at="2026-01-01T00:00:00Z",
+    )
 
 
 def ability_guide() -> PurchaseGuide:
     guide = sample_guide()
     path = (10, 10, 20, 30, 10, 20, 40, 20, 30, 10, 20, 30, 30, 40, 40, 40)
-    return PurchaseGuide(
-        guide.hero_id,
-        guide.hero_name,
-        guide.hero_class_name,
-        guide.tiers,
+    return replace(
+        guide,
         ability_path=AbilityPath(path, 100, 60, 40, 250),
         summary="Core profile: ability damage and uptime.",
         tier_summaries={1: "Leading options: Test Item."},
@@ -56,18 +75,20 @@ def eleven_item_guide() -> PurchaseGuide:
             for tier in range(1, 5)
         },
         core_items=tuple(item(500 + index, 4) for index in range(11)),
+        build_tag_ids=(1, 2, 3),
+        build_archetype="Utility / Vitality",
+        as_of_timestamp=1_767_225_600,
+        client_version=123,
+        match_mode="ranked",
     )
 
 
 def test_build_wrapper_and_metadata_round_trip() -> None:
     build = encode_hero_build(
-        sample_guide(),
+        presentation(sample_guide()),
         build_id=34,
         account_id=146293212,
-        persona="XMLJDX",
         timestamp=1234567890,
-        patch_title="Test Patch",
-        patch_published_at="2026-01-01T00:00:00Z",
     )
     wrapper = wrap_hero_build(build)
     assert extract_hero_build(wrapper) == build
@@ -75,38 +96,35 @@ def test_build_wrapper_and_metadata_round_trip() -> None:
     assert metadata.build_id == 34
     assert metadata.hero_id == 12
     assert metadata.author_account_id == 146293212
-    assert metadata.name == "XMLJDX | Kelvin | Test Patch"
+    assert metadata.name == "Spirit Damage | Ranked | 2026-01-01"
+    assert metadata.tag_ids == (1, 2, 3)
     assert MANAGED_MARKER in (metadata.description or "")
-    assert "Ranks: Emissary I–Eternus V." in (metadata.description or "")
-    assert "ruleset: NORMAL" in (metadata.description or "")
+    assert "Emissary I–Eternus V" in (metadata.description or "")
+    assert "Ranked" in (metadata.description or "")
     assert metadata.publish_timestamp is None
 
 
 def test_build_name_truncates_a_long_deadlock_patch_title() -> None:
     build = encode_hero_build(
-        sample_guide(),
+        presentation(
+            sample_guide(),
+            "A Very Long Deadlock Update Title That Would Overflow The Name",
+        ),
         build_id=34,
         account_id=146293212,
-        persona="XMLJDX",
         timestamp=1234567890,
-        patch_title="A Very Long Deadlock Update Title That Would Overflow The Name",
-        patch_published_at="2026-01-01T00:00:00Z",
     )
     metadata = hero_build_metadata(build)
     assert metadata.name is not None
-    assert len(metadata.name) == 50
-    assert metadata.name.startswith("XMLJDX | Kelvin | A Very Long Deadlock")
+    assert metadata.name == "Spirit Damage | Ranked | 2026-01-01"
 
 
 def test_encodes_native_ability_order_and_descriptions() -> None:
     build = encode_hero_build(
-        ability_guide(),
+        presentation(ability_guide()),
         build_id=34,
         account_id=146293212,
-        persona="XMLJDX",
         timestamp=1234567890,
-        patch_title="Test Patch",
-        patch_published_at="2026-01-01T00:00:00Z",
     )
     metadata = hero_build_metadata(build)
     assert "Core profile: ability damage and uptime." in (metadata.description or "")
@@ -147,7 +165,8 @@ def test_encodes_native_ability_order_and_descriptions() -> None:
     assert first[2] == 2
     assert first[3] == (1 << 64) - 1
     assert first[4] == (
-        b"State-conditioned projection | final support 100 | observed outcome rate 60.0%"
+        b"State-composed observed default \xe2\x80\xa2 tail support n=100 "
+        b"\xe2\x80\xa2 observational."
     )
     assert second[1] == 10
     assert second[2] == 1
@@ -156,13 +175,10 @@ def test_encodes_native_ability_order_and_descriptions() -> None:
 
 def test_encodes_the_viscous_layout_with_eleven_core_cards() -> None:
     build = encode_hero_build(
-        eleven_item_guide(),
+        presentation(eleven_item_guide()),
         build_id=34,
         account_id=146293212,
-        persona="XMLJDX",
         timestamp=1234567890,
-        patch_title="Test Patch",
-        patch_published_at="2026-01-01T00:00:00Z",
     )
     details = next(
         field.value
