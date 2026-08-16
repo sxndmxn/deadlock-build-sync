@@ -1,17 +1,14 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import operator
 import re
 import time
-import urllib.error
-import urllib.parse
-import urllib.request
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any, Self
 
+from .http_client import JsonHttpClient, JsonHttpError
 from .ranks import DEFAULT_RANK_RANGE, RankCatalog, RankRange
 from .snapshot import (
     EpochBoundary,
@@ -24,6 +21,9 @@ from .snapshot import (
     canonical_json,
     sha256_json,
 )
+
+if TYPE_CHECKING:
+    import httpx
 
 DEFAULT_API_BASE_URL = "https://api.deadlock-api.com"
 GAME_MODE = "normal"
@@ -149,10 +149,8 @@ class DeadlockApi:
         epochs: EpochSet | None = None,
         recorder: EvidenceRecorder | None = None,
         outcome_policy: OutcomePolicy | None = None,
+        transport: httpx.BaseTransport | None = None,
     ) -> None:
-        parsed_url = urllib.parse.urlparse(base_url)
-        if parsed_url.scheme not in {"http", "https"} or not parsed_url.netloc:
-            raise ValueError("base URL must be an absolute HTTP(S) URL")
         if client_version is not None and client_version <= 0:
             raise ValueError("client version must be positive")
         self.base_url = base_url.rstrip("/")
@@ -165,7 +163,29 @@ class DeadlockApi:
         self.configured_epochs = epochs
         self.recorder = recorder or EvidenceRecorder()
         self.outcome_policy = outcome_policy or OutcomePolicy()
+        self._http = JsonHttpClient(
+            base_url,
+            timeout=timeout,
+            max_attempts=3,
+            transport=transport,
+        )
         self._declare_static_routes()
+
+    def close(self) -> None:
+        self._http.close()
+
+    def __enter__(self) -> Self:
+        """Keep one HTTP connection pool open for an API workflow.
+
+        Returns:
+            This API client.
+
+        """
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        """Close the HTTP connection pool after an API workflow."""
+        self.close()
 
     def _declare_static_routes(self) -> None:
         declarations = {
@@ -210,42 +230,12 @@ class DeadlockApi:
 
     def get_json(self, path: str, params: dict[str, Any] | None = None) -> Any:
         normalized = self._normalized_parameters(params)
-        url = f"{self.base_url}{path}"
-        if normalized:
-            url = f"{url}?{urllib.parse.urlencode(normalized, doseq=True)}"
-
-        request = urllib.request.Request(
-            url,
-            headers={
-                "Accept": "application/json",
-                "User-Agent": "deadlock-build-sync/0.1",
-            },
-        )
-        last_error: Exception | None = None
-        for attempt in range(3):
-            try:
-                with urllib.request.urlopen(request, timeout=self.timeout) as response:
-                    raw = response.read()
-                data = json.loads(raw)
-            except (
-                urllib.error.HTTPError,
-                urllib.error.URLError,
-                TimeoutError,
-                json.JSONDecodeError,
-            ) as error:
-                last_error = error
-                if (
-                    isinstance(error, urllib.error.HTTPError)
-                    and error.code < 500
-                    and error.code != 429
-                ):
-                    break
-                if attempt < 2:
-                    time.sleep(2**attempt)
-            else:
-                self.recorder.record(path, normalized, raw)
-                return data
-        raise ApiError(f"GET {url} failed: {last_error}") from last_error
+        try:
+            response = self._http.get_json(path, normalized or None)
+        except JsonHttpError as error:
+            raise ApiError(str(error)) from error
+        self.recorder.record(path, normalized, response.content)
+        return response.data
 
     def resolve_client_version(self) -> int:
         if self.client_version is not None:

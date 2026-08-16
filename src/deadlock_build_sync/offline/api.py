@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import json
-import time
 from typing import TYPE_CHECKING, Any
 
-import httpx
+from deadlock_build_sync.http_client import JsonHttpClient, JsonHttpError
 
 from .config import API_BASE_URL, Cohort, RunPaths, sha256_json
 
@@ -19,27 +18,20 @@ class ApiError(RuntimeError):
 class ApiClient:
     def __init__(self, base_url: str = API_BASE_URL, timeout: float = 120.0) -> None:
         self.base_url = base_url.rstrip("/")
-        self.client = httpx.Client(timeout=timeout, follow_redirects=True)
+        self._http = JsonHttpClient(
+            base_url,
+            timeout=timeout,
+            max_attempts=5,
+        )
 
     def close(self) -> None:
-        self.client.close()
+        self._http.close()
 
     def get(self, path: str, params: dict[str, Any] | None = None) -> Any:
-        last_error: Exception | None = None
-        for attempt in range(5):
-            try:
-                response = self.client.get(f"{self.base_url}{path}", params=params)
-                if response.status_code == 429:
-                    retry_after = float(response.headers.get("retry-after", "2"))
-                    time.sleep(min(30.0, retry_after))
-                    continue
-                response.raise_for_status()
-                return response.json()
-            except (httpx.HTTPError, json.JSONDecodeError) as error:
-                last_error = error
-                if attempt < 4:
-                    time.sleep(2**attempt)
-        raise ApiError(f"GET {path} failed: {last_error}") from last_error
+        try:
+            return self._http.get_json(path, params).data
+        except JsonHttpError as error:
+            raise ApiError(str(error)) from error
 
 
 def write_json(path: Path, value: Any) -> None:
