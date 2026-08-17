@@ -28,6 +28,7 @@ from deadlock_build_sync.snapshot import (
     OutcomePolicy,
     SnapshotManifest,
 )
+from scripts.generate_narratives import DEFAULT_GENERATION_CONCURRENCY
 
 
 def test_sync_defaults_to_every_eligible_hero_and_staged_models() -> None:
@@ -38,6 +39,7 @@ def test_sync_defaults_to_every_eligible_hero_and_staged_models() -> None:
     assert args.kit_model == DEFAULT_KIT_MODEL
     assert args.model == DEFAULT_SYNTHESIS_MODEL
     assert args.max_attempts == 3
+    assert args.concurrency == DEFAULT_GENERATION_CONCURRENCY
 
 
 def test_status_is_read_only_and_supports_json() -> None:
@@ -82,8 +84,9 @@ def test_refresh_evidence_handoff_exports_and_admits_one_artifact(
 
 
 def test_recommend_parser_requires_a_decision_state() -> None:
+    parser = build_parser()
     with pytest.raises(SystemExit):
-        build_parser().parse_args(["recommend"])
+        parser.parse_args(["recommend"])
 
     args = build_parser().parse_args(["recommend", "--state", "state.json"])
     assert args.state == Path("state.json")
@@ -138,11 +141,10 @@ def test_install_artifacts_refuses_before_loading_when_deadlock_is_running(
         "load_artifact_guide_bundle",
         lambda *_args: pytest.fail("bundle must not load while Deadlock is running"),
     )
+    args = build_parser().parse_args(["install-artifacts"])
 
     with pytest.raises(CacheError, match="Deadlock is running"):
-        cli_module._run_install_artifacts(
-            build_parser().parse_args(["install-artifacts"])
-        )
+        cli_module._run_install_artifacts(args)
 
 
 def test_install_artifacts_loads_frozen_build_evidence_from_the_bundle(
@@ -356,6 +358,8 @@ def test_sync_generates_artifacts_and_installs_without_extra_flags(
     assert DEFAULT_KIT_MODEL in generation_args
     assert "--model" in generation_args
     assert DEFAULT_SYNTHESIS_MODEL in generation_args
+    assert "--concurrency" in generation_args
+    assert str(DEFAULT_GENERATION_CONCURRENCY) in generation_args
 
 
 @pytest.mark.parametrize("command", ["preview", "install"])

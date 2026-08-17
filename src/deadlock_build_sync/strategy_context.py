@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections import Counter
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from .artifacts import FingerprintLayers
 from .build_tags import AXIS_CLASSES, COMPLEXITY_CLASS, FUNCTION_CLASSES
@@ -253,15 +253,16 @@ def calculate_source_context_sha256(document: dict[str, Any]) -> str:
     return _canonical_hash(payload)
 
 
-def validate_strategy_context_document(document: dict[str, Any]) -> None:
-    """Verify schema, coverage, snapshot, hero, and full export fingerprints.
+type _StrategyContextHeader = tuple[
+    dict[str, Any],
+    list[Any],
+    dict[str, dict[str, Any]],
+    list[int],
+    list[dict[str, Any]],
+]
 
-    Raises:
-        StrategyContextError: If the document is malformed, stale, or edited.
 
-    """
-    if document.get("schema_version") != CONTEXT_SCHEMA_VERSION:
-        raise StrategyContextError("unsupported strategy-context schema")
+def _strategy_context_header(document: dict[str, Any]) -> _StrategyContextHeader:
     manifest = document.get("snapshot_manifest")
     if not isinstance(manifest, dict) or not isinstance(
         manifest.get("snapshot_id"), str
@@ -285,43 +286,53 @@ def validate_strategy_context_document(document: dict[str, Any]) -> None:
         for exclusion in exclusions
     ):
         raise StrategyContextError("strategy context has invalid exclusions")
+    return manifest, heroes, item_mechanics, requested, exclusions
 
-    seen_hero_ids: set[int] = set()
-    referenced_item_ids: set[int] = set()
-    for entry in heroes:
-        if not isinstance(entry, dict) or not isinstance(entry.get("hero_id"), int):
-            raise StrategyContextError("strategy context contains an invalid hero")
-        hero_id = int(entry["hero_id"])
-        if hero_id in seen_hero_ids:
-            raise StrategyContextError(
-                f"strategy context contains duplicate hero {hero_id}"
-            )
-        seen_hero_ids.add(hero_id)
-        hero_name = str(entry.get("hero") or hero_id)
-        if entry.get("snapshot_id") != manifest["snapshot_id"]:
-            raise StrategyContextError(
-                f"strategy context snapshot differs for {hero_name}"
-            )
-        referenced_item_ids.update(
-            _validate_hero_item_mechanics(entry, item_mechanics, hero_name)
+
+def _context_hero_id(entry: object) -> int:
+    if not isinstance(entry, dict):
+        raise StrategyContextError("strategy context contains an invalid hero")
+    hero = cast("dict[str, Any]", entry)
+    hero_id = hero.get("hero_id")
+    if not isinstance(hero_id, int):
+        raise StrategyContextError("strategy context contains an invalid hero")
+    return hero_id
+
+
+def _validate_context_hero(
+    entry: dict[str, Any],
+    manifest: dict[str, Any],
+    item_mechanics: dict[str, dict[str, Any]],
+) -> set[int]:
+    hero_name = str(entry.get("hero") or entry["hero_id"])
+    if entry.get("snapshot_id") != manifest["snapshot_id"]:
+        raise StrategyContextError(f"strategy context snapshot differs for {hero_name}")
+    referenced = _validate_hero_item_mechanics(entry, item_mechanics, hero_name)
+    _validate_build_identity(entry, manifest)
+    if entry.get("kit_basis_sha256") != calculate_kit_basis_sha256(entry):
+        raise StrategyContextError(
+            f"strategy context kit basis was edited for {hero_name}; "
+            "run export-context again"
         )
-        _validate_build_identity(entry, manifest)
-        if entry.get("kit_basis_sha256") != calculate_kit_basis_sha256(entry):
-            raise StrategyContextError(
-                f"strategy context kit basis was edited for {hero_name}; "
-                "run export-context again"
-            )
-        if entry.get("narrative_basis_sha256") != calculate_narrative_basis_sha256(
-            entry
-        ):
-            raise StrategyContextError(
-                f"strategy context tactical basis was edited for {hero_name}; "
-                "run export-context again"
-            )
-        if entry.get("context_sha256") != calculate_context_sha256(entry):
-            raise StrategyContextError(
-                f"strategy context was edited for {hero_name}; run export-context again"
-            )
+    if entry.get("narrative_basis_sha256") != calculate_narrative_basis_sha256(entry):
+        raise StrategyContextError(
+            f"strategy context tactical basis was edited for {hero_name}; "
+            "run export-context again"
+        )
+    if entry.get("context_sha256") != calculate_context_sha256(entry):
+        raise StrategyContextError(
+            f"strategy context was edited for {hero_name}; run export-context again"
+        )
+    return referenced
+
+
+def _validate_context_coverage(
+    seen_hero_ids: set[int],
+    referenced_item_ids: set[int],
+    requested: list[int],
+    exclusions: list[dict[str, Any]],
+    item_mechanics: dict[str, dict[str, Any]],
+) -> None:
     excluded_ids = {int(exclusion["hero_id"]) for exclusion in exclusions}
     if seen_hero_ids | excluded_ids != set(requested):
         raise StrategyContextError("strategy context does not cover requested heroes")
@@ -329,6 +340,40 @@ def validate_strategy_context_document(document: dict[str, Any]) -> None:
         raise StrategyContextError("strategy context both includes and excludes a hero")
     if set(item_mechanics) != {str(item_id) for item_id in referenced_item_ids}:
         raise StrategyContextError("strategy context has unreferenced item mechanics")
+
+
+def validate_strategy_context_document(document: dict[str, Any]) -> None:
+    """Verify schema, coverage, snapshot, hero, and full export fingerprints.
+
+    Raises:
+        StrategyContextError: If the document is malformed, stale, or edited.
+
+    """
+    if document.get("schema_version") != CONTEXT_SCHEMA_VERSION:
+        raise StrategyContextError("unsupported strategy-context schema")
+    manifest, heroes, item_mechanics, requested, exclusions = _strategy_context_header(
+        document
+    )
+
+    seen_hero_ids: set[int] = set()
+    referenced_item_ids: set[int] = set()
+    for entry in heroes:
+        hero_id = _context_hero_id(entry)
+        if hero_id in seen_hero_ids:
+            raise StrategyContextError(
+                f"strategy context contains duplicate hero {hero_id}"
+            )
+        seen_hero_ids.add(hero_id)
+        referenced_item_ids.update(
+            _validate_context_hero(entry, manifest, item_mechanics)
+        )
+    _validate_context_coverage(
+        seen_hero_ids,
+        referenced_item_ids,
+        requested,
+        exclusions,
+        item_mechanics,
+    )
     if document.get("source_context_sha256") != calculate_source_context_sha256(
         document
     ):

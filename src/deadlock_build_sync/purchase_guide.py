@@ -517,14 +517,8 @@ def format_purchase_window(window: PurchaseWindow) -> str:
     return f"{start}–{end}k"
 
 
-def build_purchase_guide(
-    hero: dict[str, Any],
-    assets: list[dict[str, Any]],
-    overall_stats: list[dict[str, Any]],
-    bucket_stats: list[dict[str, Any]],
-    ability_path: AbilityPath | None = None,
-) -> PurchaseGuide:
-    shopable_assets = [
+def _shopable_assets(assets: list[dict[str, Any]]) -> dict[int, dict[str, Any]]:
+    eligible = [
         asset
         for asset in assets
         if asset.get("shopable")
@@ -534,75 +528,109 @@ def build_purchase_guide(
         and isinstance(asset.get("item_tier"), int)
         and 1 <= int(asset["item_tier"]) <= 4
     ]
-    assets_by_id = {int(asset["id"]): asset for asset in shopable_assets}
-    bucket_rows_by_item: dict[int, list[PurchaseBucketRow]] = {}
-    for row in bucket_stats:
+    return {int(asset["id"]): asset for asset in eligible}
+
+
+def _bucket_rows(
+    rows: list[dict[str, Any]],
+    assets_by_id: dict[int, dict[str, Any]],
+) -> dict[int, list[PurchaseBucketRow]]:
+    result: dict[int, list[PurchaseBucketRow]] = {}
+    for row in rows:
         item_id = row.get("item_id")
         if not isinstance(item_id, int) or item_id not in assets_by_id:
             continue
         bucket = row.get("bucket")
-        bucket_rows_by_item.setdefault(item_id, []).append(
+        result.setdefault(item_id, []).append(
             PurchaseBucketRow(
                 bucket=int(bucket) if isinstance(bucket, int) else None,
                 matches=int(row.get("matches") or 0),
                 wins=int(row.get("wins") or 0),
             )
         )
+    return result
 
-    eligible_stats = [
+
+def _eligible_item_stats(
+    rows: list[dict[str, Any]],
+    assets_by_id: dict[int, dict[str, Any]],
+) -> list[dict[str, Any]]:
+    return [
         row
-        for row in overall_stats
+        for row in rows
         if isinstance(row.get("item_id"), int)
         and int(row["item_id"]) in assets_by_id
         and int(row.get("matches") or 0) > 0
     ]
+
+
+def _guide_item_from_stats(
+    row: dict[str, Any],
+    asset: dict[str, Any],
+    bucket_rows: list[PurchaseBucketRow],
+    max_matches: int,
+) -> GuideItem:
+    item_id = int(row["item_id"])
+    matches = int(row["matches"])
+    wins = int(row.get("wins") or 0)
+    lower, _ = wilson_score_interval(wins, matches)
+    return GuideItem(
+        item_id=item_id,
+        name=str(asset.get("name") or "Unknown Item"),
+        tier=int(asset["item_tier"]),
+        purchase_event_observations=matches,
+        observed_outcome_rate=wins / matches,
+        observed_outcome_lower_bound=lower,
+        relative_purchase_event_volume=matches / max_matches,
+        windows=tuple(analyze_purchase_windows(bucket_rows, matches, math.inf)),
+    )
+
+
+def _tiered_items(guide_items: list[GuideItem]) -> dict[int, tuple[GuideItem, ...]]:
+    tiers: dict[int, tuple[GuideItem, ...]] = {}
+    for tier in range(1, 5):
+        tiers[tier] = tuple(
+            sorted(
+                (item for item in guide_items if item.tier == tier),
+                key=lambda item: (
+                    -item.relative_purchase_event_volume,
+                    -item.observed_outcome_lower_bound,
+                    -item.purchase_event_observations,
+                    item.name.casefold(),
+                ),
+            )
+        )
+    return tiers
+
+
+def build_purchase_guide(
+    hero: dict[str, Any],
+    assets: list[dict[str, Any]],
+    overall_stats: list[dict[str, Any]],
+    bucket_stats: list[dict[str, Any]],
+    ability_path: AbilityPath | None = None,
+) -> PurchaseGuide:
+    assets_by_id = _shopable_assets(assets)
+    bucket_rows_by_item = _bucket_rows(bucket_stats, assets_by_id)
+    eligible_stats = _eligible_item_stats(overall_stats, assets_by_id)
     max_matches = max((int(row["matches"]) for row in eligible_stats), default=1)
 
     guide_items: list[GuideItem] = []
     for row in eligible_stats:
         item_id = int(row["item_id"])
-        asset = assets_by_id[item_id]
-        tier = int(asset["item_tier"])
-        matches = int(row["matches"])
-        wins = int(row.get("wins") or 0)
-        windows = tuple(
-            analyze_purchase_windows(
-                bucket_rows_by_item.get(item_id, ()),
-                matches,
-                math.inf,
-            )
-        )
-        lower, _ = wilson_score_interval(wins, matches)
         guide_items.append(
-            GuideItem(
-                item_id=item_id,
-                name=str(asset.get("name") or "Unknown Item"),
-                tier=tier,
-                purchase_event_observations=matches,
-                observed_outcome_rate=wins / matches,
-                observed_outcome_lower_bound=lower,
-                relative_purchase_event_volume=matches / max_matches,
-                windows=windows,
+            _guide_item_from_stats(
+                row,
+                assets_by_id[item_id],
+                bucket_rows_by_item.get(item_id, []),
+                max_matches,
             )
         )
-
-    tiers: dict[int, tuple[GuideItem, ...]] = {}
-    for tier in range(1, 5):
-        tier_items = sorted(
-            (item for item in guide_items if item.tier == tier),
-            key=lambda item: (
-                -item.relative_purchase_event_volume,
-                -item.observed_outcome_lower_bound,
-                -item.purchase_event_observations,
-                item.name.casefold(),
-            ),
-        )
-        tiers[tier] = tuple(tier_items)
 
     return PurchaseGuide(
         hero_id=int(hero["id"]),
         hero_name=str(hero.get("name") or f"Hero {hero['id']}"),
         hero_class_name=str(hero.get("class_name") or ""),
-        tiers=tiers,
+        tiers=_tiered_items(guide_items),
         ability_path=ability_path,
     )

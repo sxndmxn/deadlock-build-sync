@@ -12,6 +12,9 @@ if TYPE_CHECKING:
     from deepeval.test_case import LLMTestCase
 
 
+_INVALID_RESPONSE = "invalid response"
+
+
 def _parse_object(output: str | None) -> tuple[dict[str, Any] | None, str | None]:
     try:
         parsed = json.loads(output or "")
@@ -38,6 +41,20 @@ def _ordered_category_identity(value: dict[str, Any]) -> tuple[str, ...]:
     if not isinstance(rows, list):
         return ()
     return tuple(str(row.get("category")) for row in rows if isinstance(row, dict))
+
+
+def _validated_reliability_outputs(
+    outputs: list[dict[str, Any]],
+    hero: dict[str, Any],
+) -> list[dict[str, Any]]:
+    valid = []
+    for output in outputs:
+        try:
+            generate_narratives.validate_response(output, hero)
+        except generate_narratives.GenerationError:
+            continue
+        valid.append(output)
+    return valid
 
 
 class _SynchronousNarrativeMetric(BaseMetric):
@@ -107,7 +124,7 @@ class ProductionContractMetric(_SynchronousNarrativeMetric):
         """
         response, error = _parse_object(test_case.actual_output)
         if response is None:
-            return self._record(0.0, error or "invalid response")
+            return self._record(0.0, error or _INVALID_RESPONSE)
         try:
             generate_narratives.validate_response(response, self.hero)
         except generate_narratives.GenerationError as validation_error:
@@ -135,7 +152,7 @@ class ClosedPolicyCoverageMetric(_SynchronousNarrativeMetric):
         """
         response, error = _parse_object(test_case.actual_output)
         if response is None:
-            return self._record(0.0, error or "invalid response")
+            return self._record(0.0, error or _INVALID_RESPONSE)
         supplied_actions = self.hero.get("explainable_actions")
         expected_actions = tuple(
             (str(row.get("node_id")), str(row.get("evidence_ref")))
@@ -176,7 +193,7 @@ class EvidenceLanguageMetric(_SynchronousNarrativeMetric):
         """
         response, error = _parse_object(test_case.actual_output)
         if response is None:
-            return self._record(0.0, error or "invalid response")
+            return self._record(0.0, error or _INVALID_RESPONSE)
         try:
             generate_narratives.validate_response(response, self.hero)
         except generate_narratives.GenerationError as validation_error:
@@ -207,7 +224,7 @@ class ProjectionUtilizationMetric(_SynchronousNarrativeMetric):
         """
         response, error = _parse_object(test_case.actual_output)
         if response is None:
-            return self._record(0.0, error or "invalid response")
+            return self._record(0.0, error or _INVALID_RESPONSE)
         tactical = response.get("tactical_profile")
         required = {
             "build_summary": response.get("build_summary"),
@@ -278,13 +295,7 @@ class RepeatedGenerationStabilityMetric(_SynchronousNarrativeMetric):
             if isinstance(sample, dict) and isinstance(sample.get("output"), dict)
         ]
         completion = len(outputs) / len(samples)
-        valid_outputs: list[dict[str, Any]] = []
-        for output in outputs:
-            try:
-                generate_narratives.validate_response(output, self.hero)
-            except generate_narratives.GenerationError:
-                continue
-            valid_outputs.append(output)
+        valid_outputs = _validated_reliability_outputs(outputs, self.hero)
         contract = len(valid_outputs) / len(samples)
         action_identities = {
             _ordered_action_identity(output) for output in valid_outputs

@@ -197,22 +197,25 @@ def test_rejects_changed_context_or_basis(
         ],
     }
     context[field] = value
+    source_guide = guide()
+    catalog = load_narrative_catalog(path)
 
     with pytest.raises(NarrativeError, match=error):
-        apply_narrative(guide(), context, PATCH, load_narrative_catalog(path))
+        apply_narrative(source_guide, context, PATCH, catalog)
 
 
 def test_rejects_other_match_mode(tmp_path: Path) -> None:
     path = tmp_path / "narratives.json"
     write_catalog(path)
     mismatched = replace(guide(), match_mode="unranked")
+    catalog = load_narrative_catalog(path)
 
     with pytest.raises(NarrativeError, match="match mode"):
         apply_narrative(
             mismatched,
             {"context_sha256": CONTEXT_ID, "narrative_basis_sha256": BASIS_ID},
             PATCH,
-            load_narrative_catalog(path),
+            catalog,
         )
 
 
@@ -222,13 +225,15 @@ def test_rejects_changed_projection_categories(tmp_path: Path) -> None:
     document = json.loads(path.read_text(encoding="utf-8"))
     document["heroes"][0]["category_summaries"][1]["category"] = "BUY EVERYTHING"
     path.write_text(json.dumps(document), encoding="utf-8")
+    source_guide = guide()
+    catalog = load_narrative_catalog(path)
 
     with pytest.raises(NarrativeError, match="projection categories"):
         apply_narrative(
-            guide(),
+            source_guide,
             {"context_sha256": CONTEXT_ID, "narrative_basis_sha256": BASIS_ID},
             PATCH,
-            load_narrative_catalog(path),
+            catalog,
         )
 
 

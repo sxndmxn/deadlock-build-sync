@@ -38,8 +38,7 @@ def test_parses_symbolic_rank_names(raw: str, expected: Rank) -> None:
 
 
 def test_rejects_an_inverted_range() -> None:
+    minimum = Rank(RankTier.ETERNUS, RankDivision.ONE)
+    maximum = Rank(RankTier.ORACLE, RankDivision.SIX)
     with pytest.raises(ValueError, match="exceeds"):
-        RankRange(
-            minimum=Rank(RankTier.ETERNUS, RankDivision.ONE),
-            maximum=Rank(RankTier.ORACLE, RankDivision.SIX),
-        )
+        RankRange(minimum=minimum, maximum=maximum)

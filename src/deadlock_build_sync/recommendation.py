@@ -401,65 +401,59 @@ def _observed_threats(
     return frozenset((*state.threats, *inferred))
 
 
-def recommend(
-    catalog: BuildEvidenceCatalog,
+def _decision_mechanics(
     state: DecisionState,
     assets: list[dict[str, Any]],
-) -> Recommendation:
-    """Return the next supported legal action without mutating Steam.
-
-    Returns:
-        A buy, save, end, or structured abstention.
-
-    Raises:
-        RecommendationError: If state identity or mechanics are malformed.
-
-    """
-    _validate_evidence_identity(catalog, state)
-    hero = catalog.heroes.get(state.hero_id)
-    if hero is None:
-        raise RecommendationError("decision state hero is absent from build evidence")
-    policy_id = _policy_id(hero)
+) -> tuple[ItemGraph, InventoryState]:
     try:
         graph = ItemGraph.from_assets(assets)
-        inventory = _validate_inventory(state, graph)
+        return graph, _validate_inventory(state, graph)
     except MechanicsError as error:
         raise RecommendationError(str(error)) from error
-    unknown_threats = sorted(set(state.threats) - THREAT_CLASSES)
-    if unknown_threats:
-        return Recommendation(
-            RecommendationAction.ABSTAIN,
-            state.hero_id,
-            policy_id,
-            reason="unknown threat classes: " + ", ".join(unknown_threats),
-        )
-    try:
-        observed_threats = _observed_threats(state, assets, graph)
-    except MechanicsError as error:
-        raise RecommendationError(str(error)) from error
-    counter = _matching_counter(hero, state, observed_threats)
-    if counter is not None:
-        purchase = _next_purchase(counter.item_id, inventory, graph)
-        if purchase is not None:
-            item_id, cost = purchase
-            action = (
-                RecommendationAction.BUY
-                if state.liquid_souls >= cost
-                else RecommendationAction.SAVE
-            )
-            return Recommendation(
-                action,
-                state.hero_id,
-                policy_id,
-                item_id,
-                counter.item_id,
-                cost,
-                counter.support,
-                None,
-                "situational",
-                counter.trigger,
-                asdict(counter),
-            )
+
+
+def _counter_recommendation(
+    hero: HeroBuildEvidence,
+    state: DecisionState,
+    threats: frozenset[str],
+    inventory: InventoryState,
+    graph: ItemGraph,
+) -> Recommendation | None:
+    counter = _matching_counter(hero, state, threats)
+    if counter is None:
+        return None
+    purchase = _next_purchase(counter.item_id, inventory, graph)
+    if purchase is None:
+        return None
+    policy_id = _policy_id(hero)
+    item_id, cost = purchase
+    action = (
+        RecommendationAction.BUY
+        if state.liquid_souls >= cost
+        else RecommendationAction.SAVE
+    )
+    return Recommendation(
+        action,
+        state.hero_id,
+        policy_id,
+        item_id,
+        counter.item_id,
+        cost,
+        counter.support,
+        None,
+        "situational",
+        counter.trigger,
+        asdict(counter),
+    )
+
+
+def _sequence_recommendation(
+    hero: HeroBuildEvidence,
+    state: DecisionState,
+    policy_id: str,
+    inventory: InventoryState,
+    graph: ItemGraph,
+) -> Recommendation | None:
     level, candidates = _candidate_rows(hero, state)
     for row in candidates:
         purchase = _next_purchase(row.next_item_id, inventory, graph)
@@ -483,6 +477,49 @@ def recommend(
             level,
             "Observed next-action imitation; not an item-effect claim.",
         )
+    return None
+
+
+def recommend(
+    catalog: BuildEvidenceCatalog,
+    state: DecisionState,
+    assets: list[dict[str, Any]],
+) -> Recommendation:
+    """Return the next supported legal action without mutating Steam.
+
+    Returns:
+        A buy, save, end, or structured abstention.
+
+    Raises:
+        RecommendationError: If state identity or mechanics are malformed.
+
+    """
+    _validate_evidence_identity(catalog, state)
+    hero = catalog.heroes.get(state.hero_id)
+    if hero is None:
+        raise RecommendationError("decision state hero is absent from build evidence")
+    policy_id = _policy_id(hero)
+    graph, inventory = _decision_mechanics(state, assets)
+    unknown_threats = sorted(set(state.threats) - THREAT_CLASSES)
+    if unknown_threats:
+        return Recommendation(
+            RecommendationAction.ABSTAIN,
+            state.hero_id,
+            policy_id,
+            reason="unknown threat classes: " + ", ".join(unknown_threats),
+        )
+    try:
+        observed_threats = _observed_threats(state, assets, graph)
+    except MechanicsError as error:
+        raise RecommendationError(str(error)) from error
+    counter = _counter_recommendation(hero, state, observed_threats, inventory, graph)
+    if counter is not None:
+        return counter
+    sequence_recommendation = _sequence_recommendation(
+        hero, state, policy_id, inventory, graph
+    )
+    if sequence_recommendation is not None:
+        return sequence_recommendation
     sequence = hero.sequence_policy
     if sequence is not None and not (
         Counter(sequence.default_path) - Counter(state.purchases)

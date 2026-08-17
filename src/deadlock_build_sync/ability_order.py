@@ -76,40 +76,33 @@ def _ability_state(path: tuple[int, ...]) -> tuple[tuple[int, int], ...]:
     return tuple(sorted(Counter(path).items()))
 
 
-def select_ability_path(rows: list[dict[str, Any]]) -> AbilityPath | None:
-    """Select a complete default from reached legal ability-rank states.
+type _AbilityObservation = tuple[tuple[int, ...], int, int, int]
+type _DecisionCounts = dict[
+    tuple[int, tuple[tuple[int, int], ...]],
+    dict[int, tuple[int, int, int]],
+]
 
-    Returns:
-        A complete legal-count projection using all observations that reached each state.
 
-    """
-    valid: list[tuple[tuple[int, ...], int, int, int]] = []
+def _valid_observations(rows: list[dict[str, Any]]) -> list[_AbilityObservation]:
+    valid: list[_AbilityObservation] = []
     for row in rows:
         path = _valid_path(row.get("abilities"))
         matches = int(row.get("matches") or 0)
         wins = int(row.get("wins") or 0)
         losses = int(row.get("losses") or 0)
         if (
-            path is None
-            or matches <= 0
-            or wins < 0
-            or losses < 0
-            or wins + losses != matches
+            path is not None
+            and matches > 0
+            and wins >= 0
+            and losses >= 0
+            and wins + losses == matches
         ):
-            continue
-        valid.append((path, matches, wins, losses))
-    cohort_matches = sum(matches for _, matches, _, _ in valid)
-    if cohort_matches == 0:
-        return None
-    complete_path_matches = sum(
-        matches
-        for path, matches, _, _ in valid
-        if len(path) == COMPLETE_ABILITY_PATH_LENGTH
-    )
-    decisions: dict[
-        tuple[int, tuple[tuple[int, int], ...]],
-        dict[int, tuple[int, int, int]],
-    ] = defaultdict(dict)
+            valid.append((path, matches, wins, losses))
+    return valid
+
+
+def _decision_counts(valid: list[_AbilityObservation]) -> _DecisionCounts:
+    decisions: _DecisionCounts = defaultdict(dict)
     for path, matches, wins, losses in valid:
         for index, ability_id in enumerate(path):
             state = index, _ability_state(path[:index])
@@ -119,7 +112,12 @@ def select_ability_path(rows: list[dict[str, Any]]) -> AbilityPath | None:
                 prior[1] + wins,
                 prior[2] + losses,
             )
+    return decisions
 
+
+def _compose_default_path(
+    decisions: _DecisionCounts,
+) -> tuple[tuple[int, ...], tuple[int, ...], tuple[int, int, int]] | None:
     selected: list[int] = []
     support: list[int] = []
     final_counts = (0, 0, 0)
@@ -141,12 +139,35 @@ def select_ability_path(rows: list[dict[str, Any]]) -> AbilityPath | None:
     counts = Counter(selected)
     if len(counts) != 4 or any(count != 4 for count in counts.values()):
         return None
+    return tuple(selected), tuple(support), final_counts
+
+
+def select_ability_path(rows: list[dict[str, Any]]) -> AbilityPath | None:
+    """Select a complete default from reached legal ability-rank states.
+
+    Returns:
+        A complete legal-count projection using all observations that reached each state.
+
+    """
+    valid = _valid_observations(rows)
+    cohort_matches = sum(matches for _, matches, _, _ in valid)
+    if cohort_matches == 0:
+        return None
+    complete_path_matches = sum(
+        matches
+        for path, matches, _, _ in valid
+        if len(path) == COMPLETE_ABILITY_PATH_LENGTH
+    )
+    composed = _compose_default_path(_decision_counts(valid))
+    if composed is None:
+        return None
+    selected, support, final_counts = composed
     return AbilityPath(
-        ability_ids=tuple(selected),
+        ability_ids=selected,
         matches=final_counts[0],
         wins=final_counts[1],
         losses=final_counts[2],
         cohort_matches=cohort_matches,
         complete_path_matches=complete_path_matches,
-        decision_support=tuple(support),
+        decision_support=support,
     )

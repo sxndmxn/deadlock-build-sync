@@ -30,6 +30,9 @@ PRODUCTION_REPO = (
 _STATE_HOME = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state"))
 PROJECT_ROOT = _STATE_HOME / "deadlock-build-sync/offline"
 MAX_CACHE_BYTES = 8 * 1024**3
+_MANIFEST_FILENAME = "manifest.json"
+_HEROES_SOURCE = "raw/heroes.json"
+_ANALYSIS_DATABASE = "raw/analysis.duckdb"
 
 
 def _repo_identity() -> dict[str, str]:
@@ -67,7 +70,7 @@ def _repo_identity() -> dict[str, str]:
 
 
 def _manifest(paths: RunPaths, cohort: Cohort) -> dict[str, Any]:
-    target = paths.run / "manifest.json"
+    target = paths.run / _MANIFEST_FILENAME
     if target.exists():
         return read_json(target)
     return {
@@ -120,7 +123,7 @@ def _check_explicit_cohort_args(args: argparse.Namespace, frozen: Cohort) -> Non
 
 
 def _save_manifest(paths: RunPaths, manifest: dict[str, Any]) -> None:
-    write_json(paths.run / "manifest.json", manifest)
+    write_json(paths.run / _MANIFEST_FILENAME, manifest)
 
 
 def _cache_size(paths: RunPaths) -> int:
@@ -158,13 +161,13 @@ def run_extract(paths: RunPaths, cohort: Cohort, manifest: dict[str, Any]) -> No
 
 
 def run_audit(paths: RunPaths, cohort: Cohort, manifest: dict[str, Any]) -> None:
-    _require(paths, "raw/heroes.json")
+    _require(paths, _HEROES_SOURCE)
     manifest["api_audit"] = capture_api_audit(paths, cohort)
     _save_manifest(paths, manifest)
 
 
 def run_analysis(paths: RunPaths, manifest: dict[str, Any]) -> None:
-    _require(paths, "raw/analysis.duckdb", "raw/api")
+    _require(paths, _ANALYSIS_DATABASE, "raw/api")
     manifest["analysis"] = analyze(paths)
     manifest["rankings"] = generate_rankings(paths)
     manifest["cache_bytes"] = _cache_size(paths)
@@ -214,8 +217,8 @@ def run_xgboost(
 ) -> None:
     _require(
         paths,
-        "raw/analysis.duckdb",
-        "raw/heroes.json",
+        _ANALYSIS_DATABASE,
+        _HEROES_SOURCE,
         "raw/items.json",
     )
     manifest["xgboost"] = run_xgboost_experiment(paths, config)
@@ -225,9 +228,9 @@ def run_xgboost(
 def run_export_evidence(paths: RunPaths, output: Path) -> None:
     _require(
         paths,
-        "manifest.json",
-        "raw/analysis.duckdb",
-        "raw/heroes.json",
+        _MANIFEST_FILENAME,
+        _ANALYSIS_DATABASE,
+        _HEROES_SOURCE,
         "raw/items.json",
         "raw/items-all.json",
         "raw/patches.json",
@@ -294,8 +297,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+def _requested_cohort(args: argparse.Namespace) -> Cohort:
     defaults = Cohort()
     cohort = Cohort(
         minimum_badge=args.min_rank or defaults.minimum_badge,
@@ -305,8 +307,84 @@ def main(argv: list[str] | None = None) -> int:
         or datetime.now(tz=UTC).replace(microsecond=0),
     )
     cohort.validate()
+    return cohort
+
+
+def _run_layout_request(
+    args: argparse.Namespace,
+    paths: RunPaths,
+    manifest: dict[str, Any],
+) -> None:
+    if args.hero_id is None or not args.hero_name:
+        raise SystemExit("layout requires --hero-id and --hero-name")
+    run_layout(
+        paths,
+        manifest,
+        hero_id=args.hero_id,
+        hero_name=args.hero_name,
+        minimum_net_worth=args.minimum_net_worth,
+    )
+
+
+def _xgboost_experiment_config(args: argparse.Namespace) -> ExperimentConfig:
+    limits = (
+        args.xgb_train_queries,
+        args.xgb_validation_queries,
+        args.xgb_test_queries,
+        args.xgb_pilot_train_queries,
+        args.xgb_pilot_validation_queries,
+        args.xgb_bootstrap_replicates,
+    )
+    if any(value <= 0 for value in limits):
+        raise SystemExit("all XGBoost query and bootstrap limits must be positive")
+    return ExperimentConfig(
+        train_queries=args.xgb_train_queries,
+        validation_queries=args.xgb_validation_queries,
+        test_queries=args.xgb_test_queries,
+        pilot_train_queries=args.xgb_pilot_train_queries,
+        pilot_validation_queries=args.xgb_pilot_validation_queries,
+        bootstrap_replicates=args.xgb_bootstrap_replicates,
+        device=args.xgb_device,
+    )
+
+
+def _run_export_request(args: argparse.Namespace, paths: RunPaths) -> None:
+    if args.output is None:
+        raise SystemExit(f"{args.command} requires --output")
+    run_export_evidence(paths, args.output.expanduser().resolve())
+
+
+def _execute_offline_command(
+    args: argparse.Namespace,
+    paths: RunPaths,
+    cohort: Cohort,
+    manifest: dict[str, Any],
+) -> None:
+    if args.command in {"extract", "all"}:
+        run_extract(paths, cohort, manifest)
+    if args.command in {"audit", "all"}:
+        run_audit(paths, cohort, manifest)
+    if args.command in {"analyze", "all"}:
+        run_analysis(paths, manifest)
+    if args.command == "layout":
+        _run_layout_request(args, paths, manifest)
+    if args.command in {"xgboost", "all"}:
+        run_xgboost(
+            paths,
+            manifest,
+            config=_xgboost_experiment_config(args),
+        )
+    if args.command in {"report", "all"}:
+        run_report(paths, manifest)
+    if args.command in {"export-evidence", "all"}:
+        _run_export_request(args, paths)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    cohort = _requested_cohort(args)
     paths = RunPaths.create(PROJECT_ROOT, args.run_id)
-    existing_run = (paths.run / "manifest.json").exists()
+    existing_run = (paths.run / _MANIFEST_FILENAME).exists()
     manifest = _manifest(paths, cohort)
     if existing_run:
         frozen_cohort = _cohort_from_manifest(manifest)
@@ -316,52 +394,7 @@ def main(argv: list[str] | None = None) -> int:
     manifest["producer_source_before"] = before
     _save_manifest(paths, manifest)
 
-    if args.command in {"extract", "all"}:
-        run_extract(paths, cohort, manifest)
-    if args.command in {"audit", "all"}:
-        run_audit(paths, cohort, manifest)
-    if args.command in {"analyze", "all"}:
-        run_analysis(paths, manifest)
-    if args.command == "layout":
-        if args.hero_id is None or not args.hero_name:
-            raise SystemExit("layout requires --hero-id and --hero-name")
-        run_layout(
-            paths,
-            manifest,
-            hero_id=args.hero_id,
-            hero_name=args.hero_name,
-            minimum_net_worth=args.minimum_net_worth,
-        )
-    if args.command in {"xgboost", "all"}:
-        limits = (
-            args.xgb_train_queries,
-            args.xgb_validation_queries,
-            args.xgb_test_queries,
-            args.xgb_pilot_train_queries,
-            args.xgb_pilot_validation_queries,
-            args.xgb_bootstrap_replicates,
-        )
-        if any(value <= 0 for value in limits):
-            raise SystemExit("all XGBoost query and bootstrap limits must be positive")
-        run_xgboost(
-            paths,
-            manifest,
-            config=ExperimentConfig(
-                train_queries=args.xgb_train_queries,
-                validation_queries=args.xgb_validation_queries,
-                test_queries=args.xgb_test_queries,
-                pilot_train_queries=args.xgb_pilot_train_queries,
-                pilot_validation_queries=args.xgb_pilot_validation_queries,
-                bootstrap_replicates=args.xgb_bootstrap_replicates,
-                device=args.xgb_device,
-            ),
-        )
-    if args.command in {"report", "all"}:
-        run_report(paths, manifest)
-    if args.command in {"export-evidence", "all"}:
-        if args.output is None:
-            raise SystemExit(f"{args.command} requires --output")
-        run_export_evidence(paths, args.output.expanduser().resolve())
+    _execute_offline_command(args, paths, cohort, manifest)
 
     after = _repo_identity()
     manifest["producer_source_after"] = after

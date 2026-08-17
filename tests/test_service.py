@@ -392,11 +392,12 @@ def build_evidence(
 
 def test_rejects_selected_hero_without_complete_ability_path() -> None:
     api = FakeApi(ability_rows=[], duration_points=duration_points())
+    evidence = build_evidence(api)
 
     with pytest.raises(GuideError, match="reached-state ability projection"):
         generate_guides(
             api,
-            build_evidence=build_evidence(api),
+            build_evidence=evidence,
             account_id=123,
             hero_query="Kelvin",
             all_heroes=False,

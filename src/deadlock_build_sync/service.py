@@ -13,6 +13,7 @@ from .build_evidence import (
 )
 from .build_tags import BuildTagCatalog, BuildTagError, select_build_tags
 from .mechanics import (
+    AbilityDefinition,
     AbilityTimelineStep,
     ItemGraph,
     MechanicsError,
@@ -280,29 +281,17 @@ def _situational_annotation(
     return annotation
 
 
-def _build_policy(
-    inputs: _HeroInputs,
-    assets: list[dict[str, Any]],
-    hero_names: dict[int, str],
+def _policy_evidence(
+    guide: PurchaseGuide,
+    definitions: dict[int, AbilityDefinition],
     manifest: SnapshotManifest,
-) -> tuple[BuildPolicy, ValidationContext]:
-    guide = inputs.analytic_guide
-    definitions = ability_definitions_from_kit(inputs.kit)
-    item_graph = ItemGraph.from_assets(assets)
-    validation = ValidationContext(
-        item_graph=item_graph,
-        ability_definitions=definitions,
-        level_info=inputs.kit.get("level_info"),
-    )
-    if len(guide.core_items) != 8:
-        raise GuideError(f"{guide.hero_name} does not have an eight-item core")
-    evidence: dict[str, EvidenceClaim] = {}
+) -> tuple[dict[str, EvidenceClaim], EvidenceClaim]:
     item_claims = {
         item.item_id: _item_claim(item, manifest=manifest)
         for tier_items in guide.tiers.values()
         for item in tier_items
     }
-    evidence.update((claim.claim_id, claim) for claim in item_claims.values())
+    evidence = {claim.claim_id: claim for claim in item_claims.values()}
     core_claim = _core_claim(guide, manifest)
     evidence[core_claim.claim_id] = core_claim
     for ability_id in definitions:
@@ -312,139 +301,181 @@ def _build_policy(
             manifest=manifest,
         )
         evidence[claim.claim_id] = claim
+    return evidence, core_claim
 
-    purchase_nodes = tuple(
+
+def _core_policy_nodes(
+    guide: PurchaseGuide,
+    evidence_ref: str,
+) -> tuple[PolicyNode, ...]:
+    return tuple(
         PolicyNode(
             f"core-{position}",
             NodeKind.PURCHASE,
             next_id=f"core-{position + 1}" if position < 8 else "end",
-            evidence_ref=core_claim.claim_id,
+            evidence_ref=evidence_ref,
             item_id=item.item_id,
         )
         for position, item in enumerate(guide.core_items, start=1)
     )
-    assets_by_id = {
-        int(asset["id"]): asset for asset in assets if isinstance(asset.get("id"), int)
-    }
-    situational_branches = (
+
+
+@dataclass(frozen=True)
+class _SituationalPolicyContext:
+    hero_id: int
+    hero_name: str
+    core_item_ids: set[int]
+    assets_by_id: dict[int, dict[str, Any]]
+    hero_names: dict[int, str]
+    manifest: SnapshotManifest
+
+
+type _SituationalPolicyEntry = tuple[Branch, PolicyNode, CounterCard, EvidenceClaim]
+
+
+def _situational_policy_entry(
+    position: int,
+    branch: SituationalBranch,
+    context: _SituationalPolicyContext,
+) -> _SituationalPolicyEntry:
+    if branch.item_id in context.core_item_ids:
+        raise GuideError(
+            f"{context.hero_name} situational item {branch.item_id} repeats CORE"
+        )
+    if (
+        branch.item_id not in context.assets_by_id
+        or branch.comparator_item_id not in context.assets_by_id
+    ):
+        raise GuideError(
+            f"{context.hero_name} situational branch references missing assets"
+        )
+    response = branch.mechanic_ref.rsplit("/", 1)[-1]
+    if (
+        response
+        not in classify_item_threat_responses(context.assets_by_id[branch.item_id])
+        or MECHANIC_RESPONSE_THREATS.get(response) != branch.threat
+    ):
+        raise GuideError(
+            f"{context.hero_name} situational item {branch.item_id} lacks its "
+            "claimed response mechanic"
+        )
+    claim = _situational_claim(
+        branch,
+        hero_id=context.hero_id,
+        manifest=context.manifest,
+    )
+    purchase_id = f"situational-{position}"
+    guards = [Guard("enemy.threats", GuardOperator.CONTAINS, branch.threat)]
+    if branch.enemy_hero_id is not None:
+        guards.append(
+            Guard(
+                "enemy.heroes",
+                GuardOperator.CONTAINS,
+                branch.enemy_hero_id,
+            )
+        )
+    annotation = _situational_annotation(
+        branch,
+        assets_by_id=context.assets_by_id,
+        hero_names=context.hero_names,
+    )
+    policy_branch = Branch(
+        purchase_id,
+        guards[0],
+        additional_guards=tuple(guards[1:]),
+    )
+    purchase = PolicyNode(
+        purchase_id,
+        NodeKind.PURCHASE,
+        next_id="core-1",
+        evidence_ref=claim.claim_id,
+        item_id=branch.item_id,
+        optional=True,
+        annotation=annotation,
+    )
+    counter_card = CounterCard(
+        threat=branch.threat,
+        item_id=branch.item_id,
+        comparator_item_id=branch.comparator_item_id,
+        mechanic_ref=branch.mechanic_ref,
+        legal_timing="same observed decision opportunity",
+        alternative=branch.comparator,
+        replacement=branch.replacement,
+        execution_mode=branch.execution,
+        failure_condition=branch.failure_condition,
+        evidence_ref=claim.claim_id,
+        enemy_hero_id=branch.enemy_hero_id,
+    )
+    return policy_branch, purchase, counter_card, claim
+
+
+@dataclass(frozen=True)
+class _SituationalPolicyProjection:
+    source_branches: tuple[SituationalBranch, ...]
+    branches: tuple[Branch, ...]
+    purchases: tuple[PolicyNode, ...]
+    counter_cards: tuple[CounterCard, ...]
+    claims: tuple[EvidenceClaim, ...]
+
+
+def _project_situational_policy(
+    inputs: _HeroInputs,
+    assets_by_id: dict[int, dict[str, Any]],
+    hero_names: dict[int, str],
+    manifest: SnapshotManifest,
+) -> _SituationalPolicyProjection:
+    source_branches = (
         inputs.situational_policy.branches
         if inputs.situational_policy is not None
         else ()
     )
-    conditional_branches: list[Branch] = []
-    conditional_purchases: list[PolicyNode] = []
-    counter_cards: list[CounterCard] = []
-    for position, branch in enumerate(situational_branches, start=1):
-        if branch.item_id in {item.item_id for item in guide.core_items}:
-            raise GuideError(
-                f"{guide.hero_name} situational item {branch.item_id} repeats CORE"
-            )
-        if (
-            branch.item_id not in assets_by_id
-            or branch.comparator_item_id not in assets_by_id
-        ):
-            raise GuideError(
-                f"{guide.hero_name} situational branch references missing assets"
-            )
-        response = branch.mechanic_ref.rsplit("/", 1)[-1]
-        if (
-            response not in classify_item_threat_responses(assets_by_id[branch.item_id])
-            or MECHANIC_RESPONSE_THREATS.get(response) != branch.threat
-        ):
-            raise GuideError(
-                f"{guide.hero_name} situational item {branch.item_id} lacks its "
-                "claimed response mechanic"
-            )
-        claim = _situational_claim(
-            branch,
-            hero_id=guide.hero_id,
-            manifest=manifest,
-        )
-        evidence[claim.claim_id] = claim
-        purchase_id = f"situational-{position}"
-        guards = [Guard("enemy.threats", GuardOperator.CONTAINS, branch.threat)]
-        if branch.enemy_hero_id is not None:
-            guards.append(
-                Guard(
-                    "enemy.heroes",
-                    GuardOperator.CONTAINS,
-                    branch.enemy_hero_id,
-                )
-            )
-        annotation = _situational_annotation(
-            branch,
-            assets_by_id=assets_by_id,
-            hero_names=hero_names,
-        )
-        conditional_branches.append(
-            Branch(
-                purchase_id,
-                guards[0],
-                additional_guards=tuple(guards[1:]),
-            )
-        )
-        conditional_purchases.append(
-            PolicyNode(
-                purchase_id,
-                NodeKind.PURCHASE,
-                next_id="core-1",
-                evidence_ref=claim.claim_id,
-                item_id=branch.item_id,
-                optional=True,
-                annotation=annotation,
-            )
-        )
-        counter_cards.append(
-            CounterCard(
-                threat=branch.threat,
-                item_id=branch.item_id,
-                comparator_item_id=branch.comparator_item_id,
-                mechanic_ref=branch.mechanic_ref,
-                legal_timing="same observed decision opportunity",
-                alternative=branch.comparator,
-                replacement=branch.replacement,
-                execution_mode=branch.execution,
-                failure_condition=branch.failure_condition,
-                evidence_ref=claim.claim_id,
-                enemy_hero_id=branch.enemy_hero_id,
-            )
-        )
-
-    path = guide.ability_path
-    if path is None:
-        raise GuideError(f"{guide.hero_name} has no ability prefix policy")
-    ability_nodes: list[PolicyNode] = []
-    for position, (ability_id, scheduled) in enumerate(
-        zip(path.ability_ids, inputs.ability_timeline, strict=True),
-        start=1,
-    ):
-        node_id = f"ability-{position}"
-        ability_nodes.append(
-            PolicyNode(
-                node_id,
-                NodeKind.ABILITY,
-                evidence_ref=f"ability/{ability_id}/mechanics",
-                ability_id=ability_id,
-                level=scheduled.level,
-            )
-        )
-    description = inputs.kit.get("description")
-    role = "evidence-grounded default"
-    if isinstance(description, dict) and isinstance(description.get("role"), str):
-        role = description["role"]
-    situational_nodes = (
-        (
-            PolicyNode(
-                "situational-choice",
-                NodeKind.CHOICE,
-                branches=(*conditional_branches, Branch("core-1")),
-            ),
-            *conditional_purchases,
-        )
-        if situational_branches
-        else ()
+    context = _SituationalPolicyContext(
+        inputs.analytic_guide.hero_id,
+        inputs.analytic_guide.hero_name,
+        {item.item_id for item in inputs.analytic_guide.core_items},
+        assets_by_id,
+        hero_names,
+        manifest,
     )
-    nodes = (*purchase_nodes, *situational_nodes, PolicyNode("end", NodeKind.END))
+    entries = tuple(
+        _situational_policy_entry(position, branch, context)
+        for position, branch in enumerate(source_branches, start=1)
+    )
+    return _SituationalPolicyProjection(
+        source_branches,
+        tuple(entry[0] for entry in entries),
+        tuple(entry[1] for entry in entries),
+        tuple(entry[2] for entry in entries),
+        tuple(entry[3] for entry in entries),
+    )
+
+
+def _ability_policy_nodes(inputs: _HeroInputs) -> tuple[PolicyNode, ...]:
+    path = inputs.analytic_guide.ability_path
+    if path is None:
+        raise GuideError(
+            f"{inputs.analytic_guide.hero_name} has no ability prefix policy"
+        )
+    return tuple(
+        PolicyNode(
+            f"ability-{position}",
+            NodeKind.ABILITY,
+            evidence_ref=f"ability/{ability_id}/mechanics",
+            ability_id=ability_id,
+            level=scheduled.level,
+        )
+        for position, (ability_id, scheduled) in enumerate(
+            zip(path.ability_ids, inputs.ability_timeline, strict=True),
+            start=1,
+        )
+    )
+
+
+def _policy_abstentions(
+    inputs: _HeroInputs,
+    *,
+    has_situational_branches: bool,
+) -> tuple[Abstention, ...]:
     abstentions = [
         Abstention(
             AbstentionReason.INADEQUATE_SUPPORT,
@@ -459,7 +490,7 @@ def _build_policy(
             "Observed adopter outcomes are descriptive associations and never select or order an item.",
         ),
     ]
-    if situational_branches:
+    if has_situational_branches:
         abstentions.extend(
             Abstention(AbstentionReason.INADEQUATE_SUPPORT, detail)
             for detail in (
@@ -479,7 +510,8 @@ def _build_policy(
                 "Raw matchup pairs do not prove a mechanics-first counter pick; enemy-specific counter claims are withheld.",
             ),
         ))
-    minimum_ability_support = min(path.decision_support, default=0)
+    path = inputs.analytic_guide.ability_path
+    minimum_ability_support = min(path.decision_support, default=0) if path else 0
     if minimum_ability_support < LOW_ABILITY_DECISION_SUPPORT:
         abstentions.append(
             Abstention(
@@ -494,6 +526,51 @@ def _build_policy(
                 "The frozen cohort lacks a complete supported ending-duration profile; no phase-strength claim is emitted.",
             )
         )
+    return tuple(abstentions)
+
+
+def _build_policy(
+    inputs: _HeroInputs,
+    assets: list[dict[str, Any]],
+    hero_names: dict[int, str],
+    manifest: SnapshotManifest,
+) -> tuple[BuildPolicy, ValidationContext]:
+    guide = inputs.analytic_guide
+    definitions = ability_definitions_from_kit(inputs.kit)
+    validation = ValidationContext(
+        item_graph=ItemGraph.from_assets(assets),
+        ability_definitions=definitions,
+        level_info=inputs.kit.get("level_info"),
+    )
+    if len(guide.core_items) != 8:
+        raise GuideError(f"{guide.hero_name} does not have an eight-item core")
+    evidence, core_claim = _policy_evidence(guide, definitions, manifest)
+    purchase_nodes = _core_policy_nodes(guide, core_claim.claim_id)
+    assets_by_id = {
+        int(asset["id"]): asset for asset in assets if isinstance(asset.get("id"), int)
+    }
+    situational = _project_situational_policy(
+        inputs, assets_by_id, hero_names, manifest
+    )
+    evidence.update((claim.claim_id, claim) for claim in situational.claims)
+    ability_nodes = _ability_policy_nodes(inputs)
+    description = inputs.kit.get("description")
+    role = "evidence-grounded default"
+    if isinstance(description, dict) and isinstance(description.get("role"), str):
+        role = description["role"]
+    situational_nodes = (
+        (
+            PolicyNode(
+                "situational-choice",
+                NodeKind.CHOICE,
+                branches=(*situational.branches, Branch("core-1")),
+            ),
+            *situational.purchases,
+        )
+        if situational.source_branches
+        else ()
+    )
+    nodes = (*purchase_nodes, *situational_nodes, PolicyNode("end", NodeKind.END))
     policy = BuildPolicy(
         schema_version=1,
         hero_id=guide.hero_id,
@@ -501,12 +578,15 @@ def _build_policy(
         invariant_kit_id=str(inputs.kit["mechanics_sha256"]),
         strategic_role=role,
         snapshot_id=manifest.snapshot_id,
-        entry="situational-choice" if situational_branches else "core-1",
+        entry="situational-choice" if situational.source_branches else "core-1",
         nodes=nodes,
         evidence=tuple(sorted(evidence.values(), key=lambda claim: claim.claim_id)),
-        ability_plan=tuple(ability_nodes),
-        abstentions=tuple(abstentions),
-        counter_cards=tuple(counter_cards),
+        ability_plan=ability_nodes,
+        abstentions=_policy_abstentions(
+            inputs,
+            has_situational_branches=bool(situational.source_branches),
+        ),
+        counter_cards=situational.counter_cards,
     )
     return policy, validation
 
@@ -528,6 +608,200 @@ def _matchups_by_hero(
             "unit": "hero_enemy_pair",
         })
     return grouped
+
+
+@dataclass(frozen=True)
+class _GenerationEvidence:
+    assets: list[dict[str, Any]]
+    build_evidence: BuildEvidenceCatalog
+    analysis_start: int
+    duration_curves: dict[int, tuple[HeroDurationStat, ...]]
+    same_lane_matchups: dict[int, list[dict[str, Any]]]
+    whole_team_matchups: dict[int, list[dict[str, Any]]]
+
+
+def _prepare_hero_inputs(
+    api: DeadlockApi,
+    hero: dict[str, Any],
+    evidence: _GenerationEvidence,
+) -> _HeroInputs | str:
+    hero_id = int(hero["id"])
+    hero_name = str(hero.get("name") or hero_id)
+    ability_rows = api.ability_order_stats(
+        hero_id=hero_id,
+        min_unix_timestamp=evidence.analysis_start,
+        min_matches=1,
+    )
+    ability_path = select_ability_path(ability_rows)
+    try:
+        selected_build = select_hero_build(
+            evidence.build_evidence.heroes[hero_id], evidence.assets
+        )
+    except (ArtifactError, KeyError) as error:
+        raise GuideError(f"{hero_name} has invalid build evidence: {error}") from error
+    analytic_guide = build_purchase_guide_from_evidence(
+        hero, selected_build, ability_path=ability_path
+    )
+    if not analytic_guide.has_complete_item_coverage:
+        return "at least one supported item action in every tier"
+    if ability_path is None:
+        return "a complete reached-state ability projection"
+    duration_curve = evidence.duration_curves.get(hero_id, ())
+    try:
+        kit = build_hero_mechanics(hero, evidence.assets)
+        definitions = ability_definitions_from_kit(kit)
+        actions = schedule_ability_path(
+            definitions,
+            kit.get("level_info"),
+            ability_path.ability_ids,
+        )
+        timeline = validate_ability_timeline(
+            definitions,
+            kit.get("level_info"),
+            actions,
+        )
+    except MechanicsError as error:
+        return f"complete current mechanics: {error}"
+    return _HeroInputs(
+        hero,
+        analytic_guide,
+        kit,
+        timeline,
+        duration_curve,
+        {
+            "same_lane": evidence.same_lane_matchups.get(hero_id, []),
+            "whole_enemy_team": evidence.whole_team_matchups.get(hero_id, []),
+        },
+        evidence.build_evidence.heroes[hero_id].situational_policy,
+    )
+
+
+def _collect_hero_inputs(
+    api: DeadlockApi,
+    selected: list[dict[str, Any]],
+    evidence: _GenerationEvidence,
+    *,
+    all_heroes: bool,
+) -> tuple[list[_HeroInputs], list[str], list[tuple[int, str]]]:
+    inputs_by_hero: list[_HeroInputs] = []
+    skipped_heroes: list[str] = []
+    exclusions: list[tuple[int, str]] = []
+    for hero in selected:
+        prepared = _prepare_hero_inputs(api, hero, evidence)
+        if isinstance(prepared, str):
+            hero_id = int(hero["id"])
+            _handle_incomplete_analytics(
+                all_heroes=all_heroes,
+                skipped_heroes=skipped_heroes,
+                exclusions=exclusions,
+                hero_id=hero_id,
+                hero_name=str(hero.get("name") or hero_id),
+                reason=prepared,
+            )
+            continue
+        inputs_by_hero.append(prepared)
+    return inputs_by_hero, skipped_heroes, exclusions
+
+
+@dataclass(frozen=True)
+class _ProjectionEnvironment:
+    assets: list[dict[str, Any]]
+    hero_names: dict[int, str]
+    manifest: SnapshotManifest
+    rank_identity: str
+    build_tag_catalog: BuildTagCatalog
+    duration_distribution: dict[str, Any]
+    narrative_catalog: NarrativeCatalog | None
+    patch: Patch
+
+
+def _project_hero_guide(
+    inputs: _HeroInputs,
+    environment: _ProjectionEnvironment,
+) -> tuple[PurchaseGuide, BuildPolicy, dict[str, Any]]:
+    policy, validation = _build_policy(
+        inputs,
+        environment.assets,
+        environment.hero_names,
+        environment.manifest,
+    )
+    identity = ProjectionIdentity(
+        hero_name=inputs.analytic_guide.hero_name,
+        hero_class_name=inputs.analytic_guide.hero_class_name,
+        client_version=environment.manifest.client_version,
+        match_mode=environment.manifest.match_mode.value,
+        rank_identity=environment.rank_identity,
+    )
+    projected = project_policy_to_guide(
+        policy,
+        validation,
+        assets=environment.assets,
+        identity=identity,
+        layout_source=inputs.analytic_guide,
+    )
+    projected = replace(projected, ability_path=inputs.analytic_guide.ability_path)
+    try:
+        tag_selection = select_build_tags(
+            tuple(item.item_id for item in projected.core_items),
+            environment.assets,
+            environment.build_tag_catalog,
+        )
+    except BuildTagError as error:
+        raise GuideError(
+            f"{projected.hero_name} build tags are invalid: {error}"
+        ) from error
+    projected = replace(
+        projected,
+        build_tag_ids=tag_selection.tag_ids,
+        build_tag_classes=tag_selection.class_names,
+        build_tag_labels=tag_selection.labels,
+        build_tag_catalog_sha256=environment.build_tag_catalog.sha256,
+        build_archetype=tag_selection.archetype,
+        as_of_timestamp=environment.manifest.as_of_timestamp,
+    )
+    analytic = replace(
+        inputs.analytic_guide,
+        snapshot_id=environment.manifest.snapshot_id,
+        policy_id=policy.policy_id,
+        client_version=environment.manifest.client_version,
+        match_mode=environment.manifest.match_mode.value,
+        rank_identity=environment.rank_identity,
+    )
+    context = build_hero_strategy_context(
+        analytic,
+        inputs.hero,
+        environment.assets,
+        inputs.duration_curve,
+        environment.duration_distribution,
+        kit=inputs.kit,
+        ability_timeline=inputs.ability_timeline,
+        policy=policy,
+        projection=projected,
+        matchups=inputs.matchups,
+    )
+    if environment.narrative_catalog is not None:
+        projected = apply_narrative(
+            projected,
+            context,
+            environment.patch,
+            environment.narrative_catalog,
+        )
+    return projected, policy, context
+
+
+def _project_hero_guides(
+    inputs_by_hero: list[_HeroInputs],
+    environment: _ProjectionEnvironment,
+) -> tuple[list[PurchaseGuide], list[BuildPolicy], list[dict[str, Any]]]:
+    guides: list[PurchaseGuide] = []
+    policies: list[BuildPolicy] = []
+    contexts: list[dict[str, Any]] = []
+    for inputs in inputs_by_hero:
+        guide, policy, context = _project_hero_guide(inputs, environment)
+        guides.append(guide)
+        policies.append(policy)
+        contexts.append(context)
+    return guides, policies, contexts
 
 
 def generate_guides(
@@ -603,85 +877,20 @@ def generate_guides(
     )
     persona = api.steam_persona(account_id)
 
-    inputs_by_hero: list[_HeroInputs] = []
-    skipped_heroes: list[str] = []
-    exclusions: list[tuple[int, str]] = []
-    for hero in selected:
-        hero_id = int(hero["id"])
-        hero_name = str(hero.get("name") or hero_id)
-        ability_rows = api.ability_order_stats(
-            hero_id=hero_id,
-            min_unix_timestamp=analysis_start,
-            min_matches=1,
-        )
-        ability_path = select_ability_path(ability_rows)
-        try:
-            selected_build = select_hero_build(build_evidence.heroes[hero_id], assets)
-        except (ArtifactError, KeyError) as error:
-            raise GuideError(
-                f"{hero_name} has invalid build evidence: {error}"
-            ) from error
-        analytic_guide = build_purchase_guide_from_evidence(
-            hero, selected_build, ability_path=ability_path
-        )
-        if not analytic_guide.has_complete_item_coverage:
-            _handle_incomplete_analytics(
-                all_heroes=all_heroes,
-                skipped_heroes=skipped_heroes,
-                exclusions=exclusions,
-                hero_id=hero_id,
-                hero_name=hero_name,
-                reason="at least one supported item action in every tier",
-            )
-            continue
-        if ability_path is None:
-            _handle_incomplete_analytics(
-                all_heroes=all_heroes,
-                skipped_heroes=skipped_heroes,
-                exclusions=exclusions,
-                hero_id=hero_id,
-                hero_name=hero_name,
-                reason="a complete reached-state ability projection",
-            )
-            continue
-        duration_curve = duration_curves.get(hero_id, ())
-        try:
-            kit = build_hero_mechanics(hero, assets)
-            definitions = ability_definitions_from_kit(kit)
-            actions = schedule_ability_path(
-                definitions,
-                kit.get("level_info"),
-                ability_path.ability_ids,
-            )
-            timeline = validate_ability_timeline(
-                definitions,
-                kit.get("level_info"),
-                actions,
-            )
-        except MechanicsError as error:
-            _handle_incomplete_analytics(
-                all_heroes=all_heroes,
-                skipped_heroes=skipped_heroes,
-                exclusions=exclusions,
-                hero_id=hero_id,
-                hero_name=hero_name,
-                reason=f"complete current mechanics: {error}",
-            )
-            continue
-        inputs_by_hero.append(
-            _HeroInputs(
-                hero,
-                analytic_guide,
-                kit,
-                timeline,
-                duration_curve,
-                {
-                    "same_lane": same_lane_matchups.get(hero_id, []),
-                    "whole_enemy_team": whole_team_matchups.get(hero_id, []),
-                },
-                build_evidence.heroes[hero_id].situational_policy,
-            )
-        )
+    generation_evidence = _GenerationEvidence(
+        assets,
+        build_evidence,
+        analysis_start,
+        duration_curves,
+        same_lane_matchups,
+        whole_team_matchups,
+    )
+    inputs_by_hero, skipped_heroes, exclusions = _collect_hero_inputs(
+        api,
+        selected,
+        generation_evidence,
+        all_heroes=all_heroes,
+    )
 
     manifest = api.snapshot_manifest(
         patch=patch,
@@ -689,73 +898,22 @@ def generate_guides(
         build_tags_sha256=build_tag_catalog.sha256,
     )
     rank_identity = _rank_identity(rank_catalog, api.rank_range)
-    guides: list[PurchaseGuide] = []
-    policies: list[BuildPolicy] = []
-    contexts: list[dict[str, Any]] = []
     hero_names = {
         int(hero["id"]): str(hero.get("name") or hero["id"]) for hero in heroes
     }
-    for inputs in inputs_by_hero:
-        policy, validation = _build_policy(inputs, assets, hero_names, manifest)
-        identity = ProjectionIdentity(
-            hero_name=inputs.analytic_guide.hero_name,
-            hero_class_name=inputs.analytic_guide.hero_class_name,
-            client_version=manifest.client_version,
-            match_mode=manifest.match_mode.value,
-            rank_identity=rank_identity,
-        )
-        projected = project_policy_to_guide(
-            policy,
-            validation,
-            assets=assets,
-            identity=identity,
-            layout_source=inputs.analytic_guide,
-        )
-        projected = replace(projected, ability_path=inputs.analytic_guide.ability_path)
-        try:
-            tag_selection = select_build_tags(
-                tuple(item.item_id for item in projected.core_items),
-                assets,
-                build_tag_catalog,
-            )
-        except BuildTagError as error:
-            raise GuideError(
-                f"{projected.hero_name} build tags are invalid: {error}"
-            ) from error
-        projected = replace(
-            projected,
-            build_tag_ids=tag_selection.tag_ids,
-            build_tag_classes=tag_selection.class_names,
-            build_tag_labels=tag_selection.labels,
-            build_tag_catalog_sha256=build_tag_catalog.sha256,
-            build_archetype=tag_selection.archetype,
-            as_of_timestamp=manifest.as_of_timestamp,
-        )
-        analytic = replace(
-            inputs.analytic_guide,
-            snapshot_id=manifest.snapshot_id,
-            policy_id=policy.policy_id,
-            client_version=manifest.client_version,
-            match_mode=manifest.match_mode.value,
-            rank_identity=rank_identity,
-        )
-        context = build_hero_strategy_context(
-            analytic,
-            inputs.hero,
-            assets,
-            inputs.duration_curve,
-            duration_distribution,
-            kit=inputs.kit,
-            ability_timeline=inputs.ability_timeline,
-            policy=policy,
-            projection=projected,
-            matchups=inputs.matchups,
-        )
-        if narrative_catalog is not None:
-            projected = apply_narrative(projected, context, patch, narrative_catalog)
-        guides.append(projected)
-        policies.append(policy)
-        contexts.append(context)
+    projection_environment = _ProjectionEnvironment(
+        assets,
+        hero_names,
+        manifest,
+        rank_identity,
+        build_tag_catalog,
+        duration_distribution,
+        narrative_catalog,
+        patch,
+    )
+    guides, policies, contexts = _project_hero_guides(
+        inputs_by_hero, projection_environment
+    )
 
     return GeneratedGuides(
         guides=guides,

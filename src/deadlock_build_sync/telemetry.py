@@ -234,6 +234,41 @@ class ReconstructedEvent:
     cash_required: int = 0
 
 
+def _apply_purchase_event(
+    graph: ItemGraph,
+    event: InventoryEvent,
+    owned: list[int],
+    consumed_at: Counter[tuple[int, int]],
+) -> tuple[str, int]:
+    cash_required = graph.incremental_cash_cost(event.item_id, tuple(owned))
+    consumed = [
+        component for component in graph.components[event.item_id] if component in owned
+    ]
+    for component in consumed:
+        owned.remove(component)
+        consumed_at[event.time_s, component] += 1
+    owned.append(event.item_id)
+    classification = (
+        "upgrade_purchase" if consumed or event.upgrade_flag else "purchase"
+    )
+    return classification, cash_required
+
+
+def _apply_sale_event(
+    event: InventoryEvent,
+    owned: list[int],
+    consumed_at: Counter[tuple[int, int]],
+) -> str:
+    consumed_key = event.time_s, event.item_id
+    if event.item_id in owned:
+        owned.remove(event.item_id)
+        return "discretionary_sell"
+    if consumed_at[consumed_key]:
+        consumed_at[consumed_key] -= 1
+        return "upgrade_consumption"
+    raise TelemetryError(f"cannot reconstruct sell of unowned item {event.item_id}")
+
+
 def reconstruct_inventory_events(
     graph: ItemGraph,
     events: tuple[InventoryEvent, ...],
@@ -264,31 +299,14 @@ def reconstruct_inventory_events(
         except MechanicsError as error:
             raise TelemetryError(str(error)) from error
         if event.kind == InventoryEventKind.PURCHASE:
-            cash_required = graph.incremental_cash_cost(event.item_id, tuple(owned))
-            consumed = [
-                component
-                for component in graph.components[event.item_id]
-                if component in owned
-            ]
-            for component in consumed:
-                owned.remove(component)
-                consumed_at[event.time_s, component] += 1
-            owned.append(event.item_id)
-            classification = (
-                "upgrade_purchase" if consumed or event.upgrade_flag else "purchase"
+            classification, cash_required = _apply_purchase_event(
+                graph,
+                event,
+                owned,
+                consumed_at,
             )
         else:
-            consumed_key = event.time_s, event.item_id
-            if event.item_id in owned:
-                owned.remove(event.item_id)
-                classification = "discretionary_sell"
-            elif consumed_at[consumed_key]:
-                consumed_at[consumed_key] -= 1
-                classification = "upgrade_consumption"
-            else:
-                raise TelemetryError(
-                    f"cannot reconstruct sell of unowned item {event.item_id}"
-                )
+            classification = _apply_sale_event(event, owned, consumed_at)
             cash_required = 0
         result.append(
             ReconstructedEvent(

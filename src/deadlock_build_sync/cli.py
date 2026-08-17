@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 
 from scripts.generate_narratives import (
     DEFAULT_GENERATION_ATTEMPTS,
+    DEFAULT_GENERATION_CONCURRENCY,
     positive_int,
 )
 from scripts.generate_narratives import main as generate_narratives_main
@@ -61,6 +62,11 @@ if TYPE_CHECKING:
     from .service import GeneratedGuides
 
 DEFAULT_NARRATIVE_PATH = Path("generated/narratives.json")
+_BUILD_EVIDENCE_FILENAME = "build-evidence.json"
+_POLICY_FILENAME = "policies.json"
+_ARTIFACT_WRITE_STAGE = "artifact.write"
+_STEAM_INSTALL_STAGE = "steam.install"
+_POLICIES_PREFIX = "Policies: "
 
 
 def _trace_mode(value: str) -> TraceMode:
@@ -286,6 +292,16 @@ def build_parser() -> argparse.ArgumentParser:
             f"(default: {DEFAULT_GENERATION_ATTEMPTS})"
         ),
     )
+    sync.add_argument(
+        "--concurrency",
+        type=positive_int,
+        default=DEFAULT_GENERATION_CONCURRENCY,
+        metavar="N",
+        help=(
+            "maximum concurrent hero narrative pipelines "
+            f"(default: {DEFAULT_GENERATION_CONCURRENCY})"
+        ),
+    )
 
     preview = subparsers.add_parser(
         "preview", help="generate and print guides without changing Steam data"
@@ -436,7 +452,7 @@ def _build_evidence_path(args: argparse.Namespace) -> Path:
     if args.build_evidence is not None:
         return args.build_evidence.expanduser().resolve()
     configured = args.artifacts if args.command == "sync" else None
-    return _sync_artifact_directory(configured) / "build-evidence.json"
+    return _sync_artifact_directory(configured) / _BUILD_EVIDENCE_FILENAME
 
 
 def _build_evidence(args: argparse.Namespace) -> tuple[Path, BuildEvidenceCatalog]:
@@ -548,13 +564,13 @@ def _run_sync(args: argparse.Namespace) -> int:
         )
 
     context_path = artifact_directory / "strategy-context.json"
-    policy_path = artifact_directory / "policies.json"
+    policy_path = artifact_directory / _POLICY_FILENAME
     kit_path = artifact_directory / "kit-profiles.json"
     narrative_path = artifact_directory / "narratives.json"
     _write_strategy_context(context_path, generated)
     _write_policy_artifact(policy_path, generated)
-    record_stage_facts("artifact.write", path=context_path)
-    record_stage_facts("artifact.write", path=policy_path)
+    record_stage_facts(_ARTIFACT_WRITE_STAGE, path=context_path)
+    record_stage_facts(_ARTIFACT_WRITE_STAGE, path=policy_path)
 
     generation_args = [
         "--input",
@@ -569,12 +585,14 @@ def _run_sync(args: argparse.Namespace) -> int:
         args.model,
         "--max-attempts",
         str(args.max_attempts),
+        "--concurrency",
+        str(args.concurrency),
     ]
     if args.force_narratives:
         generation_args.append("--force")
     if generate_narratives_main(generation_args) != 0:
         raise NarrativeError("Codex narrative generation failed")
-    record_stage_facts("artifact.write", path=narrative_path)
+    record_stage_facts(_ARTIFACT_WRITE_STAGE, path=narrative_path)
 
     catalog = load_narrative_catalog(narrative_path)
     guides = [
@@ -594,7 +612,7 @@ def _run_sync(args: argparse.Namespace) -> int:
         allow_subset=generated.subset_selected,
     )
     record_stage_facts(
-        "steam.install",
+        _STEAM_INSTALL_STAGE,
         guide_count=len(result.build_ids),
         created=result.created,
         updated=result.updated,
@@ -610,7 +628,7 @@ def _run_sync(args: argparse.Namespace) -> int:
     print(f"Backup: {result.backup_directory}")
     print(f"Snapshot: {result.snapshot_id}")
     print(
-        "Policies: "
+        _POLICIES_PREFIX
         + ", ".join(
             f"{hero_id}={policy_id}"
             for hero_id, policy_id in sorted(result.policy_ids.items())
@@ -672,7 +690,7 @@ def _run_refresh_evidence(args: argparse.Namespace) -> int:
             "refresh-evidence requires the analysis dependencies; "
             "install deadlock-build-sync[analysis]"
         ) from error
-    output = _sync_artifact_directory(args.artifacts) / "build-evidence.json"
+    output = _sync_artifact_directory(args.artifacts) / _BUILD_EVIDENCE_FILENAME
     forwarded = [
         "all",
         "--min-rank",
@@ -708,7 +726,7 @@ def _run_recommend(args: argparse.Namespace) -> int:
     evidence_path = (
         args.build_evidence.expanduser().resolve()
         if args.build_evidence is not None
-        else _sync_artifact_directory(args.artifacts) / "build-evidence.json"
+        else _sync_artifact_directory(args.artifacts) / _BUILD_EVIDENCE_FILENAME
     )
     evidence = require_current_build_evidence(
         evidence_path,
@@ -811,7 +829,7 @@ def _run_install(args: argparse.Namespace) -> int:
         allow_subset=generated.subset_selected,
     )
     record_stage_facts(
-        "steam.install",
+        _STEAM_INSTALL_STAGE,
         guide_count=len(result.build_ids),
         created=result.created,
         updated=result.updated,
@@ -827,7 +845,7 @@ def _run_install(args: argparse.Namespace) -> int:
     print(f"Build evidence: {evidence_path} ({evidence.artifact_id})")
     print(f"Snapshot: {result.snapshot_id}")
     print(
-        "Policies: "
+        _POLICIES_PREFIX
         + ", ".join(
             f"{hero_id}={policy_id}"
             for hero_id, policy_id in sorted(result.policy_ids.items())
@@ -850,9 +868,9 @@ def _run_install_artifacts(args: argparse.Namespace) -> int:
         )
     artifact_directory = _sync_artifact_directory(args.artifacts)
     context_path = artifact_directory / "strategy-context.json"
-    policy_path = artifact_directory / "policies.json"
+    policy_path = artifact_directory / _POLICY_FILENAME
     narrative_path = artifact_directory / "narratives.json"
-    build_evidence_path = artifact_directory / "build-evidence.json"
+    build_evidence_path = artifact_directory / _BUILD_EVIDENCE_FILENAME
     bundle = load_artifact_guide_bundle(
         context_path,
         policy_path,
@@ -886,7 +904,7 @@ def _run_install_artifacts(args: argparse.Namespace) -> int:
         allow_subset=False,
     )
     record_stage_facts(
-        "steam.install",
+        _STEAM_INSTALL_STAGE,
         guide_count=len(result.build_ids),
         created=result.created,
         updated=result.updated,
@@ -905,7 +923,7 @@ def _run_install_artifacts(args: argparse.Namespace) -> int:
     print(f"Backup: {result.backup_directory}")
     print(f"Snapshot: {result.snapshot_id}")
     print(
-        "Policies: "
+        _POLICIES_PREFIX
         + ", ".join(
             f"{hero_id}={policy_id}"
             for hero_id, policy_id in sorted(result.policy_ids.items())
@@ -941,10 +959,10 @@ def _run_export_context(args: argparse.Namespace) -> int:
         exclusions=generated.exclusions,
     )
     atomic_write_json(args.output, document, compact=True)
-    record_stage_facts("artifact.write", path=args.output)
-    policy_output = args.policy_output or args.output.with_name("policies.json")
+    record_stage_facts(_ARTIFACT_WRITE_STAGE, path=args.output)
+    policy_output = args.policy_output or args.output.with_name(_POLICY_FILENAME)
     _write_policy_artifact(policy_output, generated)
-    record_stage_facts("artifact.write", path=policy_output)
+    record_stage_facts(_ARTIFACT_WRITE_STAGE, path=policy_output)
     print(f"Exported {len(generated.contexts)} hero context(s): {args.output}")
     print(f"Policies: {policy_output}")
     print(f"Build evidence: {evidence_path} ({evidence.artifact_id})")

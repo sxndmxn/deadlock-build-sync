@@ -89,6 +89,7 @@ def test_layout_rejects_a_four_item_core() -> None:
         "matches": 100,
         "share": 0.1,
     }
+    items = _items()
 
     with pytest.raises(ValueError, match="exactly eight"):
-        create_build_layout(late_game, _items(), hero_name="Haze")
+        create_build_layout(late_game, items, hero_name="Haze")

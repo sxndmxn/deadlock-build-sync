@@ -1,1 +1,1 @@
-"""Development scripts with unit-tested orchestration helpers."""
+"""Development scripts with unit-tested orchestration operations."""

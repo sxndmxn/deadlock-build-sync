@@ -6,8 +6,10 @@ import json
 import math
 from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass
+from dataclasses import field as dataclass_field
 from itertools import combinations
-from typing import Any
+from pathlib import Path
+from typing import Any, Protocol
 
 import duckdb
 import numpy as np
@@ -23,6 +25,7 @@ START_ITEM = -1
 MAX_ACTIVE_ITEMS = 4
 TRAIN_CANDIDATES = 32
 CORE_CANDIDATES = 64
+_RANK_NDCG_OBJECTIVE = "rank:ndcg"
 FEATURE_NAMES = (
     "first_item",
     "previous_item",
@@ -163,9 +166,18 @@ class ModelSpec:
     max_depth: int
 
 
+@dataclass(frozen=True)
+class _ExperimentContext:
+    assets: list[Asset]
+    by_id: dict[int, Asset]
+    hero_names: dict[int, str]
+    config: ExperimentConfig
+    device: str
+
+
 MODEL_SPECS = (
-    ModelSpec("ndcg_depth6", "rank:ndcg", 6),
-    ModelSpec("ndcg_depth8", "rank:ndcg", 8),
+    ModelSpec("ndcg_depth6", _RANK_NDCG_OBJECTIVE, 6),
+    ModelSpec("ndcg_depth8", _RANK_NDCG_OBJECTIVE, 8),
     ModelSpec("pairwise_depth6", "rank:pairwise", 6),
 )
 
@@ -333,6 +345,101 @@ def _apply_purchase(item_id: int, owned: set[int], by_id: dict[int, Asset]) -> i
     return max(0, asset.cost - credit)
 
 
+@dataclass
+class _PurchaseSequence:
+    key: tuple[int, int] | None = None
+    owned: set[int] = dataclass_field(default_factory=set)
+    sale_times: dict[int, int] = dataclass_field(default_factory=dict)
+    first_item: int = START_ITEM
+    previous_item: int = START_ITEM
+    prior_spend: int = 0
+    current_time: int = 0
+    current_net_worth: float | None = None
+    current_lead: float | None = None
+    position: int = 0
+    last_fold: str = ""
+    last_duration: int = 0
+
+    def finish_inventory(self, inventories: list[InventoryObservation]) -> None:
+        if self.key is None:
+            return
+        for owned_id, sale_time in tuple(self.sale_times.items()):
+            if 0 < sale_time <= self.last_duration:
+                self.owned.discard(owned_id)
+        inventories.append(InventoryObservation(self.last_fold, frozenset(self.owned)))
+
+    def start_match(self, key: tuple[int, int]) -> None:
+        self.key = key
+        self.owned = set()
+        self.sale_times = {}
+        self.first_item = START_ITEM
+        self.previous_item = START_ITEM
+        self.prior_spend = 0
+        self.current_time = 0
+        self.current_net_worth = None
+        self.current_lead = None
+        self.position = 0
+
+    def expire_sales(self, target_time: int) -> None:
+        for owned_id, sale_time in tuple(self.sale_times.items()):
+            if 0 < sale_time <= target_time:
+                self.owned.discard(owned_id)
+                self.sale_times.pop(owned_id, None)
+
+    def consume_purchase(
+        self,
+        row: dict[str, Any],
+        by_id: dict[int, Asset],
+    ) -> PurchaseQuery:
+        if self.key is None:
+            raise RuntimeError("purchase sequence has no match identity")
+        target_time = int(row["buy_time"])
+        self.expire_sales(target_time)
+        target = int(row["item_id"])
+        query = PurchaseQuery(
+            match_id=self.key[0],
+            player_slot=self.key[1],
+            fold=str(row["fold"]),
+            position=self.position,
+            phase=_phase(self.current_time),
+            first_item=self.first_item,
+            previous_item=self.previous_item,
+            current_time_s=self.current_time,
+            prior_spend=self.prior_spend,
+            own_net_worth=self.current_net_worth,
+            team_lead=self.current_lead,
+            average_badge=int(row["average_badge"]),
+            calibration=bool(row["calibration"]),
+            owned=tuple(sorted(self.owned)),
+            target=target,
+            target_buy_time_s=target_time,
+            component_upgrade=(
+                self.previous_item != START_ITEM
+                and self.previous_item in by_id[target].components
+            ),
+        )
+        self.prior_spend += _apply_purchase(target, self.owned, by_id)
+        self.sale_times[target] = int(row["sold_time"])
+        if self.first_item == START_ITEM:
+            self.first_item = target
+        self.previous_item = target
+        self.current_time = target_time
+        self.current_net_worth = (
+            float(row["own_net_worth_at_buy"])
+            if row["own_net_worth_at_buy"] is not None
+            else None
+        )
+        self.current_lead = (
+            float(row["team_net_worth_lead"])
+            if row["team_net_worth_lead"] is not None
+            else None
+        )
+        self.position += 1
+        self.last_fold = str(row["fold"])
+        self.last_duration = int(row["duration_s"])
+        return query
+
+
 def load_hero_queries(
     con: duckdb.DuckDBPyConnection,
     hero_id: int,
@@ -349,90 +456,14 @@ def load_hero_queries(
     ).pl()
     queries: list[PurchaseQuery] = []
     inventories: list[InventoryObservation] = []
-    current_key: tuple[int, int] | None = None
-    owned: set[int] = set()
-    sale_times: dict[int, int] = {}
-    first_item = START_ITEM
-    previous_item = START_ITEM
-    prior_spend = 0
-    current_time = 0
-    current_nw: float | None = None
-    current_lead: float | None = None
-    position = 0
-    last_fold = ""
-    last_duration = 0
-
-    def finish_inventory() -> None:
-        if current_key is None:
-            return
-        for owned_id, sale_time in tuple(sale_times.items()):
-            if 0 < sale_time <= last_duration:
-                owned.discard(owned_id)
-        inventories.append(InventoryObservation(last_fold, frozenset(owned)))
-
+    sequence = _PurchaseSequence()
     for row in frame.iter_rows(named=True):
         key = (int(row["match_id"]), int(row["player_slot"]))
-        if key != current_key:
-            finish_inventory()
-            current_key = key
-            owned = set()
-            sale_times = {}
-            first_item = START_ITEM
-            previous_item = START_ITEM
-            prior_spend = 0
-            current_time = 0
-            current_nw = None
-            current_lead = None
-            position = 0
-        target_time = int(row["buy_time"])
-        for owned_id, sale_time in tuple(sale_times.items()):
-            if 0 < sale_time <= target_time:
-                owned.discard(owned_id)
-                sale_times.pop(owned_id, None)
-        target = int(row["item_id"])
-        queries.append(
-            PurchaseQuery(
-                match_id=key[0],
-                player_slot=key[1],
-                fold=str(row["fold"]),
-                position=position,
-                phase=_phase(current_time),
-                first_item=first_item,
-                previous_item=previous_item,
-                current_time_s=current_time,
-                prior_spend=prior_spend,
-                own_net_worth=current_nw,
-                team_lead=current_lead,
-                average_badge=int(row["average_badge"]),
-                calibration=bool(row["calibration"]),
-                owned=tuple(sorted(owned)),
-                target=target,
-                target_buy_time_s=target_time,
-                component_upgrade=(
-                    previous_item != START_ITEM
-                    and previous_item in by_id[target].components
-                ),
-            )
-        )
-        prior_spend += _apply_purchase(target, owned, by_id)
-        sale_times[target] = int(row["sold_time"])
-        first_item = target if first_item == START_ITEM else first_item
-        previous_item = target
-        current_time = target_time
-        current_nw = (
-            float(row["own_net_worth_at_buy"])
-            if row["own_net_worth_at_buy"] is not None
-            else None
-        )
-        current_lead = (
-            float(row["team_net_worth_lead"])
-            if row["team_net_worth_lead"] is not None
-            else None
-        )
-        position += 1
-        last_fold = str(row["fold"])
-        last_duration = int(row["duration_s"])
-    finish_inventory()
+        if key != sequence.key:
+            sequence.finish_inventory(inventories)
+            sequence.start_match(key)
+        queries.append(sequence.consume_purchase(row, by_id))
+    sequence.finish_inventory(inventories)
     return queries, inventories
 
 
@@ -681,7 +712,7 @@ def _model(spec: ModelSpec, *, device: str) -> Any:
         "enable_categorical": True,
         "feature_types": list(FEATURE_TYPES),
     }
-    if spec.objective == "rank:ndcg":
+    if spec.objective == _RANK_NDCG_OBJECTIVE:
         parameters.update(
             lambdarank_pair_method="topk",
             lambdarank_num_pair_per_sample=16,
@@ -1296,6 +1327,168 @@ selected_model: "{selected_spec.name}"
 """
 
 
+def _select_pilot_model(
+    con: duckdb.DuckDBPyConnection,
+    pilots: list[int],
+    context: _ExperimentContext,
+) -> tuple[ModelSpec, list[dict[str, Any]]]:
+    pilot_scores: dict[str, list[float]] = defaultdict(list)
+    pilot_rows: list[dict[str, Any]] = []
+    for hero_id in pilots:
+        print(
+            f"XGBoost pilot: {context.hero_names.get(hero_id, hero_id)}",
+            flush=True,
+        )
+        queries, _ = load_hero_queries(con, hero_id, context.by_id)
+        baseline = BaselineCounts.fit(queries, len(context.assets))
+        train = sample_queries(queries, "train", context.config.pilot_train_queries)
+        validation = sample_queries(
+            queries, "validation", context.config.pilot_validation_queries
+        )
+        for spec in MODEL_SPECS:
+            model = fit_model(
+                train,
+                validation,
+                spec=spec,
+                baseline=baseline,
+                assets=context.assets,
+                by_id=context.by_id,
+                device=context.device,
+            )
+            records = evaluate_model(
+                model,
+                validation,
+                baseline=baseline,
+                assets=context.assets,
+                by_id=context.by_id,
+                batch_queries=context.config.evaluation_batch_queries,
+            )
+            non_component = [
+                record for record in records if not record.component_upgrade
+            ]
+            score = _metrics(np.asarray([record.xgb_rank for record in non_component]))[
+                "mrr"
+            ]
+            pilot_scores[spec.name].append(score)
+            pilot_rows.append({
+                "hero_id": hero_id,
+                "model": spec.name,
+                "non_component_mrr": score,
+            })
+            del model, records
+            gc.collect()
+    selected = max(
+        MODEL_SPECS,
+        key=lambda spec: (
+            float(np.mean(pilot_scores[spec.name])),
+            -spec.max_depth,
+            spec.name,
+        ),
+    )
+    return selected, pilot_rows
+
+
+def _typical_hero_budget(con: duckdb.DuckDBPyConnection, hero_id: int) -> int:
+    result = con.execute(
+        f"""
+        SELECT median(final_net_worth)
+        FROM player_matches
+        WHERE hero_id = {hero_id}
+        """
+    ).fetchone()
+    if result is None or result[0] is None:
+        raise RuntimeError(f"hero {hero_id} has no final net-worth evidence")
+    return int(result[0])
+
+
+class _FeatureImportanceModel(Protocol):
+    def get_booster(self) -> xgb.Booster: ...
+
+
+def _feature_importance_rows(
+    hero_id: int,
+    model: _FeatureImportanceModel,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for feature, gain in model.get_booster().get_score(importance_type="gain").items():
+        feature_name = feature
+        if feature.startswith("f") and feature[1:].isdigit():
+            feature_name = FEATURE_NAMES[int(feature[1:])]
+        rows.append({
+            "hero_id": hero_id,
+            "feature": feature_name,
+            "gain": gain,
+        })
+    return rows
+
+
+type _HeroExperiment = tuple[
+    list[dict[str, Any]],
+    dict[str, Any],
+    list[dict[str, Any]],
+    list[RankRecord],
+]
+
+
+def _run_hero_experiment(
+    con: duckdb.DuckDBPyConnection,
+    hero_id: int,
+    selected_spec: ModelSpec,
+    models_dir: Path,
+    context: _ExperimentContext,
+) -> _HeroExperiment:
+    queries, inventories = load_hero_queries(con, hero_id, context.by_id)
+    baseline = BaselineCounts.fit(queries, len(context.assets))
+    train = sample_queries(queries, "train", context.config.train_queries)
+    validation = sample_queries(
+        queries, "validation", context.config.validation_queries
+    )
+    test = sample_queries(queries, "test", context.config.test_queries)
+    model = fit_model(
+        train,
+        validation,
+        spec=selected_spec,
+        baseline=baseline,
+        assets=context.assets,
+        by_id=context.by_id,
+        device=context.device,
+    )
+    validation_records = evaluate_model(
+        model,
+        validation,
+        baseline=baseline,
+        assets=context.assets,
+        by_id=context.by_id,
+        batch_queries=context.config.evaluation_batch_queries,
+    )
+    test_records = evaluate_model(
+        model,
+        test,
+        baseline=baseline,
+        assets=context.assets,
+        by_id=context.by_id,
+        batch_queries=context.config.evaluation_batch_queries,
+    )
+    metric_records = [
+        *metric_rows(hero_id, "validation", validation_records),
+        *metric_rows(hero_id, "test", test_records),
+    ]
+    core = compare_cores(
+        hero_id,
+        queries,
+        inventories,
+        validation_records,
+        test_records,
+        context.by_id,
+        _typical_hero_budget(con, hero_id),
+    )
+    importance = _feature_importance_rows(hero_id, model)
+    model.save_model(models_dir / f"hero_{hero_id}.json")
+    del model, queries, inventories, validation_records
+    gc.collect()
+    return metric_records, core, importance, test_records
+
+
 def run_xgboost_experiment(
     paths: RunPaths, config: ExperimentConfig | None = None
 ) -> dict[str, Any]:
@@ -1309,6 +1502,7 @@ def run_xgboost_experiment(
         int(hero["id"]): str(hero.get("name") or hero["id"])
         for hero in read_json(paths.raw / "heroes.json")
     }
+    context = _ExperimentContext(assets, by_id, hero_names, config, device)
     con = duckdb.connect(str(paths.raw / "analysis.duckdb"), read_only=True)
     try:
         hero_ids = [
@@ -1318,56 +1512,7 @@ def run_xgboost_experiment(
             ).fetchall()
         ]
         pilots = _pilot_heroes(con)
-        pilot_scores: dict[str, list[float]] = defaultdict(list)
-        pilot_rows: list[dict[str, Any]] = []
-        for hero_id in pilots:
-            print(f"XGBoost pilot: {hero_names.get(hero_id, hero_id)}", flush=True)
-            queries, _ = load_hero_queries(con, hero_id, by_id)
-            baseline = BaselineCounts.fit(queries, len(assets))
-            train = sample_queries(queries, "train", config.pilot_train_queries)
-            validation = sample_queries(
-                queries, "validation", config.pilot_validation_queries
-            )
-            for spec in MODEL_SPECS:
-                model = fit_model(
-                    train,
-                    validation,
-                    spec=spec,
-                    baseline=baseline,
-                    assets=assets,
-                    by_id=by_id,
-                    device=device,
-                )
-                records = evaluate_model(
-                    model,
-                    validation,
-                    baseline=baseline,
-                    assets=assets,
-                    by_id=by_id,
-                    batch_queries=config.evaluation_batch_queries,
-                )
-                non_component = [
-                    record for record in records if not record.component_upgrade
-                ]
-                score = _metrics(
-                    np.asarray([record.xgb_rank for record in non_component])
-                )["mrr"]
-                pilot_scores[spec.name].append(score)
-                pilot_rows.append({
-                    "hero_id": hero_id,
-                    "model": spec.name,
-                    "non_component_mrr": score,
-                })
-                del model, records
-                gc.collect()
-        selected_spec = max(
-            MODEL_SPECS,
-            key=lambda spec: (
-                float(np.mean(pilot_scores[spec.name])),
-                -spec.max_depth,
-                spec.name,
-            ),
-        )
+        selected_spec, pilot_rows = _select_pilot_model(con, pilots, context)
         model_run_key = (
             f"{selected_spec.name}-train-{config.train_queries}"
             f"-validation-{config.validation_queries}-test-{config.test_queries}"
@@ -1384,75 +1529,13 @@ def run_xgboost_experiment(
                 f"XGBoost hero {index}/{len(hero_ids)}: {hero_names.get(hero_id, hero_id)}",
                 flush=True,
             )
-            queries, inventories = load_hero_queries(con, hero_id, by_id)
-            baseline = BaselineCounts.fit(queries, len(assets))
-            train = sample_queries(queries, "train", config.train_queries)
-            validation = sample_queries(
-                queries, "validation", config.validation_queries
+            hero_metrics, core, importance, test_records = _run_hero_experiment(
+                con, hero_id, selected_spec, models_dir, context
             )
-            test = sample_queries(queries, "test", config.test_queries)
-            model = fit_model(
-                train,
-                validation,
-                spec=selected_spec,
-                baseline=baseline,
-                assets=assets,
-                by_id=by_id,
-                device=device,
-            )
-            validation_records = evaluate_model(
-                model,
-                validation,
-                baseline=baseline,
-                assets=assets,
-                by_id=by_id,
-                batch_queries=config.evaluation_batch_queries,
-            )
-            test_records = evaluate_model(
-                model,
-                test,
-                baseline=baseline,
-                assets=assets,
-                by_id=by_id,
-                batch_queries=config.evaluation_batch_queries,
-            )
-            metrics.extend(metric_rows(hero_id, "validation", validation_records))
-            metrics.extend(metric_rows(hero_id, "test", test_records))
+            metrics.extend(hero_metrics)
+            cores.append(core)
+            feature_importance.extend(importance)
             all_test_records.extend(test_records)
-            typical_budget_result = con.execute(
-                f"""
-                SELECT median(final_net_worth)
-                FROM player_matches
-                WHERE hero_id = {hero_id}
-                """
-            ).fetchone()
-            if typical_budget_result is None or typical_budget_result[0] is None:
-                raise RuntimeError(f"hero {hero_id} has no final net-worth evidence")
-            cores.append(
-                compare_cores(
-                    hero_id,
-                    queries,
-                    inventories,
-                    validation_records,
-                    test_records,
-                    by_id,
-                    int(typical_budget_result[0]),
-                )
-            )
-            booster = model.get_booster()
-            for feature, gain in booster.get_score(importance_type="gain").items():
-                feature_name = feature
-                if feature.startswith("f") and feature[1:].isdigit():
-                    feature_name = FEATURE_NAMES[int(feature[1:])]
-                feature_importance.append({
-                    "hero_id": hero_id,
-                    "feature": feature_name,
-                    "gain": gain,
-                })
-            model_path = models_dir / f"hero_{hero_id}.json"
-            model.save_model(model_path)
-            del model, queries, inventories, validation_records, test_records
-            gc.collect()
     finally:
         con.close()
 

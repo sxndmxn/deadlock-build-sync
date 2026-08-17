@@ -18,11 +18,18 @@ from .mechanics import (
 from .snapshot import EpochBoundary, EpochSet, MatchMode, sha256_json
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from pathlib import Path
 
     from .ranks import RankCatalog, RankRange
 
 BUILD_EVIDENCE_SCHEMA_VERSION = 2
+
+type _SequencePolicyDocument = dict[str, Any]
+type _SituationalBranchDocument = dict[str, Any]
+type _SituationalPolicyDocument = dict[str, Any]
+
+
 CORE_ITEM_COUNT = 8
 CORE_CANDIDATE_LIMIT = 64
 TIER_ITEM_COUNT = 10
@@ -339,7 +346,7 @@ def _sequence_transition(value: object, hero_id: int) -> SequenceTransition:
 def _sequence_policy(value: object, hero_id: int) -> SequencePolicy:
     if not isinstance(value, dict) or value.get("version") != SEQUENCE_POLICY_VERSION:
         raise ArtifactError(f"hero {hero_id} has no supported sequence policy")
-    data = cast("dict[str, Any]", value)
+    data = cast("_SequencePolicyDocument", value)
     raw_path = data.get("component_expanded_default_path")
     raw_transitions = data.get("transitions")
     evaluation = data.get("evaluation")
@@ -372,15 +379,15 @@ def _sequence_policy(value: object, hero_id: int) -> SequencePolicy:
         transitions,
         minimum_support,
         str(production_model),
-        cast("dict[str, Any]", evaluation),
-        cast("dict[str, Any]", challenger),
+        evaluation,
+        challenger,
     )
 
 
 def _situational_branch(value: object, hero_id: int) -> SituationalBranch:
     if not isinstance(value, dict):
         raise ArtifactError(f"hero {hero_id} has a malformed situational branch")
-    data = cast("dict[str, Any]", value)
+    data = cast("_SituationalBranchDocument", value)
     threat = data.get("threat")
     enemy_hero_id = data.get("enemy_hero_id")
     text_fields = (
@@ -466,7 +473,7 @@ def _situational_policy(value: object, hero_id: int) -> SituationalPolicy:
         or value.get("version") != SITUATIONAL_POLICY_VERSION
     ):
         raise ArtifactError(f"hero {hero_id} has no supported situational policy")
-    data = cast("dict[str, Any]", value)
+    data = cast("_SituationalPolicyDocument", value)
     branches = data.get("branches")
     abstentions = data.get("abstentions")
     vocabulary = data.get("threat_vocabulary")
@@ -497,6 +504,95 @@ def _situational_policy(value: object, hero_id: int) -> SituationalPolicy:
     )
 
 
+def _hero_items(
+    raw_items: Sequence[object],
+    hero_id: int,
+    eligible: int,
+) -> tuple[tuple[ItemEvidence, ...], list[int]]:
+    items = tuple(_item(row, hero_id) for row in raw_items)
+    item_ids = [item.item_id for item in items]
+    if len(item_ids) != len(set(item_ids)):
+        raise ArtifactError(f"hero {hero_id} has duplicate item evidence")
+    if any(item.eligible_player_matches != eligible for item in items):
+        raise ArtifactError(f"hero {hero_id} item denominators disagree")
+    return items, item_ids
+
+
+def _core_candidate(
+    row: object,
+    hero_id: int,
+    item_ids: list[int],
+    eligible: int,
+) -> CoreCandidate:
+    if not isinstance(row, dict):
+        raise ArtifactError(f"hero {hero_id} has a malformed core candidate")
+    raw_item_ids = row.get("item_ids")
+    if not isinstance(raw_item_ids, list):
+        raise ArtifactError(f"hero {hero_id} has a malformed core candidate")
+    candidate_ids = tuple(
+        _required_int(item_id, "core item id", minimum=1) for item_id in raw_item_ids
+    )
+    matches = _required_int(row.get("joint_matches"), "core support")
+    if (
+        len(candidate_ids) != CORE_ITEM_COUNT
+        or len(set(candidate_ids)) != CORE_ITEM_COUNT
+        or tuple(sorted(candidate_ids)) != candidate_ids
+        or not set(candidate_ids) <= set(item_ids)
+        or matches < MINIMUM_CORE_SUPPORT
+        or matches > eligible
+    ):
+        raise ArtifactError(f"hero {hero_id} has an invalid core candidate")
+    return CoreCandidate(candidate_ids, matches)
+
+
+def _core_candidates(
+    raw_candidates: Sequence[object],
+    hero_id: int,
+    item_ids: list[int],
+    eligible: int,
+) -> list[CoreCandidate]:
+    candidates = [
+        _core_candidate(row, hero_id, item_ids, eligible) for row in raw_candidates
+    ]
+    if not candidates or len(candidates) > CORE_CANDIDATE_LIMIT:
+        raise ArtifactError(f"hero {hero_id} has no bounded supported core candidates")
+    if len({candidate.item_ids for candidate in candidates}) != len(candidates):
+        raise ArtifactError(f"hero {hero_id} has duplicate core candidates")
+    expected = sorted(candidates, key=lambda row: (-row.joint_matches, row.item_ids))
+    if candidates != expected:
+        raise ArtifactError(f"hero {hero_id} core candidates are not deterministic")
+    return candidates
+
+
+def _validate_item_tier_coverage(items: tuple[ItemEvidence, ...], hero_id: int) -> None:
+    for tier in range(1, 5):
+        if not any(item.tier == tier for item in items):
+            raise ArtifactError(f"hero {hero_id} has no Tier {tier} item evidence")
+
+
+def _validate_policy_item_references(
+    sequence_policy: SequencePolicy,
+    situational_policy: SituationalPolicy,
+    items: tuple[ItemEvidence, ...],
+    hero_id: int,
+) -> None:
+    item_ids = {item.item_id for item in items}
+    referenced_items = (
+        set(sequence_policy.default_path)
+        | {row.next_item_id for row in sequence_policy.transitions}
+        | {branch.item_id for branch in situational_policy.branches}
+        | {branch.comparator_item_id for branch in situational_policy.branches}
+    )
+    if not referenced_items <= item_ids:
+        raise ArtifactError(f"hero {hero_id} policy references missing item evidence")
+    items_by_id = {item.item_id: item for item in items}
+    if any(
+        items_by_id[branch.item_id].adopter_matches < MINIMUM_TIER_SUPPORT
+        for branch in situational_policy.branches
+    ):
+        raise ArtifactError(f"hero {hero_id} has a weak situational tier item")
+
+
 def _hero(value: object) -> HeroBuildEvidence:
     if not isinstance(value, dict):
         raise ArtifactError("build evidence contains a malformed hero")
@@ -511,60 +607,14 @@ def _hero(value: object) -> HeroBuildEvidence:
     raw_candidates = value.get("core_candidates")
     if not isinstance(raw_items, list) or not isinstance(raw_candidates, list):
         raise ArtifactError(f"hero {hero_id} has incomplete build evidence")
-    items = tuple(_item(row, hero_id) for row in raw_items)
-    item_ids = [item.item_id for item in items]
-    if len(item_ids) != len(set(item_ids)):
-        raise ArtifactError(f"hero {hero_id} has duplicate item evidence")
-    if any(item.eligible_player_matches != eligible for item in items):
-        raise ArtifactError(f"hero {hero_id} item denominators disagree")
-    candidates = []
-    for row in raw_candidates:
-        if not isinstance(row, dict):
-            raise ArtifactError(f"hero {hero_id} has a malformed core candidate")
-        raw_item_ids = row.get("item_ids")
-        if not isinstance(raw_item_ids, list):
-            raise ArtifactError(f"hero {hero_id} has a malformed core candidate")
-        candidate_ids = tuple(
-            _required_int(item_id, "core item id", minimum=1)
-            for item_id in raw_item_ids
-        )
-        matches = _required_int(row.get("joint_matches"), "core support")
-        if (
-            len(candidate_ids) != CORE_ITEM_COUNT
-            or len(set(candidate_ids)) != CORE_ITEM_COUNT
-            or tuple(sorted(candidate_ids)) != candidate_ids
-            or not set(candidate_ids) <= set(item_ids)
-            or matches < MINIMUM_CORE_SUPPORT
-            or matches > eligible
-        ):
-            raise ArtifactError(f"hero {hero_id} has an invalid core candidate")
-        candidates.append(CoreCandidate(candidate_ids, matches))
-    if not candidates or len(candidates) > CORE_CANDIDATE_LIMIT:
-        raise ArtifactError(f"hero {hero_id} has no bounded supported core candidates")
-    if len({candidate.item_ids for candidate in candidates}) != len(candidates):
-        raise ArtifactError(f"hero {hero_id} has duplicate core candidates")
-    expected = sorted(candidates, key=lambda row: (-row.joint_matches, row.item_ids))
-    if candidates != expected:
-        raise ArtifactError(f"hero {hero_id} core candidates are not deterministic")
-    for tier in range(1, 5):
-        if not any(item.tier == tier for item in items):
-            raise ArtifactError(f"hero {hero_id} has no Tier {tier} item evidence")
+    items, item_ids = _hero_items(raw_items, hero_id, eligible)
+    candidates = _core_candidates(raw_candidates, hero_id, item_ids, eligible)
+    _validate_item_tier_coverage(items, hero_id)
     sequence_policy = _sequence_policy(value.get("sequence_policy"), hero_id)
     situational_policy = _situational_policy(value.get("situational_policy"), hero_id)
-    referenced_items = (
-        set(sequence_policy.default_path)
-        | {row.next_item_id for row in sequence_policy.transitions}
-        | {branch.item_id for branch in situational_policy.branches}
-        | {branch.comparator_item_id for branch in situational_policy.branches}
+    _validate_policy_item_references(
+        sequence_policy, situational_policy, items, hero_id
     )
-    if not referenced_items <= set(item_ids):
-        raise ArtifactError(f"hero {hero_id} policy references missing item evidence")
-    items_by_id = {item.item_id: item for item in items}
-    if any(
-        items_by_id[branch.item_id].adopter_matches < MINIMUM_TIER_SUPPORT
-        for branch in situational_policy.branches
-    ):
-        raise ArtifactError(f"hero {hero_id} has a weak situational tier item")
     return HeroBuildEvidence(
         hero_id=hero_id,
         hero=name.strip(),
@@ -791,15 +841,10 @@ def _select_core_candidate(
     raise ArtifactError(f"hero {evidence.hero_id} has no legal supported core")
 
 
-def select_hero_build(
+def _validate_item_assets(
     evidence: HeroBuildEvidence,
-    assets: list[dict[str, Any]],
-) -> SelectedHeroBuild:
-    graph = ItemGraph.from_assets(assets)
-    assets_by_id = {
-        int(asset["id"]): asset for asset in assets if isinstance(asset.get("id"), int)
-    }
-    by_id = {item.item_id: item for item in evidence.items}
+    assets_by_id: dict[int, dict[str, Any]],
+) -> None:
     for item in evidence.items:
         asset = assets_by_id.get(item.item_id)
         if (
@@ -814,10 +859,14 @@ def select_hero_build(
                 f"hero {evidence.hero_id} item {item.item_id} conflicts with assets"
             )
 
-    selected, selected_order, selected_cost = _select_core_candidate(
-        graph, evidence, by_id
-    )
 
+def _replay_selected_path(
+    graph: ItemGraph,
+    evidence: HeroBuildEvidence,
+    by_id: dict[int, ItemEvidence],
+    selected: CoreCandidate,
+    selected_order: tuple[int, ...],
+) -> tuple[int, ...]:
     path_ids = (
         evidence.sequence_policy.default_path
         if evidence.sequence_policy is not None
@@ -833,17 +882,83 @@ def select_hero_build(
         raise ArtifactError(
             f"hero {evidence.hero_id} has an invalid component-expanded path: {error}"
         ) from error
+    if set(state.owned) == set(selected.item_ids):
+        return path_ids
+    fallback = _expand_component_path(graph, selected_order, by_id)
+    if len(fallback) != len(set(fallback)):
+        raise ArtifactError(
+            f"hero {evidence.hero_id} component-expanded path repeats an item"
+        )
+    state = _replay_component_path(graph, by_id, fallback)
     if set(state.owned) != set(selected.item_ids):
-        path_ids = _expand_component_path(graph, selected_order, by_id)
-        if len(path_ids) != len(set(path_ids)):
-            raise ArtifactError(
-                f"hero {evidence.hero_id} component-expanded path repeats an item"
-            )
-        state = _replay_component_path(graph, by_id, path_ids)
-        if set(state.owned) != set(selected.item_ids):
-            raise ArtifactError(
-                f"hero {evidence.hero_id} component-expanded path does not end in CORE"
-            )
+        raise ArtifactError(
+            f"hero {evidence.hero_id} component-expanded path does not end in CORE"
+        )
+    return fallback
+
+
+def _tier_selection(
+    evidence: HeroBuildEvidence,
+    tier: int,
+    core_ids: set[int],
+    situational_ids: set[int],
+) -> tuple[ItemEvidence, ...]:
+    ranked = sorted(
+        (
+            item
+            for item in evidence.items
+            if item.tier == tier
+            and item.item_id not in core_ids
+            and item.adopter_matches >= MINIMUM_TIER_SUPPORT
+        ),
+        key=lambda item: (-item.adoption, -item.adopter_matches, item.item_id),
+    )
+    required = [item for item in ranked if item.item_id in situational_ids]
+    if len(required) > TIER_ITEM_COUNT:
+        raise ArtifactError(
+            f"hero {evidence.hero_id} has too many Tier {tier} situational items"
+        )
+    membership = (
+        required
+        + [item for item in ranked if item.item_id not in situational_ids][
+            : TIER_ITEM_COUNT - len(required)
+        ]
+    )
+    if not membership:
+        raise ArtifactError(
+            f"hero {evidence.hero_id} lacks a supported non-CORE Tier {tier} item"
+        )
+    return tuple(
+        sorted(
+            membership,
+            key=lambda item: (
+                item.median_valid_buy_net_worth is None,
+                item.median_valid_buy_net_worth
+                if item.median_valid_buy_net_worth is not None
+                else math.inf,
+                item.median_buy_time_s,
+                item.item_id,
+            ),
+        )
+    )
+
+
+def select_hero_build(
+    evidence: HeroBuildEvidence,
+    assets: list[dict[str, Any]],
+) -> SelectedHeroBuild:
+    graph = ItemGraph.from_assets(assets)
+    assets_by_id = {
+        int(asset["id"]): asset for asset in assets if isinstance(asset.get("id"), int)
+    }
+    by_id = {item.item_id: item for item in evidence.items}
+    _validate_item_assets(evidence, assets_by_id)
+
+    selected, selected_order, selected_cost = _select_core_candidate(
+        graph, evidence, by_id
+    )
+
+    path_ids = _replay_selected_path(graph, evidence, by_id, selected, selected_order)
 
     tiers: dict[int, tuple[ItemEvidence, ...]] = {}
     core_ids = set(path_ids)
@@ -858,44 +973,7 @@ def select_hero_build(
             f"hero {evidence.hero_id} situational items repeat the selected CORE"
         )
     for tier in range(1, 5):
-        ranked = sorted(
-            (
-                item
-                for item in evidence.items
-                if item.tier == tier
-                and item.item_id not in core_ids
-                and item.adopter_matches >= MINIMUM_TIER_SUPPORT
-            ),
-            key=lambda item: (-item.adoption, -item.adopter_matches, item.item_id),
-        )
-        required = [item for item in ranked if item.item_id in situational_ids]
-        if len(required) > TIER_ITEM_COUNT:
-            raise ArtifactError(
-                f"hero {evidence.hero_id} has too many Tier {tier} situational items"
-            )
-        membership = (
-            required
-            + [item for item in ranked if item.item_id not in situational_ids][
-                : TIER_ITEM_COUNT - len(required)
-            ]
-        )
-        if not membership:
-            raise ArtifactError(
-                f"hero {evidence.hero_id} lacks a supported non-CORE Tier {tier} item"
-            )
-        tiers[tier] = tuple(
-            sorted(
-                membership,
-                key=lambda item: (
-                    item.median_valid_buy_net_worth is None,
-                    item.median_valid_buy_net_worth
-                    if item.median_valid_buy_net_worth is not None
-                    else math.inf,
-                    item.median_buy_time_s,
-                    item.item_id,
-                ),
-            )
-        )
+        tiers[tier] = _tier_selection(evidence, tier, core_ids, situational_ids)
     return SelectedHeroBuild(
         hero_id=evidence.hero_id,
         core=tuple(by_id[item_id] for item_id in selected_order),

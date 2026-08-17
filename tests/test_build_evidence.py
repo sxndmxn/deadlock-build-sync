@@ -296,6 +296,9 @@ def test_compatibility_rejects_identity_drift(tmp_path: Path) -> None:
     heroes = [{"id": 13, "name": "Haze"}]
     _write(path, _document())
     catalog = load_build_evidence(path)
+    rank_catalog = _rank_catalog()
+    assets = _assets()
+    epochs = _epochs()
 
     with pytest.raises(ArtifactError, match="patch"):
         assert_build_evidence_compatible(
@@ -305,10 +308,10 @@ def test_compatibility_rejects_identity_drift(tmp_path: Path) -> None:
             as_of_timestamp=catalog.as_of_timestamp,
             match_mode=MatchMode.RANKED,
             rank_range=DEFAULT_RANK_RANGE,
-            rank_catalog=_rank_catalog(),
+            rank_catalog=rank_catalog,
             heroes=heroes,
-            assets=_assets(),
-            epochs=_epochs(),
+            assets=assets,
+            epochs=epochs,
         )
 
     assert_build_evidence_compatible(

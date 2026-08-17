@@ -5,16 +5,13 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Protocol
 
-from .artifact_bundle import ArtifactBundleError, load_artifact_guide_bundle
+from .artifact_bundle import load_artifact_guide_bundle
 from .artifacts import ArtifactError, validate_policy_artifact
 from .build_evidence import load_build_evidence
 from .cache import CacheError, read_cache
 from .narratives import NarrativeError, load_narrative_catalog
 from .protobuf import hero_build_metadata
-from .strategy_context import (
-    StrategyContextError,
-    validate_strategy_context_document,
-)
+from .strategy_context import validate_strategy_context_document
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -174,10 +171,8 @@ def _context_stage(
         validate_strategy_context_document(document)
     except (
         OSError,
-        json.JSONDecodeError,
         TypeError,
         ValueError,
-        StrategyContextError,
     ) as error:
         return (
             FreshnessStage("strategy_context", FreshnessState.MALFORMED, str(error)),
@@ -225,10 +220,8 @@ def _policy_stage(path: Path, context: dict[str, Any] | None) -> FreshnessStage:
         validate_policy_artifact(document)
     except (
         OSError,
-        json.JSONDecodeError,
         TypeError,
         ValueError,
-        ArtifactError,
     ) as error:
         return FreshnessStage("policies", FreshnessState.MALFORMED, str(error))
     if context is not None and document.get("snapshot_manifest") != context.get(
@@ -335,7 +328,7 @@ def _bundle_stage(artifact_directory: Path) -> FreshnessStage:
         )
     try:
         bundle = load_artifact_guide_bundle(*paths)
-    except (ArtifactBundleError, ArtifactError, OSError, ValueError) as error:
+    except (OSError, ValueError) as error:
         return FreshnessStage("artifact_bundle", FreshnessState.MALFORMED, str(error))
     return FreshnessStage(
         "artifact_bundle",

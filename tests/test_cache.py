@@ -284,17 +284,19 @@ def test_install_rejects_incomplete_item_coverage(
     )
     location = CacheLocation(146293212, cache_path, app_directory)
     monkeypatch.setattr(cache_module, "deadlock_is_running", lambda: False)
+    guides = [guide()]
+    manifest = snapshot_manifest()
 
     with pytest.raises(CacheError, match="incomplete policy identity/projection"):
         install_guides(
             location,
-            [guide()],
+            guides,
             persona="XMLJDX",
             timestamp=100,
             patch_title="Patch",
             patch_published_at="2026-01-01T00:00:00Z",
             backup_root=tmp_path / "state",
-            snapshot_manifest=snapshot_manifest(),
+            snapshot_manifest=manifest,
         )
 
 
@@ -400,17 +402,19 @@ def test_all_hero_installation_refuses_missing_roster_member(
 ) -> None:
     location, original = isolated_location(tmp_path)
     monkeypatch.setattr(cache_module, "deadlock_is_running", lambda: False)
+    guides = [complete_guide()]
+    manifest = snapshot_manifest()
 
     with pytest.raises(CacheError, match="coverage mismatch"):
         install_guides(
             location,
-            [complete_guide()],
+            guides,
             persona="XMLJDX",
             timestamp=100,
             patch_title="Patch",
             patch_published_at="2026-01-01T00:00:00Z",
             backup_root=tmp_path / "state",
-            snapshot_manifest=snapshot_manifest(),
+            snapshot_manifest=manifest,
             expected_hero_ids={12, 13},
         )
 

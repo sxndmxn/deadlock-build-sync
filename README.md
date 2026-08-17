@@ -227,7 +227,12 @@ eligible hero lacks a complete policy. Reusable artifacts live under
 `--artifacts DIR` to select another artifact directory, or
 `--force-narratives` to regenerate both model stages. A failed model or
 semantic-validation attempt is retried up to three times per stage; change that
-bound with `--max-attempts N`.
+bound with `--max-attempts N`. Independent hero pipelines run concurrently with
+eight workers by default while preserving kit-before-synthesis ordering for each
+hero. Use `--concurrency N` to lower the request pressure or raise it when the
+Codex service limits for your account allow more parallel work. Rate-limit
+responses temporarily halve shared request pressure, honor `Retry-After`, and
+recover concurrency gradually after successful calls.
 
 For a read-only next-purchase decision after an in-match deviation, supply a
 deidentified state document matching
@@ -306,7 +311,8 @@ uv run deadlock-build-sync export-context --all \
 #    This invokes `codex exec` separately; the sync/install process never does.
 uv run python scripts/generate_narratives.py \
   --input generated/strategy-context.json \
-  --output generated/narratives.json
+  --output generated/narratives.json \
+  --concurrency 8
 
 # 3. Review strategy-context.json, policies.json, and narratives.json, then preview.
 #    strategy-context.json is compact; pipe it through `jaq .` for formatted review.

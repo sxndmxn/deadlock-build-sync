@@ -203,7 +203,7 @@ class Guard:
                 raise PolicyError(f"guard {self.field} requires an integer comparison")
             return
         if self.operator == GuardOperator.CONTAINS:
-            if expected not in {(list, tuple, set), (list, tuple, set)}:
+            if expected != (list, tuple, set):
                 raise PolicyError(f"guard {self.field} is not a collection")
             return
         if not isinstance(self.value, expected):
@@ -333,31 +333,9 @@ class PolicyNode:
         """
         if not self.node_id.strip():
             raise PolicyError("policy node id must not be empty")
-        if self.kind == NodeKind.PURCHASE and self.item_id is None:
-            raise PolicyError(f"purchase node {self.node_id} has no item")
-        if self.kind == NodeKind.SELL and self.item_id is None:
-            raise PolicyError(f"sell node {self.node_id} has no item")
-        if self.kind == NodeKind.ABILITY and (
-            self.ability_id is None or self.level is None
-        ):
-            raise PolicyError(f"ability node {self.node_id} is incomplete")
-        if self.kind in {NodeKind.CHOICE, NodeKind.OBJECTIVE_GATE}:
-            if not self.branches:
-                raise PolicyError(f"choice node {self.node_id} has no branches")
-        elif self.branches:
-            raise PolicyError(f"non-choice node {self.node_id} has branches")
-        if self.kind == NodeKind.END and self.next_id is not None:
-            raise PolicyError(f"end node {self.node_id} has a successor")
-        if self.required_flex_slots not in range(4):
-            raise PolicyError("required flex slots must be between zero and three")
-        if self.sell_priority is not None and self.sell_priority <= 0:
-            raise PolicyError("sell priority must be positive when present")
-        if (
-            self.earliest_time_s is not None
-            and self.latest_time_s is not None
-            and self.earliest_time_s > self.latest_time_s
-        ):
-            raise PolicyError(f"node {self.node_id} has an inverted time window")
+        _validate_node_action_fields(self)
+        _validate_node_branches(self)
+        _validate_node_constraints(self)
 
     def successors(self) -> tuple[str, ...]:
         """Return every graph successor.
@@ -389,6 +367,40 @@ class PolicyNode:
         from .policy_codec import structure_policy_node
 
         return structure_policy_node(value)
+
+
+def _validate_node_action_fields(node: PolicyNode) -> None:
+    if node.kind == NodeKind.PURCHASE and node.item_id is None:
+        raise PolicyError(f"purchase node {node.node_id} has no item")
+    if node.kind == NodeKind.SELL and node.item_id is None:
+        raise PolicyError(f"sell node {node.node_id} has no item")
+    if node.kind == NodeKind.ABILITY and (
+        node.ability_id is None or node.level is None
+    ):
+        raise PolicyError(f"ability node {node.node_id} is incomplete")
+
+
+def _validate_node_branches(node: PolicyNode) -> None:
+    if node.kind in {NodeKind.CHOICE, NodeKind.OBJECTIVE_GATE}:
+        if not node.branches:
+            raise PolicyError(f"choice node {node.node_id} has no branches")
+    elif node.branches:
+        raise PolicyError(f"non-choice node {node.node_id} has branches")
+
+
+def _validate_node_constraints(node: PolicyNode) -> None:
+    if node.kind == NodeKind.END and node.next_id is not None:
+        raise PolicyError(f"end node {node.node_id} has a successor")
+    if node.required_flex_slots not in range(4):
+        raise PolicyError("required flex slots must be between zero and three")
+    if node.sell_priority is not None and node.sell_priority <= 0:
+        raise PolicyError("sell priority must be positive when present")
+    if (
+        node.earliest_time_s is not None
+        and node.latest_time_s is not None
+        and node.earliest_time_s > node.latest_time_s
+    ):
+        raise PolicyError(f"node {node.node_id} has an inverted time window")
 
 
 class AbstentionReason(StrEnum):
@@ -557,62 +569,180 @@ def _validate_choice(node: PolicyNode) -> None:
         raise PolicyError(f"choice {node.node_id} has duplicate priorities")
 
 
+def _apply_purchase_node(
+    node: PolicyNode,
+    state: _PathState,
+    context: ValidationContext,
+) -> _PathState:
+    if node.item_id is None:
+        raise PolicyError(f"purchase {node.node_id} has no item")
+    if node.imbue_target_ability_id is not None:
+        validate_imbue(
+            context.ability_definitions,
+            set(state.learned),
+            node.imbue_target_ability_id,
+            required_qualifier=node.imbue_qualifier,
+            allow_ultimate=node.allow_ultimate_imbue,
+        )
+    inventory = purchase_item(
+        context.item_graph,
+        state.inventory,
+        node.item_id,
+        required_flex_slots=node.required_flex_slots,
+    )
+    sell_priorities = state.sell_priorities
+    if node.sell_priority is not None:
+        sell_priorities = (*sell_priorities, (node.item_id, node.sell_priority))
+    return _PathState(
+        inventory,
+        state.ability_actions,
+        state.learned,
+        sell_priorities,
+    )
+
+
+def _apply_sell_node(
+    node: PolicyNode,
+    state: _PathState,
+    context: ValidationContext,
+) -> _PathState:
+    if node.item_id is None:
+        raise PolicyError(f"sell {node.node_id} has no item")
+    inventory = sell_item(context.item_graph, state.inventory, node.item_id)
+    return _PathState(
+        inventory,
+        state.ability_actions,
+        state.learned,
+        state.sell_priorities,
+    )
+
+
+def _apply_ability_node(
+    node: PolicyNode,
+    state: _PathState,
+    context: ValidationContext,
+) -> _PathState:
+    if node.ability_id is None or node.level is None:
+        raise PolicyError(f"ability {node.node_id} is incomplete")
+    ability_actions = (
+        *state.ability_actions,
+        AbilityAction(node.level, node.ability_id),
+    )
+    validate_ability_timeline(
+        context.ability_definitions,
+        context.level_info,
+        ability_actions,
+    )
+    learned = frozenset((*state.learned, node.ability_id))
+    return _PathState(state.inventory, ability_actions, learned, state.sell_priorities)
+
+
 def _apply_node(
     node: PolicyNode,
     state: _PathState,
     context: ValidationContext,
 ) -> _PathState:
-    inventory = state.inventory
-    ability_actions = state.ability_actions
-    learned = state.learned
-    sell_priorities = state.sell_priorities
     try:
         if node.kind == NodeKind.PURCHASE:
-            if node.item_id is None:
-                raise PolicyError(f"purchase {node.node_id} has no item")
-            if node.imbue_target_ability_id is not None:
-                validate_imbue(
-                    context.ability_definitions,
-                    set(learned),
-                    node.imbue_target_ability_id,
-                    required_qualifier=node.imbue_qualifier,
-                    allow_ultimate=node.allow_ultimate_imbue,
-                )
-            inventory = purchase_item(
-                context.item_graph,
-                inventory,
-                node.item_id,
-                required_flex_slots=node.required_flex_slots,
-            )
-            if node.sell_priority is not None:
-                sell_priorities = (*sell_priorities, (node.item_id, node.sell_priority))
-        elif node.kind == NodeKind.SELL:
-            if node.item_id is None:
-                raise PolicyError(f"sell {node.node_id} has no item")
-            inventory = sell_item(context.item_graph, inventory, node.item_id)
-        elif node.kind == NodeKind.ABILITY:
-            if node.ability_id is None or node.level is None:
-                raise PolicyError(f"ability {node.node_id} is incomplete")
-            ability_actions = (
-                *ability_actions,
-                AbilityAction(node.level, node.ability_id),
-            )
-            validate_ability_timeline(
-                context.ability_definitions,
-                context.level_info,
-                ability_actions,
-            )
-            learned = frozenset((*learned, node.ability_id))
-        elif (
-            node.kind == NodeKind.OBJECTIVE_GATE and node.unlocks_flex_slots is not None
-        ):
+            return _apply_purchase_node(node, state, context)
+        if node.kind == NodeKind.SELL:
+            return _apply_sell_node(node, state, context)
+        if node.kind == NodeKind.ABILITY:
+            return _apply_ability_node(node, state, context)
+        if node.kind == NodeKind.OBJECTIVE_GATE and node.unlocks_flex_slots is not None:
             inventory = replace(
-                inventory,
+                state.inventory,
                 unlocked_flex_slots=node.unlocks_flex_slots,
+            )
+            return _PathState(
+                inventory,
+                state.ability_actions,
+                state.learned,
+                state.sell_priorities,
             )
     except MechanicsError as error:
         raise PolicyError(f"node {node.node_id}: {error}") from error
-    return _PathState(inventory, ability_actions, learned, sell_priorities)
+    return state
+
+
+def _validate_policy_node(
+    node: PolicyNode,
+    nodes: dict[str, PolicyNode],
+    claims: dict[str, EvidenceClaim],
+    *,
+    validate_successors: bool,
+) -> None:
+    if node.kind in {NodeKind.CHOICE, NodeKind.OBJECTIVE_GATE}:
+        _validate_choice(node)
+    if node.evidence_ref is not None and node.evidence_ref not in claims:
+        raise PolicyError(
+            f"node {node.node_id} references missing evidence {node.evidence_ref}"
+        )
+    if node.kind in {NodeKind.PURCHASE, NodeKind.SELL, NodeKind.ABILITY} and (
+        node.evidence_ref is None
+    ):
+        raise PolicyError(f"action node {node.node_id} has no evidence")
+    if not validate_successors:
+        return
+    successors = (
+        *node.successors(),
+        *((node.recalculation_next,) if node.recalculation_next else ()),
+    )
+    for successor in successors:
+        if successor not in nodes:
+            raise PolicyError(f"node {node.node_id} has missing successor {successor}")
+
+
+def _validate_ability_plan(
+    policy: BuildPolicy,
+    context: ValidationContext,
+) -> None:
+    if not policy.ability_plan:
+        return
+    ability_actions = tuple(
+        AbilityAction(node.level, node.ability_id)
+        for node in policy.ability_plan
+        if node.level is not None and node.ability_id is not None
+    )
+    if len(ability_actions) != len(policy.ability_plan):
+        raise PolicyError("ability plan contains an incomplete action")
+    try:
+        validate_ability_timeline(
+            context.ability_definitions,
+            context.level_info,
+            ability_actions,
+        )
+    except MechanicsError as error:
+        raise PolicyError(f"ability plan: {error}") from error
+
+
+class _PolicyGraphValidator:
+    def __init__(
+        self,
+        nodes: dict[str, PolicyNode],
+        context: ValidationContext,
+    ) -> None:
+        self.nodes = nodes
+        self.context = context
+        self.reached: set[str] = set()
+        self.active: set[str] = set()
+
+    def visit(self, node_id: str, state: _PathState) -> None:
+        if node_id in self.active:
+            raise PolicyError(f"policy contains a reachable cycle at {node_id}")
+        self.active.add(node_id)
+        self.reached.add(node_id)
+        node = self.nodes[node_id]
+        next_state = _apply_node(node, state, self.context)
+        successors = node.successors()
+        if node.kind == NodeKind.END:
+            self.active.remove(node_id)
+            return
+        if not successors:
+            raise PolicyError(f"reachable node {node_id} does not terminate")
+        for successor in successors:
+            self.visit(successor, next_state)
+        self.active.remove(node_id)
 
 
 def validate_policy(policy: BuildPolicy, context: ValidationContext) -> None:
@@ -624,66 +754,15 @@ def validate_policy(policy: BuildPolicy, context: ValidationContext) -> None:
     """
     nodes = {node.node_id: node for node in policy.nodes}
     claims = {claim.claim_id: claim for claim in policy.evidence}
-    for node in (*policy.nodes, *policy.ability_plan):
-        if node.kind in {NodeKind.CHOICE, NodeKind.OBJECTIVE_GATE}:
-            _validate_choice(node)
-        if node.evidence_ref is not None and node.evidence_ref not in claims:
-            raise PolicyError(
-                f"node {node.node_id} references missing evidence {node.evidence_ref}"
-            )
-        if node.kind in {NodeKind.PURCHASE, NodeKind.SELL, NodeKind.ABILITY} and (
-            node.evidence_ref is None
-        ):
-            raise PolicyError(f"action node {node.node_id} has no evidence")
-        if node in policy.nodes:
-            for successor in (
-                *node.successors(),
-                *((node.recalculation_next,) if node.recalculation_next else ()),
-            ):
-                if successor not in nodes:
-                    raise PolicyError(
-                        f"node {node.node_id} has missing successor {successor}"
-                    )
+    for node in policy.nodes:
+        _validate_policy_node(node, nodes, claims, validate_successors=True)
+    for node in policy.ability_plan:
+        _validate_policy_node(node, nodes, claims, validate_successors=False)
+    _validate_ability_plan(policy, context)
 
-    if policy.ability_plan:
-        ability_actions = tuple(
-            AbilityAction(node.level, node.ability_id)
-            for node in policy.ability_plan
-            if node.level is not None and node.ability_id is not None
-        )
-        if len(ability_actions) != len(policy.ability_plan):
-            raise PolicyError("ability plan contains an incomplete action")
-        try:
-            validate_ability_timeline(
-                context.ability_definitions,
-                context.level_info,
-                ability_actions,
-            )
-        except MechanicsError as error:
-            raise PolicyError(f"ability plan: {error}") from error
-
-    reached: set[str] = set()
-    active: set[str] = set()
-
-    def visit(node_id: str, state: _PathState) -> None:
-        if node_id in active:
-            raise PolicyError(f"policy contains a reachable cycle at {node_id}")
-        active.add(node_id)
-        reached.add(node_id)
-        node = nodes[node_id]
-        next_state = _apply_node(node, state, context)
-        successors = node.successors()
-        if node.kind == NodeKind.END:
-            active.remove(node_id)
-            return
-        if not successors:
-            raise PolicyError(f"reachable node {node_id} does not terminate")
-        for successor in successors:
-            visit(successor, next_state)
-        active.remove(node_id)
-
-    visit(policy.entry, _PathState())
-    unreachable = set(nodes) - reached
+    graph = _PolicyGraphValidator(nodes, context)
+    graph.visit(policy.entry, _PathState())
+    unreachable = set(nodes) - graph.reached
     if unreachable:
         raise PolicyError(
             "policy contains unreachable nodes: " + ", ".join(sorted(unreachable))
@@ -705,6 +784,63 @@ class PolicyDecision:
     abstention: Abstention | None = None
 
 
+def _choice_step(node: PolicyNode, state: EvaluationState) -> str | PolicyDecision:
+    matching = [branch for branch in node.branches if branch.matches(state.observable)]
+    if len(matching) > 1 and any(branch.priority is None for branch in matching):
+        return PolicyDecision(
+            None,
+            None,
+            Abstention(
+                AbstentionReason.OUT_OF_DISTRIBUTION,
+                "multiple policy guards matched without runtime precedence",
+                node.node_id,
+            ),
+        )
+    if matching:
+        return min(
+            matching,
+            key=lambda branch: branch.priority if branch.priority is not None else 0,
+        ).next_id
+    return next(branch.next_id for branch in node.branches if branch.is_default)
+
+
+def _node_is_fulfilled(node: PolicyNode, state: EvaluationState) -> bool:
+    if node.kind == NodeKind.PURCHASE:
+        return node.item_id in state.inventory.owned
+    if node.kind == NodeKind.ABILITY:
+        return node.ability_id in state.learned_abilities
+    return False
+
+
+def _missed_timing_decision(node: PolicyNode) -> PolicyDecision:
+    return PolicyDecision(
+        None,
+        None,
+        Abstention(
+            AbstentionReason.OUT_OF_DISTRIBUTION,
+            f"missed timing for {node.node_id}; no safe recalculation branch",
+            node.node_id,
+        ),
+    )
+
+
+def _evaluate_policy_node(
+    node: PolicyNode,
+    state: EvaluationState,
+) -> str | PolicyDecision:
+    if node.kind in {NodeKind.CHOICE, NodeKind.OBJECTIVE_GATE}:
+        return _choice_step(node, state)
+    if _node_is_fulfilled(node, state):
+        if node.next_id is None:
+            return PolicyDecision(None, NodeKind.END)
+        return node.next_id
+    if node.latest_time_s is not None and state.clock_s > node.latest_time_s:
+        if node.recalculation_next is None:
+            return _missed_timing_decision(node)
+        return node.recalculation_next
+    return PolicyDecision(node.node_id, node.kind)
+
+
 def next_policy_decision(
     policy: BuildPolicy,
     state: EvaluationState,
@@ -721,58 +857,10 @@ def next_policy_decision(
     while current not in visited:
         visited.add(current)
         node = nodes[current]
-        if node.kind in {NodeKind.CHOICE, NodeKind.OBJECTIVE_GATE}:
-            matching = [
-                branch for branch in node.branches if branch.matches(state.observable)
-            ]
-            if len(matching) > 1 and any(
-                branch.priority is None for branch in matching
-            ):
-                return PolicyDecision(
-                    None,
-                    None,
-                    Abstention(
-                        AbstentionReason.OUT_OF_DISTRIBUTION,
-                        "multiple policy guards matched without runtime precedence",
-                        node.node_id,
-                    ),
-                )
-            if matching:
-                current = min(
-                    matching,
-                    key=lambda branch: (
-                        branch.priority if branch.priority is not None else 0
-                    ),
-                ).next_id
-            else:
-                current = next(
-                    branch.next_id for branch in node.branches if branch.is_default
-                )
-            continue
-        if node.kind == NodeKind.PURCHASE and node.item_id in state.inventory.owned:
-            if node.next_id is None:
-                break
-            current = node.next_id
-            continue
-        if node.kind == NodeKind.ABILITY and node.ability_id in state.learned_abilities:
-            if node.next_id is None:
-                break
-            current = node.next_id
-            continue
-        if node.latest_time_s is not None and state.clock_s > node.latest_time_s:
-            if node.recalculation_next is None:
-                return PolicyDecision(
-                    None,
-                    None,
-                    Abstention(
-                        AbstentionReason.OUT_OF_DISTRIBUTION,
-                        f"missed timing for {node.node_id}; no safe recalculation branch",
-                        node.node_id,
-                    ),
-                )
-            current = node.recalculation_next
-            continue
-        return PolicyDecision(node.node_id, node.kind)
+        step = _evaluate_policy_node(node, state)
+        if isinstance(step, PolicyDecision):
+            return step
+        current = step
     return PolicyDecision(None, NodeKind.END)
 
 

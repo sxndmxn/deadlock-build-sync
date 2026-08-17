@@ -128,41 +128,33 @@ class ArtifactCompatibility:
             )
 
 
-def validate_hero_document(
-    document: dict[str, Any],
-    *,
+def _validated_hero_id(hero: object) -> int:
+    if not isinstance(hero, dict):
+        raise ArtifactError("artifact contains a malformed hero")
+    hero_id = hero.get("hero_id")
+    if not isinstance(hero_id, int):
+        raise ArtifactError("artifact contains a malformed hero")
+    evidence_ids = hero.get("evidence_ids", [])
+    evidence = hero.get("evidence", [])
+    if not isinstance(evidence_ids, list) or not isinstance(evidence, list):
+        raise ArtifactError(f"hero {hero_id} has malformed evidence references")
+    available = {
+        row.get("claim_id")
+        for row in evidence
+        if isinstance(row, dict) and isinstance(row.get("claim_id"), str)
+    }
+    if not set(evidence_ids) <= available:
+        raise ArtifactError(f"hero {hero_id} has dangling evidence references")
+    return hero_id
+
+
+def _validate_hero_coverage(
+    found: list[int],
     requested_hero_ids: set[int],
-    allowed_exclusions: dict[int, str] | None = None,
+    exclusions: dict[int, str],
 ) -> None:
-    """Require exact requested-hero coverage and internally complete references.
-
-    Raises:
-        ArtifactError: If heroes are missing, extra, duplicated, malformed, or dangling.
-
-    """
-    heroes = document.get("heroes")
-    if not isinstance(heroes, list):
-        raise ArtifactError("artifact heroes must be an array")
-    found: list[int] = []
-    for hero in heroes:
-        if not isinstance(hero, dict) or not isinstance(hero.get("hero_id"), int):
-            raise ArtifactError("artifact contains a malformed hero")
-        hero_id = int(hero["hero_id"])
-        found.append(hero_id)
-        evidence_ids = hero.get("evidence_ids", [])
-        evidence = hero.get("evidence", [])
-        if not isinstance(evidence_ids, list) or not isinstance(evidence, list):
-            raise ArtifactError(f"hero {hero_id} has malformed evidence references")
-        available = {
-            row.get("claim_id")
-            for row in evidence
-            if isinstance(row, dict) and isinstance(row.get("claim_id"), str)
-        }
-        if not set(evidence_ids) <= available:
-            raise ArtifactError(f"hero {hero_id} has dangling evidence references")
     if len(found) != len(set(found)):
         raise ArtifactError("artifact contains duplicate heroes")
-    exclusions = allowed_exclusions or {}
     covered = set(found) | set(exclusions)
     missing = requested_hero_ids - covered
     extra = set(found) - requested_hero_ids
@@ -182,6 +174,29 @@ def validate_hero_document(
             "artifact exclusions need reasons: "
             + ", ".join(map(str, sorted(empty_reasons)))
         )
+
+
+def validate_hero_document(
+    document: dict[str, Any],
+    *,
+    requested_hero_ids: set[int],
+    allowed_exclusions: dict[int, str] | None = None,
+) -> None:
+    """Require exact requested-hero coverage and internally complete references.
+
+    Raises:
+        ArtifactError: If heroes are missing, extra, duplicated, malformed, or dangling.
+
+    """
+    heroes = document.get("heroes")
+    if not isinstance(heroes, list):
+        raise ArtifactError("artifact heroes must be an array")
+    found = [_validated_hero_id(hero) for hero in heroes]
+    _validate_hero_coverage(
+        found,
+        requested_hero_ids,
+        allowed_exclusions or {},
+    )
 
 
 def build_policy_artifact(
@@ -211,15 +226,9 @@ def build_policy_artifact(
     return document
 
 
-def validate_policy_artifact(document: dict[str, Any]) -> None:
-    """Validate policy round trips, snapshot compatibility, and roster coverage.
-
-    Raises:
-        ArtifactError: If any sidecar identity, policy, exclusion, or coverage fails.
-
-    """
-    if document.get("schema_version") != POLICY_ARTIFACT_SCHEMA_VERSION:
-        raise ArtifactError("unsupported policy-artifact schema")
+def _policy_artifact_header(
+    document: dict[str, Any],
+) -> tuple[dict[str, Any], list[int], list[Any], list[Any]]:
     manifest = document.get("snapshot_manifest")
     requested = document.get("requested_hero_ids")
     exclusions = document.get("exclusions")
@@ -233,10 +242,15 @@ def validate_policy_artifact(document: dict[str, Any]) -> None:
     )
     if not all(header_checks):
         raise ArtifactError("policy artifact is missing manifest or coverage data")
-    manifest_data = cast("dict[str, Any]", manifest)
-    requested_ids = cast("list[int]", requested)
-    exclusion_rows = cast("list[Any]", exclusions)
-    policy_rows = cast("list[Any]", raw_policies)
+    return (
+        cast("dict[str, Any]", manifest),
+        cast("list[int]", requested),
+        cast("list[Any]", exclusions),
+        cast("list[Any]", raw_policies),
+    )
+
+
+def _decode_policy_exclusions(exclusion_rows: list[Any]) -> dict[int, str]:
     excluded: dict[int, str] = {}
     for exclusion in exclusion_rows:
         if (
@@ -247,7 +261,14 @@ def validate_policy_artifact(document: dict[str, Any]) -> None:
         ):
             raise ArtifactError("policy artifact contains an invalid exclusion")
         excluded[int(exclusion["hero_id"])] = str(exclusion["reason"])
-    decoded = []
+    return excluded
+
+
+def _decode_policies(
+    policy_rows: list[Any],
+    snapshot_id: Any,
+) -> list[BuildPolicy]:
+    decoded: list[BuildPolicy] = []
     for raw_policy in policy_rows:
         if not isinstance(raw_policy, dict):
             raise ArtifactError("policy artifact contains a malformed policy")
@@ -257,9 +278,17 @@ def validate_policy_artifact(document: dict[str, Any]) -> None:
             raise ArtifactError(
                 f"policy artifact contains an invalid policy: {error}"
             ) from error
-        if policy.snapshot_id != manifest_data["snapshot_id"]:
+        if policy.snapshot_id != snapshot_id:
             raise ArtifactError(f"hero {policy.hero_id} policy uses another snapshot")
         decoded.append(policy)
+    return decoded
+
+
+def _validate_policy_coverage(
+    decoded: list[BuildPolicy],
+    excluded: dict[int, str],
+    requested_ids: list[int],
+) -> None:
     hero_ids = [policy.hero_id for policy in decoded]
     if len(hero_ids) != len(set(hero_ids)):
         raise ArtifactError("policy artifact contains duplicate heroes")
@@ -267,6 +296,23 @@ def validate_policy_artifact(document: dict[str, Any]) -> None:
         raise ArtifactError("policy artifact both includes and excludes a hero")
     if set(hero_ids) | set(excluded) != set(requested_ids):
         raise ArtifactError("policy artifact does not cover requested heroes")
+
+
+def validate_policy_artifact(document: dict[str, Any]) -> None:
+    """Validate policy round trips, snapshot compatibility, and roster coverage.
+
+    Raises:
+        ArtifactError: If any sidecar identity, policy, exclusion, or coverage fails.
+
+    """
+    if document.get("schema_version") != POLICY_ARTIFACT_SCHEMA_VERSION:
+        raise ArtifactError("unsupported policy-artifact schema")
+    manifest, requested_ids, exclusion_rows, policy_rows = _policy_artifact_header(
+        document
+    )
+    excluded = _decode_policy_exclusions(exclusion_rows)
+    decoded = _decode_policies(policy_rows, manifest["snapshot_id"])
+    _validate_policy_coverage(decoded, excluded, requested_ids)
 
 
 def _fsync_directory(path: Path) -> None:

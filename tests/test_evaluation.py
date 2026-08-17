@@ -135,11 +135,9 @@ def test_abstention_threshold_uses_validation_only() -> None:
     threshold = select_abstention_threshold(records, maximum_risk=0.0)
 
     assert threshold == 0.6
+    test_records = [prediction(0.9, 1, fold=Fold.TEST)]
     with pytest.raises(EvaluationError, match="validation only"):
-        select_abstention_threshold(
-            [prediction(0.9, 1, fold=Fold.TEST)],
-            maximum_risk=0.1,
-        )
+        select_abstention_threshold(test_records, maximum_risk=0.1)
 
 
 def target_trial() -> TargetTrialSpec:
@@ -237,8 +235,9 @@ def test_decision_log_rejects_personal_fields_and_future_leakage() -> None:
     with pytest.raises(EvaluationError, match="prohibited personal"):
         RecommendationEvent.from_dict(encoded)
 
+    source = event()
     with pytest.raises(EvaluationError, match="future feature leakage"):
-        replace(event(), feature_as_of_timestamp=201)
+        replace(source, feature_as_of_timestamp=201)
 
 
 def monitor() -> MonitoringSnapshot:

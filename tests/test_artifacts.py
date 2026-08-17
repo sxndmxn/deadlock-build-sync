@@ -74,11 +74,10 @@ def test_fingerprint_layers_invalidate_only_their_downstream_dependencies() -> N
 def test_exact_artifact_compatibility_rejects_mode_and_prompt_changes() -> None:
     actual = compatibility()
     actual.assert_reusable_with(compatibility())
+    incompatible = compatibility(match_mode="unranked", prompt_version=16)
 
     with pytest.raises(ArtifactError, match="match_mode, prompt_version"):
-        actual.assert_reusable_with(
-            compatibility(match_mode="unranked", prompt_version=16)
-        )
+        actual.assert_reusable_with(incompatible)
 
 
 def test_compact_json_round_trips_without_indentation(tmp_path: Path) -> None:

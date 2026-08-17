@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import Any
 
 from .policy import (
@@ -147,8 +147,47 @@ def _apply_sell_priorities(
         if node.kind == NodeKind.SELL and node.item_id is not None:
             priorities.setdefault(node.item_id, len(priorities) + 1)
     return tuple(
-        replace(item, sell_priority=priorities.get(item.item_id, item.sell_priority))
+        _project_guide_item_policy_fields(
+            item,
+            required_flex_slots=item.required_flex_slots,
+            sell_priority=priorities.get(item.item_id, item.sell_priority),
+            imbue_target_ability_id=item.imbue_target_ability_id,
+            tactical_annotation=item.tactical_annotation,
+        )
         for item in items
+    )
+
+
+def _project_guide_item_policy_fields(
+    item: GuideItem,
+    *,
+    required_flex_slots: int | None,
+    sell_priority: int | None,
+    imbue_target_ability_id: int | None,
+    tactical_annotation: str,
+) -> GuideItem:
+    return GuideItem(
+        item_id=item.item_id,
+        name=item.name,
+        tier=item.tier,
+        purchase_event_observations=item.purchase_event_observations,
+        observed_outcome_rate=item.observed_outcome_rate,
+        observed_outcome_lower_bound=item.observed_outcome_lower_bound,
+        relative_purchase_event_volume=item.relative_purchase_event_volume,
+        windows=item.windows,
+        required_flex_slots=required_flex_slots,
+        sell_priority=sell_priority,
+        imbue_target_ability_id=imbue_target_ability_id,
+        tactical_annotation=tactical_annotation,
+        eligible_player_matches=item.eligible_player_matches,
+        adopter_matches=item.adopter_matches,
+        purchase_adoption=item.purchase_adoption,
+        purchase_events=item.purchase_events,
+        median_buy_time_s=item.median_buy_time_s,
+        median_valid_buy_net_worth=item.median_valid_buy_net_worth,
+        buy_net_worth_q25=item.buy_net_worth_q25,
+        buy_net_worth_q75=item.buy_net_worth_q75,
+        valid_buy_net_worth_share=item.valid_buy_net_worth_share,
     )
 
 
@@ -185,7 +224,7 @@ def _project_evidence_layout(
 ) -> PurchaseGuide:
     source_core_ids = tuple(item.item_id for item in layout.core_items)
     core_purchase_items = layout.core_purchase_items or layout.core_items
-    core_purchase_ids = tuple(item.item_id for item in core_purchase_items)
+    core_purchase_ids = {item.item_id for item in core_purchase_items}
     policy_core_ids = tuple(
         node.item_id
         for node in default_path
@@ -198,7 +237,7 @@ def _project_evidence_layout(
     if any(not 1 <= len(layout.tiers.get(tier, ())) <= 10 for tier in range(1, 5)):
         raise PolicyError("evidence projection requires 1–10 items in every tier")
     tier_item_ids = {item.item_id for items in layout.tiers.values() for item in items}
-    if tier_item_ids & set(core_purchase_ids):
+    if tier_item_ids & core_purchase_ids:
         raise PolicyError("evidence tier menus must not repeat CORE path items")
     conditional = _conditional_nodes(policy)
     missing_conditional = set(conditional) - tier_item_ids
@@ -212,7 +251,7 @@ def _project_evidence_layout(
         node = conditional.get(item.item_id)
         if node is None:
             return item
-        return replace(
+        return _project_guide_item_policy_fields(
             item,
             tactical_annotation=node.annotation,
             required_flex_slots=node.required_flex_slots or None,
