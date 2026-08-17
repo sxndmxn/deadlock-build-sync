@@ -371,149 +371,193 @@ def _challenger(paths: RunPaths) -> dict[str, Any]:
     }
 
 
-def _situational_policy(
+type _QualifiedSituationalBranch = tuple[
+    tuple[float, ...],
+    dict[str, Any],
+    dict[str, Any],
+]
+type _SituationalEvidence = tuple[
+    pl.DataFrame,
+    dict[int, dict[str, Any]],
+    dict[str, dict[str, Any]],
+]
+
+
+def _load_situational_evidence(
     paths: RunPaths,
     hero_id: int,
-    assets: list[dict[str, Any]],
-    *,
-    excluded_item_ids: frozenset[int] = frozenset(),
-) -> dict[str, Any]:
+) -> _SituationalEvidence | None:
     matchup_path = paths.tables / "matchup_interactions.csv"
     overlap_path = paths.tables / "state_overlap_diagnostics.csv"
     stability_path = paths.tables / "matchup_temporal_stability.csv"
+    if not (
+        matchup_path.is_file() and overlap_path.is_file() and stability_path.is_file()
+    ):
+        return None
+    matchups = pl.read_csv(matchup_path).filter(pl.col("hero_id") == hero_id)
+    overlap = pl.read_csv(overlap_path).filter(pl.col("hero_id") == hero_id)
+    stability = pl.read_csv(stability_path).filter(pl.col("hero_id") == hero_id)
+    overlap_by_item = {
+        int(row["item_id"]): row for row in overlap.iter_rows(named=True)
+    }
+    stability_by_scope = {
+        str(row["scope"]): row for row in stability.iter_rows(named=True)
+    }
+    return matchups, overlap_by_item, stability_by_scope
+
+
+def _bounded_comparative_interval(
+    row: dict[str, Any],
+) -> tuple[float, float] | None:
+    interval_low = row.get("comparative_interval_low")
+    interval_high = row.get("comparative_interval_high")
+    bounded = (
+        isinstance(interval_low, (int, float))
+        and isinstance(interval_high, (int, float))
+        and math.isfinite(float(interval_low))
+        and math.isfinite(float(interval_high))
+        and float(interval_low) <= float(interval_high)
+        and float(interval_high) - float(interval_low) <= MAX_COMPARATIVE_INTERVAL_WIDTH
+    )
+    if not bounded:
+        return None
+    return float(interval_low), float(interval_high)
+
+
+def _evaluate_situational_response(
+    row: dict[str, Any],
+    response: str,
+    diagnostic: dict[str, Any],
+    temporal: dict[str, Any],
+) -> tuple[dict[str, Any], _QualifiedSituationalBranch | None]:
+    item_id = int(row["item_id"])
+    effective = float(diagnostic.get("effective_support") or 0.0)
+    state_coverage = float(diagnostic.get("state_coverage") or 0.0)
+    comparator_item_id = int(row.get("comparator_item_id") or 0)
+    comparison_support = int(row.get("comparison_support") or 0)
+    comparative_interval = _bounded_comparative_interval(row)
+    stable = (
+        float(temporal.get("spearman") or 0.0) >= 0.3
+        and float(temporal.get("sign_agreement") or 0.0) >= 0.6
+    )
+    gates = {
+        "mechanics": True,
+        "same_opportunity": bool(row.get("same_opportunity")),
+        "comparator": comparator_item_id > 0,
+        "support": int(row["observations"]) >= 20,
+        "comparison_support": comparison_support >= 20,
+        "effective_support": effective >= 20,
+        "overlap": state_coverage >= 0.5,
+        "chronological_stability": stable,
+        "bounded_comparative_uncertainty": comparative_interval is not None,
+        "comparative_advantage": (
+            comparative_interval is not None and comparative_interval[0] > 0
+        ),
+    }
+    passed = all(gates.values())
+    threat = MECHANIC_RESPONSE_THREATS[response]
+    enemy_id = int(row["enemy_hero_id"])
+    comparator = (
+        f"same-opportunity item {comparator_item_id} or save"
+        if comparator_item_id
+        else "unavailable"
+    )
+    candidate = {
+        "threat": threat,
+        "item_id": item_id,
+        "comparator_item_id": comparator_item_id or None,
+        "enemy_hero_id": enemy_id,
+        "scope": str(row["scope"]),
+        "mechanic_ref": f"item/{item_id}/{response}",
+        "comparator": comparator,
+        "support": int(row["observations"]),
+        "comparison_support": comparison_support,
+        "effective_support": effective,
+        "overlap": state_coverage,
+        "stable": stable,
+        "comparative_interval": [
+            row.get("comparative_interval_low"),
+            row.get("comparative_interval_high"),
+        ],
+        "gates": gates,
+        "qualified": passed,
+        "admitted": False,
+    }
+    if not passed or comparative_interval is None:
+        return candidate, None
+    branch = {
+        "threat": threat,
+        "item_id": item_id,
+        "enemy_hero_id": enemy_id,
+        "mechanic_ref": f"item/{item_id}/{response}",
+        "comparator": comparator,
+        "comparator_item_id": comparator_item_id,
+        "comparison_support": comparison_support,
+        "same_opportunity": True,
+        "support": int(row["observations"]),
+        "effective_support": effective,
+        "overlap": state_coverage,
+        "stable": stable,
+        "comparative_interval": list(comparative_interval),
+        "trigger": (
+            f"Enemy hero {enemy_id} presents material {threat.replace('_', ' ')}."
+        ),
+        "replacement": (
+            f"Choose item {item_id} instead of item {comparator_item_id} "
+            "at the matched opportunity."
+        ),
+        "execution": (
+            f"Use the verified {response.replace('_', ' ')} mechanic while the "
+            "trigger remains observable."
+        ),
+        "failure_condition": (
+            "Skip when the threat is not material or the compared decision state "
+            "no longer matches."
+        ),
+    }
+    score = (
+        float(str(row["scope"]) == "same_lane"),
+        state_coverage,
+        effective,
+        float(row["observations"]),
+        -float(item_id),
+    )
+    return candidate, (score, candidate, branch)
+
+
+def _collect_situational_candidates(
+    evidence: _SituationalEvidence,
+    assets: list[dict[str, Any]],
+    excluded_item_ids: frozenset[int],
+) -> tuple[list[dict[str, Any]], list[_QualifiedSituationalBranch]]:
+    matchups, overlap_by_item, stability_by_scope = evidence
     asset_by_id = {
         int(asset["id"]): asset for asset in assets if isinstance(asset.get("id"), int)
     }
     candidates: list[dict[str, Any]] = []
-    qualified: list[tuple[tuple[float, ...], dict[str, Any], dict[str, Any]]] = []
-    if matchup_path.is_file() and overlap_path.is_file() and stability_path.is_file():
-        matchups = pl.read_csv(matchup_path).filter(pl.col("hero_id") == hero_id)
-        overlap = pl.read_csv(overlap_path).filter(pl.col("hero_id") == hero_id)
-        stability = pl.read_csv(stability_path).filter(pl.col("hero_id") == hero_id)
-        overlap_by_item = {
-            int(row["item_id"]): row for row in overlap.iter_rows(named=True)
-        }
-        stability_by_scope = {
-            str(row["scope"]): row for row in stability.iter_rows(named=True)
-        }
-        for row in matchups.iter_rows(named=True):
-            item_id = int(row["item_id"])
-            if item_id in excluded_item_ids:
-                continue
-            asset = asset_by_id.get(item_id)
-            if asset is None:
-                continue
-            responses = classify_item_threat_responses(asset)
-            diagnostic = overlap_by_item.get(item_id, {})
-            temporal = stability_by_scope.get(str(row["scope"]), {})
-            for response in sorted(responses):
-                effective = float(diagnostic.get("effective_support") or 0.0)
-                state_coverage = float(diagnostic.get("state_coverage") or 0.0)
-                comparator_item_id = int(row.get("comparator_item_id") or 0)
-                comparison_support = int(row.get("comparison_support") or 0)
-                interval_low = row.get("comparative_interval_low")
-                interval_high = row.get("comparative_interval_high")
-                bounded_uncertainty = (
-                    isinstance(interval_low, (int, float))
-                    and isinstance(interval_high, (int, float))
-                    and math.isfinite(float(interval_low))
-                    and math.isfinite(float(interval_high))
-                    and float(interval_low) <= float(interval_high)
-                    and float(interval_high) - float(interval_low)
-                    <= MAX_COMPARATIVE_INTERVAL_WIDTH
-                )
-                comparative_interval = (
-                    (float(interval_low), float(interval_high))
-                    if bounded_uncertainty
-                    and interval_low is not None
-                    and interval_high is not None
-                    else None
-                )
-                comparative_advantage = (
-                    comparative_interval is not None and comparative_interval[0] > 0
-                )
-                stable = (
-                    float(temporal.get("spearman") or 0.0) >= 0.3
-                    and float(temporal.get("sign_agreement") or 0.0) >= 0.6
-                )
-                gates = {
-                    "mechanics": True,
-                    "same_opportunity": bool(row.get("same_opportunity")),
-                    "comparator": comparator_item_id > 0,
-                    "support": int(row["observations"]) >= 20,
-                    "comparison_support": comparison_support >= 20,
-                    "effective_support": effective >= 20,
-                    "overlap": state_coverage >= 0.5,
-                    "chronological_stability": stable,
-                    "bounded_comparative_uncertainty": bounded_uncertainty,
-                    "comparative_advantage": comparative_advantage,
-                }
-                passed = all(gates.values())
-                candidate = {
-                    "threat": MECHANIC_RESPONSE_THREATS[response],
-                    "item_id": item_id,
-                    "comparator_item_id": comparator_item_id or None,
-                    "enemy_hero_id": int(row["enemy_hero_id"]),
-                    "scope": str(row["scope"]),
-                    "mechanic_ref": f"item/{item_id}/{response}",
-                    "comparator": (
-                        f"same-opportunity item {comparator_item_id} or save"
-                        if comparator_item_id
-                        else "unavailable"
-                    ),
-                    "support": int(row["observations"]),
-                    "comparison_support": comparison_support,
-                    "effective_support": effective,
-                    "overlap": state_coverage,
-                    "stable": stable,
-                    "comparative_interval": [interval_low, interval_high],
-                    "gates": gates,
-                    "qualified": passed,
-                    "admitted": False,
-                }
-                candidates.append(candidate)
-                if passed and comparative_interval is not None:
-                    threat = MECHANIC_RESPONSE_THREATS[response]
-                    enemy_id = int(row["enemy_hero_id"])
-                    branch = {
-                        "threat": threat,
-                        "item_id": item_id,
-                        "enemy_hero_id": enemy_id,
-                        "mechanic_ref": f"item/{item_id}/{response}",
-                        "comparator": candidate["comparator"],
-                        "comparator_item_id": comparator_item_id,
-                        "comparison_support": comparison_support,
-                        "same_opportunity": True,
-                        "support": int(row["observations"]),
-                        "effective_support": effective,
-                        "overlap": state_coverage,
-                        "stable": stable,
-                        "comparative_interval": list(comparative_interval),
-                        "trigger": (
-                            f"Enemy hero {enemy_id} presents material "
-                            f"{threat.replace('_', ' ')}."
-                        ),
-                        "replacement": (
-                            f"Choose item {item_id} instead of item "
-                            f"{comparator_item_id} at the matched opportunity."
-                        ),
-                        "execution": (
-                            f"Use the verified {response.replace('_', ' ')} mechanic "
-                            "while the trigger remains observable."
-                        ),
-                        "failure_condition": (
-                            "Skip when the threat is not material or the compared "
-                            "decision state no longer matches."
-                        ),
-                    }
-                    score = (
-                        float(str(row["scope"]) == "same_lane"),
-                        state_coverage,
-                        effective,
-                        float(row["observations"]),
-                        -float(item_id),
-                    )
-                    qualified.append((score, candidate, branch))
+    qualified: list[_QualifiedSituationalBranch] = []
+    for row in matchups.iter_rows(named=True):
+        item_id = int(row["item_id"])
+        if item_id in excluded_item_ids:
+            continue
+        asset = asset_by_id.get(item_id)
+        if asset is None:
+            continue
+        diagnostic = overlap_by_item.get(item_id, {})
+        temporal = stability_by_scope.get(str(row["scope"]), {})
+        for response in sorted(classify_item_threat_responses(asset)):
+            candidate, branch = _evaluate_situational_response(
+                row, response, diagnostic, temporal
+            )
+            candidates.append(candidate)
+            if branch is not None:
+                qualified.append(branch)
+    return candidates, qualified
+
+
+def _admit_situational_branches(
+    qualified: list[_QualifiedSituationalBranch],
+) -> list[dict[str, Any]]:
     ordered = sorted(
         qualified,
         key=lambda row: (
@@ -523,7 +567,7 @@ def _situational_policy(
             int(row[2]["item_id"]),
         ),
     )
-    branches = []
+    branches: list[dict[str, Any]] = []
     used_items: set[int] = set()
     used_guards: set[tuple[str, int]] = set()
     for _, candidate, branch in ordered:
@@ -537,23 +581,48 @@ def _situational_policy(
         used_guards.add(guard)
         if len(branches) == MAX_SITUATIONAL_BRANCHES:
             break
-    rejected = len(candidates) - len(branches)
+    return branches
+
+
+def _situational_abstentions(
+    candidate_count: int,
+    branch_count: int,
+) -> list[str]:
+    rejected = candidate_count - branch_count
+    if rejected:
+        return [
+            (
+                f"{rejected} mechanics-backed candidate(s) failed at least one "
+                "same-opportunity, comparator, support, overlap, bounded-uncertainty, "
+                "or chronological-stability gate."
+            )
+        ]
+    if not branch_count:
+        return ["No mechanics-backed situational candidate was available."]
+    return []
+
+
+def _situational_policy(
+    paths: RunPaths,
+    hero_id: int,
+    assets: list[dict[str, Any]],
+    *,
+    excluded_item_ids: frozenset[int] = frozenset(),
+) -> dict[str, Any]:
+    candidates: list[dict[str, Any]] = []
+    qualified: list[_QualifiedSituationalBranch] = []
+    evidence = _load_situational_evidence(paths, hero_id)
+    if evidence is not None:
+        candidates, qualified = _collect_situational_candidates(
+            evidence, assets, excluded_item_ids
+        )
+    branches = _admit_situational_branches(qualified)
     return {
         "version": 1,
         "threat_vocabulary": sorted(THREAT_CLASSES),
         "branches": branches,
         "candidate_audit": candidates,
-        "abstentions": (
-            [
-                f"{rejected} mechanics-backed candidate(s) failed at least one same-opportunity, comparator, support, overlap, bounded-uncertainty, or chronological-stability gate."
-            ]
-            if rejected
-            else (
-                ["No mechanics-backed situational candidate was available."]
-                if not branches
-                else []
-            )
-        ),
+        "abstentions": _situational_abstentions(len(candidates), len(branches)),
     }
 
 

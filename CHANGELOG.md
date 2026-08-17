@@ -9,6 +9,8 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Bounded concurrent hero narrative pipelines with atomic progress checkpoints and
+  rate-limit-aware backpressure.
 - Read-only artifact freshness, evidence refresh, and state-aware recommendation
   commands.
 - Pinned build tags, archetype titles, tactical hover projection, and typed

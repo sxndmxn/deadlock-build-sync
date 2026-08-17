@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from .purchase_guide import (
     TacticalProfile,
@@ -14,17 +14,18 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from .api import Patch
-    from .purchase_guide import GuideItem, PurchaseGuide
+    from .purchase_guide import GuideCategory, GuideItem, PurchaseGuide
 
 NARRATIVE_SCHEMA_VERSION = 6
 NARRATIVE_PROMPT_VERSION = 23
 DEFAULT_KIT_MODEL = "gpt-5.6-luna"
 DEFAULT_SYNTHESIS_MODEL = "gpt-5.6-luna"
+_PLAYER_DESCRIPTION_SURFACE = "player.description"
 NARRATIVE_FIELD_SURFACES = {
     "build_summary": ("reviewed_guide.summary",),
-    "tactical_profile.primary_role": ("player.description",),
-    "tactical_profile.fight_role": ("player.description",),
-    "tactical_profile.economy_plan": ("player.description",),
+    "tactical_profile.primary_role": (_PLAYER_DESCRIPTION_SURFACE,),
+    "tactical_profile.fight_role": (_PLAYER_DESCRIPTION_SURFACE,),
+    "tactical_profile.economy_plan": (_PLAYER_DESCRIPTION_SURFACE,),
     "tactical_profile.ending_duration_interpretation": ("audit.narrative",),
     "action_explanations": ("player.item_hover",),
     "category_summaries": ("audit.narrative",),
@@ -73,16 +74,7 @@ def _require_identity(path: Path, entry: dict[str, Any], snapshot_id: str) -> No
         _require_sha(path, entry.get(field), label)
 
 
-def load_narrative_catalog(path: Path) -> NarrativeCatalog:
-    """Load a complete narrative artifact and validate its compatibility envelope.
-
-    Returns:
-        An exact-snapshot catalog ready for deterministic admission.
-
-    Raises:
-        NarrativeError: If schema, identity, coverage, or hero data is incomplete.
-
-    """
+def _read_narrative_document(path: Path) -> dict[str, Any]:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
@@ -98,6 +90,21 @@ def load_narrative_catalog(path: Path) -> NarrativeCatalog:
         )
     if data.get("prompt_version") != NARRATIVE_PROMPT_VERSION:
         raise NarrativeError(f"{path} was generated with an outdated tactical prompt")
+    return data
+
+
+type _CatalogHeader = tuple[
+    str,
+    str,
+    dict[str, Any],
+    dict[str, Any],
+    list[int],
+    list[Any],
+    list[Any],
+]
+
+
+def _catalog_header(path: Path, data: dict[str, Any]) -> _CatalogHeader:
     snapshot_id = _require_sha(path, data.get("snapshot_id"), "snapshot")
     source_context = _require_sha(
         path,
@@ -124,6 +131,21 @@ def load_narrative_catalog(path: Path) -> NarrativeCatalog:
         raise NarrativeError(
             f"{path} is missing its snapshot, cohort, or coverage data"
         )
+    return cast(
+        "_CatalogHeader",
+        (
+            snapshot_id,
+            source_context,
+            patch,
+            cohort,
+            requested,
+            exclusions,
+            entries,
+        ),
+    )
+
+
+def _catalog_exclusions(path: Path, exclusions: list[Any]) -> dict[int, str]:
     exclusion_map: dict[int, str] = {}
     for exclusion in exclusions:
         if (
@@ -134,6 +156,14 @@ def load_narrative_catalog(path: Path) -> NarrativeCatalog:
         ):
             raise NarrativeError(f"{path} contains an invalid hero exclusion")
         exclusion_map[int(exclusion["hero_id"])] = str(exclusion["reason"]).strip()
+    return exclusion_map
+
+
+def _catalog_heroes(
+    path: Path,
+    entries: list[Any],
+    snapshot_id: str,
+) -> dict[int, dict[str, Any]]:
     heroes: dict[int, dict[str, Any]] = {}
     for entry in entries:
         if not isinstance(entry, dict) or not isinstance(entry.get("hero_id"), int):
@@ -147,11 +177,42 @@ def load_narrative_catalog(path: Path) -> NarrativeCatalog:
         if hero_id in heroes:
             raise NarrativeError(f"{path} contains duplicate hero {hero_id}")
         heroes[hero_id] = entry
-    requested_ids = set(requested)
+    return heroes
+
+
+def _validate_catalog_coverage(
+    path: Path,
+    heroes: dict[int, dict[str, Any]],
+    exclusion_map: dict[int, str],
+    requested_ids: set[int],
+) -> None:
     if set(heroes) & set(exclusion_map):
         raise NarrativeError(f"{path} both includes and excludes a hero")
     if set(heroes) | set(exclusion_map) != requested_ids:
         raise NarrativeError(f"{path} does not cover every requested hero")
+
+
+def load_narrative_catalog(path: Path) -> NarrativeCatalog:
+    """Load a complete narrative artifact and validate its compatibility envelope.
+
+    Returns:
+        An exact-snapshot catalog ready for deterministic admission.
+
+    """
+    data = _read_narrative_document(path)
+    (
+        snapshot_id,
+        source_context,
+        patch,
+        cohort,
+        requested,
+        exclusions,
+        entries,
+    ) = _catalog_header(path, data)
+    exclusion_map = _catalog_exclusions(path, exclusions)
+    heroes = _catalog_heroes(path, entries, snapshot_id)
+    requested_ids = set(requested)
+    _validate_catalog_coverage(path, heroes, exclusion_map, requested_ids)
     return NarrativeCatalog(
         snapshot_id=snapshot_id,
         patch_identity=str(patch["identity"]),
@@ -165,21 +226,12 @@ def load_narrative_catalog(path: Path) -> NarrativeCatalog:
     )
 
 
-def apply_narrative(
+def _narrative_entry(
     guide: PurchaseGuide,
     context: dict[str, Any],
     patch: Patch,
     catalog: NarrativeCatalog,
-) -> PurchaseGuide:
-    """Admit prose only when snapshot, policy, context, and projection are exact.
-
-    Returns:
-        A guide with summaries replaced while all executable fields remain unchanged.
-
-    Raises:
-        NarrativeError: If the artifact is stale, incomplete, or changes category identity.
-
-    """
+) -> dict[str, Any]:
     if catalog.patch_identity != patch.identity:
         raise NarrativeError("narrative artifact patch identity does not match the run")
     if catalog.snapshot_id != guide.snapshot_id:
@@ -210,6 +262,21 @@ def apply_narrative(
             raise NarrativeError(
                 f"{label} changed for {guide.hero_name}; regenerate the artifact"
             )
+    return entry
+
+
+type _NarrativeContent = tuple[
+    str,
+    TacticalProfile,
+    list[Any],
+    list[Any],
+]
+
+
+def _narrative_content(
+    entry: dict[str, Any],
+    hero_name: str,
+) -> _NarrativeContent:
     summary = entry.get("build_summary")
     tactical_profile = entry.get("tactical_profile")
     action_explanations = entry.get("action_explanations")
@@ -221,7 +288,7 @@ def apply_narrative(
         or not isinstance(action_explanations, list)
         or not isinstance(category_summaries, list)
     ):
-        raise NarrativeError(f"narrative for {guide.hero_name} is incomplete")
+        raise NarrativeError(f"narrative for {hero_name} is incomplete")
     profile_fields = {
         field: tactical_profile.get(field)
         for field in ("primary_role", "fight_role", "economy_plan")
@@ -230,7 +297,19 @@ def apply_narrative(
         not isinstance(value, str) or not value.strip()
         for value in profile_fields.values()
     ):
-        raise NarrativeError(f"narrative for {guide.hero_name} has no tactical profile")
+        raise NarrativeError(f"narrative for {hero_name} has no tactical profile")
+    profile = TacticalProfile(
+        primary_role=str(profile_fields["primary_role"]).strip(),
+        fight_role=str(profile_fields["fight_role"]).strip(),
+        economy_plan=str(profile_fields["economy_plan"]).strip(),
+    )
+    return summary.strip(), profile, action_explanations, category_summaries
+
+
+def _narrative_categories(
+    guide: PurchaseGuide,
+    category_summaries: list[Any],
+) -> tuple[GuideCategory, ...]:
     summaries: dict[str, str] = {}
     for category in category_summaries:
         if (
@@ -249,7 +328,7 @@ def apply_narrative(
         raise NarrativeError(
             f"narrative for {guide.hero_name} changed the projection categories"
         )
-    categories = tuple(
+    return tuple(
         replace(
             category,
             description=(
@@ -258,10 +337,17 @@ def apply_narrative(
         )
         for category in guide.rendered_categories
     )
+
+
+def _closed_action_explanations(
+    context: dict[str, Any],
+    action_explanations: list[Any],
+    hero_name: str,
+) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
     supplied_actions = context.get("explainable_actions")
     if not isinstance(supplied_actions, list):
         raise NarrativeError(
-            f"strategy context for {guide.hero_name} has no explainable actions"
+            f"strategy context for {hero_name} has no explainable actions"
         )
     supplied = [action for action in supplied_actions if isinstance(action, dict)]
     explanations = [
@@ -276,12 +362,18 @@ def apply_narrative(
         or len(explanations) != len(action_explanations)
         or explanation_nodes != supplied_nodes
     ):
-        raise NarrativeError(
-            f"narrative for {guide.hero_name} changed the closed action set"
-        )
-    explanation_by_node = {
+        raise NarrativeError(f"narrative for {hero_name} changed the closed action set")
+    return supplied, {
         str(explanation["node_id"]): explanation for explanation in explanations
     }
+
+
+def _annotated_core_items(
+    guide: PurchaseGuide,
+    categories: tuple[GuideCategory, ...],
+    supplied: list[dict[str, Any]],
+    explanation_by_node: dict[str, dict[str, Any]],
+) -> tuple[tuple[GuideCategory, ...], tuple[GuideItem, ...], tuple[GuideItem, ...]]:
     core_category = next(
         (category for category in categories if category.name == "CORE ITEMS"),
         None,
@@ -322,10 +414,7 @@ def apply_narrative(
                 f"narrative for {guide.hero_name} changed CORE action {node_id}"
             )
         try:
-            annotation = tactical_item_annotation(
-                str(explanation["instruction"]),
-                item,
-            )
+            annotation = tactical_item_annotation(str(explanation["instruction"]), item)
         except ValueError as error:
             raise NarrativeError(
                 f"narrative for {guide.hero_name} has invalid CORE action {node_id}: "
@@ -337,13 +426,22 @@ def apply_narrative(
     annotated_purchase_path = tuple(
         annotated_by_id.get(item.item_id, item) for item in core_category.items
     )
-    categories = tuple(
+    updated_categories = tuple(
         replace(category, items=annotated_purchase_path)
         if category is core_category
         else category
         for category in categories
     )
-    optional_annotations: dict[int, GuideItem] = {}
+    return updated_categories, annotated_core, annotated_purchase_path
+
+
+def _conditional_annotations(
+    categories: tuple[GuideCategory, ...],
+    supplied: list[dict[str, Any]],
+    explanation_by_node: dict[str, dict[str, Any]],
+    hero_name: str,
+) -> dict[int, GuideItem]:
+    annotations: dict[int, GuideItem] = {}
     for action in supplied:
         if not isinstance(action.get("conditional_contract"), dict):
             continue
@@ -366,44 +464,76 @@ def apply_narrative(
             or not isinstance(explanation.get("instruction"), str)
         ):
             raise NarrativeError(
-                f"narrative for {guide.hero_name} changed conditional action {node_id}"
+                f"narrative for {hero_name} changed conditional action {node_id}"
             )
         try:
             annotation = tactical_item_annotation(
-                str(explanation["instruction"]),
-                matches[0],
+                str(explanation["instruction"]), matches[0]
             )
         except ValueError as error:
             raise NarrativeError(
-                f"narrative for {guide.hero_name} has invalid conditional action "
+                f"narrative for {hero_name} has invalid conditional action "
                 f"{node_id}: {error}"
             ) from error
-        optional_annotations[action_id] = replace(
-            matches[0], tactical_annotation=annotation
-        )
-    if optional_annotations:
+        annotations[action_id] = replace(matches[0], tactical_annotation=annotation)
+    return annotations
+
+
+def _apply_conditional_annotations(
+    categories: tuple[GuideCategory, ...],
+    tiers: dict[int, tuple[GuideItem, ...]],
+    annotations: dict[int, GuideItem],
+) -> tuple[tuple[GuideCategory, ...], dict[int, tuple[GuideItem, ...]]]:
+    if annotations:
         categories = tuple(
             replace(
                 category,
                 items=tuple(
-                    optional_annotations.get(item.item_id, item)
-                    for item in category.items
+                    annotations.get(item.item_id, item) for item in category.items
                 ),
             )
             for category in categories
         )
-    tiers = {
-        tier: tuple(optional_annotations.get(item.item_id, item) for item in items)
-        for tier, items in guide.tiers.items()
+    updated_tiers = {
+        tier: tuple(annotations.get(item.item_id, item) for item in items)
+        for tier, items in tiers.items()
     }
+    return categories, updated_tiers
+
+
+def apply_narrative(
+    guide: PurchaseGuide,
+    context: dict[str, Any],
+    patch: Patch,
+    catalog: NarrativeCatalog,
+) -> PurchaseGuide:
+    """Admit prose only when snapshot, policy, context, and projection are exact.
+
+    Returns:
+        A guide with summaries replaced while all executable fields remain unchanged.
+
+    """
+    entry = _narrative_entry(guide, context, patch, catalog)
+    summary, tactical_profile, action_explanations, category_summaries = (
+        _narrative_content(entry, guide.hero_name)
+    )
+    categories = _narrative_categories(guide, category_summaries)
+    supplied, explanation_by_node = _closed_action_explanations(
+        context, action_explanations, guide.hero_name
+    )
+    categories, annotated_core, annotated_purchase_path = _annotated_core_items(
+        guide, categories, supplied, explanation_by_node
+    )
+    optional_annotations = _conditional_annotations(
+        categories, supplied, explanation_by_node, guide.hero_name
+    )
+    categories, tiers = _apply_conditional_annotations(
+        categories, guide.tiers, optional_annotations
+    )
     return replace(
         guide,
-        summary=summary.strip(),
-        tactical_profile=TacticalProfile(
-            primary_role=str(profile_fields["primary_role"]).strip(),
-            fight_role=str(profile_fields["fight_role"]).strip(),
-            economy_plan=str(profile_fields["economy_plan"]).strip(),
-        ),
+        summary=summary,
+        tactical_profile=tactical_profile,
         categories=categories,
         core_items=annotated_core,
         core_purchase_items=annotated_purchase_path,

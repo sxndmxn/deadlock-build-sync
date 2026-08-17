@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 from collections import defaultdict
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import duckdb
 import numpy as np
@@ -267,13 +267,36 @@ def _state_overlap_diagnostics(con: duckdb.DuckDBPyConnection) -> pl.DataFrame:
     ).pl()
 
 
-def _outcome_confounding_correlations(metrics: pl.DataFrame) -> pl.DataFrame:
+def _confounding_correlations_for_group(
+    scope: str,
+    identity: dict[str, Any],
+    group: pl.DataFrame,
+) -> list[dict[str, Any]]:
     features = (
         "median_buy_time_s",
         "median_valid_buy_net_worth",
         "adoption_rate",
         "cost",
     )
+    correlations: list[dict[str, Any]] = []
+    for feature in features:
+        usable = group.drop_nulls([feature, "raw_outcome_rate"])
+        if usable.height < 3 or usable[feature].n_unique() < 2:
+            continue
+        correlation = spearmanr(
+            usable[feature].to_numpy(),
+            usable["raw_outcome_rate"].to_numpy(),
+        ).statistic
+        correlations.append({
+            "scope": scope,
+            **identity,
+            "feature": feature,
+            "spearman": float(correlation) if math.isfinite(correlation) else None,
+        })
+    return correlations
+
+
+def _outcome_confounding_correlations(metrics: pl.DataFrame) -> pl.DataFrame:
     rows: list[dict[str, Any]] = []
     scopes: tuple[tuple[str, list[str]], ...] = (
         ("within_hero", ["hero_id"]),
@@ -283,22 +306,7 @@ def _outcome_confounding_correlations(metrics: pl.DataFrame) -> pl.DataFrame:
         for key, group in metrics.group_by(keys):
             key_values = key if isinstance(key, tuple) else (key,)
             identity = dict(zip(keys, key_values, strict=True))
-            for feature in features:
-                usable = group.drop_nulls([feature, "raw_outcome_rate"])
-                if usable.height < 3 or usable[feature].n_unique() < 2:
-                    continue
-                correlation = spearmanr(
-                    usable[feature].to_numpy(),
-                    usable["raw_outcome_rate"].to_numpy(),
-                ).statistic
-                rows.append({
-                    "scope": scope,
-                    **identity,
-                    "feature": feature,
-                    "spearman": float(correlation)
-                    if math.isfinite(correlation)
-                    else None,
-                })
+            rows.extend(_confounding_correlations_for_group(scope, identity, group))
     return pl.DataFrame(rows)
 
 
@@ -339,10 +347,13 @@ def _ridge_pipeline() -> Pipeline:
             list(range(1, len(RIDGE_FEATURES))),
         ),
     ])
-    return Pipeline([
-        ("features", transformer),
-        ("model", LogisticRegression(C=0.5, max_iter=300, solver="lbfgs")),
-    ])
+    return Pipeline(
+        [
+            ("features", transformer),
+            ("model", LogisticRegression(C=0.5, max_iter=300, solver="lbfgs")),
+        ],
+        memory=None,
+    )
 
 
 def _state_only_pipeline() -> Pipeline:
@@ -359,10 +370,145 @@ def _state_only_pipeline() -> Pipeline:
             list(range(len(STATE_FEATURES))),
         )
     ])
-    return Pipeline([
-        ("features", transformer),
-        ("model", LogisticRegression(C=0.5, max_iter=300, solver="lbfgs")),
-    ])
+    return Pipeline(
+        [
+            ("features", transformer),
+            ("model", LogisticRegression(C=0.5, max_iter=300, solver="lbfgs")),
+        ],
+        memory=None,
+    )
+
+
+def _ridge_group_is_modelable(group: pl.DataFrame) -> bool:
+    return (
+        group.height >= 200
+        and group["won"].n_unique() >= 2
+        and group["item_id"].n_unique() >= 2
+    )
+
+
+def _evaluate_ridge_holdout(
+    hero_id: int,
+    tier: int,
+    train: pl.DataFrame,
+    test: pl.DataFrame,
+) -> tuple[Pipeline | None, list[dict[str, Any]]]:
+    if train.height < 100 or test.height < 20 or train["won"].n_unique() < 2:
+        return None, []
+    train_model = _ridge_pipeline()
+    train_model.fit(_matrix(train), train["won"].to_numpy())
+    probabilities = train_model.predict_proba(_matrix(test))[:, 1]
+    evaluation = [
+        {
+            "hero_id": hero_id,
+            "tier": tier,
+            "model": "ridge_state_model",
+            "observations": test.height,
+            "brier": brier_score_loss(test["won"].to_numpy(), probabilities),
+            "log_loss": log_loss(test["won"].to_numpy(), probabilities, labels=[0, 1]),
+        }
+    ]
+    state_model = _state_only_pipeline()
+    state_model.fit(_matrix(train, STATE_FEATURES), train["won"].to_numpy())
+    state_probabilities = state_model.predict_proba(_matrix(test, STATE_FEATURES))[:, 1]
+    evaluation.append({
+        "hero_id": hero_id,
+        "tier": tier,
+        "model": "state_only_model",
+        "observations": test.height,
+        "brier": brier_score_loss(test["won"].to_numpy(), state_probabilities),
+        "log_loss": log_loss(
+            test["won"].to_numpy(),
+            state_probabilities,
+            labels=[0, 1],
+        ),
+    })
+    return train_model, evaluation
+
+
+def _score_ridge_counterfactuals(
+    hero_id: int,
+    tier: int,
+    group: pl.DataFrame,
+) -> tuple[list[dict[str, Any]], pl.DataFrame]:
+    full_model = _ridge_pipeline()
+    full_model.fit(_matrix(group), group["won"].to_numpy())
+    reference = group.sample(min(3000, group.height), seed=hero_id * 10 + tier)
+    scores: list[dict[str, Any]] = []
+    for item_id in group["item_id"].unique().to_list():
+        counterfactual = reference.with_columns(pl.lit(item_id).alias("item_id"))
+        adjusted = float(full_model.predict_proba(_matrix(counterfactual))[:, 1].mean())
+        scores.append({
+            "hero_id": hero_id,
+            "tier": tier,
+            "item_id": int(item_id),
+            "ridge_adjusted_rate": adjusted,
+        })
+    return scores, reference
+
+
+def _supported_ridge_items(frame: pl.DataFrame) -> set[int]:
+    return set(
+        frame.group_by("item_id").len().filter(pl.col("len") >= 20)["item_id"].to_list()
+    )
+
+
+def _ridge_item_values(
+    model: Pipeline,
+    reference: pl.DataFrame,
+    item_ids: list[int],
+) -> list[float]:
+    values: list[float] = []
+    for item_id in item_ids:
+        counterfactual = reference.with_columns(pl.lit(item_id).alias("item_id"))
+        values.append(float(model.predict_proba(_matrix(counterfactual))[:, 1].mean()))
+    return values
+
+
+def _ridge_split_stability(
+    hero_id: int,
+    tier: int,
+    train: pl.DataFrame,
+    test: pl.DataFrame,
+    reference: pl.DataFrame,
+    train_model: Pipeline | None,
+) -> dict[str, Any] | None:
+    if (
+        train_model is None
+        or test.height < 100
+        or test["won"].n_unique() < 2
+        or test["item_id"].n_unique() < 2
+    ):
+        return None
+    test_model = _ridge_pipeline()
+    test_model.fit(_matrix(test), test["won"].to_numpy())
+    shared_items = sorted(_supported_ridge_items(train) & _supported_ridge_items(test))
+    if len(shared_items) < 3:
+        return None
+    train_values = _ridge_item_values(train_model, reference, shared_items)
+    test_values = _ridge_item_values(test_model, reference, shared_items)
+    correlation = spearmanr(train_values, test_values).statistic
+    train_top = {
+        item_id
+        for _, item_id in sorted(
+            zip(train_values, shared_items, strict=True), reverse=True
+        )[:10]
+    }
+    test_top = {
+        item_id
+        for _, item_id in sorted(
+            zip(test_values, shared_items, strict=True), reverse=True
+        )[:10]
+    }
+    union = train_top | test_top
+    return {
+        "hero_id": hero_id,
+        "tier": tier,
+        "method": "ridge_adjusted_rate",
+        "shared_items": len(shared_items),
+        "spearman": float(correlation) if math.isfinite(correlation) else None,
+        "top10_jaccard": len(train_top & test_top) / len(union),
+    }
 
 
 def _ridge_scores(
@@ -384,121 +530,21 @@ def _ridge_scores(
     grouped = frame.group_by(["hero_id", "tier"], maintain_order=True)
     for group_index, (key, group) in enumerate(grouped, start=1):
         hero_id, tier = int(key[0]), int(key[1])
-        if (
-            group.height < 200
-            or group["won"].n_unique() < 2
-            or group["item_id"].n_unique() < 2
-        ):
+        if not _ridge_group_is_modelable(group):
             continue
         train = group.filter(pl.col("fold") == "train")
         test = group.filter(pl.col("fold") == "test")
-        train_model: Pipeline | None = None
-        if train.height >= 100 and test.height >= 20 and train["won"].n_unique() >= 2:
-            train_model = _ridge_pipeline()
-            train_model.fit(_matrix(train), train["won"].to_numpy())
-            probabilities = train_model.predict_proba(_matrix(test))[:, 1]
-            evaluation.append({
-                "hero_id": hero_id,
-                "tier": tier,
-                "model": "ridge_state_model",
-                "observations": test.height,
-                "brier": brier_score_loss(test["won"].to_numpy(), probabilities),
-                "log_loss": log_loss(
-                    test["won"].to_numpy(), probabilities, labels=[0, 1]
-                ),
-            })
-            state_model = _state_only_pipeline()
-            state_model.fit(_matrix(train, STATE_FEATURES), train["won"].to_numpy())
-            state_probabilities = state_model.predict_proba(
-                _matrix(test, STATE_FEATURES)
-            )[:, 1]
-            evaluation.append({
-                "hero_id": hero_id,
-                "tier": tier,
-                "model": "state_only_model",
-                "observations": test.height,
-                "brier": brier_score_loss(test["won"].to_numpy(), state_probabilities),
-                "log_loss": log_loss(
-                    test["won"].to_numpy(),
-                    state_probabilities,
-                    labels=[0, 1],
-                ),
-            })
-        full_model = _ridge_pipeline()
-        full_model.fit(_matrix(group), group["won"].to_numpy())
-        reference = group.sample(min(3000, group.height), seed=hero_id * 10 + tier)
-        for item_id in group["item_id"].unique().to_list():
-            counterfactual = reference.with_columns(pl.lit(item_id).alias("item_id"))
-            adjusted = float(
-                full_model.predict_proba(_matrix(counterfactual))[:, 1].mean()
-            )
-            scores.append({
-                "hero_id": hero_id,
-                "tier": tier,
-                "item_id": int(item_id),
-                "ridge_adjusted_rate": adjusted,
-            })
-        if (
-            train_model is not None
-            and test.height >= 100
-            and test["won"].n_unique() >= 2
-            and test["item_id"].n_unique() >= 2
-        ):
-            test_model = _ridge_pipeline()
-            test_model.fit(_matrix(test), test["won"].to_numpy())
-            train_supported = set(
-                train
-                .group_by("item_id")
-                .len()
-                .filter(pl.col("len") >= 20)["item_id"]
-                .to_list()
-            )
-            test_supported = set(
-                test
-                .group_by("item_id")
-                .len()
-                .filter(pl.col("len") >= 20)["item_id"]
-                .to_list()
-            )
-            shared_items = sorted(train_supported & test_supported)
-            if len(shared_items) >= 3:
-                train_values: list[float] = []
-                test_values: list[float] = []
-                for item_id in shared_items:
-                    counterfactual = reference.with_columns(
-                        pl.lit(item_id).alias("item_id")
-                    )
-                    matrix = _matrix(counterfactual)
-                    train_values.append(
-                        float(train_model.predict_proba(matrix)[:, 1].mean())
-                    )
-                    test_values.append(
-                        float(test_model.predict_proba(matrix)[:, 1].mean())
-                    )
-                correlation = spearmanr(train_values, test_values).statistic
-                train_top = {
-                    item_id
-                    for _, item_id in sorted(
-                        zip(train_values, shared_items, strict=True), reverse=True
-                    )[:10]
-                }
-                test_top = {
-                    item_id
-                    for _, item_id in sorted(
-                        zip(test_values, shared_items, strict=True), reverse=True
-                    )[:10]
-                }
-                union = train_top | test_top
-                stability.append({
-                    "hero_id": hero_id,
-                    "tier": tier,
-                    "method": "ridge_adjusted_rate",
-                    "shared_items": len(shared_items),
-                    "spearman": float(correlation)
-                    if math.isfinite(correlation)
-                    else None,
-                    "top10_jaccard": len(train_top & test_top) / len(union),
-                })
+        train_model, holdout_evaluation = _evaluate_ridge_holdout(
+            hero_id, tier, train, test
+        )
+        evaluation.extend(holdout_evaluation)
+        group_scores, reference = _score_ridge_counterfactuals(hero_id, tier, group)
+        scores.extend(group_scores)
+        stability_row = _ridge_split_stability(
+            hero_id, tier, train, test, reference, train_model
+        )
+        if stability_row is not None:
+            stability.append(stability_row)
         if group_index % 25 == 0:
             print(f"State models: {group_index} hero-tier cells", flush=True)
     return pl.DataFrame(scores), pl.DataFrame(evaluation), pl.DataFrame(stability)
@@ -1569,18 +1615,8 @@ def _effective_property_value(prop: dict[str, Any]) -> bool:
     return normalized not in {"", "0", "0.0", "-1", "-1.0", "-2", "-2.0", "false"}
 
 
-def _mechanics_audit(
-    paths: RunPaths,
-) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
-    items = read_json(paths.raw / "items.json")
-    all_assets = read_json(paths.raw / "items-all.json")
-    heroes = read_json(paths.raw / "heroes.json")
-    by_class = {
-        str(asset.get("class_name")): asset
-        for asset in all_assets
-        if isinstance(asset, dict) and asset.get("class_name")
-    }
-    item_rows = [
+def _item_mechanics_rows(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
         {
             "item_id": int(item["id"]),
             "item_name": item.get("name"),
@@ -1594,83 +1630,142 @@ def _mechanics_audit(
         }
         for item in items
     ]
+
+
+type _ScalingSignals = tuple[list[str], set[str], set[str], list[float]]
+type _AbilityProperty = dict[str, Any]
+type _ScaleFunction = dict[str, Any]
+type _HeroItemReferences = dict[str, Any]
+
+
+def _effective_scale_function(prop: object) -> _ScaleFunction | None:
+    if not isinstance(prop, dict):
+        return None
+    property_data = cast("_AbilityProperty", prop)
+    if not _effective_property_value(property_data):
+        return None
+    scale = property_data.get("scale_function")
+    if not isinstance(scale, dict):
+        return None
+    return cast("_ScaleFunction", scale)
+
+
+def _ability_scaling_signals(ability: dict[str, Any]) -> _ScalingSignals:
+    properties = ability.get("properties") or {}
+    scaled_properties: list[str] = []
+    scale_functions: set[str] = set()
+    scale_types: set[str] = set()
+    spirit_coefficients: list[float] = []
+    for property_name, prop in properties.items():
+        scale = _effective_scale_function(prop)
+        if scale is None:
+            continue
+        scaled_properties.append(str(property_name))
+        class_value = str(scale.get("class_name") or "")
+        if class_value:
+            scale_functions.add(class_value)
+        specific = scale.get("specific_stat_scale_type")
+        if specific:
+            scale_types.add(str(specific))
+        scale_types.update(str(stat) for stat in scale.get("scaling_stats") or [])
+        coefficient = scale.get("stat_scale")
+        if "tech_damage" in class_value and isinstance(coefficient, int | float):
+            spirit_coefficients.append(float(coefficient))
+    return scaled_properties, scale_functions, scale_types, spirit_coefficients
+
+
+def _ability_mechanics_row(
+    hero: dict[str, Any],
+    slot: int,
+    class_name: object,
+    ability: dict[str, Any],
+) -> dict[str, Any]:
+    scaled, functions, scale_types, spirit_coefficients = _ability_scaling_signals(
+        ability
+    )
+    description = ability.get("description") or {}
+    all_scale_types = (*functions, *scale_types)
+    return {
+        "hero_id": int(hero["id"]),
+        "hero_name": hero.get("name"),
+        "ability_slot": slot,
+        "ability_class": class_name,
+        "ability_name": ability.get("name"),
+        "ability_quip": description.get("quip")
+        if isinstance(description, dict)
+        else None,
+        "scaled_property_count": len(scaled),
+        "scaled_properties": " | ".join(sorted(scaled)),
+        "scale_functions": " | ".join(sorted(functions)),
+        "specific_scale_types": " | ".join(sorted(scale_types)),
+        "spirit_damage_coefficients": " | ".join(
+            f"{value:g}" for value in sorted(spirit_coefficients)
+        ),
+        "has_spirit_damage_scaling": bool(spirit_coefficients),
+        "has_duration_scaling": any(
+            "duration" in value.lower() for value in all_scale_types
+        ),
+        "has_range_or_radius_scaling": any(
+            token in value.lower()
+            for value in all_scale_types
+            for token in ("range", "radius")
+        ),
+        "has_cooldown_or_recharge_scaling": any(
+            token in value.lower()
+            for value in all_scale_types
+            for token in ("cooldown", "recharge")
+        ),
+    }
+
+
+def _audit_hero_mechanics(
+    hero: dict[str, Any],
+    by_class: dict[str, dict[str, Any]],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    raw_references = hero.get("items")
+    references = (
+        cast("_HeroItemReferences", raw_references)
+        if isinstance(raw_references, dict)
+        else {}
+    )
+    abilities = [references.get(f"signature{slot}") for slot in range(1, 5)]
+    resolved = [by_class.get(str(class_name), {}) for class_name in abilities]
+    ability_rows = [
+        _ability_mechanics_row(hero, slot, class_name, ability)
+        for slot, (class_name, ability) in enumerate(
+            zip(abilities, resolved, strict=True), start=1
+        )
+    ]
+    hero_row = {
+        "hero_id": int(hero["id"]),
+        "hero_name": hero.get("name"),
+        "signature_abilities": sum(bool(value) for value in abilities),
+        "resolved_abilities": sum(bool(value) for value in resolved),
+        "abilities_with_scaling": sum(
+            bool(row["scaled_property_count"]) for row in ability_rows
+        ),
+    }
+    return hero_row, ability_rows
+
+
+def _mechanics_audit(
+    paths: RunPaths,
+) -> tuple[pl.DataFrame, pl.DataFrame, pl.DataFrame]:
+    items = read_json(paths.raw / "items.json")
+    all_assets = read_json(paths.raw / "items-all.json")
+    heroes = read_json(paths.raw / "heroes.json")
+    by_class = {
+        str(asset.get("class_name")): asset
+        for asset in all_assets
+        if isinstance(asset, dict) and asset.get("class_name")
+    }
+    item_rows = _item_mechanics_rows(items)
     hero_rows: list[dict[str, Any]] = []
     ability_rows: list[dict[str, Any]] = []
     for hero in heroes:
-        references = hero.get("items") if isinstance(hero.get("items"), dict) else {}
-        abilities = [references.get(f"signature{slot}") for slot in range(1, 5)]
-        resolved = [by_class.get(str(class_name), {}) for class_name in abilities]
-        active_scaling_count = 0
-        for slot, (class_name, ability) in enumerate(
-            zip(abilities, resolved, strict=True), start=1
-        ):
-            properties = ability.get("properties") or {}
-            scaled_properties: list[str] = []
-            scale_functions: set[str] = set()
-            scale_types: set[str] = set()
-            spirit_coefficients: list[float] = []
-            for property_name, prop in properties.items():
-                if not isinstance(prop, dict) or not _effective_property_value(prop):
-                    continue
-                scale = prop.get("scale_function")
-                if not isinstance(scale, dict):
-                    continue
-                scaled_properties.append(str(property_name))
-                class_value = str(scale.get("class_name") or "")
-                if class_value:
-                    scale_functions.add(class_value)
-                specific = scale.get("specific_stat_scale_type")
-                if specific:
-                    scale_types.add(str(specific))
-                scale_types.update(
-                    str(stat) for stat in scale.get("scaling_stats") or []
-                )
-                coefficient = scale.get("stat_scale")
-                if "tech_damage" in class_value and isinstance(
-                    coefficient, int | float
-                ):
-                    spirit_coefficients.append(float(coefficient))
-            active_scaling_count += bool(scaled_properties)
-            description = ability.get("description") or {}
-            ability_rows.append({
-                "hero_id": int(hero["id"]),
-                "hero_name": hero.get("name"),
-                "ability_slot": slot,
-                "ability_class": class_name,
-                "ability_name": ability.get("name"),
-                "ability_quip": description.get("quip")
-                if isinstance(description, dict)
-                else None,
-                "scaled_property_count": len(scaled_properties),
-                "scaled_properties": " | ".join(sorted(scaled_properties)),
-                "scale_functions": " | ".join(sorted(scale_functions)),
-                "specific_scale_types": " | ".join(sorted(scale_types)),
-                "spirit_damage_coefficients": " | ".join(
-                    f"{value:g}" for value in sorted(spirit_coefficients)
-                ),
-                "has_spirit_damage_scaling": bool(spirit_coefficients),
-                "has_duration_scaling": any(
-                    "duration" in value.lower()
-                    for value in (*scale_functions, *scale_types)
-                ),
-                "has_range_or_radius_scaling": any(
-                    token in value.lower()
-                    for value in (*scale_functions, *scale_types)
-                    for token in ("range", "radius")
-                ),
-                "has_cooldown_or_recharge_scaling": any(
-                    token in value.lower()
-                    for value in (*scale_functions, *scale_types)
-                    for token in ("cooldown", "recharge")
-                ),
-            })
-        hero_rows.append({
-            "hero_id": int(hero["id"]),
-            "hero_name": hero.get("name"),
-            "signature_abilities": len([value for value in abilities if value]),
-            "resolved_abilities": len([value for value in resolved if value]),
-            "abilities_with_scaling": active_scaling_count,
-        })
+        hero_row, hero_abilities = _audit_hero_mechanics(hero, by_class)
+        hero_rows.append(hero_row)
+        ability_rows.extend(hero_abilities)
     return (
         pl.DataFrame(item_rows),
         pl.DataFrame(hero_rows),

@@ -1,3 +1,7 @@
+import argparse
+import copy
+import json
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -463,6 +467,139 @@ def test_generation_retries_semantic_failure(
 
     assert attempts == 2
     assert validated["hero_id"] == 12
+
+
+def test_rate_limit_halves_pressure_and_retries_affected_request(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    packet, response = packet_and_response()
+    attempts = 0
+
+    def fake_run_codex(*_args: object, **_kwargs: object) -> dict[str, Any]:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise generate_narratives.GenerationError(
+                "Codex failed with 429; Retry-After: 0 seconds"
+            )
+        return response
+
+    monkeypatch.setattr(generate_narratives, "run_codex", fake_run_codex)
+    monkeypatch.setattr(generate_narratives.random, "uniform", lambda *_args: 0.0)
+    limiter = generate_narratives._RequestLimiter(4)
+    validated = generate_narratives.generate_validated_response(
+        packet,
+        packet,
+        generate_narratives.GenerationStage(
+            schema_path=tmp_path / "schema.json",
+            model="test-model",
+            prompt="prompt",
+            identity_fields=("hero_id", "snapshot_id", "policy_id"),
+            validator=lambda candidate, _context: candidate,
+            label="test",
+            max_attempts=2,
+        ),
+        request_limiter=limiter,
+    )
+
+    assert attempts == 2
+    assert limiter.current_limit == 2
+    assert validated["hero_id"] == packet["hero_id"]
+
+
+def test_hero_pipelines_overlap_and_checkpoint_in_deterministic_order(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first, _ = packet_and_response()
+    second = copy.deepcopy(first)
+    second.update({"hero_id": 13, "hero": "Viscous"})
+    selected = [second, first]
+    source = {
+        "snapshot_manifest": {"snapshot_id": "1" * 64},
+        "source_context_sha256": "6" * 64,
+        "patch": {},
+        "exclusions": [],
+        "item_mechanics": {},
+    }
+    stage_order: dict[int, list[str]] = {12: [], 13: []}
+    active = 0
+    peak_active = 0
+    lock = threading.Lock()
+    kit_barrier = threading.Barrier(2)
+
+    def fake_generate(
+        _model_input: dict[str, Any],
+        validation_context: dict[str, Any],
+        stage: generate_narratives.GenerationStage,
+        **_kwargs: object,
+    ) -> dict[str, Any]:
+        nonlocal active, peak_active
+        hero_id = int(validation_context["hero_id"])
+        is_kit = stage.prompt == generate_narratives.KIT_PROMPT
+        with lock:
+            active += 1
+            peak_active = max(peak_active, active)
+        if is_kit:
+            kit_barrier.wait(timeout=1)
+        with lock:
+            if not is_kit:
+                assert stage_order[hero_id] == ["kit"]
+            stage_order[hero_id].append("kit" if is_kit else "synthesis")
+            active -= 1
+        if is_kit:
+            return {
+                "hero_id": hero_id,
+                "kit_basis_sha256": validation_context["kit_basis_sha256"],
+            }
+        return {
+            "hero_id": hero_id,
+            "snapshot_id": validation_context["snapshot_id"],
+            "policy_id": validation_context["policy_id"],
+            "context_sha256": validation_context["context_sha256"],
+            "narrative_basis_sha256": validation_context["narrative_basis_sha256"],
+        }
+
+    monkeypatch.setattr(
+        generate_narratives,
+        "generate_validated_response",
+        fake_generate,
+    )
+    output = tmp_path / "narratives.json"
+    kit_output = tmp_path / "kit-profiles.json"
+    run = generate_narratives._NarrativeGenerationRun(
+        args=argparse.Namespace(
+            force=True,
+            kit_model="kit-model",
+            model="synthesis-model",
+            max_attempts=1,
+            concurrency=2,
+            schema=tmp_path / "narrative.schema.json",
+            output=output,
+        ),
+        source=source,
+        selected_heroes=selected,
+        requested_hero_ids={12, 13},
+        kit_schema=tmp_path / "kit.schema.json",
+        kit_output=kit_output,
+        generated_narratives={},
+        kit_profiles={},
+        artifact_lock=threading.Lock(),
+        request_limiter=generate_narratives._RequestLimiter(2),
+    )
+    generate_narratives._generate_selected_narratives(run)
+
+    assert peak_active == 2
+    assert stage_order == {12: ["kit", "synthesis"], 13: ["kit", "synthesis"]}
+    assert [hero["hero_id"] for hero in selected] == [13, 12]
+    assert [hero["hero_id"] for hero in json.loads(output.read_text())["heroes"]] == [
+        12,
+        13,
+    ]
+    assert [
+        hero["hero_id"] for hero in json.loads(kit_output.read_text())["heroes"]
+    ] == [12, 13]
 
 
 def test_kit_validator_preserves_exact_abilities() -> None:

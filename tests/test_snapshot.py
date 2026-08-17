@@ -146,19 +146,22 @@ def test_manifest_rejects_cutoff_before_independent_epoch() -> None:
         created_at=datetime.now(UTC).isoformat(),
         fetched_at=datetime.now(UTC).isoformat(),
     ).records
+    created_at = datetime.now(UTC).isoformat()
+    epochs = EpochSet(boundary, boundary, boundary, boundary)
+    outcome_policy = OutcomePolicy()
     with pytest.raises(ValueError, match="precedes"):
         SnapshotManifest(
             client_version=123,
             as_of_timestamp=200,
-            created_at=datetime.now(UTC).isoformat(),
+            created_at=created_at,
             match_mode=MatchMode.RANKED,
             game_mode="normal",
             rank_range={},
             rank_labels_sha256="ranks",
             build_tags_sha256="b" * 64,
             patch={},
-            epochs=EpochSet(boundary, boundary, boundary, boundary),
-            outcome_policy=OutcomePolicy(),
+            epochs=epochs,
+            outcome_policy=outcome_policy,
             outcome_policy_enforced=False,
             records=record,
         )

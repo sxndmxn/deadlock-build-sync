@@ -20,6 +20,7 @@ from .kv3_binary import encode_binary_v4
 from .presentation import build_presentation
 from .protobuf import (
     MANAGED_MARKER,
+    HeroBuildMetadata,
     encode_hero_build,
     hero_build_metadata,
     is_managed_build,
@@ -34,6 +35,7 @@ if TYPE_CHECKING:
 
 DEADLOCK_APP_ID = "1422450"
 CACHE_RELATIVE_PATH = Path("remote/cfg/cached_hero_builds.kv3")
+_CACHE_FILENAME = "cached_hero_builds.kv3"
 STEAM_ROOT_RELATIVE_PATHS = (
     Path(".local/share/Steam"),
     Path(".steam/steam"),
@@ -88,43 +90,45 @@ def steam_root() -> Path:
     return next((root for root in roots if root.is_dir()), roots[0])
 
 
-def _steam_accounts(userdata: Path, account_id: int | None) -> tuple[Path, ...]:
+def _steam_accounts(userdata: Path, account_id: int | None) -> list[Path]:
     if account_id is not None:
-        return (userdata / str(account_id),)
+        return [userdata / str(account_id)]
     if not userdata.is_dir():
-        return ()
-    return tuple(
+        return []
+    return [
         path for path in userdata.iterdir() if path.is_dir() and path.name.isdigit()
-    )
+    ]
 
 
-def discover_cache(
-    *,
-    account_id: int | None = None,
-    cache_path: Path | None = None,
-    root: Path | None = None,
+def _explicit_cache_location(
+    cache_path: Path,
+    account_id: int | None,
 ) -> CacheLocation:
-    if cache_path is not None:
-        resolved = cache_path.expanduser().resolve()
-        if not resolved.is_file():
-            raise CacheError(f"Deadlock cache does not exist: {resolved}")
-        try:
-            inferred_account = int(resolved.parents[3].name)
-            app_directory = resolved.parents[2]
-        except (IndexError, ValueError) as error:
-            if account_id is None:
-                raise CacheError(
-                    "--account-id is required with a nonstandard --cache-path"
-                ) from error
-            inferred_account = account_id
-            app_directory = resolved.parent.parent.parent
-        if account_id is not None and inferred_account != account_id:
+    resolved = cache_path.expanduser().resolve()
+    if not resolved.is_file():
+        raise CacheError(f"Deadlock cache does not exist: {resolved}")
+    try:
+        inferred_account = int(resolved.parents[3].name)
+        app_directory = resolved.parents[2]
+    except (IndexError, ValueError) as error:
+        if account_id is None:
             raise CacheError(
-                f"cache belongs to account {inferred_account}, not requested account {account_id}"
-            )
-        return CacheLocation(inferred_account, resolved, app_directory)
+                "--account-id is required with a nonstandard --cache-path"
+            ) from error
+        inferred_account = account_id
+        app_directory = resolved.parent.parent.parent
+    if account_id is not None and inferred_account != account_id:
+        raise CacheError(
+            f"cache belongs to account {inferred_account}, not requested account "
+            f"{account_id}"
+        )
+    return CacheLocation(inferred_account, resolved, app_directory)
 
-    roots = (root,) if root is not None else steam_roots()
+
+def _discover_cache_locations(
+    roots: tuple[Path, ...],
+    account_id: int | None,
+) -> list[CacheLocation]:
     candidates: list[CacheLocation] = []
     discovered_paths: set[Path] = set()
     for steam_directory in roots:
@@ -141,6 +145,13 @@ def discover_cache(
                         app_directory=(account / DEADLOCK_APP_ID).resolve(),
                     )
                 )
+    return candidates
+
+
+def _select_cache_location(
+    candidates: list[CacheLocation],
+    account_id: int | None,
+) -> CacheLocation:
     if not candidates:
         requested = f" for account {account_id}" if account_id is not None else ""
         raise CacheError(f"no Deadlock Steam Cloud cache found{requested}")
@@ -156,6 +167,20 @@ def discover_cache(
         )
         raise CacheError(f"multiple Deadlock caches found ({accounts}); pass {hint}")
     return candidates[0]
+
+
+def discover_cache(
+    *,
+    account_id: int | None = None,
+    cache_path: Path | None = None,
+    root: Path | None = None,
+) -> CacheLocation:
+    if cache_path is not None:
+        return _explicit_cache_location(cache_path, account_id)
+    roots = (root,) if root is not None else steam_roots()
+    return _select_cache_location(
+        _discover_cache_locations(roots, account_id), account_id
+    )
 
 
 def deadlock_is_running() -> bool:
@@ -253,6 +278,31 @@ def _allocate_local_build_id(root: dict[str, Any], account_id: int) -> int:
     return build_id
 
 
+def _managed_build_slot(
+    unpublished: list[Any],
+    guide: PurchaseGuide,
+    account_id: int,
+) -> tuple[int | None, int | None]:
+    managed_index: int | None = None
+    managed_id: int | None = None
+    for index, blob in enumerate(unpublished):
+        if not isinstance(blob, (bytes, bytearray)):
+            continue
+        try:
+            metadata = hero_build_metadata(bytes(blob))
+        except ValueError:
+            continue
+        if is_managed_build(metadata, hero_id=guide.hero_id, account_id=account_id):
+            if managed_index is not None:
+                raise CacheError(
+                    f"multiple managed builds already exist for {guide.hero_name}; "
+                    "restore or remove duplicates"
+                )
+            managed_index = index
+            managed_id = metadata.build_id
+    return managed_index, managed_id
+
+
 def update_managed_builds(
     root: dict[str, Any],
     guides: list[PurchaseGuide],
@@ -272,22 +322,7 @@ def update_managed_builds(
     updated = 0
 
     for guide in guides:
-        managed_index: int | None = None
-        managed_id: int | None = None
-        for index, blob in enumerate(unpublished):
-            if not isinstance(blob, (bytes, bytearray)):
-                continue
-            try:
-                metadata = hero_build_metadata(bytes(blob))
-            except ValueError:
-                continue
-            if is_managed_build(metadata, hero_id=guide.hero_id, account_id=account_id):
-                if managed_index is not None:
-                    raise CacheError(
-                        f"multiple managed builds already exist for {guide.hero_name}; restore or remove duplicates"
-                    )
-                managed_index = index
-                managed_id = metadata.build_id
+        managed_index, managed_id = _managed_build_slot(unpublished, guide, account_id)
         if managed_id is None:
             managed_id = _allocate_local_build_id(updated_root, account_id)
         hero_build = encode_hero_build(
@@ -330,7 +365,7 @@ def _create_backup(location: CacheLocation, *, root: Path | None = None) -> Path
         backup = parent / f"{timestamp}-{suffix}"
         suffix += 1
     backup.mkdir(parents=True)
-    shutil.copy2(location.cache_path, backup / "cached_hero_builds.kv3")
+    shutil.copy2(location.cache_path, backup / _CACHE_FILENAME)
     if location.remote_cache_path.is_file():
         shutil.copy2(location.remote_cache_path, backup / "remotecache.vdf")
     for path in backup.iterdir():
@@ -415,6 +450,48 @@ def _out_of_scope_fingerprint(
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _target_managed_metadata(
+    blob: object,
+    expected: dict[int, int],
+    account_id: int,
+) -> HeroBuildMetadata | None:
+    if not isinstance(blob, (bytes, bytearray)):
+        return None
+    try:
+        metadata = hero_build_metadata(bytes(blob))
+    except ValueError:
+        return None
+    hero_id = metadata.hero_id
+    if (
+        metadata.author_account_id != account_id
+        or hero_id is None
+        or hero_id not in expected
+        or not metadata.description
+        or MANAGED_MARKER not in metadata.description
+    ):
+        return None
+    return metadata
+
+
+def _validate_managed_identity(
+    metadata: HeroBuildMetadata,
+    identities: dict[int, tuple[str, str]],
+) -> None:
+    hero_id = cast("int", metadata.hero_id)
+    if metadata.build_id is None:
+        raise CacheError(f"replacement cache managed hero {hero_id} has no build ID")
+    expected_identity = identities.get(hero_id)
+    if expected_identity is None:
+        return
+    snapshot_id, policy_id = expected_identity
+    description = metadata.description or ""
+    if (
+        f"Snapshot: {snapshot_id}." not in description
+        or f"Policy: {policy_id}." not in description
+    ):
+        raise CacheError(f"replacement cache managed hero {hero_id} has stale identity")
+
+
 def _validate_managed_entries(
     root: dict[str, Any],
     expected: dict[int, int],
@@ -424,40 +501,16 @@ def _validate_managed_entries(
 ) -> None:
     found: dict[int, int] = {}
     for blob in root.get("Unpublished", []):
-        if not isinstance(blob, (bytes, bytearray)):
+        metadata = _target_managed_metadata(blob, expected, account_id)
+        if metadata is None:
             continue
-        try:
-            metadata = hero_build_metadata(bytes(blob))
-        except ValueError:
-            continue
-        hero_id = metadata.hero_id
-        if (
-            metadata.author_account_id == account_id
-            and hero_id is not None
-            and hero_id in expected
-            and metadata.description
-            and MANAGED_MARKER in metadata.description
-        ):
-            if hero_id in found:
-                raise CacheError(
-                    f"replacement cache contains duplicate managed hero {hero_id}"
-                )
-            if metadata.build_id is None:
-                raise CacheError(
-                    f"replacement cache managed hero {hero_id} has no build ID"
-                )
-            expected_identity = (identities or {}).get(hero_id)
-            if expected_identity is not None:
-                snapshot_id, policy_id = expected_identity
-                description = metadata.description or ""
-                if (
-                    f"Snapshot: {snapshot_id}." not in description
-                    or f"Policy: {policy_id}." not in description
-                ):
-                    raise CacheError(
-                        f"replacement cache managed hero {hero_id} has stale identity"
-                    )
-            found[hero_id] = metadata.build_id
+        hero_id = cast("int", metadata.hero_id)
+        if hero_id in found:
+            raise CacheError(
+                f"replacement cache contains duplicate managed hero {hero_id}"
+            )
+        _validate_managed_identity(metadata, identities or {})
+        found[hero_id] = cast("int", metadata.build_id)
     if found != expected:
         raise CacheError(
             f"replacement cache validation failed: expected {expected}, found {found}"
@@ -488,24 +541,41 @@ def _restore_cache_file(source: Path, destination: Path) -> None:
             temporary.unlink(missing_ok=True)
 
 
-def install_guides(
-    location: CacheLocation,
-    guides: list[PurchaseGuide],
+@dataclass(frozen=True)
+class _GuideInstallationIdentity:
+    hero_ids: set[int]
+    snapshot_id: str
+    policy_ids: dict[int, str]
+    identities: dict[int, tuple[str, str]]
+
+
+def _validate_install_coverage(
+    hero_ids: set[int],
+    guide_count: int,
+    expected_hero_ids: set[int] | None,
     *,
-    persona: str,
-    timestamp: int,
-    patch_title: str,
-    patch_published_at: str,
-    rank_range: RankRange = DEFAULT_RANK_RANGE,
-    backup_root: Path | None = None,
-    snapshot_manifest: dict[str, Any] | None = None,
-    expected_hero_ids: set[int] | None = None,
-    allow_subset: bool = False,
-) -> InstallResult:
-    if deadlock_is_running():
+    allow_subset: bool,
+) -> None:
+    if len(hero_ids) != guide_count:
+        raise CacheError("refusing to install duplicate hero guides")
+    if expected_hero_ids is None or allow_subset:
+        return
+    missing = expected_hero_ids - hero_ids
+    extra = hero_ids - expected_hero_ids
+    if missing or extra:
         raise CacheError(
-            "Deadlock is running; close it before installing private builds"
+            "all-hero installation coverage mismatch; missing "
+            f"{sorted(missing)}, extra {sorted(extra)}"
         )
+
+
+def _validate_install_request(
+    guides: list[PurchaseGuide],
+    snapshot_manifest: dict[str, Any] | None,
+    expected_hero_ids: set[int] | None,
+    *,
+    allow_subset: bool,
+) -> _GuideInstallationIdentity:
     if not guides:
         raise CacheError("no guides were generated")
     incomplete = [
@@ -524,17 +594,13 @@ def install_guides(
             "refusing to install guides with incomplete policy identity/projection: "
             + ", ".join(incomplete)
         )
-    guide_hero_ids = {guide.hero_id for guide in guides}
-    if len(guide_hero_ids) != len(guides):
-        raise CacheError("refusing to install duplicate hero guides")
-    if expected_hero_ids is not None and not allow_subset:
-        missing = expected_hero_ids - guide_hero_ids
-        extra = guide_hero_ids - expected_hero_ids
-        if missing or extra:
-            raise CacheError(
-                "all-hero installation coverage mismatch; missing "
-                f"{sorted(missing)}, extra {sorted(extra)}"
-            )
+    hero_ids = {guide.hero_id for guide in guides}
+    _validate_install_coverage(
+        hero_ids,
+        len(guides),
+        expected_hero_ids,
+        allow_subset=allow_subset,
+    )
     snapshot_ids = {guide.snapshot_id for guide in guides}
     if len(snapshot_ids) != 1:
         raise CacheError("all installed guides must use one snapshot")
@@ -545,12 +611,114 @@ def install_guides(
     identities = {
         guide.hero_id: (guide.snapshot_id, guide.policy_id) for guide in guides
     }
+    return _GuideInstallationIdentity(
+        hero_ids,
+        snapshot_id,
+        policy_ids,
+        identities,
+    )
+
+
+@dataclass(frozen=True)
+class _ReplacementValidation:
+    account_id: int
+    build_ids: dict[int, int]
+    identities: dict[int, tuple[str, str]]
+    hero_ids: set[int]
+    out_of_scope_sha256: str
+
+
+def _validate_replacement_cache(
+    root: dict[str, Any],
+    validation: _ReplacementValidation,
+    scope_error: str,
+) -> None:
+    _validate_managed_entries(
+        root,
+        validation.build_ids,
+        account_id=validation.account_id,
+        identities=validation.identities,
+    )
+    fingerprint = _out_of_scope_fingerprint(
+        root,
+        account_id=validation.account_id,
+        target_hero_ids=validation.hero_ids,
+    )
+    if fingerprint != validation.out_of_scope_sha256:
+        raise CacheError(scope_error)
+
+
+def _install_replacement(
+    location: CacheLocation,
+    encoded: bytes,
+    validation: _ReplacementValidation,
+) -> None:
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            prefix=".cached_hero_builds.",
+            suffix=".tmp",
+            dir=location.cache_path.parent,
+            delete=False,
+        ) as temporary:
+            temporary_path = Path(temporary.name)
+            temporary.write(encoded)
+            temporary.flush()
+            os.fsync(temporary.fileno())
+        candidate = read_cache(temporary_path)
+        _validate_replacement_cache(
+            candidate,
+            validation,
+            "replacement cache changed out-of-scope Steam data",
+        )
+        if deadlock_is_running():
+            raise CacheError(
+                "Deadlock started before replacement; refusing to change the cache"
+            )
+        temporary_path.replace(location.cache_path)
+        temporary_path = None
+        _fsync_directory(location.cache_path.parent)
+        installed = read_cache(location.cache_path)
+        _validate_replacement_cache(
+            installed,
+            validation,
+            "installed cache changed out-of-scope Steam data",
+        )
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+
+
+def install_guides(
+    location: CacheLocation,
+    guides: list[PurchaseGuide],
+    *,
+    persona: str,
+    timestamp: int,
+    patch_title: str,
+    patch_published_at: str,
+    rank_range: RankRange = DEFAULT_RANK_RANGE,
+    backup_root: Path | None = None,
+    snapshot_manifest: dict[str, Any] | None = None,
+    expected_hero_ids: set[int] | None = None,
+    allow_subset: bool = False,
+) -> InstallResult:
+    if deadlock_is_running():
+        raise CacheError(
+            "Deadlock is running; close it before installing private builds"
+        )
+    identity = _validate_install_request(
+        guides,
+        snapshot_manifest,
+        expected_hero_ids,
+        allow_subset=allow_subset,
+    )
 
     original = read_cache(location.cache_path)
     original_out_of_scope = _out_of_scope_fingerprint(
         original,
         account_id=location.account_id,
-        target_hero_ids=guide_hero_ids,
+        target_hero_ids=identity.hero_ids,
     )
     replacement, build_ids, created, updated = update_managed_builds(
         original,
@@ -572,8 +740,8 @@ def install_guides(
         "build_ids": build_ids,
         "rank_range": rank_range.as_dict(),
         "snapshot": snapshot_manifest,
-        "snapshot_id": snapshot_id,
-        "policy_ids": policy_ids,
+        "snapshot_id": identity.snapshot_id,
+        "policy_ids": identity.policy_ids,
         "projection_fingerprints": {
             guide.hero_id: projection_fingerprint(guide) for guide in guides
         },
@@ -581,63 +749,19 @@ def install_guides(
     }
     atomic_write_json(backup / "manifest.json", manifest)
 
-    temporary_path: Path | None = None
+    validation = _ReplacementValidation(
+        location.account_id,
+        build_ids,
+        identity.identities,
+        identity.hero_ids,
+        original_out_of_scope,
+    )
     try:
-        with tempfile.NamedTemporaryFile(
-            prefix=".cached_hero_builds.",
-            suffix=".tmp",
-            dir=location.cache_path.parent,
-            delete=False,
-        ) as temporary:
-            temporary_path = Path(temporary.name)
-            temporary.write(encoded)
-            temporary.flush()
-            os.fsync(temporary.fileno())
-        candidate = read_cache(temporary_path)
-        _validate_managed_entries(
-            candidate,
-            build_ids,
-            account_id=location.account_id,
-            identities=identities,
-        )
-        if (
-            _out_of_scope_fingerprint(
-                candidate,
-                account_id=location.account_id,
-                target_hero_ids=guide_hero_ids,
-            )
-            != original_out_of_scope
-        ):
-            raise CacheError("replacement cache changed out-of-scope Steam data")
-        if deadlock_is_running():
-            raise CacheError(
-                "Deadlock started before replacement; refusing to change the cache"
-            )
-        temporary_path.replace(location.cache_path)
-        temporary_path = None
-        _fsync_directory(location.cache_path.parent)
-        installed = read_cache(location.cache_path)
-        _validate_managed_entries(
-            installed,
-            build_ids,
-            account_id=location.account_id,
-            identities=identities,
-        )
-        if (
-            _out_of_scope_fingerprint(
-                installed,
-                account_id=location.account_id,
-                target_hero_ids=guide_hero_ids,
-            )
-            != original_out_of_scope
-        ):
-            raise CacheError("installed cache changed out-of-scope Steam data")
+        _install_replacement(location, encoded, validation)
     except Exception as error:
-        if temporary_path is not None:
-            temporary_path.unlink(missing_ok=True)
         try:
             _restore_cache_file(
-                backup / "cached_hero_builds.kv3",
+                backup / _CACHE_FILENAME,
                 location.cache_path,
             )
         except Exception as restore_error:
@@ -657,8 +781,8 @@ def install_guides(
         build_ids,
         created,
         updated,
-        snapshot_id,
-        policy_ids,
+        identity.snapshot_id,
+        identity.policy_ids,
     )
 
 
@@ -678,11 +802,7 @@ def restore_latest(
     )
     backups = (
         sorted(
-            (
-                path
-                for path in parent.iterdir()
-                if (path / "cached_hero_builds.kv3").is_file()
-            ),
+            (path for path in parent.iterdir() if (path / _CACHE_FILENAME).is_file()),
             reverse=True,
         )
         if parent.is_dir()
@@ -690,7 +810,7 @@ def restore_latest(
     )
     if not backups:
         raise CacheError(f"no cache backups found for account {location.account_id}")
-    source = backups[0] / "cached_hero_builds.kv3"
+    source = backups[0] / _CACHE_FILENAME
     read_cache(source)
     _restore_cache_file(source, location.cache_path)
     return backups[0]

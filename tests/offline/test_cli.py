@@ -41,9 +41,10 @@ def test_unspecified_existing_cohort_arguments_do_not_conflict() -> None:
 
 def test_conflicting_existing_cohort_requires_new_run_id() -> None:
     args = Namespace(min_rank=81, max_rank=None, since=None, as_of=None)
+    frozen = _cohort_from_manifest(_manifest())
 
     with pytest.raises(SystemExit, match="new --run-id"):
-        _check_explicit_cohort_args(args, _cohort_from_manifest(_manifest()))
+        _check_explicit_cohort_args(args, frozen)
 
 
 def test_file_sha256_is_stable(tmp_path: Path) -> None:

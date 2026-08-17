@@ -90,10 +90,9 @@ def test_adoption_deduplicates_rebuys_but_keeps_events_and_accounts() -> None:
 
 
 def test_opening_net_worth_quarantines_final_snapshot_fallback() -> None:
+    event = PurchaseEvent(1, 0, None, 1, 120, net_worth=20_000, final_net_worth=20_000)
     with pytest.raises(TelemetryError, match="final-snapshot"):
-        validated_purchase_net_worth(
-            PurchaseEvent(1, 0, None, 1, 120, net_worth=20_000, final_net_worth=20_000)
-        )
+        validated_purchase_net_worth(event)
     assert (
         validated_purchase_net_worth(
             PurchaseEvent(
@@ -185,14 +184,12 @@ def test_sparse_cohort_widens_monotonically_without_crossing_regime() -> None:
     )
 
     assert widen_sparse_cohort(windows, minimum_support=20) == windows[:2]
+    invalid_windows = (
+        CohortWindow(91, 96, 100, 200, 5),
+        CohortWindow(92, 95, 100, 200, 20),
+    )
     with pytest.raises(TelemetryError, match="monotonically widen"):
-        widen_sparse_cohort(
-            (
-                CohortWindow(91, 96, 100, 200, 5),
-                CohortWindow(92, 95, 100, 200, 20),
-            ),
-            minimum_support=20,
-        )
+        widen_sparse_cohort(invalid_windows, minimum_support=20)
 
 
 def test_prefix_aggregation_keeps_variable_paths_and_denominators() -> None:

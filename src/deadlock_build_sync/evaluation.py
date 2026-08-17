@@ -816,6 +816,55 @@ class MonitoringDecision:
     last_compatible_policy_ids: tuple[str, ...]
 
 
+def _rollback_reasons(
+    snapshot: MonitoringSnapshot,
+    thresholds: MonitoringThresholds,
+) -> list[str]:
+    reasons = []
+    if not snapshot.mechanics_match:
+        reasons.append("mechanics fingerprint mismatch")
+    if snapshot.calibration_error > thresholds.maximum_calibration_error:
+        reasons.append("material calibration failure")
+    if not snapshot.schema_decode_ok:
+        reasons.append("schema decode failure")
+    if not snapshot.preservation_unchanged:
+        reasons.append("user-data preservation changed")
+    if snapshot.restore_failures:
+        reasons.append("restore failure")
+    return reasons
+
+
+def _refusal_reasons(
+    snapshot: MonitoringSnapshot,
+    thresholds: MonitoringThresholds,
+) -> list[str]:
+    reasons = []
+    if snapshot.snapshot_age_s > thresholds.maximum_snapshot_age_s:
+        reasons.append("snapshot freshness exceeded")
+    if snapshot.path_rejections or snapshot.render_rejections:
+        reasons.append("path or render rejection observed")
+    if snapshot.install_failures:
+        reasons.append("install failure observed")
+    return reasons
+
+
+def _alert_reasons(
+    snapshot: MonitoringSnapshot,
+    thresholds: MonitoringThresholds,
+) -> list[str]:
+    reasons = []
+    if snapshot.invalid_state_rate > thresholds.maximum_invalid_state_rate:
+        reasons.append("invalid-state rate exceeded")
+    branch_rate = (
+        snapshot.unhandled_branches / snapshot.exposures if snapshot.exposures else 0.0
+    )
+    if branch_rate > thresholds.maximum_unhandled_branch_rate:
+        reasons.append("unhandled-branch rate exceeded")
+    if snapshot.recommendation_concentration > thresholds.maximum_concentration:
+        reasons.append("recommendation concentration exceeded")
+    return reasons
+
+
 def evaluate_monitoring(
     snapshot: MonitoringSnapshot,
     *,
@@ -830,17 +879,7 @@ def evaluate_monitoring(
 
     """
     resolved = thresholds or MonitoringThresholds()
-    rollback = []
-    if not snapshot.mechanics_match:
-        rollback.append("mechanics fingerprint mismatch")
-    if snapshot.calibration_error > resolved.maximum_calibration_error:
-        rollback.append("material calibration failure")
-    if not snapshot.schema_decode_ok:
-        rollback.append("schema decode failure")
-    if not snapshot.preservation_unchanged:
-        rollback.append("user-data preservation changed")
-    if snapshot.restore_failures:
-        rollback.append("restore failure")
+    rollback = _rollback_reasons(snapshot, resolved)
     if rollback:
         if not last_compatible_snapshot_id or not last_compatible_policy_ids:
             rollback.append("no last compatible policy is available")
@@ -850,13 +889,7 @@ def evaluate_monitoring(
             last_compatible_snapshot_id,
             last_compatible_policy_ids,
         )
-    refusal = []
-    if snapshot.snapshot_age_s > resolved.maximum_snapshot_age_s:
-        refusal.append("snapshot freshness exceeded")
-    if snapshot.path_rejections or snapshot.render_rejections:
-        refusal.append("path or render rejection observed")
-    if snapshot.install_failures:
-        refusal.append("install failure observed")
+    refusal = _refusal_reasons(snapshot, resolved)
     if refusal:
         return MonitoringDecision(
             MonitorAction.REFUSE,
@@ -864,16 +897,7 @@ def evaluate_monitoring(
             last_compatible_snapshot_id,
             last_compatible_policy_ids,
         )
-    alert = []
-    if snapshot.invalid_state_rate > resolved.maximum_invalid_state_rate:
-        alert.append("invalid-state rate exceeded")
-    branch_rate = (
-        snapshot.unhandled_branches / snapshot.exposures if snapshot.exposures else 0.0
-    )
-    if branch_rate > resolved.maximum_unhandled_branch_rate:
-        alert.append("unhandled-branch rate exceeded")
-    if snapshot.recommendation_concentration > resolved.maximum_concentration:
-        alert.append("recommendation concentration exceeded")
+    alert = _alert_reasons(snapshot, resolved)
     return MonitoringDecision(
         MonitorAction.ALERT if alert else MonitorAction.HEALTHY,
         tuple(alert),

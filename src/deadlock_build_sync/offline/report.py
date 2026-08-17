@@ -259,6 +259,21 @@ Top three items per tier under four materially different estimators:
 """
 
 
+def _event_inflation_bounds(metrics: pl.DataFrame) -> tuple[float, float, bool]:
+    bounds = metrics.select(
+        pl.col("event_inflation").min().alias("minimum"),
+        pl.col("event_inflation").max().alias("maximum"),
+    ).row(0, named=True)
+    if not isinstance(bounds["minimum"], (int, float)) or not isinstance(
+        bounds["maximum"], (int, float)
+    ):
+        raise TypeError("event-inflation bounds are not numeric")
+    minimum = float(bounds["minimum"])
+    maximum = float(bounds["maximum"])
+    counts_are_unique = abs(minimum - 1.0) < 1e-12 and abs(maximum - 1.0) < 1e-12
+    return minimum, maximum, counts_are_unique
+
+
 def render_report(paths: RunPaths) -> dict[str, Any]:
     _charts(paths)
     manifest = read_json(paths.run / "manifest.json")
@@ -328,19 +343,8 @@ def render_report(paths: RunPaths) -> dict[str, Any]:
     valid_share = counts.get("valid_purchase_net_worth", 0) / max(
         1, counts.get("first_purchases", 0)
     )
-    inflation_bounds = metrics.select(
-        pl.col("event_inflation").min().alias("minimum"),
-        pl.col("event_inflation").max().alias("maximum"),
-    ).row(0, named=True)
-    if not isinstance(inflation_bounds["minimum"], (int, float)) or not isinstance(
-        inflation_bounds["maximum"], (int, float)
-    ):
-        raise TypeError("event-inflation bounds are not numeric")
-    event_inflation_min = float(inflation_bounds["minimum"])
-    event_inflation_max = float(inflation_bounds["maximum"])
-    event_counts_are_unique = (
-        abs(event_inflation_min - 1.0) < 1e-12
-        and abs(event_inflation_max - 1.0) < 1e-12
+    event_inflation_min, event_inflation_max, event_counts_are_unique = (
+        _event_inflation_bounds(metrics)
     )
     most_popular = (
         metrics

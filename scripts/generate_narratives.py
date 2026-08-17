@@ -3,15 +3,19 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -30,12 +34,18 @@ from deadlock_build_sync.strategy_context import (
     validate_strategy_context_document,
 )
 
+_KitAbilityRole = dict[str, Any]
+_ProjectionCategory = dict[str, Any]
+
 SCHEMA_VERSION = NARRATIVE_SCHEMA_VERSION
 PROMPT_VERSION = NARRATIVE_PROMPT_VERSION
 REUSABLE_PROMPT_VERSIONS = frozenset({PROMPT_VERSION})
 KIT_SCHEMA_VERSION = 1
 KIT_PROMPT_VERSION = 4
 DEFAULT_GENERATION_ATTEMPTS = 3
+DEFAULT_GENERATION_CONCURRENCY = 8
+DEFAULT_RATE_LIMIT_BACKOFF_SECONDS = 1.0
+MAX_RATE_LIMIT_BACKOFF_SECONDS = 60.0
 CONDITION_PATTERN = re.compile(
     r"\b(?:after|before|if|once|only|save|hold|until|when|while|unless|then)\b"
     r"|rather than|as soon as",
@@ -66,6 +76,15 @@ ANALYTICS_LEAK_PATTERN = re.compile(
 CORRUPT_PROSE_PATTERN = re.compile(
     r"[\u200b-\u200f\u202a-\u202e\u2060-\u206f\u4e00-\u9fff]"
     r"|(?<=[A-Za-z])\d+(?=\W|$)"
+)
+RATE_LIMIT_PATTERN = re.compile(
+    r"\b(?:429|rate[ -]?limit(?:ed|ing)?|too many requests)\b",
+    re.IGNORECASE,
+)
+RETRY_AFTER_PATTERN = re.compile(
+    r"(?:retry[ -]?after|try again in)\s*(?::|=)?\s*"
+    r"(?P<value>\d+(?:\.\d+)?)\s*(?P<unit>milliseconds?|ms|seconds?|s)?",
+    re.IGNORECASE,
 )
 
 KIT_PROMPT = """
@@ -165,6 +184,117 @@ class GenerationStage:
     normalizer: Callable[[dict[str, Any]], dict[str, Any]] | None = None
 
 
+class _RequestLimiter:
+    """Bound concurrent Codex calls and coordinate rate-limit backpressure."""
+
+    def __init__(self, max_concurrency: int) -> None:
+        if max_concurrency < 1:
+            raise ValueError("max_concurrency must be at least one")
+        self._max_concurrency = max_concurrency
+        self._current_limit = max_concurrency
+        self._in_flight = 0
+        self._not_before = 0.0
+        self._successful_requests = 0
+        self._condition = threading.Condition()
+
+    @property
+    def current_limit(self) -> int:
+        with self._condition:
+            return self._current_limit
+
+    def acquire(self) -> None:
+        with self._condition:
+            while True:
+                delay = self._not_before - time.monotonic()
+                if self._in_flight < self._current_limit and delay <= 0:
+                    self._in_flight += 1
+                    return
+                self._condition.wait(timeout=delay if delay > 0 else None)
+
+    def release(
+        self,
+        error: GenerationError | None,
+        *,
+        attempt: int,
+    ) -> float:
+        """Release one request and return any local retry delay.
+
+        Returns:
+            Seconds the affected pipeline should wait before a local retry.
+
+        Raises:
+            RuntimeError: If no request slot is currently held.
+
+        """
+        with self._condition:
+            if self._in_flight < 1:
+                raise RuntimeError("cannot release a request that was not acquired")
+            self._in_flight -= 1
+            delay = self._release_delay(error, attempt=attempt)
+            self._condition.notify_all()
+            return delay
+
+    def _release_delay(
+        self,
+        error: GenerationError | None,
+        *,
+        attempt: int,
+    ) -> float:
+        if error is None:
+            self._record_successful_request()
+            return 0.0
+        if not _is_rate_limit_error(error):
+            return random.uniform(  # ruff: ignore[suspicious-non-cryptographic-random-usage]
+                0.05,
+                min(0.5, 0.1 * attempt),
+            )
+        return self._record_rate_limit(error, attempt=attempt)
+
+    def _record_successful_request(self) -> None:
+        if (
+            self._current_limit >= self._max_concurrency
+            or time.monotonic() < self._not_before
+        ):
+            return
+        self._successful_requests += 1
+        if self._successful_requests >= self._current_limit:
+            self._current_limit += 1
+            self._successful_requests = 0
+
+    def _record_rate_limit(self, error: GenerationError, *, attempt: int) -> float:
+        supplied_delay = _retry_after_seconds(error)
+        base_delay = (
+            supplied_delay
+            if supplied_delay is not None
+            else min(
+                DEFAULT_RATE_LIMIT_BACKOFF_SECONDS * (2 ** (attempt - 1)),
+                MAX_RATE_LIMIT_BACKOFF_SECONDS,
+            )
+        )
+        jitter_ceiling = min(1.0, max(0.1, base_delay * 0.25))
+        delay = base_delay + random.uniform(  # ruff: ignore[suspicious-non-cryptographic-random-usage]
+            0.0,
+            jitter_ceiling,
+        )
+        self._not_before = max(self._not_before, time.monotonic() + delay)
+        self._current_limit = max(1, self._current_limit // 2)
+        self._successful_requests = 0
+        return delay
+
+
+def _is_rate_limit_error(error: GenerationError) -> bool:
+    return RATE_LIMIT_PATTERN.search(str(error)) is not None
+
+
+def _retry_after_seconds(error: GenerationError) -> float | None:
+    match = RETRY_AFTER_PATTERN.search(str(error))
+    if match is None:
+        return None
+    delay = float(match.group("value"))
+    unit = (match.group("unit") or "seconds").casefold()
+    return delay / 1000 if unit.startswith("m") else delay
+
+
 def _mentions_item(text: str, item_name: str) -> bool:
     return re.search(rf"(?<!\w){re.escape(item_name)}(?!\w)", text) is not None
 
@@ -257,10 +387,98 @@ def bind_response_structure(
     return bound
 
 
+@dataclass(frozen=True)
+class _GenerationRequestResult:
+    response: dict[str, Any]
+    error: GenerationError | None
+    retry_delay: float
+
+
+def _request_codex_response(
+    model_input: dict[str, Any],
+    stage: GenerationStage,
+    request_limiter: _RequestLimiter,
+    *,
+    attempt: int,
+) -> _GenerationRequestResult:
+    request_limiter.acquire()
+    request_error: GenerationError | None = None
+    response: dict[str, Any] = {}
+    try:
+        response = run_codex(
+            model_input,
+            schema_path=stage.schema_path,
+            model=stage.model,
+            prompt=stage.prompt,
+            timeout_seconds=stage.timeout_seconds,
+        )
+    except GenerationError as error:
+        request_error = error
+    finally:
+        retry_delay = request_limiter.release(request_error, attempt=attempt)
+    return _GenerationRequestResult(response, request_error, retry_delay)
+
+
+def _admit_generated_response(
+    response: dict[str, Any],
+    validation_context: dict[str, Any],
+    stage: GenerationStage,
+) -> dict[str, Any]:
+    bound_response = bind_response_identity(
+        response,
+        validation_context,
+        stage.identity_fields,
+    )
+    bound_response = bind_response_structure(bound_response, validation_context)
+    if stage.normalizer is not None:
+        bound_response = stage.normalizer(bound_response)
+    return stage.validator(bound_response, validation_context)
+
+
+def _retry_failed_codex_request(
+    stage: GenerationStage,
+    error: GenerationError,
+    *,
+    attempt: int,
+    retry_delay: float,
+) -> None:
+    if attempt >= stage.max_attempts:
+        return
+    print(
+        f"retry {stage.label} ({attempt + 1}/{stage.max_attempts}) "
+        f"after {retry_delay:.2f}s: {error}",
+        file=sys.stderr,
+    )
+    if not _is_rate_limit_error(error):
+        time.sleep(retry_delay)
+
+
+def _retry_rejected_response(
+    stage: GenerationStage,
+    error: GenerationError,
+    *,
+    attempt: int,
+) -> None:
+    if attempt >= stage.max_attempts:
+        return
+    retry_delay = random.uniform(  # ruff: ignore[suspicious-non-cryptographic-random-usage]
+        0.05,
+        min(0.5, 0.1 * attempt),
+    )
+    print(
+        f"retry {stage.label} ({attempt + 1}/{stage.max_attempts}) "
+        f"after {retry_delay:.2f}s: {error}",
+        file=sys.stderr,
+    )
+    time.sleep(retry_delay)
+
+
 def generate_validated_response(
     model_input: dict[str, Any],
     validation_context: dict[str, Any],
     stage: GenerationStage,
+    *,
+    request_limiter: _RequestLimiter | None = None,
 ) -> dict[str, Any]:
     """Generate and validate one response with bounded retries.
 
@@ -274,32 +492,33 @@ def generate_validated_response(
     """
     if stage.max_attempts < 1:
         raise ValueError("max_attempts must be at least one")
+    limiter = request_limiter or _RequestLimiter(1)
     last_error: GenerationError | None = None
     for attempt in range(1, stage.max_attempts + 1):
+        request = _request_codex_response(
+            model_input,
+            stage,
+            limiter,
+            attempt=attempt,
+        )
+        if request.error is not None:
+            last_error = request.error
+            _retry_failed_codex_request(
+                stage,
+                request.error,
+                attempt=attempt,
+                retry_delay=request.retry_delay,
+            )
+            continue
         try:
-            response = run_codex(
-                model_input,
-                schema_path=stage.schema_path,
-                model=stage.model,
-                prompt=stage.prompt,
-                timeout_seconds=stage.timeout_seconds,
-            )
-            response = bind_response_identity(
-                response,
+            return _admit_generated_response(
+                request.response,
                 validation_context,
-                stage.identity_fields,
+                stage,
             )
-            response = bind_response_structure(response, validation_context)
-            if stage.normalizer is not None:
-                response = stage.normalizer(response)
-            return stage.validator(response, validation_context)
         except GenerationError as error:
             last_error = error
-            if attempt < stage.max_attempts:
-                print(
-                    f"retry {stage.label} ({attempt + 1}/{stage.max_attempts}): {error}",
-                    file=sys.stderr,
-                )
+            _retry_rejected_response(stage, error, attempt=attempt)
     raise GenerationError(
         f"{stage.label} failed after {stage.max_attempts} attempt(s): {last_error}"
     ) from last_error
@@ -319,6 +538,38 @@ def _finish_sentence(value: Any) -> Any:
     return stripped if stripped[-1] in ".!?" else stripped + "."
 
 
+def _normalize_tactical_profile(tactical: dict[str, Any]) -> dict[str, Any]:
+    normalized = {**tactical}
+    for field in ("fight_role", "economy_plan"):
+        if field in normalized:
+            normalized[field] = _finish_sentence(normalized[field])
+    duration = tactical.get("ending_duration_interpretation")
+    if isinstance(duration, dict):
+        normalized["ending_duration_interpretation"] = {
+            **duration,
+            "plan": _finish_sentence(duration.get("plan")),
+        }
+    return normalized
+
+
+def _normalize_action_explanations(rows: list[Any]) -> list[Any]:
+    return [
+        {**row, "instruction": _finish_sentence(row.get("instruction"))}
+        if isinstance(row, dict)
+        else row
+        for row in rows
+    ]
+
+
+def _normalize_category_summaries(rows: list[Any]) -> list[Any]:
+    return [
+        {**row, "summary": _finish_sentence(row.get("summary"))}
+        if isinstance(row, dict)
+        else row
+        for row in rows
+    ]
+
+
 def normalize_narrative_response(response: dict[str, Any]) -> dict[str, Any]:
     """Normalize presentation-only sentence endings before strict validation.
 
@@ -327,36 +578,17 @@ def normalize_narrative_response(response: dict[str, Any]) -> dict[str, Any]:
 
     """
     normalized = {**response}
-    for field in ("build_summary",):
-        if field in normalized:
-            normalized[field] = _finish_sentence(normalized[field])
+    if "build_summary" in normalized:
+        normalized["build_summary"] = _finish_sentence(normalized["build_summary"])
     tactical = response.get("tactical_profile")
     if isinstance(tactical, dict):
-        normalized_tactical = {**tactical}
-        for field in ("fight_role", "economy_plan"):
-            if field in normalized_tactical:
-                normalized_tactical[field] = _finish_sentence(
-                    normalized_tactical[field]
-                )
-        duration = tactical.get("ending_duration_interpretation")
-        if isinstance(duration, dict):
-            normalized_tactical["ending_duration_interpretation"] = {
-                **duration,
-                "plan": _finish_sentence(duration.get("plan")),
-            }
-        normalized["tactical_profile"] = normalized_tactical
-    for field, text_field in (
-        ("action_explanations", "instruction"),
-        ("category_summaries", "summary"),
-    ):
-        rows = response.get(field)
-        if isinstance(rows, list):
-            normalized[field] = [
-                {**row, text_field: _finish_sentence(row.get(text_field))}
-                if isinstance(row, dict)
-                else row
-                for row in rows
-            ]
+        normalized["tactical_profile"] = _normalize_tactical_profile(tactical)
+    actions = response.get("action_explanations")
+    if isinstance(actions, list):
+        normalized["action_explanations"] = _normalize_action_explanations(actions)
+    categories = response.get("category_summaries")
+    if isinstance(categories, list):
+        normalized["category_summaries"] = _normalize_category_summaries(categories)
     return normalized
 
 
@@ -403,6 +635,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=positive_int,
         default=DEFAULT_GENERATION_ATTEMPTS,
         help=f"generation attempts per stage (default: {DEFAULT_GENERATION_ATTEMPTS})",
+    )
+    parser.add_argument(
+        "--concurrency",
+        type=positive_int,
+        default=DEFAULT_GENERATION_CONCURRENCY,
+        metavar="N",
+        help=(
+            "maximum concurrent hero pipelines "
+            f"(default: {DEFAULT_GENERATION_CONCURRENCY})"
+        ),
     )
     parser.add_argument("--force", action="store_true")
     return parser.parse_args(argv)
@@ -464,14 +706,7 @@ def _ability_identity(ability: dict[str, Any]) -> tuple[int | None, str]:
     return (int(raw_id) if isinstance(raw_id, int) else None, str(raw_name or ""))
 
 
-def validate_hero_context(hero: dict[str, Any]) -> None:
-    """Reject packets that cannot support a closed-policy explanation.
-
-    Raises:
-        GenerationError: If identity, mechanics, policy, or projection is incomplete.
-
-    """
-    name = str(hero.get("hero") or hero.get("hero_id") or "unknown")
+def _validate_strategy_identity(hero: dict[str, Any], name: str) -> None:
     identity_fields = (
         "snapshot_id",
         "policy_id",
@@ -483,6 +718,9 @@ def validate_hero_context(hero: dict[str, Any]) -> None:
         not _is_sha256(hero.get(field)) for field in identity_fields
     ):
         raise GenerationError(f"strategy context omitted exact identity for {name}")
+
+
+def _validate_hero_abilities(hero: dict[str, Any], name: str) -> None:
     abilities = _abilities(hero)
     if len(abilities) != 4 or any(
         _ability_identity(ability)[0] is None for ability in abilities
@@ -490,6 +728,9 @@ def validate_hero_context(hero: dict[str, Any]) -> None:
         raise GenerationError(
             f"strategy context omitted four current abilities for {name}"
         )
+
+
+def _validate_ability_policy_context(hero: dict[str, Any], name: str) -> None:
     ability_policy = hero.get("ability_policy")
     steps = ability_policy.get("steps") if isinstance(ability_policy, dict) else None
     if (
@@ -505,14 +746,9 @@ def validate_hero_context(hero: dict[str, Any]) -> None:
         raise GenerationError(
             f"strategy context omitted a legal ability timeline for {name}"
         )
-    ending = hero.get("ending_duration_profile")
-    if (
-        not isinstance(ending, dict)
-        or ending.get("estimand") != "ending_duration_profile"
-    ):
-        raise GenerationError(
-            f"strategy context omitted the ending-duration estimand for {name}"
-        )
+
+
+def _validate_policy_projection_context(hero: dict[str, Any], name: str) -> None:
     policy = hero.get("policy")
     actions = hero.get("explainable_actions")
     projection = hero.get("projection")
@@ -525,6 +761,28 @@ def validate_hero_context(hero: dict[str, Any]) -> None:
         raise GenerationError(
             f"strategy context omitted the Steam projection for {name}"
         )
+
+
+def validate_hero_context(hero: dict[str, Any]) -> None:
+    """Reject packets that cannot support a closed-policy explanation.
+
+    Raises:
+        GenerationError: If identity, mechanics, policy, or projection is incomplete.
+
+    """
+    name = str(hero.get("hero") or hero.get("hero_id") or "unknown")
+    _validate_strategy_identity(hero, name)
+    _validate_hero_abilities(hero, name)
+    _validate_ability_policy_context(hero, name)
+    ending = hero.get("ending_duration_profile")
+    if (
+        not isinstance(ending, dict)
+        or ending.get("estimand") != "ending_duration_profile"
+    ):
+        raise GenerationError(
+            f"strategy context omitted the ending-duration estimand for {name}"
+        )
+    _validate_policy_projection_context(hero, name)
 
 
 def kit_context(hero: dict[str, Any]) -> dict[str, Any]:
@@ -636,42 +894,44 @@ def synthesis_context(
     }
 
 
-def validate_kit_response(
+_KIT_TEXT_FIELDS = (
+    "primary_role",
+    "combat_pattern",
+    "economy_tendencies",
+    "scaling_profile",
+)
+
+
+def _validate_kit_identity_and_profile(
     response: dict[str, Any],
     hero: dict[str, Any],
-) -> dict[str, Any]:
-    """Validate an ability-only profile without admitting invented identities.
-
-    Returns:
-        A normalized, fingerprint-bound kit explanation.
-
-    Raises:
-        GenerationError: If identities or supplied ability evidence changed.
-
-    """
-    name = str(hero.get("hero") or hero.get("hero_id") or "unknown")
+    name: str,
+) -> None:
     if response.get("hero_id") != hero.get("hero_id"):
         raise GenerationError(f"kit analysis changed hero_id for {name}")
     if response.get("kit_basis_sha256") != hero.get("kit_basis_sha256"):
         raise GenerationError(f"kit analysis changed kit_basis_sha256 for {name}")
-    text_fields = (
-        "primary_role",
-        "combat_pattern",
-        "economy_tendencies",
-        "scaling_profile",
-    )
     if any(
         not isinstance(response.get(field), str) or not response[field].strip()
-        for field in text_fields
+        for field in _KIT_TEXT_FIELDS
     ):
         raise GenerationError(f"kit analysis omitted its tactical profile for {name}")
-    supplied = {
+
+
+def _supplied_ability_identities(hero: dict[str, Any]) -> dict[int, str]:
+    return {
         ability_id: ability_name
         for ability in _abilities(hero)
         for ability_id, ability_name in (_ability_identity(ability),)
         if ability_id is not None
     }
-    roles = response.get("ability_roles")
+
+
+def _validated_ability_roles(
+    roles: object,
+    supplied: dict[int, str],
+    name: str,
+) -> list[dict[str, Any]]:
     if not isinstance(roles, list) or len(roles) != len(supplied):
         raise GenerationError(f"kit analysis omitted ability roles for {name}")
     normalized_roles: list[dict[str, Any]] = []
@@ -681,44 +941,72 @@ def validate_kit_response(
             raise GenerationError(
                 f"kit analysis returned an invalid ability for {name}"
             )
-        ability_id = int(role["ability_id"])
-        if ability_id in seen or supplied.get(ability_id) != role.get("ability"):
+        role_data = cast("_KitAbilityRole", role)
+        ability_id = int(role_data["ability_id"])
+        if ability_id in seen or supplied.get(ability_id) != role_data.get("ability"):
             raise GenerationError(f"kit analysis changed an ability for {name}")
         if any(
-            not isinstance(role.get(field), str) or not role[field].strip()
+            not isinstance(role_data.get(field), str) or not role_data[field].strip()
             for field in ("tactical_role", "scaling_hooks")
         ):
             raise GenerationError(f"kit analysis omitted ability evidence for {name}")
         seen.add(ability_id)
         normalized_roles.append({
             "ability_id": ability_id,
-            "ability": str(role["ability"]),
-            "tactical_role": str(role["tactical_role"]).strip(),
-            "scaling_hooks": str(role["scaling_hooks"]).strip(),
+            "ability": str(role_data["ability"]),
+            "tactical_role": str(role_data["tactical_role"]).strip(),
+            "scaling_hooks": str(role_data["scaling_hooks"]).strip(),
         })
-    synergies = response.get("synergies")
-    uncertainties = response.get("uncertainties")
     if seen != set(supplied):
         raise GenerationError(f"kit analysis omitted a supplied ability for {name}")
+    return normalized_roles
+
+
+def _validated_kit_synergies(value: object, name: str) -> list[str]:
     if (
-        not isinstance(synergies, list)
-        or not synergies
-        or any(not isinstance(value, str) or not value.strip() for value in synergies)
+        not isinstance(value, list)
+        or not value
+        or any(not isinstance(entry, str) or not entry.strip() for entry in value)
     ):
         raise GenerationError(f"kit analysis omitted supplied synergies for {name}")
-    if not isinstance(uncertainties, list) or any(
-        not isinstance(value, str) or not value.strip() for value in uncertainties
+    return [entry.strip() for entry in cast("list[str]", value)]
+
+
+def _validated_kit_uncertainties(value: object, name: str) -> list[str]:
+    if not isinstance(value, list) or any(
+        not isinstance(entry, str) or not entry.strip() for entry in value
     ):
         raise GenerationError(f"kit analysis omitted supplied evidence for {name}")
+    return [entry.strip() for entry in cast("list[str]", value)]
+
+
+def validate_kit_response(
+    response: dict[str, Any],
+    hero: dict[str, Any],
+) -> dict[str, Any]:
+    """Validate an ability-only profile without admitting invented identities.
+
+    Returns:
+        A normalized, fingerprint-bound kit explanation.
+
+    """
+    name = str(hero.get("hero") or hero.get("hero_id") or "unknown")
+    _validate_kit_identity_and_profile(response, hero, name)
+    supplied = _supplied_ability_identities(hero)
+    normalized_roles = _validated_ability_roles(
+        response.get("ability_roles"), supplied, name
+    )
+    synergies = _validated_kit_synergies(response.get("synergies"), name)
+    uncertainties = _validated_kit_uncertainties(response.get("uncertainties"), name)
     return {
         "hero_id": int(response["hero_id"]),
         "hero": name,
         "kit_basis_sha256": str(response["kit_basis_sha256"]),
         "prompt_version": KIT_PROMPT_VERSION,
-        **{field: str(response[field]).strip() for field in text_fields},
+        **{field: str(response[field]).strip() for field in _KIT_TEXT_FIELDS},
         "ability_roles": normalized_roles,
-        "synergies": [str(value).strip() for value in synergies],
-        "uncertainties": [str(value).strip() for value in uncertainties],
+        "synergies": synergies,
+        "uncertainties": uncertainties,
     }
 
 
@@ -917,22 +1205,13 @@ def _validate_conditional_instruction(
         )
 
 
-def validate_response(
+def _validate_narrative_identity(
     response: dict[str, Any],
     hero: dict[str, Any],
+    hero_name: str,
     *,
-    require_context_match: bool = True,
-) -> dict[str, Any]:
-    """Admit prose only when it is an exact explanation of the closed policy.
-
-    Returns:
-        A normalized explanation whose identifiers and action set are unchanged.
-
-    Raises:
-        GenerationError: If prose changes policy identity, semantics, or claim strength.
-
-    """
-    hero_name = str(hero.get("hero") or hero.get("hero_id") or "unknown")
+    require_context_match: bool,
+) -> None:
     identity_fields = (
         "hero_id",
         "snapshot_id",
@@ -944,6 +1223,23 @@ def validate_response(
     for field in identity_fields:
         if response.get(field) != hero.get(field):
             raise GenerationError(f"Codex changed {field} for {hero_name}")
+
+
+@dataclass(frozen=True)
+class _ValidatedNarrativeOverview:
+    primary_role: str
+    fight_role: str
+    economy_plan: str
+    ending: dict[str, Any]
+    ending_plan: str
+    build_summary: str
+
+
+def _validated_narrative_overview(
+    response: dict[str, Any],
+    hero: dict[str, Any],
+    hero_name: str,
+) -> _ValidatedNarrativeOverview:
     tactical = response.get("tactical_profile")
     if not isinstance(tactical, dict):
         raise GenerationError(f"Codex omitted tactical_profile for {hero_name}")
@@ -973,6 +1269,55 @@ def validate_response(
     summary = _validate_complete_sentence(
         response.get("build_summary"), "build summary", hero_name
     )
+    return _ValidatedNarrativeOverview(
+        primary_role=primary_role,
+        fight_role=fight_role,
+        economy_plan=economy_plan,
+        ending=ending,
+        ending_plan=ending_plan,
+        build_summary=summary,
+    )
+
+
+def _validated_action_explanation(
+    explanation: dict[str, Any],
+    supplied: dict[str, Any],
+    hero_name: str,
+) -> dict[str, str]:
+    node_id = str(explanation["node_id"])
+    if explanation.get("evidence_ref") != supplied.get("evidence_ref"):
+        raise GenerationError(f"Codex changed evidence for action {node_id}")
+    instruction = _validate_complete_sentence(
+        explanation.get("instruction"), f"instruction for {node_id}", hero_name
+    )
+    if len(instruction.encode("utf-8")) > MAX_TACTICAL_INSTRUCTION_BYTES:
+        raise GenerationError(
+            f"Codex exceeded the {MAX_TACTICAL_INSTRUCTION_BYTES}-byte "
+            f"instruction limit for {node_id}"
+        )
+    action_name = str(supplied.get("action") or "")
+    if action_name and not _mentions_item(instruction, action_name):
+        raise GenerationError(f"Codex omitted {action_name} from action {node_id}")
+    if supplied.get("annotation") and CONDITION_PATTERN.search(instruction) is None:
+        raise GenerationError(f"Codex removed the condition from action {node_id}")
+    _validate_conditional_instruction(
+        instruction,
+        supplied,
+        node_id=node_id,
+    )
+    _validate_prose_ceiling(instruction, hero_name)
+    return {
+        "node_id": node_id,
+        "evidence_ref": str(explanation["evidence_ref"]),
+        "instruction": instruction,
+    }
+
+
+def _validated_action_explanations(
+    response: dict[str, Any],
+    hero: dict[str, Any],
+    hero_name: str,
+) -> tuple[list[dict[str, str]], list[Any]]:
 
     supplied_actions = hero.get("explainable_actions")
     explanations = response.get("action_explanations")
@@ -992,38 +1337,93 @@ def validate_response(
         explanations
     ):
         raise GenerationError(f"Codex changed the closed action set for {hero_name}")
-    normalized_actions = []
+    normalized_actions: list[dict[str, str]] = []
     for explanation in explanations:
         if not isinstance(explanation, dict):
             raise GenerationError(f"Codex returned a malformed action for {hero_name}")
         node_id = str(explanation["node_id"])
-        supplied = supplied_by_node[node_id]
-        if explanation.get("evidence_ref") != supplied.get("evidence_ref"):
-            raise GenerationError(f"Codex changed evidence for action {node_id}")
-        instruction = _validate_complete_sentence(
-            explanation.get("instruction"), f"instruction for {node_id}", hero_name
-        )
-        if len(instruction.encode("utf-8")) > MAX_TACTICAL_INSTRUCTION_BYTES:
-            raise GenerationError(
-                f"Codex exceeded the {MAX_TACTICAL_INSTRUCTION_BYTES}-byte "
-                f"instruction limit for {node_id}"
+        normalized_actions.append(
+            _validated_action_explanation(
+                explanation,
+                supplied_by_node[node_id],
+                hero_name,
             )
-        action_name = str(supplied.get("action") or "")
-        if action_name and not _mentions_item(instruction, action_name):
-            raise GenerationError(f"Codex omitted {action_name} from action {node_id}")
-        if supplied.get("annotation") and CONDITION_PATTERN.search(instruction) is None:
-            raise GenerationError(f"Codex removed the condition from action {node_id}")
-        _validate_conditional_instruction(
-            instruction,
-            supplied,
-            node_id=node_id,
         )
-        _validate_prose_ceiling(instruction, hero_name)
-        normalized_actions.append({
-            "node_id": node_id,
-            "evidence_ref": str(explanation["evidence_ref"]),
-            "instruction": instruction,
-        })
+    return normalized_actions, supplied_actions
+
+
+def _validated_category_summary(
+    source_category: dict[str, Any],
+    category: dict[str, Any],
+    supplied_actions: list[Any],
+    all_items: set[str],
+    hero_name: str,
+) -> dict[str, str]:
+    text = _validate_complete_sentence(
+        category.get("summary"),
+        f"category {source_category.get('name')}",
+        hero_name,
+    )
+    raw_category_items = source_category.get("items")
+    category_items = (
+        {
+            str(item.get("item"))
+            for item in raw_category_items
+            if isinstance(item, dict) and item.get("item")
+        }
+        if isinstance(raw_category_items, list)
+        else set()
+    )
+    category_annotations = " ".join(
+        str(action.get("annotation") or "")
+        for action in supplied_actions
+        if isinstance(action, dict)
+        and str(action.get("action") or "") in category_items
+    )
+    allowed_replacement_refs = {
+        item
+        for item in all_items - category_items
+        if _mentions_item(category_annotations, item)
+    }
+    mentioned = {item for item in all_items if _mentions_item(text, item)}
+    if not mentioned or not mentioned <= (category_items | allowed_replacement_refs):
+        raise GenerationError(
+            f"Codex used missing or cross-category items in {source_category.get('name')}"
+        )
+    _validate_optional_category_semantics(source_category, text)
+    _validate_prose_ceiling(text, hero_name)
+    return {
+        "category": str(category.get("category")),
+        "summary": text,
+    }
+
+
+def _validate_optional_category_semantics(
+    source_category: dict[str, Any],
+    text: str,
+) -> None:
+    if not source_category.get("optional"):
+        return
+    category_name = str(source_category.get("name") or "")
+    if BUY_ALL_PATTERN.search(text) is not None:
+        raise GenerationError(
+            f"Codex made {category_name} an automatic all-item purchase"
+        )
+    if category_name.startswith("TIER "):
+        if REFERENCE_MENU_PATTERN.search(text) is None:
+            raise GenerationError(
+                f"Codex removed reference-menu semantics for {category_name}"
+            )
+    elif CONDITION_PATTERN.search(text) is None:
+        raise GenerationError(f"Codex removed the optional trigger for {category_name}")
+
+
+def _validated_category_summaries(
+    response: dict[str, Any],
+    hero: dict[str, Any],
+    supplied_actions: list[Any],
+    hero_name: str,
+) -> list[dict[str, str]]:
 
     projection = hero.get("projection")
     categories = projection.get("categories") if isinstance(projection, dict) else None
@@ -1049,67 +1449,62 @@ def validate_response(
         for item in category.get("items") or []
         if isinstance(item, dict) and item.get("item")
     }
-    normalized_categories = []
+    normalized_categories: list[dict[str, str]] = []
     for source_category, category in zip(categories, summaries, strict=True):
         if not isinstance(source_category, dict) or not isinstance(category, dict):
             raise GenerationError(
                 f"Codex returned a malformed category for {hero_name}"
             )
-        text = _validate_complete_sentence(
-            category.get("summary"),
-            f"category {source_category.get('name')}",
-            hero_name,
-        )
-        raw_category_items = source_category.get("items")
-        category_items = (
-            {
-                str(item.get("item"))
-                for item in raw_category_items
-                if isinstance(item, dict) and item.get("item")
-            }
-            if isinstance(raw_category_items, list)
-            else set()
-        )
-        category_annotations = " ".join(
-            str(action.get("annotation") or "")
-            for action in supplied_actions
-            if isinstance(action, dict)
-            and str(action.get("action") or "") in category_items
-        )
-        allowed_replacement_refs = {
-            item
-            for item in all_items - category_items
-            if _mentions_item(category_annotations, item)
-        }
-        mentioned = {item for item in all_items if _mentions_item(text, item)}
-        if not mentioned or not mentioned <= (
-            category_items | allowed_replacement_refs
-        ):
-            raise GenerationError(
-                f"Codex used missing or cross-category items in {source_category.get('name')}"
+        normalized_categories.append(
+            _validated_category_summary(
+                cast("_ProjectionCategory", source_category),
+                cast("_ProjectionCategory", category),
+                supplied_actions,
+                all_items,
+                hero_name,
             )
-        if source_category.get("optional"):
-            category_name = str(source_category.get("name") or "")
-            if BUY_ALL_PATTERN.search(text) is not None:
-                raise GenerationError(
-                    f"Codex made {category_name} an automatic all-item purchase"
-                )
-            if category_name.startswith("TIER "):
-                if REFERENCE_MENU_PATTERN.search(text) is None:
-                    raise GenerationError(
-                        f"Codex removed reference-menu semantics for {category_name}"
-                    )
-            elif CONDITION_PATTERN.search(text) is None:
-                raise GenerationError(
-                    f"Codex removed the optional trigger for {category_name}"
-                )
-        _validate_prose_ceiling(text, hero_name)
-        normalized_categories.append({
-            "category": str(category.get("category")),
-            "summary": text,
-        })
+        )
+    return normalized_categories
+
+
+def validate_response(
+    response: dict[str, Any],
+    hero: dict[str, Any],
+    *,
+    require_context_match: bool = True,
+) -> dict[str, Any]:
+    """Admit prose only when it is an exact explanation of the closed policy.
+
+    Returns:
+        A normalized explanation whose identifiers and action set are unchanged.
+
+    """
+    hero_name = str(hero.get("hero") or hero.get("hero_id") or "unknown")
+    _validate_narrative_identity(
+        response,
+        hero,
+        hero_name,
+        require_context_match=require_context_match,
+    )
+    overview = _validated_narrative_overview(response, hero, hero_name)
+    normalized_actions, supplied_actions = _validated_action_explanations(
+        response,
+        hero,
+        hero_name,
+    )
+    normalized_categories = _validated_category_summaries(
+        response,
+        hero,
+        supplied_actions,
+        hero_name,
+    )
     combined = " ".join(
-        [summary, fight_role, economy_plan, ending_plan]
+        [
+            overview.build_summary,
+            overview.fight_role,
+            overview.economy_plan,
+            overview.ending_plan,
+        ]
         + [row["instruction"] for row in normalized_actions]
         + [row["summary"] for row in normalized_categories]
     )
@@ -1123,17 +1518,17 @@ def validate_response(
         "narrative_basis_sha256": str(response["narrative_basis_sha256"]),
         "prompt_version": PROMPT_VERSION,
         "tactical_profile": {
-            "primary_role": primary_role.strip(),
-            "fight_role": fight_role,
-            "economy_plan": economy_plan,
+            "primary_role": overview.primary_role.strip(),
+            "fight_role": overview.fight_role,
+            "economy_plan": overview.economy_plan,
             "ending_duration_interpretation": {
-                "estimand": str(ending["estimand"]),
-                "strongest_phase": str(ending["strongest_phase"]),
-                "weakest_phase": str(ending["weakest_phase"]),
-                "plan": ending_plan,
+                "estimand": str(overview.ending["estimand"]),
+                "strongest_phase": str(overview.ending["strongest_phase"]),
+                "weakest_phase": str(overview.ending["weakest_phase"]),
+                "plan": overview.ending_plan,
             },
         },
-        "build_summary": summary,
+        "build_summary": overview.build_summary,
         "action_explanations": normalized_actions,
         "category_summaries": normalized_categories,
     }
@@ -1233,130 +1628,271 @@ def validated_reusable_entries(
     return reusable
 
 
+@dataclass
+class _NarrativeGenerationRun:
+    args: argparse.Namespace
+    source: dict[str, Any]
+    selected_heroes: list[dict[str, Any]]
+    requested_hero_ids: set[int]
+    kit_schema: Path
+    kit_output: Path
+    generated_narratives: dict[int, dict[str, Any]]
+    kit_profiles: dict[int, dict[str, Any]]
+    artifact_lock: threading.Lock
+    request_limiter: _RequestLimiter
+
+
+def _prepare_narrative_generation(
+    args: argparse.Namespace,
+) -> _NarrativeGenerationRun:
+    source = _load_object(args.input)
+    try:
+        validate_strategy_context_document(source)
+    except StrategyContextError as error:
+        raise GenerationError(str(error)) from error
+    if not args.schema.is_file():
+        raise GenerationError(f"response schema not found: {args.schema}")
+    kit_schema = args.kit_schema
+    if not kit_schema.is_file():
+        raise GenerationError(f"kit response schema not found: {kit_schema}")
+    kit_output = args.kit_output or args.output.with_name("kit-profiles.json")
+    selected = _selected_heroes(source, args.hero)
+    for hero in selected:
+        validate_hero_context(hero)
+    requested_hero_ids = {int(hero["hero_id"]) for hero in selected}
+    if args.hero is None:
+        requested_hero_ids.update(
+            int(exclusion["hero_id"])
+            for exclusion in source.get("exclusions") or []
+            if isinstance(exclusion, dict) and isinstance(exclusion.get("hero_id"), int)
+        )
+    source_heroes = {int(hero["hero_id"]): hero for hero in selected}
+    return _NarrativeGenerationRun(
+        args=args,
+        source=source,
+        selected_heroes=selected,
+        requested_hero_ids=requested_hero_ids,
+        kit_schema=kit_schema,
+        kit_output=kit_output,
+        generated_narratives=validated_reusable_entries(
+            _existing_entries(args.output),
+            source_heroes,
+        ),
+        kit_profiles=validated_reusable_kit_profiles(
+            _existing_entries(kit_output),
+            source_heroes,
+        ),
+        artifact_lock=threading.Lock(),
+        request_limiter=_RequestLimiter(args.concurrency),
+    )
+
+
+def _write_kit_profile_artifact(run: _NarrativeGenerationRun) -> None:
+    _write_artifact(
+        run.kit_output,
+        _kit_artifact_document(
+            run.source,
+            run.kit_profiles,
+            model=run.args.kit_model,
+        ),
+    )
+
+
+def _write_narrative_artifact(run: _NarrativeGenerationRun) -> None:
+    _write_artifact(
+        run.args.output,
+        _artifact_document(
+            run.source,
+            run.generated_narratives,
+            requested_hero_ids=run.requested_hero_ids,
+            kit_model=run.args.kit_model,
+            synthesis_model=run.args.model,
+        ),
+    )
+
+
+def _checkpoint_kit_profile(
+    run: _NarrativeGenerationRun,
+    hero_id: int,
+    kit_profile: dict[str, Any],
+) -> None:
+    with run.artifact_lock:
+        run.kit_profiles[hero_id] = kit_profile
+        _write_kit_profile_artifact(run)
+
+
+def _checkpoint_generated_narrative(
+    run: _NarrativeGenerationRun,
+    hero_id: int,
+    narrative: dict[str, Any],
+) -> None:
+    with run.artifact_lock:
+        run.generated_narratives[hero_id] = narrative
+        _write_narrative_artifact(run)
+
+
+def _write_completed_generation_artifacts(run: _NarrativeGenerationRun) -> None:
+    with run.artifact_lock:
+        _write_kit_profile_artifact(run)
+        _write_narrative_artifact(run)
+
+
+def _kit_profile_for_narrative(
+    run: _NarrativeGenerationRun,
+    hero: dict[str, Any],
+    *,
+    index: int,
+) -> dict[str, Any]:
+    hero_id = int(hero["hero_id"])
+    kit_profile = run.kit_profiles.get(hero_id)
+    if not run.args.force and kit_profile is not None:
+        return kit_profile
+    print(
+        f"[{index}/{len(run.selected_heroes)}] Kit ({run.args.kit_model}): "
+        f"{hero.get('hero')}",
+        file=sys.stderr,
+    )
+    kit_profile = generate_validated_response(
+        kit_context(hero),
+        hero,
+        GenerationStage(
+            schema_path=run.kit_schema,
+            model=run.args.kit_model,
+            prompt=KIT_PROMPT,
+            identity_fields=("hero_id", "kit_basis_sha256"),
+            validator=validate_kit_response,
+            label=f"kit analysis for {hero.get('hero')}",
+            max_attempts=run.args.max_attempts,
+        ),
+        request_limiter=run.request_limiter,
+    )
+    _checkpoint_kit_profile(run, hero_id, kit_profile)
+    return kit_profile
+
+
+def _generate_hero_narrative(
+    run: _NarrativeGenerationRun,
+    hero: dict[str, Any],
+    *,
+    index: int,
+) -> None:
+    hero_id = int(hero["hero_id"])
+    if not run.args.force and hero_id in run.generated_narratives:
+        print(
+            f"[{index}/{len(run.selected_heroes)}] reuse {hero.get('hero')}",
+            file=sys.stderr,
+        )
+        return
+    kit_profile = _kit_profile_for_narrative(run, hero, index=index)
+    print(
+        f"[{index}/{len(run.selected_heroes)}] Synthesis ({run.args.model}): "
+        f"{hero.get('hero')}",
+        file=sys.stderr,
+    )
+    model_context = synthesis_context(
+        hero,
+        kit_profile,
+        run.source["item_mechanics"],
+    )
+    narrative = generate_validated_response(
+        model_context,
+        hero,
+        GenerationStage(
+            schema_path=run.args.schema,
+            model=run.args.model,
+            prompt=PROMPT,
+            identity_fields=(
+                "hero_id",
+                "snapshot_id",
+                "policy_id",
+                "context_sha256",
+                "narrative_basis_sha256",
+            ),
+            validator=validate_response,
+            label=f"narrative synthesis for {hero.get('hero')}",
+            max_attempts=run.args.max_attempts,
+            normalizer=normalize_narrative_response,
+        ),
+        request_limiter=run.request_limiter,
+    )
+    _checkpoint_generated_narrative(run, hero_id, narrative)
+
+
+def _pending_hero_pipelines(
+    run: _NarrativeGenerationRun,
+) -> list[tuple[int, dict[str, Any]]]:
+    pending: list[tuple[int, dict[str, Any]]] = []
+    selected_count = len(run.selected_heroes)
+    for index, hero in enumerate(run.selected_heroes, start=1):
+        hero_id = int(hero["hero_id"])
+        if not run.args.force and hero_id in run.generated_narratives:
+            print(
+                f"[{index}/{selected_count}] reuse {hero.get('hero')}",
+                file=sys.stderr,
+            )
+        else:
+            pending.append((index, hero))
+    return pending
+
+
+def _generate_pending_hero_pipelines(
+    run: _NarrativeGenerationRun,
+    pending: list[tuple[int, dict[str, Any]]],
+) -> dict[int, GenerationError]:
+    failures: dict[int, GenerationError] = {}
+    worker_count = min(run.args.concurrency, len(pending))
+    print(
+        f"Generating {len(pending)} hero pipeline(s) with up to "
+        f"{worker_count} concurrent worker(s).",
+        file=sys.stderr,
+    )
+    with ThreadPoolExecutor(
+        max_workers=worker_count,
+        thread_name_prefix="deadlock-narrative",
+    ) as executor:
+        futures = {
+            executor.submit(_generate_hero_narrative, run, hero, index=index): int(
+                hero["hero_id"]
+            )
+            for index, hero in pending
+        }
+        for future in as_completed(futures):
+            hero_id = futures[future]
+            try:
+                future.result()
+            except GenerationError as error:
+                failures[hero_id] = error
+    return failures
+
+
+def _raise_hero_pipeline_failures(
+    run: _NarrativeGenerationRun,
+    failures: dict[int, GenerationError],
+) -> None:
+    if not failures:
+        return
+    failure_details = "; ".join(
+        f"{hero.get('hero')}: {failures[hero_id]}"
+        for hero in run.selected_heroes
+        if (hero_id := int(hero["hero_id"])) in failures
+    )
+    raise GenerationError(f"hero generation failed: {failure_details}")
+
+
+def _generate_selected_narratives(run: _NarrativeGenerationRun) -> None:
+    pending = _pending_hero_pipelines(run)
+    if pending:
+        failures = _generate_pending_hero_pipelines(run, pending)
+        _raise_hero_pipeline_failures(run, failures)
+    _write_completed_generation_artifacts(run)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args() if argv is None else parse_args(argv)
     try:
-        source = _load_object(args.input)
-        try:
-            validate_strategy_context_document(source)
-        except StrategyContextError as error:
-            raise GenerationError(str(error)) from error
-        if not args.schema.is_file():
-            raise GenerationError(f"response schema not found: {args.schema}")
-        kit_schema = args.kit_schema
-        if not kit_schema.is_file():
-            raise GenerationError(f"kit response schema not found: {kit_schema}")
-        kit_output = args.kit_output or args.output.with_name("kit-profiles.json")
-        selected = _selected_heroes(source, args.hero)
-        for hero in selected:
-            validate_hero_context(hero)
-        selected_ids = {int(hero["hero_id"]) for hero in selected}
-        if args.hero is None:
-            selected_ids.update(
-                int(exclusion["hero_id"])
-                for exclusion in source.get("exclusions") or []
-                if isinstance(exclusion, dict)
-                and isinstance(exclusion.get("hero_id"), int)
-            )
-        source_heroes = {int(hero["hero_id"]): hero for hero in selected}
-        generated = validated_reusable_entries(
-            _existing_entries(args.output),
-            source_heroes,
-        )
-        kit_profiles = validated_reusable_kit_profiles(
-            _existing_entries(kit_output),
-            source_heroes,
-        )
-        for index, hero in enumerate(selected, start=1):
-            hero_id = int(hero["hero_id"])
-            if not args.force and hero_id in generated:
-                print(
-                    f"[{index}/{len(selected)}] reuse {hero.get('hero')}",
-                    file=sys.stderr,
-                )
-                continue
-            kit_profile = kit_profiles.get(hero_id)
-            if args.force or kit_profile is None:
-                print(
-                    f"[{index}/{len(selected)}] Kit ({args.kit_model}): {hero.get('hero')}",
-                    file=sys.stderr,
-                )
-                kit_profile = generate_validated_response(
-                    kit_context(hero),
-                    hero,
-                    GenerationStage(
-                        schema_path=kit_schema,
-                        model=args.kit_model,
-                        prompt=KIT_PROMPT,
-                        identity_fields=("hero_id", "kit_basis_sha256"),
-                        validator=validate_kit_response,
-                        label=f"kit analysis for {hero.get('hero')}",
-                        max_attempts=args.max_attempts,
-                    ),
-                )
-                kit_profiles[hero_id] = kit_profile
-                _write_artifact(
-                    kit_output,
-                    _kit_artifact_document(
-                        source,
-                        kit_profiles,
-                        model=args.kit_model,
-                    ),
-                )
-            print(
-                f"[{index}/{len(selected)}] Synthesis ({args.model}): {hero.get('hero')}",
-                file=sys.stderr,
-            )
-            model_context = synthesis_context(
-                hero,
-                kit_profile,
-                source["item_mechanics"],
-            )
-            generated[hero_id] = generate_validated_response(
-                model_context,
-                hero,
-                GenerationStage(
-                    schema_path=args.schema,
-                    model=args.model,
-                    prompt=PROMPT,
-                    identity_fields=(
-                        "hero_id",
-                        "snapshot_id",
-                        "policy_id",
-                        "context_sha256",
-                        "narrative_basis_sha256",
-                    ),
-                    validator=validate_response,
-                    label=f"narrative synthesis for {hero.get('hero')}",
-                    max_attempts=args.max_attempts,
-                    normalizer=normalize_narrative_response,
-                ),
-            )
-            _write_artifact(
-                args.output,
-                _artifact_document(
-                    source,
-                    generated,
-                    requested_hero_ids=selected_ids,
-                    kit_model=args.kit_model,
-                    synthesis_model=args.model,
-                ),
-            )
-        _write_artifact(
-            kit_output,
-            _kit_artifact_document(source, kit_profiles, model=args.kit_model),
-        )
-        _write_artifact(
-            args.output,
-            _artifact_document(
-                source,
-                generated,
-                requested_hero_ids=selected_ids,
-                kit_model=args.kit_model,
-                synthesis_model=args.model,
-            ),
-        )
-        print(f"Wrote {len(generated)} narrative(s): {args.output}")
+        run = _prepare_narrative_generation(args)
+        _generate_selected_narratives(run)
+        print(f"Wrote {len(run.generated_narratives)} narrative(s): {args.output}")
         return 0
     except GenerationError as error:
         print(f"error: {error}", file=sys.stderr)

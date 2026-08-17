@@ -3,8 +3,8 @@ from __future__ import annotations
 import html
 import json
 import re
-from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Any
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -523,40 +523,7 @@ class CategoryBonusTable:
             raise MechanicsError("authoritative cost_bonuses are missing")
         categories: dict[str, tuple[CategoryBonus, ...]] = {}
         for category, rows in raw.items():
-            current_rows = rows
-            if isinstance(current_rows, dict):
-                current_rows = [
-                    {"threshold": threshold, "value": value}
-                    for threshold, value in current_rows.items()
-                ]
-            if not isinstance(current_rows, list):
-                raise MechanicsError(f"malformed {category} cost bonuses")
-            bonuses: list[CategoryBonus] = []
-            for row in current_rows:
-                if not isinstance(row, dict):
-                    raise MechanicsError(f"malformed {category} cost bonus")
-                threshold = row.get(
-                    "gold_threshold",
-                    row.get("threshold", row.get("cost")),
-                )
-                if isinstance(threshold, str) and threshold.isdigit():
-                    threshold = int(threshold)
-                if not isinstance(threshold, int) or threshold < 0:
-                    raise MechanicsError(f"invalid {category} bonus threshold")
-                bonuses.append(
-                    CategoryBonus(
-                        threshold,
-                        normalize_mechanical_value({
-                            key: value
-                            for key, value in row.items()
-                            if key not in {"gold_threshold", "threshold", "cost"}
-                        }),
-                    )
-                )
-            ordered = sorted(bonuses, key=lambda bonus: bonus.threshold)
-            if len({bonus.threshold for bonus in ordered}) != len(ordered):
-                raise MechanicsError(f"duplicate {category} bonus threshold")
-            categories[str(category).casefold()] = tuple(ordered)
+            categories[str(category).casefold()] = _category_bonuses(category, rows)
         return cls(categories)
 
     def crossed(
@@ -581,6 +548,48 @@ class CategoryBonusTable:
             for bonus in self.categories.get(category.casefold(), ())
             if previous_spend < bonus.threshold <= new_spend
         )
+
+
+def _category_bonus_rows(category: object, rows: object) -> list[object]:
+    if isinstance(rows, dict):
+        return [
+            {"threshold": threshold, "value": value}
+            for threshold, value in rows.items()
+        ]
+    if not isinstance(rows, list):
+        raise MechanicsError(f"malformed {category} cost bonuses")
+    return cast("list[object]", rows)
+
+
+def _category_bonus(category: object, row: object) -> CategoryBonus:
+    if not isinstance(row, dict):
+        raise MechanicsError(f"malformed {category} cost bonus")
+    threshold = row.get("gold_threshold", row.get("threshold", row.get("cost")))
+    if isinstance(threshold, str) and threshold.isdigit():
+        threshold = int(threshold)
+    if not isinstance(threshold, int) or threshold < 0:
+        raise MechanicsError(f"invalid {category} bonus threshold")
+    return CategoryBonus(
+        threshold,
+        normalize_mechanical_value({
+            key: value
+            for key, value in row.items()
+            if key not in {"gold_threshold", "threshold", "cost"}
+        }),
+    )
+
+
+def _category_bonuses(category: object, rows: object) -> tuple[CategoryBonus, ...]:
+    ordered = sorted(
+        (
+            _category_bonus(category, row)
+            for row in _category_bonus_rows(category, rows)
+        ),
+        key=lambda bonus: bonus.threshold,
+    )
+    if len({bonus.threshold for bonus in ordered}) != len(ordered):
+        raise MechanicsError(f"duplicate {category} bonus threshold")
+    return tuple(ordered)
 
 
 @dataclass(frozen=True)
@@ -609,47 +618,118 @@ class AbilityTimelineStep:
     unlocks_remaining: int
 
 
-def _currency_grants_by_level(level_info: object) -> dict[int, tuple[int, int]]:
+def _level_rows(level_info: object) -> list[tuple[object, object]]:
     if isinstance(level_info, dict):
-        rows: list[tuple[object, object]] = list(level_info.items())
-    elif isinstance(level_info, list):
-        rows = [
+        return list(level_info.items())
+    if isinstance(level_info, list):
+        return [
             (row.get("level"), row) if isinstance(row, dict) else (None, row)
             for row in level_info
         ]
-    else:
-        raise MechanicsError("hero level_info must be an object or list")
+    raise MechanicsError("hero level_info must be an object or list")
+
+
+def _level_grant(raw_level: object, row: object) -> tuple[int, tuple[int, int]]:
+    if not isinstance(row, dict):
+        raise MechanicsError("level_info row is missing level")
+    level = raw_level
+    if isinstance(level, str) and level.isdigit():
+        level = int(level)
+    if not isinstance(level, int):
+        raise MechanicsError("level_info row is missing level")
+    currencies = row.get("bonus_currencies", [])
+    if not isinstance(currencies, list) or not all(
+        isinstance(currency, str) for currency in currencies
+    ):
+        raise MechanicsError("level_info has malformed bonus currencies")
+    explicit_ap = row.get("ability_points", row.get("ability_points_granted", 0))
+    explicit_unlocks = row.get("ability_unlocks", 0)
+    if (
+        not isinstance(explicit_ap, int)
+        or explicit_ap < 0
+        or not isinstance(explicit_unlocks, int)
+        or explicit_unlocks < 0
+    ):
+        raise MechanicsError("level_info has an invalid ability-point grant")
+    ap = explicit_ap + sum(currency == "EAbilityPoints" for currency in currencies)
+    unlocks = explicit_unlocks + sum(
+        currency == "EAbilityUnlocks" for currency in currencies
+    )
+    return level, (unlocks, ap)
+
+
+def _currency_grants_by_level(level_info: object) -> dict[int, tuple[int, int]]:
     result: dict[int, tuple[int, int]] = {}
-    for raw_level, row in rows:
-        if not isinstance(row, dict):
-            raise MechanicsError("level_info row is missing level")
-        level = raw_level
-        if isinstance(level, str) and level.isdigit():
-            level = int(level)
-        if not isinstance(level, int):
-            raise MechanicsError("level_info row is missing level")
-        currencies = row.get("bonus_currencies", [])
-        if not isinstance(currencies, list) or not all(
-            isinstance(currency, str) for currency in currencies
-        ):
-            raise MechanicsError("level_info has malformed bonus currencies")
-        explicit_ap = row.get("ability_points", row.get("ability_points_granted", 0))
-        explicit_unlocks = row.get("ability_unlocks", 0)
-        if (
-            not isinstance(explicit_ap, int)
-            or explicit_ap < 0
-            or not isinstance(explicit_unlocks, int)
-            or explicit_unlocks < 0
-        ):
-            raise MechanicsError("level_info has an invalid ability-point grant")
-        ap = explicit_ap + sum(currency == "EAbilityPoints" for currency in currencies)
-        unlocks = explicit_unlocks + sum(
-            currency == "EAbilityUnlocks" for currency in currencies
-        )
-        result[level] = unlocks, ap
+    for raw_level, row in _level_rows(level_info):
+        level, grant = _level_grant(raw_level, row)
+        result[level] = grant
     if not result:
         raise MechanicsError("level_info contains no levels")
     return result
+
+
+@dataclass
+class _AbilityProgress:
+    ranks: dict[int, int]
+    ap: int = 0
+    unlocks: int = 0
+    current_level: int = 0
+
+
+def _advance_ability_level(
+    progress: _AbilityProgress,
+    grants: dict[int, tuple[int, int]],
+    level: int,
+) -> None:
+    for current in range(progress.current_level + 1, level + 1):
+        unlock_grant, ap_grant = grants.get(current, (0, 0))
+        progress.unlocks += unlock_grant
+        progress.ap += ap_grant
+    progress.current_level = level
+
+
+def _apply_ability_action(
+    progress: _AbilityProgress,
+    definitions: dict[int, AbilityDefinition],
+    action: AbilityAction,
+) -> AbilityTimelineStep:
+    definition = definitions.get(action.ability_id)
+    if definition is None:
+        raise MechanicsError(f"unknown ability {action.ability_id}")
+    prior_rank = progress.ranks[action.ability_id]
+    if prior_rank == 0:
+        if action.level < definition.unlock_level:
+            raise MechanicsError(
+                f"ability {action.ability_id} unlocks at level {definition.unlock_level}"
+            )
+        cost = 1
+        currency = "ability_unlock"
+        if not progress.unlocks:
+            raise MechanicsError(
+                f"ability {action.ability_id} needs an unlock currency"
+            )
+        progress.unlocks -= 1
+    else:
+        cost_index = prior_rank - 1
+        if cost_index >= len(definition.upgrade_costs):
+            raise MechanicsError(f"ability {action.ability_id} is already maxed")
+        cost = definition.upgrade_costs[cost_index]
+        currency = "ability_points"
+        if cost > progress.ap:
+            raise MechanicsError(
+                f"ability {action.ability_id} costs {cost} AP with only {progress.ap} available"
+            )
+        progress.ap -= cost
+    progress.ranks[action.ability_id] = prior_rank + 1
+    return AbilityTimelineStep(
+        level=action.level,
+        ability_id=action.ability_id,
+        rank=prior_rank + 1,
+        cost=cost,
+        currency=currency,
+        ap_remaining=progress.ap,
+        unlocks_remaining=progress.unlocks,
+    )
 
 
 def validate_ability_timeline(
@@ -669,58 +749,13 @@ def validate_ability_timeline(
     grants = _currency_grants_by_level(level_info)
     if tuple(actions) != tuple(sorted(actions, key=lambda action: action.level)):
         raise MechanicsError("ability actions must be ordered by level")
-    ranks = dict.fromkeys(definitions, 0)
-    ap = 0
-    unlocks = 0
-    current_level = 0
+    progress = _AbilityProgress(dict.fromkeys(definitions, 0))
     result: list[AbilityTimelineStep] = []
     for action in actions:
         if action.level not in grants:
             raise MechanicsError(f"ability action uses unknown level {action.level}")
-        for level in range(current_level + 1, action.level + 1):
-            unlock_grant, ap_grant = grants.get(level, (0, 0))
-            unlocks += unlock_grant
-            ap += ap_grant
-        current_level = action.level
-        definition = definitions.get(action.ability_id)
-        if definition is None:
-            raise MechanicsError(f"unknown ability {action.ability_id}")
-        prior_rank = ranks[action.ability_id]
-        if prior_rank == 0:
-            if action.level < definition.unlock_level:
-                raise MechanicsError(
-                    f"ability {action.ability_id} unlocks at level {definition.unlock_level}"
-                )
-            cost = 1
-            currency = "ability_unlock"
-            if not unlocks:
-                raise MechanicsError(
-                    f"ability {action.ability_id} needs an unlock currency"
-                )
-            unlocks -= 1
-        else:
-            cost_index = prior_rank - 1
-            if cost_index >= len(definition.upgrade_costs):
-                raise MechanicsError(f"ability {action.ability_id} is already maxed")
-            cost = definition.upgrade_costs[cost_index]
-            currency = "ability_points"
-            if cost > ap:
-                raise MechanicsError(
-                    f"ability {action.ability_id} costs {cost} AP with only {ap} available"
-                )
-            ap -= cost
-        ranks[action.ability_id] = prior_rank + 1
-        result.append(
-            AbilityTimelineStep(
-                level=action.level,
-                ability_id=action.ability_id,
-                rank=prior_rank + 1,
-                cost=cost,
-                currency=currency,
-                ap_remaining=ap,
-                unlocks_remaining=unlocks,
-            )
-        )
+        _advance_ability_level(progress, grants, action.level)
+        result.append(_apply_ability_action(progress, definitions, action))
     return tuple(result)
 
 
@@ -813,7 +848,7 @@ def purchase_item(
     active_count = sum(graph.require(owned_id).active for owned_id in owned)
     if active_count > MAX_ACTIVE_ITEMS:
         raise MechanicsError("purchase exceeds four active-item bindings")
-    return replace(state, owned=tuple(owned))
+    return InventoryState(tuple(owned), state.unlocked_flex_slots)
 
 
 @dataclass(frozen=True)
@@ -822,34 +857,33 @@ class _ComponentPlan:
     dependencies: tuple[frozenset[int], ...]
 
 
-def _plan_component_actions(
-    graph: ItemGraph, target_ids: tuple[int, ...]
-) -> _ComponentPlan:
-    planned_ids: list[int] = []
-    dependencies: list[set[int]] = []
-    consumed_by: dict[int, int] = {}
-    owned_actions: dict[int, int] = {}
-    last_action_by_item: dict[int, int] = {}
-    planning_state = InventoryState()
+class _ComponentPlanner:
+    def __init__(self, graph: ItemGraph) -> None:
+        self.graph = graph
+        self.planned_ids: list[int] = []
+        self.dependencies: list[set[int]] = []
+        self.consumed_by: dict[int, int] = {}
+        self.owned_actions: dict[int, int] = {}
+        self.last_action_by_item: dict[int, int] = {}
+        self.state = InventoryState()
 
-    def plan(item_id: int) -> int:
-        nonlocal planning_state
-        if item_id in planning_state.owned:
+    def plan(self, item_id: int) -> int:
+        if item_id in self.state.owned:
             try:
-                return owned_actions[item_id]
+                return self.owned_actions[item_id]
             except KeyError as error:
                 raise MechanicsError(
                     f"owned item {item_id} has no planned purchase action"
                 ) from error
 
         component_actions = tuple(
-            plan(component_id) for component_id in graph.components[item_id]
+            self.plan(component_id) for component_id in self.graph.components[item_id]
         )
-        action_index = len(planned_ids)
+        action_index = len(self.planned_ids)
         action_dependencies = set(component_actions)
-        previous_action = last_action_by_item.get(item_id)
+        previous_action = self.last_action_by_item.get(item_id)
         if previous_action is not None:
-            consumer = consumed_by.get(previous_action)
+            consumer = self.consumed_by.get(previous_action)
             if consumer is None:
                 raise MechanicsError(
                     f"item {item_id} cannot be rebought before its prior copy is consumed"
@@ -858,38 +892,114 @@ def _plan_component_actions(
 
         missing = [
             component_id
-            for component_id in graph.components[item_id]
-            if component_id not in planning_state.owned
+            for component_id in self.graph.components[item_id]
+            if component_id not in self.state.owned
         ]
         if missing:
             raise MechanicsError(
                 f"planned item {item_id} is missing components {missing}"
             )
-        planning_state = purchase_item(graph, planning_state, item_id)
-        planned_ids.append(item_id)
-        dependencies.append(action_dependencies)
+        self.state = purchase_item(self.graph, self.state, item_id)
+        self.planned_ids.append(item_id)
+        self.dependencies.append(action_dependencies)
         for component_id, component_action in zip(
-            graph.components[item_id], component_actions, strict=True
+            self.graph.components[item_id], component_actions, strict=True
         ):
-            consumed_by[component_action] = action_index
-            owned_actions.pop(component_id, None)
-        owned_actions[item_id] = action_index
-        last_action_by_item[item_id] = action_index
+            self.consumed_by[component_action] = action_index
+            self.owned_actions.pop(component_id, None)
+        self.owned_actions[item_id] = action_index
+        self.last_action_by_item[item_id] = action_index
         return action_index
 
-    final_actions: list[int] = []
-    for item_id in target_ids:
-        action_index = plan(item_id)
-        if action_index in final_actions:
-            raise MechanicsError(f"final item {item_id} was already scheduled")
-        if final_actions:
-            dependencies[action_index].add(final_actions[-1])
-        final_actions.append(action_index)
-    if set(planning_state.owned) != set(target_ids):
-        raise MechanicsError("planned component path does not end in final inventory")
-    return _ComponentPlan(
-        tuple(planned_ids), tuple(frozenset(required) for required in dependencies)
-    )
+    def build(self, target_ids: tuple[int, ...]) -> _ComponentPlan:
+        final_actions: list[int] = []
+        for item_id in target_ids:
+            action_index = self.plan(item_id)
+            if action_index in final_actions:
+                raise MechanicsError(f"final item {item_id} was already scheduled")
+            if final_actions:
+                self.dependencies[action_index].add(final_actions[-1])
+            final_actions.append(action_index)
+        if set(self.state.owned) != set(target_ids):
+            raise MechanicsError(
+                "planned component path does not end in final inventory"
+            )
+        return _ComponentPlan(
+            tuple(self.planned_ids),
+            tuple(frozenset(required) for required in self.dependencies),
+        )
+
+
+def _plan_component_actions(
+    graph: ItemGraph, target_ids: tuple[int, ...]
+) -> _ComponentPlan:
+    return _ComponentPlanner(graph).build(target_ids)
+
+
+class _ComponentScheduleSearch:
+    def __init__(
+        self,
+        graph: ItemGraph,
+        plan: _ComponentPlan,
+        target_ids: tuple[int, ...],
+        priorities: Mapping[int, tuple[float, float, int]],
+    ) -> None:
+        self.graph = graph
+        self.plan = plan
+        self.target_ids = target_ids
+        self.priorities = priorities
+        self.failed_states: set[tuple[frozenset[int], tuple[int, ...], int]] = set()
+
+    def _ready_actions(self, completed: frozenset[int]) -> list[int]:
+        return sorted(
+            (
+                index
+                for index, required in enumerate(self.plan.dependencies)
+                if index not in completed and required <= completed
+            ),
+            key=lambda index: (
+                *self.priorities.get(
+                    self.plan.item_ids[index],
+                    (
+                        float("inf"),
+                        float("inf"),
+                        self.plan.item_ids[index],
+                    ),
+                ),
+                index,
+            ),
+        )
+
+    def search(
+        self,
+        completed: frozenset[int],
+        state: InventoryState,
+    ) -> tuple[int, ...] | None:
+        if len(completed) == len(self.plan.item_ids):
+            return () if set(state.owned) == set(self.target_ids) else None
+        state_key = (
+            completed,
+            tuple(sorted(state.owned)),
+            state.unlocked_flex_slots,
+        )
+        if state_key in self.failed_states:
+            return None
+        for action_index in self._ready_actions(completed):
+            item_id = self.plan.item_ids[action_index]
+            if any(
+                component_id not in state.owned
+                for component_id in self.graph.components[item_id]
+            ):
+                continue
+            try:
+                next_state = purchase_item(self.graph, state, item_id)
+            except MechanicsError:
+                continue
+            suffix = self.search(completed | {action_index}, next_state)
+            if suffix is not None:
+                return (action_index, *suffix)
+        self.failed_states.add(state_key)
+        return None
 
 
 def _search_component_schedule(
@@ -898,55 +1008,9 @@ def _search_component_schedule(
     target_ids: tuple[int, ...],
     priorities: Mapping[int, tuple[float, float, int]],
 ) -> tuple[int, ...] | None:
-    planned_ids = plan.item_ids
-    dependencies = plan.dependencies
-
-    failed_states: set[tuple[frozenset[int], tuple[int, ...], int]] = set()
-
-    def search(
-        completed: frozenset[int], state: InventoryState
-    ) -> tuple[int, ...] | None:
-        if len(completed) == len(planned_ids):
-            return () if set(state.owned) == set(target_ids) else None
-        state_key = (
-            completed,
-            tuple(sorted(state.owned)),
-            state.unlocked_flex_slots,
-        )
-        if state_key in failed_states:
-            return None
-        ready = sorted(
-            (
-                index
-                for index, required in enumerate(dependencies)
-                if index not in completed and required <= completed
-            ),
-            key=lambda index: (
-                *priorities.get(
-                    planned_ids[index],
-                    (float("inf"), float("inf"), planned_ids[index]),
-                ),
-                index,
-            ),
-        )
-        for action_index in ready:
-            item_id = planned_ids[action_index]
-            if any(
-                component_id not in state.owned
-                for component_id in graph.components[item_id]
-            ):
-                continue
-            try:
-                next_state = purchase_item(graph, state, item_id)
-            except MechanicsError:
-                continue
-            suffix = search(completed | {action_index}, next_state)
-            if suffix is not None:
-                return (action_index, *suffix)
-        failed_states.add(state_key)
-        return None
-
-    return search(frozenset(), InventoryState())
+    return _ComponentScheduleSearch(graph, plan, target_ids, priorities).search(
+        frozenset(), InventoryState()
+    )
 
 
 def schedule_component_path(
@@ -998,7 +1062,7 @@ def sell_item(graph: ItemGraph, state: InventoryState, item_id: int) -> Inventor
     if item_id not in owned:
         raise MechanicsError(f"cannot sell unowned item {item_id}")
     owned.remove(item_id)
-    return replace(state, owned=tuple(owned))
+    return InventoryState(tuple(owned), state.unlocked_flex_slots)
 
 
 def validate_imbue(

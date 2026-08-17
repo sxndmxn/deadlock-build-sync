@@ -209,12 +209,9 @@ def test_ability_timeline_uses_unlock_levels_and_asset_ap_grants() -> None:
         (1, 1, 0),
         (3, 2, 0),
     ]
+    invalid_actions = (AbilityAction(1, 20),)
     with pytest.raises(MechanicsError, match="unlocks at level 3"):
-        validate_ability_timeline(
-            definitions,
-            levels,
-            (AbilityAction(1, 20),),
-        )
+        validate_ability_timeline(definitions, levels, invalid_actions)
 
 
 def test_ability_definitions_preserve_asset_unlocks_costs_and_qualifiers() -> None:
@@ -249,8 +246,9 @@ def test_inventory_enforces_slots_actives_sells_and_flex() -> None:
         sell_item(graph, state, 12)
     state = sell_item(graph, state, 4)
     assert state.owned == (1, 2, 3)
+    empty_state = InventoryState()
     with pytest.raises(MechanicsError, match="unavailable flex"):
-        purchase_item(graph, InventoryState(), 6, required_flex_slots=1)
+        purchase_item(graph, empty_state, 6, required_flex_slots=1)
 
 
 def test_imbue_requires_learned_qualified_allowed_ability() -> None:

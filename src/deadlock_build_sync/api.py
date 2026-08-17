@@ -6,7 +6,7 @@ import re
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any, Self
+from typing import TYPE_CHECKING, Any, Self, cast
 
 from .http_client import JsonHttpClient, JsonHttpError
 from .ranks import DEFAULT_RANK_RANGE, RankCatalog, RankRange
@@ -96,6 +96,33 @@ HERO_DURATION_BUCKETS = (
     ("50m+", 3000, 7000),
 )
 MIN_HERO_DURATION_MATCHES = 20
+
+
+def _duration_stat(
+    row: object,
+    label: str,
+    minimum: int,
+    maximum_exclusive: int,
+) -> tuple[int, HeroDurationStat] | None:
+    if not isinstance(row, dict):
+        return None
+    data = cast("dict[str, Any]", row)
+    hero_id = data.get("hero_id")
+    if not isinstance(hero_id, int):
+        return None
+    matches = int(data.get("matches") or 0)
+    wins = int(data.get("wins") or 0)
+    losses = int(data.get("losses") or 0)
+    if matches < MIN_HERO_DURATION_MATCHES or wins + losses != matches:
+        return None
+    return hero_id, HeroDurationStat(
+        label=label,
+        min_duration_s=minimum,
+        max_duration_s=maximum_exclusive,
+        wins=wins,
+        losses=losses,
+        matches=matches,
+    )
 
 
 def _parse_datetime(value: str) -> datetime:
@@ -428,24 +455,11 @@ class DeadlockApi:
                     f"hero duration stats response for {label} was not a list"
                 )
             for row in data:
-                if not isinstance(row, dict) or not isinstance(row.get("hero_id"), int):
+                resolved = _duration_stat(row, label, minimum, maximum_exclusive)
+                if resolved is None:
                     continue
-                matches = int(row.get("matches") or 0)
-                wins = int(row.get("wins") or 0)
-                losses = int(row.get("losses") or 0)
-                if matches < MIN_HERO_DURATION_MATCHES or wins + losses != matches:
-                    continue
-                hero_id = int(row["hero_id"])
-                curves.setdefault(hero_id, []).append(
-                    HeroDurationStat(
-                        label=label,
-                        min_duration_s=minimum,
-                        max_duration_s=maximum_exclusive,
-                        wins=wins,
-                        losses=losses,
-                        matches=matches,
-                    )
-                )
+                hero_id, point = resolved
+                curves.setdefault(hero_id, []).append(point)
         return {hero_id: tuple(points) for hero_id, points in curves.items()}
 
     def hero_counter_stats(

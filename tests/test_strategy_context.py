@@ -295,12 +295,14 @@ def test_document_rejects_unaccounted_requested_hero() -> None:
     context["kit_basis_sha256"] = calculate_kit_basis_sha256(context)
     context["narrative_basis_sha256"] = calculate_narrative_basis_sha256(context)
     context["context_sha256"] = calculate_context_sha256(context)
+    patch = Patch("Patch", 123, "2026-01-01T00:00:00Z")
+    item_mechanics = build_item_mechanics_catalog(assets(), {101})
 
     with pytest.raises(StrategyContextError, match="cover requested heroes"):
         build_strategy_context_document(
-            Patch("Patch", 123, "2026-01-01T00:00:00Z"),
+            patch,
             [context],
             manifest=live_manifest,
-            item_mechanics=build_item_mechanics_catalog(assets(), {101}),
+            item_mechanics=item_mechanics,
             requested_hero_ids={12, 13},
         )

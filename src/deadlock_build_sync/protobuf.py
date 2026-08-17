@@ -151,40 +151,48 @@ def extract_hero_build(result_blob: bytes) -> bytes:
     return result_blob
 
 
+def _record_metadata_field(
+    field: ProtoField,
+    values: dict[int, int | str],
+    tag_ids: list[int],
+) -> None:
+    if field.wire_type == 0 and isinstance(field.value, int):
+        values[field.number] = field.value
+        if field.number == 11:
+            tag_ids.append(field.value)
+        return
+    if (
+        field.wire_type == 2
+        and field.number in {5, 6}
+        and isinstance(field.value, bytes)
+    ):
+        values[field.number] = field.value.decode("utf-8", errors="replace")
+
+
+def _metadata_int(values: dict[int, int | str], number: int) -> int | None:
+    value = values.get(number)
+    return value if isinstance(value, int) else None
+
+
+def _metadata_text(values: dict[int, int | str], number: int) -> str | None:
+    value = values.get(number)
+    return value if isinstance(value, str) else None
+
+
 def hero_build_metadata(result_blob: bytes) -> HeroBuildMetadata:
     build = extract_hero_build(result_blob)
     values: dict[int, int | str] = {}
     tag_ids: list[int] = []
     for field in parse_fields(build):
-        if field.wire_type == 0 and isinstance(field.value, int):
-            values[field.number] = field.value
-            if field.number == 11:
-                tag_ids.append(field.value)
-        elif (
-            field.wire_type == 2
-            and field.number in {5, 6}
-            and isinstance(field.value, bytes)
-        ):
-            values[field.number] = field.value.decode("utf-8", errors="replace")
-    build_id = values.get(1)
-    hero_id = values.get(2)
-    author_account_id = values.get(3)
-    name = values.get(5)
-    description = values.get(6)
-    version = values.get(8)
-    publish_timestamp = values.get(13)
+        _record_metadata_field(field, values, tag_ids)
     return HeroBuildMetadata(
-        build_id=build_id if isinstance(build_id, int) else None,
-        hero_id=hero_id if isinstance(hero_id, int) else None,
-        author_account_id=(
-            author_account_id if isinstance(author_account_id, int) else None
-        ),
-        name=name if isinstance(name, str) else None,
-        description=description if isinstance(description, str) else None,
-        version=version if isinstance(version, int) else None,
-        publish_timestamp=(
-            publish_timestamp if isinstance(publish_timestamp, int) else None
-        ),
+        build_id=_metadata_int(values, 1),
+        hero_id=_metadata_int(values, 2),
+        author_account_id=_metadata_int(values, 3),
+        name=_metadata_text(values, 5),
+        description=_metadata_text(values, 6),
+        version=_metadata_int(values, 8),
+        publish_timestamp=_metadata_int(values, 13),
         tag_ids=tuple(tag_ids),
     )
 

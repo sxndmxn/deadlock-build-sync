@@ -211,8 +211,9 @@ def test_policy_validates_ability_plan_separately_from_runtime_graph() -> None:
             ),
         ),
     )
+    validation_context = context()
     with pytest.raises(PolicyError, match="ability plan"):
-        validate_policy(invalid, context())
+        validate_policy(invalid, validation_context)
 
 
 def test_policy_rejects_unknown_kind_and_edited_fingerprint() -> None:
@@ -278,8 +279,9 @@ def test_validate_policy_checks_every_branch_and_terminates() -> None:
         tuple(changed),
         policy.evidence,
     )
+    validation_context = context()
     with pytest.raises(PolicyError, match="missing successor"):
-        validate_policy(invalid, context())
+        validate_policy(invalid, validation_context)
 
 
 def test_choice_requires_default_and_rejects_ambiguous_overlap() -> None:
@@ -308,9 +310,10 @@ def test_choice_requires_default_and_rejects_ambiguous_overlap() -> None:
         nodes,
         policy.evidence,
     )
+    validation_context = context()
 
     with pytest.raises(PolicyError, match="overlapping guards"):
-        validate_policy(invalid, context())
+        validate_policy(invalid, validation_context)
 
 
 def test_all_path_validation_finds_slot_error_hidden_in_one_branch() -> None:
@@ -356,9 +359,10 @@ def test_all_path_validation_finds_slot_error_hidden_in_one_branch() -> None:
         tuple(nodes),
         (claim("item/core"),),
     )
+    validation_context = context()
 
     with pytest.raises(PolicyError, match="exceeds 9 available item slots"):
-        validate_policy(policy, context())
+        validate_policy(policy, validation_context)
 
 
 def test_recalculation_skips_owned_and_handles_missed_timing() -> None:

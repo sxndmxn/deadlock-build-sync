@@ -37,6 +37,14 @@ class ArtifactBundleError(ValueError):
     """Raised when reviewed install artifacts do not form one exact bundle."""
 
 
+_COVERAGE_MISMATCH = "artifact bundle coverage differs across files"
+
+type _PatchDocument = dict[str, Any]
+type _RankBoundary = dict[str, Any]
+type _PolicyDocumentRow = dict[str, Any]
+type _HeroContextRow = dict[str, Any]
+
+
 @dataclass(frozen=True)
 class ArtifactGuideBundle:
     guides: list[PurchaseGuide]
@@ -87,7 +95,7 @@ def _snapshot_identity(manifest: dict[str, Any]) -> str:
 def _patch(value: object) -> Patch:
     if not isinstance(value, dict):
         raise ArtifactBundleError("artifact bundle has no patch identity")
-    data = cast("dict[str, Any]", value)
+    data = cast("_PatchDocument", value)
     try:
         patch = Patch(
             title=str(data["title"]),
@@ -112,7 +120,7 @@ def _patch(value: object) -> Patch:
 def _rank_from_boundary(value: object, label: str) -> Rank:
     if not isinstance(value, dict) or not isinstance(value.get("badge_id"), int):
         raise ArtifactBundleError(f"artifact bundle has no numeric {label} rank")
-    data = cast("dict[str, Any]", value)
+    data = cast("_RankBoundary", value)
     badge_id = cast("int", data["badge_id"])
     tier, division = divmod(badge_id, 10)
     try:
@@ -214,6 +222,87 @@ def _guide_item(
     )
 
 
+type _CategorySpec = tuple[str, bool, int, int]
+
+
+def _projection_category_rows(
+    hero: dict[str, Any],
+    expected: tuple[_CategorySpec, ...],
+    hero_id: int,
+) -> list[object]:
+    projection = hero.get("projection")
+    rows = projection.get("categories") if isinstance(projection, dict) else None
+    if not isinstance(rows, list) or len(rows) != len(expected):
+        raise ArtifactBundleError(
+            f"hero {hero_id} artifact projection must contain five rows"
+        )
+    return rows
+
+
+def _projected_category(
+    raw: object,
+    spec: _CategorySpec,
+    *,
+    index: int,
+    evidence: HeroBuildEvidence,
+) -> tuple[GuideCategory, tuple[GuideItem, ...]]:
+    name, optional, minimum, maximum = spec
+    raw_items = raw.get("items") if isinstance(raw, dict) else None
+    if (
+        not isinstance(raw, dict)
+        or raw.get("name") != name
+        or raw.get("optional") is not optional
+        or not isinstance(raw_items, list)
+        or not minimum <= len(raw_items) <= maximum
+    ):
+        raise ArtifactBundleError(
+            f"hero {evidence.hero_id} artifact row {name} is malformed"
+        )
+    items = tuple(
+        _guide_item(item, evidence=evidence, expected_tier=index or None)
+        for item in raw_items
+    )
+    if index != 0 and len({item.item_id for item in items}) != len(items):
+        raise ArtifactBundleError(
+            f"hero {evidence.hero_id} artifact row {name} contains duplicates"
+        )
+    return GuideCategory(name, items, optional=optional), items
+
+
+def _final_core_items(
+    items: tuple[GuideItem, ...],
+    core_path_ids: tuple[int, ...],
+    policy_core_ids: tuple[int, ...],
+    hero_id: int,
+) -> tuple[GuideItem, ...]:
+    if tuple(item.item_id for item in items) != core_path_ids:
+        raise ArtifactBundleError(
+            f"hero {hero_id} projection CORE path differs from component-expanded evidence"
+        )
+    by_id = {item.item_id: item for item in items}
+    if not set(policy_core_ids) <= set(by_id):
+        raise ArtifactBundleError(
+            f"hero {hero_id} projection CORE path omits final items"
+        )
+    return tuple(by_id[item_id] for item_id in policy_core_ids)
+
+
+def _validate_projected_item_sets(
+    core_items: tuple[GuideItem, ...],
+    tiers: dict[int, tuple[GuideItem, ...]],
+    policy_core_ids: tuple[int, ...],
+    hero_id: int,
+) -> None:
+    if tuple(item.item_id for item in core_items) != policy_core_ids:
+        raise ArtifactBundleError(
+            f"hero {hero_id} projection core differs from its policy"
+        )
+    core_ids = {item.item_id for item in core_items}
+    tier_ids = {item.item_id for tier_items in tiers.values() for item in tier_items}
+    if core_ids & tier_ids:
+        raise ArtifactBundleError(f"hero {hero_id} optional rows repeat CORE items")
+
+
 def _categories(
     hero: dict[str, Any],
     policy: BuildPolicy,
@@ -221,81 +310,38 @@ def _categories(
 ) -> tuple[
     tuple[GuideCategory, ...], tuple[GuideItem, ...], dict[int, tuple[GuideItem, ...]]
 ]:
-    projection = hero.get("projection")
-    raw_categories = (
-        projection.get("categories") if isinstance(projection, dict) else None
-    )
     policy_core_ids = _policy_core(policy)
     core_path_ids = (
         evidence.sequence_policy.default_path
         if evidence.sequence_policy is not None
         else policy_core_ids
     )
-    expected = (
+    expected: tuple[_CategorySpec, ...] = (
         ("CORE ITEMS", False, len(core_path_ids), len(core_path_ids)),
         ("TIER 1", True, 1, 10),
         ("TIER 2", True, 1, 10),
         ("TIER 3", True, 1, 10),
         ("TIER 4", True, 1, 10),
     )
-    if not isinstance(raw_categories, list) or len(raw_categories) != len(expected):
-        raise ArtifactBundleError(
-            f"hero {policy.hero_id} artifact projection must contain five rows"
-        )
+    raw_categories = _projection_category_rows(hero, expected, policy.hero_id)
     categories: list[GuideCategory] = []
     tiers: dict[int, tuple[GuideItem, ...]] = {}
     core_items: tuple[GuideItem, ...] = ()
-    for index, (raw, (name, optional, minimum, maximum)) in enumerate(
-        zip(raw_categories, expected, strict=True)
-    ):
-        raw_items = raw.get("items") if isinstance(raw, dict) else None
-        if (
-            not isinstance(raw, dict)
-            or raw.get("name") != name
-            or raw.get("optional") is not optional
-            or not isinstance(raw_items, list)
-            or not minimum <= len(raw_items) <= maximum
-        ):
-            raise ArtifactBundleError(
-                f"hero {policy.hero_id} artifact row {name} is malformed"
-            )
-        items = tuple(
-            _guide_item(
-                item,
-                evidence=evidence,
-                expected_tier=index or None,
-            )
-            for item in raw_items
+    for index, (raw, spec) in enumerate(zip(raw_categories, expected, strict=True)):
+        category, items = _projected_category(
+            raw,
+            spec,
+            index=index,
+            evidence=evidence,
         )
-        if index != 0 and len({item.item_id for item in items}) != len(items):
-            raise ArtifactBundleError(
-                f"hero {policy.hero_id} artifact row {name} contains duplicates"
-            )
-        categories.append(GuideCategory(name, items, optional=optional))
+        categories.append(category)
         if index == 0:
-            if tuple(item.item_id for item in items) != core_path_ids:
-                raise ArtifactBundleError(
-                    f"hero {policy.hero_id} projection CORE path differs from "
-                    "component-expanded evidence"
-                )
-            by_id = {item.item_id: item for item in items}
-            if not set(policy_core_ids) <= set(by_id):
-                raise ArtifactBundleError(
-                    f"hero {policy.hero_id} projection CORE path omits final items"
-                )
-            core_items = tuple(by_id[item_id] for item_id in policy_core_ids)
+            core_items = _final_core_items(
+                items, core_path_ids, policy_core_ids, policy.hero_id
+            )
         else:
             tiers[index] = items
-    if tuple(item.item_id for item in core_items) != policy_core_ids:
-        raise ArtifactBundleError(
-            f"hero {policy.hero_id} projection core differs from its policy"
-        )
-    core_ids = {item.item_id for item in core_items}
-    tier_ids = {item.item_id for tier_items in tiers.values() for item in tier_items}
-    if core_ids & tier_ids:
-        raise ArtifactBundleError(
-            f"hero {policy.hero_id} optional rows repeat CORE items"
-        )
+    _validate_projected_item_sets(core_items, tiers, policy_core_ids, policy.hero_id)
     return tuple(categories), core_items, tiers
 
 
@@ -568,7 +614,7 @@ def _validated_manifest(
     manifest = context.get("snapshot_manifest")
     if not isinstance(manifest, dict):
         raise ArtifactBundleError("strategy context has no snapshot manifest")
-    data = cast("dict[str, Any]", manifest)
+    data: dict[str, Any] = manifest
     if policies.get("snapshot_manifest") != data:
         raise ArtifactBundleError("context and policy snapshot manifests differ")
     snapshot_id = data.get("snapshot_id")
@@ -595,13 +641,13 @@ def _validated_coverage(
     ):
         raise ArtifactBundleError("artifact bundle has invalid requested heroes")
     if requested != policies.get("requested_hero_ids"):
-        raise ArtifactBundleError("artifact bundle coverage differs across files")
+        raise ArtifactBundleError(_COVERAGE_MISMATCH)
     if context.get("exclusions") != policies.get("exclusions"):
-        raise ArtifactBundleError("artifact bundle coverage differs across files")
+        raise ArtifactBundleError(_COVERAGE_MISMATCH)
     if catalog.requested_hero_ids != frozenset(requested):
-        raise ArtifactBundleError("artifact bundle coverage differs across files")
+        raise ArtifactBundleError(_COVERAGE_MISMATCH)
     if catalog.exclusions != dict(exclusions):
-        raise ArtifactBundleError("artifact bundle coverage differs across files")
+        raise ArtifactBundleError(_COVERAGE_MISMATCH)
     return exclusions
 
 
@@ -633,7 +679,7 @@ def _validated_cohort(
 def _decoded_policies(document: dict[str, Any]) -> dict[int, BuildPolicy]:
     rows = cast("list[object]", document["policies"])
     decoded = [
-        BuildPolicy.from_dict(cast("dict[str, Any]", row))
+        BuildPolicy.from_dict(cast("_PolicyDocumentRow", row))
         for row in rows
         if isinstance(row, dict)
     ]
@@ -646,22 +692,17 @@ def _hero_contexts(document: dict[str, Any]) -> dict[int, dict[str, Any]]:
     for row in rows:
         if not isinstance(row, dict):
             continue
-        hero = cast("dict[str, Any]", row)
+        hero = cast("_HeroContextRow", row)
         hero_id = hero.get("hero_id")
         if isinstance(hero_id, int):
             heroes[hero_id] = hero
     return heroes
 
 
-def _validated_build_evidence(
-    path: Path,
-    context: dict[str, Any],
+def _evidence_snapshot_record(
     manifest: dict[str, Any],
-) -> BuildEvidenceCatalog:
-    try:
-        catalog = load_build_evidence(path)
-    except ArtifactError as error:
-        raise ArtifactBundleError(str(error)) from error
+    catalog: BuildEvidenceCatalog,
+) -> dict[str, Any]:
     records = manifest.get("records")
     evidence_records = (
         [
@@ -686,10 +727,18 @@ def _validated_build_evidence(
         or record.get("byte_count") != len(catalog.raw_bytes)
     ):
         raise ArtifactBundleError("build evidence differs from the artifact snapshot")
+    return record
+
+
+def _build_evidence_compatibility(
+    catalog: BuildEvidenceCatalog,
+    context: dict[str, Any],
+    manifest: dict[str, Any],
+) -> dict[str, bool]:
     requested = context.get("requested_hero_ids")
     rank = manifest.get("rank_range")
     cohort = catalog.cohort
-    checks = {
+    return {
         "client version": catalog.client_version == manifest.get("client_version"),
         "patch": catalog.patch.get("identity")
         == (manifest.get("patch") or {}).get("identity"),
@@ -707,6 +756,19 @@ def _validated_build_evidence(
         "hero coverage": isinstance(requested, list)
         and catalog.requested_hero_ids == frozenset(requested),
     }
+
+
+def _validated_build_evidence(
+    path: Path,
+    context: dict[str, Any],
+    manifest: dict[str, Any],
+) -> BuildEvidenceCatalog:
+    try:
+        catalog = load_build_evidence(path)
+    except ArtifactError as error:
+        raise ArtifactBundleError(str(error)) from error
+    _evidence_snapshot_record(manifest, catalog)
+    checks = _build_evidence_compatibility(catalog, context, manifest)
     differences = [label for label, compatible in checks.items() if not compatible]
     if differences:
         raise ArtifactBundleError(

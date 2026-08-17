@@ -26,6 +26,10 @@ INT64_ONE = 16
 DOUBLE_ZERO = 17
 DOUBLE_ONE = 18
 
+_PACKED_DOUBLE_ZERO = struct.pack("<d", 0.0)
+_PACKED_DOUBLE_NEGATIVE_ZERO = struct.pack("<d", -0.0)
+_PACKED_DOUBLE_ONE = struct.pack("<d", 1.0)
+
 
 @dataclass
 class _Context:
@@ -73,46 +77,65 @@ def _write_object(context: _Context, value: dict[str, Any]) -> None:
         _write_property(context, str(name), child)
 
 
+def _write_integer(context: _Context, value: int) -> None:
+    if value == 0:
+        _write_type(context, INT64_ZERO)
+    elif value == 1:
+        _write_type(context, INT64_ONE)
+    else:
+        if not -(1 << 63) <= value < (1 << 63):
+            raise OverflowError(f"KV3 integer is outside signed 64-bit range: {value}")
+        _write_type(context, INT64)
+        _pack_into(context.bytes8, "<q", value)
+
+
+def _write_float(context: _Context, value: float) -> None:
+    packed = struct.pack("<d", value)
+    if packed in {_PACKED_DOUBLE_ZERO, _PACKED_DOUBLE_NEGATIVE_ZERO}:
+        _write_type(context, DOUBLE_ZERO)
+    elif packed == _PACKED_DOUBLE_ONE:
+        _write_type(context, DOUBLE_ONE)
+    else:
+        _write_type(context, DOUBLE)
+        _pack_into(context.bytes8, "<d", value)
+
+
+def _write_string(context: _Context, value: str) -> None:
+    _write_type(context, STRING)
+    _pack_into(context.bytes4, "<i", context.string_id(value))
+
+
+def _write_blob(context: _Context, value: bytes | bytearray | memoryview) -> None:
+    blob = bytes(value)
+    _write_type(context, BINARY_BLOB)
+    context.binary_blob_lengths.append(len(blob))
+    context.binary_blobs.extend(blob)
+
+
+def _write_array(context: _Context, value: list[Any] | tuple[Any, ...]) -> None:
+    _write_type(context, ARRAY)
+    _pack_into(context.bytes4, "<i", len(value))
+    for child in value:
+        _write_value(context, child)
+
+
 def _write_value(context: _Context, value: Any) -> None:
     if value is None:
         _write_type(context, NULL)
     elif isinstance(value, bool):
         _write_type(context, BOOLEAN_TRUE if value else BOOLEAN_FALSE)
     elif isinstance(value, int):
-        if value == 0:
-            _write_type(context, INT64_ZERO)
-        elif value == 1:
-            _write_type(context, INT64_ONE)
-        else:
-            if not -(1 << 63) <= value < (1 << 63):
-                raise OverflowError(
-                    f"KV3 integer is outside signed 64-bit range: {value}"
-                )
-            _write_type(context, INT64)
-            _pack_into(context.bytes8, "<q", value)
+        _write_integer(context, value)
     elif isinstance(value, float):
-        if value == 0.0:
-            _write_type(context, DOUBLE_ZERO)
-        elif value == 1.0:
-            _write_type(context, DOUBLE_ONE)
-        else:
-            _write_type(context, DOUBLE)
-            _pack_into(context.bytes8, "<d", value)
+        _write_float(context, value)
     elif isinstance(value, str):
-        _write_type(context, STRING)
-        _pack_into(context.bytes4, "<i", context.string_id(value))
+        _write_string(context, value)
     elif isinstance(value, (bytes, bytearray, memoryview)):
-        blob = bytes(value)
-        _write_type(context, BINARY_BLOB)
-        context.binary_blob_lengths.append(len(blob))
-        context.binary_blobs.extend(blob)
+        _write_blob(context, value)
     elif isinstance(value, dict):
         _write_object(context, value)
     elif isinstance(value, (list, tuple)):
-        _write_type(context, ARRAY)
-        _pack_into(context.bytes4, "<i", len(value))
-        for child in value:
-            _write_value(context, child)
+        _write_array(context, value)
     else:
         raise TypeError(f"unsupported KV3 value: {type(value).__name__}")
 

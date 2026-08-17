@@ -318,8 +318,11 @@ def test_stale_or_out_of_cohort_state_fails_closed(
     change: dict[str, object],
     message: str,
 ) -> None:
+    evidence = catalog()
+    decision_state = state(**change)
+    item_assets = assets()
     with pytest.raises(RecommendationError, match=message):
-        recommend(catalog(), state(**change), assets())
+        recommend(evidence, decision_state, item_assets)
 
 
 def test_decision_state_file_requires_complete_context(tmp_path: Path) -> None:
@@ -431,13 +434,11 @@ def test_conflicting_situational_branches_fail_closed() -> None:
             )
         },
     )
+    decision_state = state(threats=("healing", "control"))
+    item_assets = expanded_assets()
 
     with pytest.raises(RecommendationError, match="multiple situational branches"):
-        recommend(
-            conflicting,
-            state(threats=("healing", "control")),
-            expanded_assets(),
-        )
+        recommend(conflicting, decision_state, item_assets)
 
 
 def test_enemy_item_mechanics_supply_an_observable_threat() -> None:
@@ -495,9 +496,8 @@ def test_full_active_bindings_supply_the_active_burden_threat() -> None:
 
 
 def test_unknown_enemy_item_fails_closed() -> None:
+    evidence = catalog(branch=True)
+    decision_state = state(enemy_item_ids=(999,))
+    item_assets = expanded_assets()
     with pytest.raises(RecommendationError, match="unknown current item 999"):
-        recommend(
-            catalog(branch=True),
-            state(enemy_item_ids=(999,)),
-            expanded_assets(),
-        )
+        recommend(evidence, decision_state, item_assets)
