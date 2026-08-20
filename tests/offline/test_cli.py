@@ -90,17 +90,8 @@ def test_layout_command_accepts_explicit_hero_and_threshold() -> None:
     assert args.minimum_net_worth == 45_000
 
 
-def test_xgboost_command_accepts_resource_limits() -> None:
-    args = build_parser().parse_args([
-        "xgboost",
-        "--run-id",
-        "frozen",
-        "--xgb-train-queries",
-        "1000",
-        "--xgb-test-queries",
-        "500",
-    ])
+def test_all_command_has_no_model_training_flags() -> None:
+    parser = build_parser()
 
-    assert args.command == "xgboost"
-    assert args.xgb_train_queries == 1000
-    assert args.xgb_test_queries == 500
+    with pytest.raises(SystemExit):
+        parser.parse_args(["all", "--model-device", "cuda"])

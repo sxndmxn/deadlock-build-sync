@@ -69,7 +69,7 @@ def _manifest(evidence: dict[str, Any], raw_evidence: bytes) -> SnapshotManifest
                 {
                     "artifact_id": evidence["artifact_id"],
                     "hero_count": 1,
-                    "method": "reconstructed-final-inventory-v3",
+                    "method": "state-aware-multi-path-v3",
                 },
                 datetime.now(UTC).isoformat(),
                 hashlib.sha256(raw_evidence).hexdigest(),
@@ -192,11 +192,13 @@ def _build_evidence() -> dict[str, Any]:
             })
     boundary = EpochBoundary(PATCH.identity, 100)
     payload = {
-        "schema_version": 2,
+        "schema_version": 4,
         "producer": "fixture",
         "method": {
-            "version": "reconstructed-final-inventory-v3",
-            "core_item_count": 8,
+            "version": "state-aware-multi-path-v3",
+            "core_candidate_item_count": 8,
+            "minimum_core_item_count": 4,
+            "maximum_core_item_count": 9,
             "core_candidate_limit": 64,
             "minimum_core_support": 20,
             "minimum_tier_support": 20,
@@ -228,6 +230,21 @@ def _build_evidence() -> dict[str, Any]:
                         "joint_matches": 50,
                     }
                 ],
+                "core_policy": {
+                    "version": 1,
+                    "backbone_item_ids": list(range(1001, 1005)),
+                    "default_item_ids": list(range(1001, 1009)),
+                    "backbone_matches": 60,
+                    "backbone_fold_matches": {
+                        "train": 20,
+                        "validation": 20,
+                        "test": 20,
+                    },
+                    "default_matches": 50,
+                    "alternatives": [],
+                    "candidate_audit": [],
+                    "evaluation": {"method": "cross-fitted-dr"},
+                },
                 "items": items,
                 "sequence_policy": {
                     "version": 3,
@@ -246,11 +263,6 @@ def _build_evidence() -> dict[str, Any]:
                         }
                     ],
                     "evaluation": {"chronological_fold": "test"},
-                    "challenger": {
-                        "evaluated": True,
-                        "passed": False,
-                        "promoted": False,
-                    },
                 },
                 "situational_policy": {
                     "version": 1,
@@ -269,6 +281,26 @@ def _build_evidence() -> dict[str, Any]:
             }
         ],
     }
+    flat_hero = payload["heroes"][0]
+    payload["heroes"] = [
+        {
+            "hero_id": flat_hero["hero_id"],
+            "hero": flat_hero["hero"],
+            "builds": [
+                {
+                    "path_id": "default",
+                    "path_label": "Evidence Default",
+                    "signature_item_ids": [],
+                    "discovery": {"method": "single-supported-path"},
+                    **{
+                        key: value
+                        for key, value in flat_hero.items()
+                        if key not in {"hero_id", "hero"}
+                    },
+                }
+            ],
+        }
+    ]
     return {**payload, "artifact_id": sha256_json(payload)}
 
 
@@ -282,6 +314,8 @@ def _write_bundle(root: Path) -> tuple[Path, Path, Path, Path]:
     ability_ids = (10, 20, 30, 40) * 4
     hero = {
         "hero_id": 12,
+        "path_id": "default",
+        "path_label": "Evidence Default",
         "hero": "Kelvin",
         "hero_mechanics": {"class_name": "hero_kelvin"},
         "item_mechanics_ids": [],
@@ -354,6 +388,7 @@ def _write_bundle(root: Path) -> tuple[Path, Path, Path, Path]:
         "heroes": [
             {
                 "hero_id": 12,
+                "path_id": "default",
                 "prompt_version": NARRATIVE_PROMPT_VERSION,
                 "snapshot_id": manifest.snapshot_id,
                 "policy_id": policy.policy_id,

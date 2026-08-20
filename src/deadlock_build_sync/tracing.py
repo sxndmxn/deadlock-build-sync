@@ -79,6 +79,7 @@ _SAFE_STAGE_FACTS = frozenset({
     "hero_count",
     "path",
     "policy_count",
+    "removed",
     "row_count",
     "skipped_count",
     "snapshot_id",

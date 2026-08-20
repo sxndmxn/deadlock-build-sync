@@ -17,13 +17,13 @@ import keyvalues3
 
 from .artifacts import atomic_write_json
 from .kv3_binary import encode_binary_v4
-from .presentation import build_presentation
+from .presentation import MANAGED_MARKER, build_presentation
 from .protobuf import (
-    MANAGED_MARKER,
     HeroBuildMetadata,
     encode_hero_build,
     hero_build_metadata,
     is_managed_build,
+    managed_build_path,
     wrap_hero_build,
 )
 from .ranks import DEFAULT_RANK_RANGE
@@ -36,6 +36,7 @@ if TYPE_CHECKING:
 DEADLOCK_APP_ID = "1422450"
 CACHE_RELATIVE_PATH = Path("remote/cfg/cached_hero_builds.kv3")
 _CACHE_FILENAME = "cached_hero_builds.kv3"
+type BuildKey = tuple[int, str]
 STEAM_ROOT_RELATIVE_PATHS = (
     Path(".local/share/Steam"),
     Path(".steam/steam"),
@@ -64,11 +65,12 @@ class CacheLocation:
 class InstallResult:
     cache_path: Path
     backup_directory: Path
-    build_ids: dict[int, int]
+    build_ids: dict[BuildKey, int]
     created: int
     updated: int
+    removed: int
     snapshot_id: str
-    policy_ids: dict[int, str]
+    policy_ids: dict[BuildKey, str]
 
 
 def steam_roots(*, home: Path | None = None) -> tuple[Path, ...]:
@@ -278,29 +280,65 @@ def _allocate_local_build_id(root: dict[str, Any], account_id: int) -> int:
     return build_id
 
 
-def _managed_build_slot(
-    unpublished: list[Any],
-    guide: PurchaseGuide,
+@dataclass(frozen=True)
+class _ManagedBuildScan:
+    retained: list[Any]
+    existing_ids: dict[BuildKey, int]
+    removed_candidates: int
+
+
+def _target_managed_build(
+    blob: object,
+    *,
+    target_hero_ids: set[int],
     account_id: int,
-) -> tuple[int | None, int | None]:
-    managed_index: int | None = None
-    managed_id: int | None = None
-    for index, blob in enumerate(unpublished):
-        if not isinstance(blob, (bytes, bytearray)):
+) -> HeroBuildMetadata | None:
+    if not isinstance(blob, (bytes, bytearray)):
+        return None
+    try:
+        metadata = hero_build_metadata(bytes(blob))
+    except ValueError:
+        return None
+    hero_id = metadata.hero_id
+    if hero_id not in target_hero_ids or not is_managed_build(
+        metadata,
+        hero_id=cast("int", hero_id),
+        account_id=account_id,
+    ):
+        return None
+    return metadata
+
+
+def _scan_managed_builds(
+    unpublished: list[Any],
+    *,
+    desired: set[BuildKey],
+    account_id: int,
+) -> _ManagedBuildScan:
+    target_hero_ids = {build_key[0] for build_key in desired}
+    existing_ids: dict[BuildKey, int] = {}
+    retained: list[Any] = []
+    removed_candidates = 0
+    for blob in unpublished:
+        metadata = _target_managed_build(
+            blob,
+            target_hero_ids=target_hero_ids,
+            account_id=account_id,
+        )
+        if metadata is None:
+            retained.append(blob)
             continue
-        try:
-            metadata = hero_build_metadata(bytes(blob))
-        except ValueError:
+        removed_candidates += 1
+        path_id = managed_build_path(metadata)
+        key = (cast("int", metadata.hero_id), path_id) if path_id is not None else None
+        if key is None or key not in desired:
             continue
-        if is_managed_build(metadata, hero_id=guide.hero_id, account_id=account_id):
-            if managed_index is not None:
-                raise CacheError(
-                    f"multiple managed builds already exist for {guide.hero_name}; "
-                    "restore or remove duplicates"
-                )
-            managed_index = index
-            managed_id = metadata.build_id
-    return managed_index, managed_id
+        if key in existing_ids or metadata.build_id is None:
+            raise CacheError(
+                f"multiple or malformed managed builds already exist for {key[0]}/{key[1]}"
+            )
+        existing_ids[key] = metadata.build_id
+    return _ManagedBuildScan(retained, existing_ids, removed_candidates)
 
 
 def update_managed_builds(
@@ -313,18 +351,33 @@ def update_managed_builds(
     patch_title: str,
     patch_published_at: str,
     rank_range: RankRange = DEFAULT_RANK_RANGE,
-) -> tuple[dict[str, Any], dict[int, int], int, int]:
+) -> tuple[dict[str, Any], dict[BuildKey, int], int, int, int]:
     _ = persona
     updated_root = deepcopy(root)
     unpublished = updated_root["Unpublished"]
-    build_ids: dict[int, int] = {}
+    desired = {(guide.hero_id, guide.path_id) for guide in guides}
+    scan = _scan_managed_builds(
+        unpublished,
+        desired=desired,
+        account_id=account_id,
+    )
+    updated_root["Unpublished"] = scan.retained
+    unpublished = scan.retained
+    build_ids: dict[BuildKey, int] = {}
     created = 0
     updated = 0
+    next_new_id = _allocate_local_build_id(root, account_id)
 
     for guide in guides:
-        managed_index, managed_id = _managed_build_slot(unpublished, guide, account_id)
+        key = guide.hero_id, guide.path_id
+        managed_id = scan.existing_ids.get(key)
         if managed_id is None:
-            managed_id = _allocate_local_build_id(updated_root, account_id)
+            managed_id = next_new_id
+            next_new_id += 1
+            if managed_id >= 1000:
+                raise CacheError(
+                    "no safe local build ID remains below the reserved 1000 range"
+                )
         hero_build = encode_hero_build(
             build_presentation(
                 guide,
@@ -337,14 +390,14 @@ def update_managed_builds(
             timestamp=timestamp,
         )
         wrapped = wrap_hero_build(hero_build)
-        if managed_index is None:
-            unpublished.append(wrapped)
+        unpublished.append(wrapped)
+        if key not in scan.existing_ids:
             created += 1
         else:
-            unpublished[managed_index] = wrapped
             updated += 1
-        build_ids[guide.hero_id] = managed_id
-    return updated_root, build_ids, created, updated
+        build_ids[key] = managed_id
+    removed = scan.removed_candidates - updated
+    return updated_root, build_ids, created, updated, removed
 
 
 def _state_root() -> Path:
@@ -410,11 +463,11 @@ def _is_target_managed_blob(
         metadata = hero_build_metadata(bytes(value))
     except ValueError:
         return False
-    return (
-        metadata.author_account_id == account_id
-        and metadata.hero_id in target_hero_ids
-        and metadata.description is not None
-        and MANAGED_MARKER in metadata.description
+    hero_id = metadata.hero_id
+    return hero_id in target_hero_ids and is_managed_build(
+        metadata,
+        hero_id=cast("int", hero_id),
+        account_id=account_id,
     )
 
 
@@ -452,9 +505,9 @@ def _out_of_scope_fingerprint(
 
 def _target_managed_metadata(
     blob: object,
-    expected: dict[int, int],
+    expected: dict[BuildKey, int],
     account_id: int,
-) -> HeroBuildMetadata | None:
+) -> tuple[BuildKey, HeroBuildMetadata] | None:
     if not isinstance(blob, (bytes, bytearray)):
         return None
     try:
@@ -462,25 +515,30 @@ def _target_managed_metadata(
     except ValueError:
         return None
     hero_id = metadata.hero_id
+    path_id = managed_build_path(metadata)
+    key = (cast("int", hero_id), path_id) if path_id is not None else None
     if (
         metadata.author_account_id != account_id
         or hero_id is None
-        or hero_id not in expected
+        or key not in expected
         or not metadata.description
         or MANAGED_MARKER not in metadata.description
     ):
         return None
-    return metadata
+    return cast("BuildKey", key), metadata
 
 
 def _validate_managed_identity(
+    key: BuildKey,
     metadata: HeroBuildMetadata,
-    identities: dict[int, tuple[str, str]],
+    identities: dict[BuildKey, tuple[str, str]],
 ) -> None:
-    hero_id = cast("int", metadata.hero_id)
+    hero_id, path_id = key
     if metadata.build_id is None:
-        raise CacheError(f"replacement cache managed hero {hero_id} has no build ID")
-    expected_identity = identities.get(hero_id)
+        raise CacheError(
+            f"replacement cache managed build {hero_id}/{path_id} has no build ID"
+        )
+    expected_identity = identities.get(key)
     if expected_identity is None:
         return
     snapshot_id, policy_id = expected_identity
@@ -489,28 +547,30 @@ def _validate_managed_identity(
         f"Snapshot: {snapshot_id}." not in description
         or f"Policy: {policy_id}." not in description
     ):
-        raise CacheError(f"replacement cache managed hero {hero_id} has stale identity")
+        raise CacheError(
+            f"replacement cache managed build {hero_id}/{path_id} has stale identity"
+        )
 
 
 def _validate_managed_entries(
     root: dict[str, Any],
-    expected: dict[int, int],
+    expected: dict[BuildKey, int],
     *,
     account_id: int,
-    identities: dict[int, tuple[str, str]] | None = None,
+    identities: dict[BuildKey, tuple[str, str]] | None = None,
 ) -> None:
-    found: dict[int, int] = {}
+    found: dict[BuildKey, int] = {}
     for blob in root.get("Unpublished", []):
-        metadata = _target_managed_metadata(blob, expected, account_id)
-        if metadata is None:
+        target = _target_managed_metadata(blob, expected, account_id)
+        if target is None:
             continue
-        hero_id = cast("int", metadata.hero_id)
-        if hero_id in found:
+        key, metadata = target
+        if key in found:
             raise CacheError(
-                f"replacement cache contains duplicate managed hero {hero_id}"
+                f"replacement cache contains duplicate managed build {key[0]}/{key[1]}"
             )
-        _validate_managed_identity(metadata, identities or {})
-        found[hero_id] = cast("int", metadata.build_id)
+        _validate_managed_identity(key, metadata, identities or {})
+        found[key] = cast("int", metadata.build_id)
     if found != expected:
         raise CacheError(
             f"replacement cache validation failed: expected {expected}, found {found}"
@@ -544,20 +604,18 @@ def _restore_cache_file(source: Path, destination: Path) -> None:
 @dataclass(frozen=True)
 class _GuideInstallationIdentity:
     hero_ids: set[int]
+    build_keys: set[BuildKey]
     snapshot_id: str
-    policy_ids: dict[int, str]
-    identities: dict[int, tuple[str, str]]
+    policy_ids: dict[BuildKey, str]
+    identities: dict[BuildKey, tuple[str, str]]
 
 
 def _validate_install_coverage(
     hero_ids: set[int],
-    guide_count: int,
     expected_hero_ids: set[int] | None,
     *,
     allow_subset: bool,
 ) -> None:
-    if len(hero_ids) != guide_count:
-        raise CacheError("refusing to install duplicate hero guides")
     if expected_hero_ids is None or allow_subset:
         return
     missing = expected_hero_ids - hero_ids
@@ -595,9 +653,11 @@ def _validate_install_request(
             + ", ".join(incomplete)
         )
     hero_ids = {guide.hero_id for guide in guides}
+    build_keys = {(guide.hero_id, guide.path_id) for guide in guides}
+    if len(build_keys) != len(guides):
+        raise CacheError("refusing to install duplicate hero/build-path guides")
     _validate_install_coverage(
         hero_ids,
-        len(guides),
         expected_hero_ids,
         allow_subset=allow_subset,
     )
@@ -607,12 +667,14 @@ def _validate_install_request(
     snapshot_id = next(iter(snapshot_ids))
     if snapshot_manifest is None or snapshot_manifest.get("snapshot_id") != snapshot_id:
         raise CacheError("install snapshot manifest is missing or incompatible")
-    policy_ids = {guide.hero_id: guide.policy_id for guide in guides}
+    policy_ids = {(guide.hero_id, guide.path_id): guide.policy_id for guide in guides}
     identities = {
-        guide.hero_id: (guide.snapshot_id, guide.policy_id) for guide in guides
+        (guide.hero_id, guide.path_id): (guide.snapshot_id, guide.policy_id)
+        for guide in guides
     }
     return _GuideInstallationIdentity(
         hero_ids,
+        build_keys,
         snapshot_id,
         policy_ids,
         identities,
@@ -622,8 +684,8 @@ def _validate_install_request(
 @dataclass(frozen=True)
 class _ReplacementValidation:
     account_id: int
-    build_ids: dict[int, int]
-    identities: dict[int, tuple[str, str]]
+    build_ids: dict[BuildKey, int]
+    identities: dict[BuildKey, tuple[str, str]]
     hero_ids: set[int]
     out_of_scope_sha256: str
 
@@ -720,7 +782,7 @@ def install_guides(
         account_id=location.account_id,
         target_hero_ids=identity.hero_ids,
     )
-    replacement, build_ids, created, updated = update_managed_builds(
+    replacement, build_ids, created, updated, removed = update_managed_builds(
         original,
         guides,
         account_id=location.account_id,
@@ -733,18 +795,24 @@ def install_guides(
     encoded = encode_binary_v4(replacement)
 
     backup = _create_backup(location, root=backup_root)
+    installed_builds = [
+        {
+            "hero_id": guide.hero_id,
+            "path_id": guide.path_id,
+            "build_id": build_ids[guide.hero_id, guide.path_id],
+            "policy_id": guide.policy_id,
+            "projection_fingerprint": projection_fingerprint(guide),
+        }
+        for guide in guides
+    ]
     manifest = {
         "account_id": location.account_id,
         "cache_path": str(location.cache_path),
         "created_at": datetime.now(UTC).isoformat(),
-        "build_ids": build_ids,
+        "builds": installed_builds,
         "rank_range": rank_range.as_dict(),
         "snapshot": snapshot_manifest,
         "snapshot_id": identity.snapshot_id,
-        "policy_ids": identity.policy_ids,
-        "projection_fingerprints": {
-            guide.hero_id: projection_fingerprint(guide) for guide in guides
-        },
         "out_of_scope_sha256": original_out_of_scope,
     }
     atomic_write_json(backup / "manifest.json", manifest)
@@ -781,6 +849,7 @@ def install_guides(
         build_ids,
         created,
         updated,
+        removed,
         identity.snapshot_id,
         identity.policy_ids,
     )

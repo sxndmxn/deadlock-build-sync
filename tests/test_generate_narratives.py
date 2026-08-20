@@ -14,6 +14,7 @@ from scripts import generate_narratives
 def packet_and_response() -> tuple[dict[str, Any], dict[str, Any]]:
     packet: dict[str, Any] = {
         "hero_id": 12,
+        "path_id": "default",
         "hero": "Kelvin",
         "snapshot_id": "1" * 64,
         "policy_id": "2" * 64,
@@ -118,6 +119,7 @@ def packet_and_response() -> tuple[dict[str, Any], dict[str, Any]]:
     }
     response: dict[str, Any] = {
         "hero_id": 12,
+        "path_id": "default",
         "snapshot_id": "1" * 64,
         "policy_id": "2" * 64,
         "context_sha256": "3" * 64,
@@ -170,7 +172,7 @@ def packet_and_response() -> tuple[dict[str, Any], dict[str, Any]]:
 
 
 def test_generator_uses_installer_prompt_version() -> None:
-    assert generate_narratives.PROMPT_VERSION == NARRATIVE_PROMPT_VERSION == 23
+    assert generate_narratives.PROMPT_VERSION == NARRATIVE_PROMPT_VERSION == 24
 
 
 def test_kit_context_excludes_items_outcomes_and_policy() -> None:
@@ -227,7 +229,7 @@ def test_validates_closed_policy_explanation() -> None:
 
     validated = generate_narratives.validate_response(response, packet)
 
-    assert validated["prompt_version"] == 23
+    assert validated["prompt_version"] == 24
 
 
 def test_rejects_core_instruction_over_utf8_byte_budget() -> None:
@@ -551,10 +553,12 @@ def test_hero_pipelines_overlap_and_checkpoint_in_deterministic_order(
         if is_kit:
             return {
                 "hero_id": hero_id,
+                "path_id": validation_context["path_id"],
                 "kit_basis_sha256": validation_context["kit_basis_sha256"],
             }
         return {
             "hero_id": hero_id,
+            "path_id": validation_context["path_id"],
             "snapshot_id": validation_context["snapshot_id"],
             "policy_id": validation_context["policy_id"],
             "context_sha256": validation_context["context_sha256"],
@@ -606,6 +610,7 @@ def test_kit_validator_preserves_exact_abilities() -> None:
     packet, _ = packet_and_response()
     response = {
         "hero_id": 12,
+        "path_id": "default",
         "kit_basis_sha256": "4" * 64,
         "primary_role": "control support",
         "combat_pattern": "Control committed enemies while protecting allied pressure.",
@@ -636,12 +641,12 @@ def test_reuse_requires_exact_context_snapshot_and_policy() -> None:
     response = generate_narratives.validate_response(response, packet)
 
     assert generate_narratives.validated_reusable_entries(
-        {12: response},
-        {12: packet},
-    ) == {12: response}
+        {(12, "default"): response},
+        {(12, "default"): packet},
+    ) == {(12, "default"): response}
 
     changed = {**packet, "context_sha256": "8" * 64}
     assert not generate_narratives.validated_reusable_entries(
-        {12: response},
-        {12: changed},
+        {(12, "default"): response},
+        {(12, "default"): changed},
     )

@@ -44,6 +44,7 @@ def guide() -> PurchaseGuide:
 def write_catalog(path: Path, **overrides: object) -> None:
     entry = {
         "hero_id": 12,
+        "path_id": "default",
         "prompt_version": NARRATIVE_PROMPT_VERSION,
         "snapshot_id": SNAPSHOT_ID,
         "policy_id": POLICY_ID,

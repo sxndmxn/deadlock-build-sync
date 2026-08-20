@@ -63,6 +63,55 @@ def _situational_case() -> NarrativeCase:
     return NarrativeCase(hero, "closed situational branch contract")
 
 
+def _optional_core_case() -> NarrativeCase:
+    hero = deepcopy(CASES[0].hero)
+    categories = hero["projection"]["categories"]
+    tier = next(category for category in categories if category["name"] == "TIER 3")
+    item = tier["items"].pop()
+    core_item = hero["projection"]["categories"][0]["items"][-1]
+    item["annotation"] = (
+        f"Choose {item['item']} over {core_item['item']} only when its documented "
+        "mechanic fits; keep the default when that need is absent."
+    )
+    categories.insert(
+        1,
+        {
+            "name": "OPTIONAL CORE",
+            "optional": True,
+            "items": [item],
+        },
+    )
+    policy = hero.get("policy")
+    if isinstance(policy, dict):
+        policy["schema_version"] = 2
+        policy["core_alternatives"] = [
+            {
+                "item_id": item["item_id"],
+                "comparator_item_id": core_item["item_id"],
+                "stage": 8,
+                "trigger": item["annotation"],
+                "execution": (
+                    f"Replace {core_item['item']} at the final supported slot."
+                ),
+                "failure_condition": (
+                    f"Keep {core_item['item']} when the observable need is absent."
+                ),
+                "mechanics_refs": [f"asset:item:{item['item_id']}:description"],
+                "evidence_ref": f"hero/{hero['hero_id']}/core-alternative/eval",
+                "support": 200,
+                "effective_support": 120.0,
+                "overlap": 0.8,
+                "interval": [-0.02, 0.02],
+                "fold_estimates": {
+                    "train": 0.0,
+                    "validation": 0.01,
+                    "test": -0.01,
+                },
+            }
+        ]
+    return NarrativeCase(hero, "optional core non-causal swap contract")
+
+
 @pytest.mark.parametrize("case", CASES, ids=lambda case: case.name)
 def test_production_narrative_prompt(case: NarrativeCase) -> None:
     test_case = generate_test_case(case)
@@ -75,5 +124,11 @@ def test_production_narrative_prompt(case: NarrativeCase) -> None:
 
 def test_situational_narrative_prompt() -> None:
     case = _situational_case()
+    test_case = generate_test_case(case)
+    assert_test(test_case, production_metrics(case.hero), run_async=False)
+
+
+def test_optional_core_narrative_prompt() -> None:
+    case = _optional_core_case()
     test_case = generate_test_case(case)
     assert_test(test_case, production_metrics(case.hero), run_async=False)

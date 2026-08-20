@@ -6,8 +6,10 @@ from typing import TYPE_CHECKING, Any
 from .ability_order import LOW_ABILITY_DECISION_SUPPORT, select_ability_path
 from .artifacts import ArtifactError
 from .build_evidence import (
+    MAXIMUM_CORE_ITEM_COUNT,
     MECHANIC_RESPONSE_THREATS,
     METHOD_VERSION,
+    MINIMUM_BACKBONE_ITEM_COUNT,
     assert_build_evidence_compatible,
     select_hero_build,
 )
@@ -30,6 +32,7 @@ from .policy import (
     Branch,
     BuildPolicy,
     ClaimClass,
+    CoreAlternativeCard,
     CounterCard,
     EvidenceClaim,
     Guard,
@@ -52,9 +55,11 @@ from .snapshot import EvidenceUnit
 from .strategy_context import build_hero_strategy_context, build_item_mechanics_catalog
 
 if TYPE_CHECKING:
+    from .ability_order import AbilityPath
     from .api import DeadlockApi, HeroDurationStat, Patch
     from .build_evidence import (
         BuildEvidenceCatalog,
+        SelectedHeroBuild,
         SituationalBranch,
         SituationalPolicy,
     )
@@ -212,18 +217,70 @@ def _item_claim(
 
 def _core_claim(guide: PurchaseGuide, manifest: SnapshotManifest) -> EvidenceClaim:
     return EvidenceClaim(
-        claim_id=f"hero/{guide.hero_id}/coherent-eight-item-core",
+        claim_id=f"hero/{guide.hero_id}/stable-supported-backbone",
         claim_class=ClaimClass.DESCRIPTIVE,
         snapshot_id=manifest.snapshot_id,
         cohort=_cohort(manifest),
         unit=EvidenceUnit.ELIGIBLE_APPEARANCE,
         support=guide.core_items[0].eligible_player_matches,
-        mechanics_refs=tuple(f"item/{item.item_id}" for item in guide.core_items),
+        mechanics_refs=tuple(f"item/{item.item_id}" for item in guide.backbone_items),
         language_ceiling=frozenset({"observed", "adopted", "rate", "more common"}),
-        numerator=guide.core_joint_matches,
+        numerator=guide.backbone_matches,
         denominator=guide.core_items[0].eligible_player_matches,
-        estimate=guide.core_joint_share,
+        estimate=guide.backbone_share,
     )
+
+
+def _core_alternative_claim(
+    guide: PurchaseGuide,
+    alternative: Any,
+    manifest: SnapshotManifest,
+) -> EvidenceClaim:
+    return EvidenceClaim(
+        claim_id=(
+            f"hero/{guide.hero_id}/core-alternative/"
+            f"{alternative.item_id}-for-{alternative.comparator_item_id}"
+        ),
+        claim_class=ClaimClass.PREDICTIVE,
+        snapshot_id=manifest.snapshot_id,
+        cohort=_cohort(manifest),
+        unit=EvidenceUnit.PURCHASE_EVENT,
+        support=alternative.support + alternative.comparison_support,
+        mechanics_refs=alternative.mechanics_refs,
+        language_ceiling=frozenset({"estimated", "conditional", "expected"}),
+        estimate=alternative.dr_estimate,
+        interval=alternative.comparative_interval,
+        comparison_baseline=0.0,
+    )
+
+
+def _core_alternative_cards(
+    guide: PurchaseGuide,
+    manifest: SnapshotManifest,
+) -> tuple[tuple[CoreAlternativeCard, ...], tuple[EvidenceClaim, ...]]:
+    claims = tuple(
+        _core_alternative_claim(guide, alternative, manifest)
+        for alternative in guide.core_alternatives
+    )
+    cards = tuple(
+        CoreAlternativeCard(
+            item_id=alternative.item_id,
+            comparator_item_id=alternative.comparator_item_id,
+            stage=alternative.stage,
+            trigger=alternative.trigger,
+            execution=alternative.execution,
+            failure_condition=alternative.failure_condition,
+            mechanics_refs=alternative.mechanics_refs,
+            evidence_ref=claim.claim_id,
+            support=alternative.support + alternative.comparison_support,
+            effective_support=alternative.effective_support,
+            overlap=alternative.overlap,
+            interval=alternative.comparative_interval,
+            fold_estimates=alternative.fold_estimates,
+        )
+        for alternative, claim in zip(guide.core_alternatives, claims, strict=True)
+    )
+    return cards, claims
 
 
 def _situational_claim(
@@ -288,8 +345,10 @@ def _policy_evidence(
 ) -> tuple[dict[str, EvidenceClaim], EvidenceClaim]:
     item_claims = {
         item.item_id: _item_claim(item, manifest=manifest)
-        for tier_items in guide.tiers.values()
-        for item in tier_items
+        for item in (
+            *(item for tier_items in guide.tiers.values() for item in tier_items),
+            *guide.optional_core_items,
+        )
     }
     evidence = {claim.claim_id: claim for claim in item_claims.values()}
     core_claim = _core_claim(guide, manifest)
@@ -308,11 +367,12 @@ def _core_policy_nodes(
     guide: PurchaseGuide,
     evidence_ref: str,
 ) -> tuple[PolicyNode, ...]:
+    core_item_count = len(guide.core_items)
     return tuple(
         PolicyNode(
             f"core-{position}",
             NodeKind.PURCHASE,
-            next_id=f"core-{position + 1}" if position < 8 else "end",
+            next_id=(f"core-{position + 1}" if position < core_item_count else "end"),
             evidence_ref=evidence_ref,
             item_id=item.item_id,
         )
@@ -387,7 +447,7 @@ def _situational_policy_entry(
     purchase = PolicyNode(
         purchase_id,
         NodeKind.PURCHASE,
-        next_id="core-1",
+        next_id="end",
         evidence_ref=claim.claim_id,
         item_id=branch.item_id,
         optional=True,
@@ -448,6 +508,58 @@ def _project_situational_policy(
         tuple(entry[2] for entry in entries),
         tuple(entry[3] for entry in entries),
     )
+
+
+def _runtime_purchase_graph(
+    core_nodes: tuple[PolicyNode, ...],
+    situational: _SituationalPolicyProjection,
+) -> tuple[str, tuple[PolicyNode, ...]]:
+    core_position_by_item = {
+        node.item_id: position for position, node in enumerate(core_nodes, start=1)
+    }
+    grouped: dict[int, list[tuple[Branch, PolicyNode]]] = {}
+    for source, branch, purchase in zip(
+        situational.source_branches,
+        situational.branches,
+        situational.purchases,
+        strict=True,
+    ):
+        position = core_position_by_item.get(source.comparator_item_id)
+        if position is None:
+            raise GuideError(
+                "situational comparator is absent from the authoritative core path"
+            )
+        grouped.setdefault(position, []).append((branch, purchase))
+
+    entry_by_position = {
+        position: (
+            f"situational-choice-{position}"
+            if position in grouped
+            else f"core-{position}"
+        )
+        for position in range(1, len(core_nodes) + 1)
+    }
+    nodes: list[PolicyNode] = []
+    for position, core in enumerate(core_nodes, start=1):
+        successor = entry_by_position.get(position + 1, "end")
+        if position in grouped:
+            entries = grouped[position]
+            nodes.append(
+                PolicyNode(
+                    f"situational-choice-{position}",
+                    NodeKind.CHOICE,
+                    branches=(
+                        *(branch for branch, _ in entries),
+                        Branch(core.node_id),
+                    ),
+                )
+            )
+        nodes.append(replace(core, next_id=successor))
+        nodes.extend(
+            replace(purchase, next_id=successor)
+            for _, purchase in grouped.get(position, ())
+        )
+    return entry_by_position[1], tuple(nodes)
 
 
 def _ability_policy_nodes(inputs: _HeroInputs) -> tuple[PolicyNode, ...]:
@@ -542,8 +654,12 @@ def _build_policy(
         ability_definitions=definitions,
         level_info=inputs.kit.get("level_info"),
     )
-    if len(guide.core_items) != 8:
-        raise GuideError(f"{guide.hero_name} does not have an eight-item core")
+    if (
+        not MINIMUM_BACKBONE_ITEM_COUNT
+        <= len(guide.core_items)
+        <= MAXIMUM_CORE_ITEM_COUNT
+    ):
+        raise GuideError(f"{guide.hero_name} does not have a supported core size")
     evidence, core_claim = _policy_evidence(guide, definitions, manifest)
     purchase_nodes = _core_policy_nodes(guide, core_claim.claim_id)
     assets_by_id = {
@@ -553,32 +669,23 @@ def _build_policy(
         inputs, assets_by_id, hero_names, manifest
     )
     evidence.update((claim.claim_id, claim) for claim in situational.claims)
+    core_alternatives, alternative_claims = _core_alternative_cards(guide, manifest)
+    evidence.update((claim.claim_id, claim) for claim in alternative_claims)
     ability_nodes = _ability_policy_nodes(inputs)
     description = inputs.kit.get("description")
     role = "evidence-grounded default"
     if isinstance(description, dict) and isinstance(description.get("role"), str):
         role = description["role"]
-    situational_nodes = (
-        (
-            PolicyNode(
-                "situational-choice",
-                NodeKind.CHOICE,
-                branches=(*situational.branches, Branch("core-1")),
-            ),
-            *situational.purchases,
-        )
-        if situational.source_branches
-        else ()
-    )
-    nodes = (*purchase_nodes, *situational_nodes, PolicyNode("end", NodeKind.END))
+    entry, runtime_nodes = _runtime_purchase_graph(purchase_nodes, situational)
+    nodes = (*runtime_nodes, PolicyNode("end", NodeKind.END))
     policy = BuildPolicy(
-        schema_version=1,
+        schema_version=3,
         hero_id=guide.hero_id,
-        variant="coherent-eight-item-core",
+        variant="state-aware-multi-path-v3",
         invariant_kit_id=str(inputs.kit["mechanics_sha256"]),
         strategic_role=role,
         snapshot_id=manifest.snapshot_id,
-        entry="situational-choice" if situational.source_branches else "core-1",
+        entry=entry,
         nodes=nodes,
         evidence=tuple(sorted(evidence.values(), key=lambda claim: claim.claim_id)),
         ability_plan=ability_nodes,
@@ -587,6 +694,9 @@ def _build_policy(
             has_situational_branches=bool(situational.source_branches),
         ),
         counter_cards=situational.counter_cards,
+        core_alternatives=core_alternatives,
+        path_id=guide.path_id,
+        path_label=guide.path_label,
     )
     return policy, validation
 
@@ -620,60 +730,114 @@ class _GenerationEvidence:
     whole_team_matchups: dict[int, list[dict[str, Any]]]
 
 
+def _ability_path_for_build(
+    api: DeadlockApi,
+    *,
+    hero_id: int,
+    analysis_start: int,
+    selected_build: SelectedHeroBuild,
+    global_path: AbilityPath,
+    use_item_filter: bool,
+) -> AbilityPath:
+    if not use_item_filter:
+        return global_path
+    filter_item_ids = tuple(item.item_id for item in selected_build.backbone)
+    filtered_rows = api.ability_order_stats(
+        hero_id=hero_id,
+        min_unix_timestamp=analysis_start,
+        min_matches=1,
+        include_item_ids=filter_item_ids,
+    )
+    filtered_path = select_ability_path(
+        filtered_rows,
+        filter_item_ids=filter_item_ids,
+    )
+    if (
+        filtered_path is not None
+        and filtered_path.minimum_decision_support >= LOW_ABILITY_DECISION_SUPPORT
+    ):
+        return filtered_path
+    return global_path
+
+
 def _prepare_hero_inputs(
     api: DeadlockApi,
     hero: dict[str, Any],
     evidence: _GenerationEvidence,
-) -> _HeroInputs | str:
+) -> tuple[_HeroInputs, ...] | str:
     hero_id = int(hero["id"])
     hero_name = str(hero.get("name") or hero_id)
-    ability_rows = api.ability_order_stats(
+    global_ability_rows = api.ability_order_stats(
         hero_id=hero_id,
         min_unix_timestamp=evidence.analysis_start,
         min_matches=1,
     )
-    ability_path = select_ability_path(ability_rows)
-    try:
-        selected_build = select_hero_build(
-            evidence.build_evidence.heroes[hero_id], evidence.assets
-        )
-    except (ArtifactError, KeyError) as error:
-        raise GuideError(f"{hero_name} has invalid build evidence: {error}") from error
-    analytic_guide = build_purchase_guide_from_evidence(
-        hero, selected_build, ability_path=ability_path
-    )
-    if not analytic_guide.has_complete_item_coverage:
-        return "at least one supported item action in every tier"
-    if ability_path is None:
+    global_ability_path = select_ability_path(global_ability_rows)
+    if global_ability_path is None:
         return "a complete reached-state ability projection"
+    hero_builds = evidence.build_evidence.hero_builds.get(
+        hero_id,
+        (evidence.build_evidence.heroes[hero_id],),
+    )
     duration_curve = evidence.duration_curves.get(hero_id, ())
     try:
         kit = build_hero_mechanics(hero, evidence.assets)
         definitions = ability_definitions_from_kit(kit)
-        actions = schedule_ability_path(
-            definitions,
-            kit.get("level_info"),
-            ability_path.ability_ids,
-        )
-        timeline = validate_ability_timeline(
-            definitions,
-            kit.get("level_info"),
-            actions,
-        )
     except MechanicsError as error:
         return f"complete current mechanics: {error}"
-    return _HeroInputs(
-        hero,
-        analytic_guide,
-        kit,
-        timeline,
-        duration_curve,
-        {
-            "same_lane": evidence.same_lane_matchups.get(hero_id, []),
-            "whole_enemy_team": evidence.whole_team_matchups.get(hero_id, []),
-        },
-        evidence.build_evidence.heroes[hero_id].situational_policy,
-    )
+    prepared: list[_HeroInputs] = []
+    for build_evidence in hero_builds:
+        try:
+            selected_build = select_hero_build(build_evidence, evidence.assets)
+        except (ArtifactError, KeyError) as error:
+            raise GuideError(
+                f"{hero_name} path {build_evidence.path_id} has invalid build "
+                f"evidence: {error}"
+            ) from error
+        ability_path = _ability_path_for_build(
+            api,
+            hero_id=hero_id,
+            analysis_start=evidence.analysis_start,
+            selected_build=selected_build,
+            global_path=global_ability_path,
+            use_item_filter=len(hero_builds) > 1,
+        )
+        analytic_guide = build_purchase_guide_from_evidence(
+            hero, selected_build, ability_path=ability_path
+        )
+        if not analytic_guide.has_complete_item_coverage:
+            return (
+                f"path {build_evidence.path_label} needs at least one supported "
+                "item action in every tier"
+            )
+        try:
+            actions = schedule_ability_path(
+                definitions,
+                kit.get("level_info"),
+                ability_path.ability_ids,
+            )
+            timeline = validate_ability_timeline(
+                definitions,
+                kit.get("level_info"),
+                actions,
+            )
+        except MechanicsError as error:
+            return f"complete current mechanics: {error}"
+        prepared.append(
+            _HeroInputs(
+                hero,
+                analytic_guide,
+                kit,
+                timeline,
+                duration_curve,
+                {
+                    "same_lane": evidence.same_lane_matchups.get(hero_id, []),
+                    "whole_enemy_team": evidence.whole_team_matchups.get(hero_id, []),
+                },
+                build_evidence.situational_policy,
+            )
+        )
+    return tuple(prepared)
 
 
 def _collect_hero_inputs(
@@ -699,7 +863,7 @@ def _collect_hero_inputs(
                 reason=prepared,
             )
             continue
-        inputs_by_hero.append(prepared)
+        inputs_by_hero.extend(prepared)
     return inputs_by_hero, skipped_heroes, exclusions
 
 
@@ -757,6 +921,7 @@ def _project_hero_guide(
         build_tag_labels=tag_selection.labels,
         build_tag_catalog_sha256=environment.build_tag_catalog.sha256,
         build_archetype=tag_selection.archetype,
+        analysis_start_timestamp=environment.manifest.epochs.analysis_start_timestamp,
         as_of_timestamp=environment.manifest.as_of_timestamp,
     )
     analytic = replace(
@@ -766,6 +931,8 @@ def _project_hero_guide(
         client_version=environment.manifest.client_version,
         match_mode=environment.manifest.match_mode.value,
         rank_identity=environment.rank_identity,
+        analysis_start_timestamp=environment.manifest.epochs.analysis_start_timestamp,
+        as_of_timestamp=environment.manifest.as_of_timestamp,
     )
     context = build_hero_strategy_context(
         analytic,

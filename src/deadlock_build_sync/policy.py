@@ -5,6 +5,7 @@ from enum import StrEnum
 from typing import Any
 
 from .mechanics import (
+    BASE_INVENTORY_SLOTS,
     AbilityAction,
     AbilityDefinition,
     InventoryState,
@@ -453,6 +454,30 @@ def _validate_counter_cards(
             raise PolicyError("counter card has no matching optional purchase node")
 
 
+def _validate_core_alternative_cards(
+    cards: tuple[CoreAlternativeCard, ...],
+    nodes: tuple[PolicyNode, ...],
+    claim_ids: list[str],
+) -> None:
+    item_ids = [card.item_id for card in cards]
+    if len(item_ids) != len(set(item_ids)):
+        raise PolicyError("core alternative cards must use distinct items")
+    claims = set(claim_ids)
+    default_items = {
+        node.item_id
+        for node in nodes
+        if node.kind == NodeKind.PURCHASE and not node.optional
+    }
+    for card in cards:
+        if card.evidence_ref not in claims:
+            raise PolicyError("core alternative card references missing evidence")
+        if (
+            card.item_id in default_items
+            or card.comparator_item_id not in default_items
+        ):
+            raise PolicyError("core alternative card does not replace a default item")
+
+
 @dataclass(frozen=True)
 class BuildPolicy:
     schema_version: int
@@ -467,6 +492,9 @@ class BuildPolicy:
     ability_plan: tuple[PolicyNode, ...] = ()
     abstentions: tuple[Abstention, ...] = ()
     counter_cards: tuple[CounterCard, ...] = ()
+    core_alternatives: tuple[CoreAlternativeCard, ...] = ()
+    path_id: str = "default"
+    path_label: str = "Evidence Default"
 
     def __post_init__(self) -> None:
         """Validate policy-level identity and uniqueness.
@@ -475,7 +503,7 @@ class BuildPolicy:
             PolicyError: If identity fields or node/claim IDs are invalid.
 
         """
-        if self.schema_version != 1:
+        if self.schema_version not in {1, 2, 3}:
             raise PolicyError(f"unsupported policy schema {self.schema_version}")
         if self.hero_id <= 0:
             raise PolicyError("policy hero id must be positive")
@@ -487,6 +515,8 @@ class BuildPolicy:
                 self.strategic_role,
                 self.snapshot_id,
                 self.entry,
+                self.path_id,
+                self.path_label,
             )
         ):
             raise PolicyError("policy identity fields must not be empty")
@@ -505,6 +535,9 @@ class BuildPolicy:
             if claim.snapshot_id != self.snapshot_id:
                 raise PolicyError(f"claim {claim.claim_id} uses a stale snapshot")
         _validate_counter_cards(self.counter_cards, self.nodes, claim_ids)
+        _validate_core_alternative_cards(self.core_alternatives, self.nodes, claim_ids)
+        if self.schema_version == 1 and self.core_alternatives:
+            raise PolicyError("policy schema 1 cannot contain core alternatives")
 
     @property
     def policy_id(self) -> str:
@@ -784,7 +817,34 @@ class PolicyDecision:
     abstention: Abstention | None = None
 
 
-def _choice_step(node: PolicyNode, state: EvaluationState) -> str | PolicyDecision:
+def _choice_step(
+    node: PolicyNode,
+    state: EvaluationState,
+    nodes: dict[str, PolicyNode],
+) -> str | PolicyDecision:
+    fulfilled_alternatives = [
+        nodes[branch.next_id]
+        for branch in node.branches
+        if not branch.is_default
+        and nodes[branch.next_id].kind == NodeKind.PURCHASE
+        and nodes[branch.next_id].optional
+        and _node_is_fulfilled(nodes[branch.next_id], state)
+    ]
+    if len(fulfilled_alternatives) > 1:
+        return PolicyDecision(
+            None,
+            None,
+            Abstention(
+                AbstentionReason.OUT_OF_DISTRIBUTION,
+                "multiple policy alternatives are already owned",
+                node.node_id,
+            ),
+        )
+    if fulfilled_alternatives:
+        fulfilled = fulfilled_alternatives[0]
+        if fulfilled.next_id is None:
+            return PolicyDecision(None, NodeKind.END)
+        return fulfilled.next_id
     matching = [branch for branch in node.branches if branch.matches(state.observable)]
     if len(matching) > 1 and any(branch.priority is None for branch in matching):
         return PolicyDecision(
@@ -827,9 +887,10 @@ def _missed_timing_decision(node: PolicyNode) -> PolicyDecision:
 def _evaluate_policy_node(
     node: PolicyNode,
     state: EvaluationState,
+    nodes: dict[str, PolicyNode],
 ) -> str | PolicyDecision:
     if node.kind in {NodeKind.CHOICE, NodeKind.OBJECTIVE_GATE}:
-        return _choice_step(node, state)
+        return _choice_step(node, state, nodes)
     if _node_is_fulfilled(node, state):
         if node.next_id is None:
             return PolicyDecision(None, NodeKind.END)
@@ -857,7 +918,7 @@ def next_policy_decision(
     while current not in visited:
         visited.add(current)
         node = nodes[current]
-        step = _evaluate_policy_node(node, state)
+        step = _evaluate_policy_node(node, state, nodes)
         if isinstance(step, PolicyDecision):
             return step
         current = step
@@ -932,6 +993,59 @@ class CounterCard:
         from .policy_codec import structure_counter_card
 
         return structure_counter_card(value)
+
+
+@dataclass(frozen=True)
+class CoreAlternativeCard:
+    item_id: int
+    comparator_item_id: int
+    stage: int
+    trigger: str
+    execution: str
+    failure_condition: str
+    mechanics_refs: tuple[str, ...]
+    evidence_ref: str
+    support: int
+    effective_support: float
+    overlap: float
+    interval: tuple[float, float]
+    fold_estimates: dict[str, float]
+
+    def __post_init__(self) -> None:
+        """Require an estimable, mechanics-grounded final-slot decision card.
+
+        Raises:
+            PolicyError: If the card fails its identity or evidence contract.
+
+        """
+        text = (self.trigger, self.execution, self.failure_condition, self.evidence_ref)
+        identity_invalid = (
+            self.item_id <= 0
+            or self.comparator_item_id <= 0
+            or self.item_id == self.comparator_item_id
+            or not 1 <= self.stage <= BASE_INVENTORY_SLOTS
+        )
+        evidence_invalid = (
+            self.support < 20
+            or self.effective_support < 20
+            or not 0.5 <= self.overlap <= 1
+        )
+        interval_invalid = (
+            self.interval[0] > self.interval[1]
+            or self.interval[1] - self.interval[0] > 0.10
+        )
+        content_invalid = not all(value.strip() for value in text) or not (
+            self.mechanics_refs
+        )
+        folds_invalid = set(self.fold_estimates) != {"train", "validation", "test"}
+        if any((
+            identity_invalid,
+            evidence_invalid,
+            interval_invalid,
+            content_invalid,
+            folds_invalid,
+        )):
+            raise PolicyError("core alternative card is incomplete or unsupported")
 
 
 @dataclass(frozen=True)

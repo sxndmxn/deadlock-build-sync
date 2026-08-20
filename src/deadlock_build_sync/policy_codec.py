@@ -10,6 +10,7 @@ from .policy import (
     Branch,
     BuildPolicy,
     ClaimClass,
+    CoreAlternativeCard,
     CounterCard,
     EvidenceClaim,
     Guard,
@@ -228,6 +229,28 @@ def _structure_counter_card(value: Any, _: type[CounterCard]) -> CounterCard:
 
 _converter.register_structure_hook(CounterCard, _structure_counter_card)
 _converter.register_unstructure_hook(CounterCard, _unstructure_counter_card)
+
+_structure_core_alternative_generated = make_dict_structure_fn(
+    CoreAlternativeCard, _converter
+)
+_unstructure_core_alternative = make_dict_unstructure_fn(
+    CoreAlternativeCard, _converter
+)
+
+
+def _structure_core_alternative(
+    value: Any, _: type[CoreAlternativeCard]
+) -> CoreAlternativeCard:
+    return _structure_with_context(
+        value,
+        _structure_core_alternative_generated,
+        CoreAlternativeCard,
+        "core alternative card",
+    )
+
+
+_converter.register_structure_hook(CoreAlternativeCard, _structure_core_alternative)
+_converter.register_unstructure_hook(CoreAlternativeCard, _unstructure_core_alternative)
 
 _structure_policy_generated = make_dict_structure_fn(BuildPolicy, _converter)
 _unstructure_policy = make_dict_unstructure_fn(BuildPolicy, _converter)

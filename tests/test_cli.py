@@ -184,6 +184,7 @@ def test_install_artifacts_loads_frozen_build_evidence_from_the_bundle(
             build_ids={},
             created=0,
             updated=0,
+            removed=0,
             cache_path=cache_path,
             backup_directory=tmp_path / "backup",
             snapshot_id="s" * 64,
@@ -333,13 +334,14 @@ def test_sync_generates_artifacts_and_installs_without_extra_flags(
         cli_module,
         "install_guides",
         lambda *_args, **_kwargs: SimpleNamespace(
-            build_ids={12: 2},
+            build_ids={(12, "default"): 2},
             created=1,
             updated=0,
+            removed=0,
             cache_path=cache_path,
             backup_directory=tmp_path / "backup",
             snapshot_id=generated.manifest.snapshot_id,
-            policy_ids={12: "policy"},
+            policy_ids={(12, "default"): "policy"},
         ),
     )
 

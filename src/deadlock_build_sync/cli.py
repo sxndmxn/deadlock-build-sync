@@ -17,7 +17,7 @@ from scripts.generate_narratives import main as generate_narratives_main
 
 from .api import DEFAULT_API_BASE_URL, ApiError, DeadlockApi
 from .artifact_bundle import load_artifact_guide_bundle
-from .artifacts import atomic_write_json, build_policy_artifact
+from .artifacts import atomic_write_json, build_policy_artifact, load_policy_artifact
 from .build_evidence import BuildEvidenceCatalog, load_build_evidence
 from .cache import (
     CacheError,
@@ -254,18 +254,17 @@ def build_parser() -> argparse.ArgumentParser:
     refresh.add_argument("--max-badge", type=positive_int, default=115)
     refresh.add_argument("--since", help="cohort lower timestamp in ISO-8601 form")
     refresh.add_argument("--as-of", help="frozen upper timestamp in ISO-8601 form")
-    refresh.add_argument(
-        "--xgb-device",
-        choices=("auto", "cpu", "cuda"),
-        default="auto",
-        help="XGBoost device; auto prefers CUDA and falls back to CPU",
-    )
     recommendation = subparsers.add_parser(
         "recommend",
         help="return a read-only next action for a deidentified state file",
     )
     recommendation.add_argument("--state", type=Path, required=True)
     recommendation.add_argument("--build-evidence", type=Path)
+    recommendation.add_argument(
+        "--policies",
+        type=Path,
+        help="typed policy sidecar (default: policies.json beside build evidence)",
+    )
     recommendation.add_argument("--artifacts", type=Path)
     sync.add_argument(
         "--kit-model",
@@ -616,11 +615,13 @@ def _run_sync(args: argparse.Namespace) -> int:
         guide_count=len(result.build_ids),
         created=result.created,
         updated=result.updated,
+        removed=result.removed,
         snapshot_id=result.snapshot_id,
     )
     print(
         f"Synced {len(result.build_ids)} private guide(s): "
-        f"{result.created} created, {result.updated} updated."
+        f"{result.created} created, {result.updated} updated, "
+        f"{result.removed} stale removed."
     )
     print(f"Artifacts: {artifact_directory}")
     print(f"Build evidence: {evidence_path} ({evidence.artifact_id})")
@@ -630,8 +631,8 @@ def _run_sync(args: argparse.Namespace) -> int:
     print(
         _POLICIES_PREFIX
         + ", ".join(
-            f"{hero_id}={policy_id}"
-            for hero_id, policy_id in sorted(result.policy_ids.items())
+            f"{hero_id}/{path_id}={policy_id}"
+            for (hero_id, path_id), policy_id in sorted(result.policy_ids.items())
         )
     )
     print(
@@ -699,8 +700,6 @@ def _run_refresh_evidence(args: argparse.Namespace) -> int:
         str(args.max_badge),
         "--output",
         str(output),
-        "--xgb-device",
-        args.xgb_device,
     ]
     for flag, value in (
         ("--run-id", args.run_id),
@@ -739,13 +738,52 @@ def _run_recommend(args: argparse.Namespace) -> int:
         hero_count=len(getattr(evidence, "heroes", {})),
     )
     state = DecisionState.from_file(args.state.expanduser().resolve())
+    policy_path = (
+        args.policies.expanduser().resolve()
+        if args.policies is not None
+        else evidence_path.with_name(_POLICY_FILENAME)
+    )
+    manifest, policies = load_policy_artifact(policy_path)
+    policy_patch = manifest.get("patch")
+    compatibility = (
+        manifest.get("client_version") == evidence.client_version,
+        manifest.get("as_of_timestamp") == evidence.as_of_timestamp,
+        str(manifest.get("match_mode") or "").casefold()
+        == str(evidence.cohort.get("match_mode") or "").casefold(),
+        str(manifest.get("game_mode") or "").casefold()
+        == str(evidence.cohort.get("game_mode") or "").casefold(),
+        isinstance(policy_patch, dict)
+        and policy_patch.get("identity") == evidence.patch.get("identity"),
+        manifest.get("epochs") == evidence.epochs.as_dict(),
+    )
+    if not all(compatibility):
+        raise RecommendationError(
+            "typed policy sidecar differs from the current build evidence"
+        )
+    policy = next(
+        (
+            candidate
+            for (hero_id, path_id), candidate in sorted(policies.items())
+            if hero_id == state.hero_id and path_id == "default"
+        ),
+        next(
+            (
+                candidate
+                for (hero_id, _), candidate in sorted(policies.items())
+                if hero_id == state.hero_id
+            ),
+            None,
+        ),
+    )
+    if policy is None:
+        raise RecommendationError("decision state hero is absent from typed policies")
     pinned_api = DeadlockApi(
         args.api_base_url,
         client_version=evidence.client_version,
         as_of_timestamp=evidence.as_of_timestamp,
         epochs=evidence.epochs,
     )
-    decision = recommend(evidence, state, pinned_api.items())
+    decision = recommend(evidence, policy, state, pinned_api.items())
     print(json.dumps(decision.as_dict(), indent=2, ensure_ascii=False))
     return 0
 
@@ -833,11 +871,13 @@ def _run_install(args: argparse.Namespace) -> int:
         guide_count=len(result.build_ids),
         created=result.created,
         updated=result.updated,
+        removed=result.removed,
         snapshot_id=result.snapshot_id,
     )
     print(
         f"Installed {len(result.build_ids)} private guide(s): "
-        f"{result.created} created, {result.updated} updated."
+        f"{result.created} created, {result.updated} updated, "
+        f"{result.removed} stale removed."
     )
     print(f"Cache: {result.cache_path}")
     print(f"Backup: {result.backup_directory}")
@@ -847,8 +887,8 @@ def _run_install(args: argparse.Namespace) -> int:
     print(
         _POLICIES_PREFIX
         + ", ".join(
-            f"{hero_id}={policy_id}"
-            for hero_id, policy_id in sorted(result.policy_ids.items())
+            f"{hero_id}/{path_id}={policy_id}"
+            for (hero_id, path_id), policy_id in sorted(result.policy_ids.items())
         )
     )
     print(
@@ -908,11 +948,13 @@ def _run_install_artifacts(args: argparse.Namespace) -> int:
         guide_count=len(result.build_ids),
         created=result.created,
         updated=result.updated,
+        removed=result.removed,
         snapshot_id=result.snapshot_id,
     )
     print(
         f"Installed {len(result.build_ids)} reviewed private guide(s): "
-        f"{result.created} created, {result.updated} updated."
+        f"{result.created} created, {result.updated} updated, "
+        f"{result.removed} stale removed."
     )
     print(f"Artifacts: {artifact_directory}")
     print(f"Build evidence: {build_evidence_path}")
@@ -925,8 +967,8 @@ def _run_install_artifacts(args: argparse.Namespace) -> int:
     print(
         _POLICIES_PREFIX
         + ", ".join(
-            f"{hero_id}={policy_id}"
-            for hero_id, policy_id in sorted(result.policy_ids.items())
+            f"{hero_id}/{path_id}={policy_id}"
+            for (hero_id, path_id), policy_id in sorted(result.policy_ids.items())
         )
     )
     print(

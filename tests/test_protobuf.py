@@ -24,6 +24,7 @@ def sample_guide() -> PurchaseGuide:
         {1: (item,), 2: (), 3: (), 4: ()},
         build_tag_ids=(1, 2, 3),
         build_archetype="Spirit Damage",
+        analysis_start_timestamp=1_767_225_600,
         as_of_timestamp=1_767_225_600,
         client_version=123,
         match_mode="ranked",
@@ -77,6 +78,7 @@ def eleven_item_guide() -> PurchaseGuide:
         core_items=tuple(item(500 + index, 4) for index in range(11)),
         build_tag_ids=(1, 2, 3),
         build_archetype="Utility / Vitality",
+        analysis_start_timestamp=1_767_225_600,
         as_of_timestamp=1_767_225_600,
         client_version=123,
         match_mode="ranked",
@@ -96,7 +98,7 @@ def test_build_wrapper_and_metadata_round_trip() -> None:
     assert metadata.build_id == 34
     assert metadata.hero_id == 12
     assert metadata.author_account_id == 146293212
-    assert metadata.name == "Spirit Damage | Ranked | 2026-01-01"
+    assert metadata.name == "XMLJDX | Spirit Damage | Test Patch / 0101–0101"
     assert metadata.tag_ids == (1, 2, 3)
     assert MANAGED_MARKER in (metadata.description or "")
     assert "Emissary I–Eternus V" in (metadata.description or "")
@@ -116,7 +118,24 @@ def test_build_name_truncates_a_long_deadlock_patch_title() -> None:
     )
     metadata = hero_build_metadata(build)
     assert metadata.name is not None
-    assert metadata.name == "Spirit Damage | Ranked | 2026-01-01"
+    assert metadata.name == "XMLJDX | Spirit Damage | A Very Long D / 0101–0101"
+
+
+def test_build_name_keeps_path_distinguishable_for_dated_patch() -> None:
+    guide = replace(
+        sample_guide(),
+        build_archetype="Mini Turret / Titanic Magazine",
+    )
+    build = encode_hero_build(
+        presentation(guide, " Minor Update - 08-12-2026"),
+        build_id=34,
+        account_id=146293212,
+        timestamp=1234567890,
+    )
+
+    metadata = hero_build_metadata(build)
+
+    assert metadata.name == "XMLJDX | Mini Turret / Titanic | 0812 / 0101–0101"
 
 
 def test_encodes_native_ability_order_and_descriptions() -> None:

@@ -14,6 +14,7 @@ from deadlock_build_sync.policy import (
     Branch,
     BuildPolicy,
     ClaimClass,
+    CoreAlternativeCard,
     CounterCard,
     EvaluationState,
     EvidenceClaim,
@@ -33,6 +34,26 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 SNAPSHOT_ID = "a" * 64
+
+
+def test_core_alternative_accepts_the_ninth_universal_slot() -> None:
+    card = CoreAlternativeCard(
+        item_id=1,
+        comparator_item_id=2,
+        stage=9,
+        trigger="When the documented mechanic fits.",
+        execution="Replace the default item.",
+        failure_condition="Keep the default otherwise.",
+        mechanics_refs=("asset:item:1",),
+        evidence_ref="alternative/1",
+        support=40,
+        effective_support=30,
+        overlap=0.8,
+        interval=(-0.02, 0.02),
+        fold_estimates={"train": 0.0, "validation": 0.0, "test": 0.0},
+    )
+
+    assert card.stage == 9
 
 
 def assets(count: int = 10, *, active: bool = False) -> list[dict[str, Any]]:

@@ -18,7 +18,6 @@ from .layout import write_build_layout
 from .production_evidence import export_production_evidence
 from .rankings import generate_rankings
 from .report import render_report
-from .xgb_ranker import ExperimentConfig, run_xgboost_experiment
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 _SOURCE_CHECKOUT = Path(__file__).resolve().parents[3]
@@ -212,19 +211,6 @@ def run_layout(
     _save_manifest(paths, manifest)
 
 
-def run_xgboost(
-    paths: RunPaths, manifest: dict[str, Any], *, config: ExperimentConfig
-) -> None:
-    _require(
-        paths,
-        _ANALYSIS_DATABASE,
-        _HEROES_SOURCE,
-        "raw/items.json",
-    )
-    manifest["xgboost"] = run_xgboost_experiment(paths, config)
-    _save_manifest(paths, manifest)
-
-
 def run_export_evidence(paths: RunPaths, output: Path) -> None:
     _require(
         paths,
@@ -257,7 +243,6 @@ def build_parser() -> argparse.ArgumentParser:
             "analyze",
             "report",
             "layout",
-            "xgboost",
             "export-evidence",
             "all",
         ),
@@ -276,18 +261,6 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=45_000,
         help="late-game final-net-worth threshold for layout",
-    )
-    parser.add_argument("--xgb-train-queries", type=int, default=20_000)
-    parser.add_argument("--xgb-validation-queries", type=int, default=5_000)
-    parser.add_argument("--xgb-test-queries", type=int, default=10_000)
-    parser.add_argument("--xgb-pilot-train-queries", type=int, default=8_000)
-    parser.add_argument("--xgb-pilot-validation-queries", type=int, default=2_000)
-    parser.add_argument("--xgb-bootstrap-replicates", type=int, default=1_000)
-    parser.add_argument(
-        "--xgb-device",
-        choices=("auto", "cpu", "cuda"),
-        default="auto",
-        help="XGBoost device; auto prefers CUDA and falls back to CPU",
     )
     parser.add_argument(
         "--output",
@@ -326,28 +299,6 @@ def _run_layout_request(
     )
 
 
-def _xgboost_experiment_config(args: argparse.Namespace) -> ExperimentConfig:
-    limits = (
-        args.xgb_train_queries,
-        args.xgb_validation_queries,
-        args.xgb_test_queries,
-        args.xgb_pilot_train_queries,
-        args.xgb_pilot_validation_queries,
-        args.xgb_bootstrap_replicates,
-    )
-    if any(value <= 0 for value in limits):
-        raise SystemExit("all XGBoost query and bootstrap limits must be positive")
-    return ExperimentConfig(
-        train_queries=args.xgb_train_queries,
-        validation_queries=args.xgb_validation_queries,
-        test_queries=args.xgb_test_queries,
-        pilot_train_queries=args.xgb_pilot_train_queries,
-        pilot_validation_queries=args.xgb_pilot_validation_queries,
-        bootstrap_replicates=args.xgb_bootstrap_replicates,
-        device=args.xgb_device,
-    )
-
-
 def _run_export_request(args: argparse.Namespace, paths: RunPaths) -> None:
     if args.output is None:
         raise SystemExit(f"{args.command} requires --output")
@@ -368,12 +319,6 @@ def _execute_offline_command(
         run_analysis(paths, manifest)
     if args.command == "layout":
         _run_layout_request(args, paths, manifest)
-    if args.command in {"xgboost", "all"}:
-        run_xgboost(
-            paths,
-            manifest,
-            config=_xgboost_experiment_config(args),
-        )
     if args.command in {"report", "all"}:
         run_report(paths, manifest)
     if args.command in {"export-evidence", "all"}:

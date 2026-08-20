@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from dataclasses import dataclass
+from functools import cache
 from typing import Any
 
 COMPLETE_ABILITY_PATH_LENGTH = 16
@@ -20,6 +21,7 @@ class AbilityPath:
     complete_path_matches: int = 0
     decision_support: tuple[int, ...] = ()
     selection: str = "MOST_SUPPORTED_LEGAL_STATE"
+    filter_item_ids: tuple[int, ...] = ()
 
     @property
     def final_branch_support_share(self) -> float:
@@ -118,31 +120,49 @@ def _decision_counts(valid: list[_AbilityObservation]) -> _DecisionCounts:
 def _compose_default_path(
     decisions: _DecisionCounts,
 ) -> tuple[tuple[int, ...], tuple[int, ...], tuple[int, int, int]] | None:
-    selected: list[int] = []
-    support: list[int] = []
-    final_counts = (0, 0, 0)
-    for position in range(COMPLETE_ABILITY_PATH_LENGTH):
-        candidates = decisions.get((position, _ability_state(tuple(selected))), {})
-        eligible = [
-            (ability_id, counts)
-            for ability_id, counts in candidates.items()
-            if selected.count(ability_id) < 4
-        ]
-        if not eligible:
+    @cache
+    def suffix(
+        position: int,
+        state: tuple[tuple[int, int], ...],
+    ) -> tuple[tuple[int, ...], tuple[int, ...], tuple[int, int, int]] | None:
+        counts_by_ability = dict(state)
+        if position == COMPLETE_ABILITY_PATH_LENGTH:
+            if len(counts_by_ability) == 4 and all(
+                count == 4 for count in counts_by_ability.values()
+            ):
+                return (), (), (0, 0, 0)
             return None
-        ability_id, final_counts = min(
-            eligible,
+        candidates = decisions.get((position, state), {})
+        eligible = sorted(
+            (
+                (ability_id, counts)
+                for ability_id, counts in candidates.items()
+                if counts_by_ability.get(ability_id, 0) < 4
+            ),
             key=lambda candidate: (-candidate[1][0], candidate[0]),
         )
-        selected.append(ability_id)
-        support.append(final_counts[0])
-    counts = Counter(selected)
-    if len(counts) != 4 or any(count != 4 for count in counts.values()):
+        for ability_id, observation_counts in eligible:
+            next_counts = dict(counts_by_ability)
+            next_counts[ability_id] = next_counts.get(ability_id, 0) + 1
+            continuation = suffix(position + 1, tuple(sorted(next_counts.items())))
+            if continuation is None:
+                continue
+            path, support, tail_counts = continuation
+            return (
+                (ability_id, *path),
+                (observation_counts[0], *support),
+                tail_counts if path else observation_counts,
+            )
         return None
-    return tuple(selected), tuple(support), final_counts
+
+    return suffix(0, ())
 
 
-def select_ability_path(rows: list[dict[str, Any]]) -> AbilityPath | None:
+def select_ability_path(
+    rows: list[dict[str, Any]],
+    *,
+    filter_item_ids: tuple[int, ...] = (),
+) -> AbilityPath | None:
     """Select a complete default from reached legal ability-rank states.
 
     Returns:
@@ -170,4 +190,10 @@ def select_ability_path(rows: list[dict[str, Any]]) -> AbilityPath | None:
         cohort_matches=cohort_matches,
         complete_path_matches=complete_path_matches,
         decision_support=support,
+        selection=(
+            "MOST_SUPPORTED_LEGAL_STATE_ITEM_FILTERED"
+            if filter_item_ids
+            else "MOST_SUPPORTED_LEGAL_STATE"
+        ),
+        filter_item_ids=filter_item_ids,
     )

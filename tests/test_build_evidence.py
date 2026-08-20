@@ -86,6 +86,8 @@ def _document(
     assets: list[dict[str, Any]] | None = None,
     candidates: list[dict[str, Any]] | None = None,
     median_final_net_worth: int = 30_000,
+    default_item_ids: list[int] | None = None,
+    core_alternatives: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     current_assets = assets or _assets()
     heroes = [{"id": 13, "name": "Haze"}]
@@ -106,14 +108,15 @@ def _document(
             }
         ],
         "evaluation": {"chronological_fold": "test"},
-        "challenger": {"evaluated": True, "passed": False, "promoted": False},
     }
     payload = {
-        "schema_version": 2,
+        "schema_version": 4,
         "producer": "deadlock-build-sync.offline",
         "method": {
-            "version": "reconstructed-final-inventory-v3",
-            "core_item_count": 8,
+            "version": "state-aware-multi-path-v3",
+            "core_candidate_item_count": 8,
+            "minimum_core_item_count": 4,
+            "maximum_core_item_count": 9,
             "core_candidate_limit": 64,
             "minimum_core_support": 20,
             "minimum_tier_support": 20,
@@ -137,31 +140,64 @@ def _document(
             {
                 "hero_id": 13,
                 "hero": "Haze",
-                "eligible_player_matches": 1_000,
-                "median_final_net_worth": median_final_net_worth,
-                "core_candidates": candidates
-                or [
+                "builds": [
                     {
-                        "item_ids": [101, 102, 201, 202, 301, 302, 401, 402],
-                        "joint_matches": 80,
+                        "path_id": "default",
+                        "path_label": "Evidence Default",
+                        "signature_item_ids": [],
+                        "discovery": {"method": "single-supported-path"},
+                        "eligible_player_matches": 1_000,
+                        "median_final_net_worth": median_final_net_worth,
+                        "core_candidates": candidates
+                        or [
+                            {
+                                "item_ids": [
+                                    101,
+                                    102,
+                                    201,
+                                    202,
+                                    301,
+                                    302,
+                                    401,
+                                    402,
+                                ],
+                                "joint_matches": 80,
+                            }
+                        ],
+                        "core_policy": {
+                            "version": 1,
+                            "backbone_item_ids": [101, 102, 201, 202],
+                            "default_item_ids": default_item_ids
+                            or [101, 102, 201, 202, 301, 302, 401, 402],
+                            "backbone_matches": 90,
+                            "backbone_fold_matches": {
+                                "train": 30,
+                                "validation": 30,
+                                "test": 30,
+                            },
+                            "default_matches": 80,
+                            "alternatives": core_alternatives or [],
+                            "candidate_audit": [],
+                            "evaluation": {"method": "cross-fitted-dr"},
+                        },
+                        "items": [_item(asset) for asset in current_assets],
+                        "sequence_policy": sequence_policy,
+                        "situational_policy": {
+                            "version": 1,
+                            "threat_vocabulary": [
+                                "active_slot_burden",
+                                "ally_protection",
+                                "bullet_pressure",
+                                "control",
+                                "healing",
+                                "mobility_escape",
+                                "spirit_pressure",
+                            ],
+                            "branches": [],
+                            "abstentions": ["No branch passed every gate."],
+                        },
                     }
                 ],
-                "items": [_item(asset) for asset in current_assets],
-                "sequence_policy": sequence_policy,
-                "situational_policy": {
-                    "version": 1,
-                    "threat_vocabulary": [
-                        "active_slot_burden",
-                        "ally_protection",
-                        "bullet_pressure",
-                        "control",
-                        "healing",
-                        "mobility_escape",
-                        "spirit_pressure",
-                    ],
-                    "branches": [],
-                    "abstentions": ["No branch passed every gate."],
-                },
             }
         ],
     }
@@ -185,14 +221,14 @@ def test_load_and_select_exact_build_layout(tmp_path: Path) -> None:
     selected = select_hero_build(catalog.heroes[13], _assets())
 
     assert [item.item_id for item in selected.core] == [
-        402,
-        401,
-        302,
-        301,
-        202,
-        201,
-        102,
         101,
+        102,
+        201,
+        202,
+        301,
+        302,
+        401,
+        402,
     ]
     assert selected.core_joint_matches == 80
     assert selected.core_joint_share == 0.08
@@ -225,7 +261,9 @@ def test_load_and_select_exact_build_layout(tmp_path: Path) -> None:
     )
 
 
-def test_selection_skips_core_above_median_final_net_worth(tmp_path: Path) -> None:
+def test_selection_rejects_policy_core_above_median_final_net_worth(
+    tmp_path: Path,
+) -> None:
     path = tmp_path / "build-evidence.json"
     candidates = [
         {"item_ids": list(range(403, 411)), "joint_matches": 90},
@@ -234,17 +272,19 @@ def test_selection_skips_core_above_median_final_net_worth(tmp_path: Path) -> No
     _write(path, _document(candidates=candidates, median_final_net_worth=10_000))
 
     catalog = load_build_evidence(path)
-    selected = select_hero_build(catalog.heroes[13], _assets())
-
-    assert {item.item_id for item in selected.core} == set(range(101, 109))
-    assert selected.core_joint_matches == 80
+    hero = catalog.heroes[13]
+    assets = _assets()
+    with pytest.raises(ArtifactError, match="exceeds cohort wealth"):
+        select_hero_build(hero, assets)
 
 
 def test_sparse_supported_tiers_do_not_require_filler(tmp_path: Path) -> None:
     path = tmp_path / "build-evidence.json"
     document = _document()
-    document["heroes"][0]["items"] = [
-        item for item in document["heroes"][0]["items"] if item["item_id"] % 100 <= 3
+    document["heroes"][0]["builds"][0]["items"] = [
+        item
+        for item in document["heroes"][0]["builds"][0]["items"]
+        if item["item_id"] % 100 <= 3
     ]
     _refingerprint(document)
     _write(path, document)
@@ -259,10 +299,74 @@ def test_sparse_supported_tiers_do_not_require_filler(tmp_path: Path) -> None:
     }
 
 
+def test_optional_component_requires_its_upgrade_in_a_higher_tier_menu(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "build-evidence.json"
+    assets = _assets()
+    next(asset for asset in assets if asset["id"] == 203)["component_items"] = [
+        "item_t1_4"
+    ]
+    next(asset for asset in assets if asset["id"] == 303)["component_items"] = [
+        "item_t1_3"
+    ]
+    assets.extend([
+        {
+            **assets[11],
+            "id": item_id,
+            "name": f"Tier 2 Item {item_id % 100}",
+            "class_name": f"item_t2_{item_id % 100}",
+            "component_items": ["item_t1_3"] if item_id == 213 else [],
+        }
+        for item_id in (212, 213)
+    ])
+    _write(path, _document(assets=assets))
+
+    selected = select_hero_build(load_build_evidence(path).heroes[13], assets)
+
+    tier_1_ids = {item.item_id for item in selected.tiers[1]}
+    tier_2_ids = {item.item_id for item in selected.tiers[2]}
+    assert 203 in tier_2_ids
+    assert 104 in tier_1_ids
+    assert 213 not in tier_2_ids
+    assert 103 not in tier_1_ids
+
+
+def test_admitted_core_alternative_moves_out_of_its_tier_row(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "build-evidence.json"
+    alternative = {
+        "item_id": 303,
+        "comparator_item_id": 302,
+        "stage": 6,
+        "support": 40,
+        "comparison_support": 50,
+        "effective_support": 30.0,
+        "overlap": 0.8,
+        "stable": True,
+        "dr_estimate": 0.0,
+        "comparative_interval": [-0.02, 0.02],
+        "trigger": "Choose Tier 3 Item 3 when its documented mechanic fits.",
+        "execution": "Replace Tier 3 Item 2 at stage 6.",
+        "failure_condition": "Keep Tier 3 Item 2 when that need is absent.",
+        "mechanics_refs": ["asset:item:303:description"],
+        "fold_estimates": {"train": 0.0, "validation": 0.01, "test": -0.01},
+    }
+    _write(path, _document(core_alternatives=[alternative]))
+
+    selected = select_hero_build(load_build_evidence(path).heroes[13], _assets())
+
+    assert [item.item_id for item in selected.optional_core] == [303]
+    assert 303 not in {
+        item.item_id for tier_items in selected.tiers.values() for item in tier_items
+    }
+
+
 def test_loader_rejects_tampering(tmp_path: Path) -> None:
     path = tmp_path / "build-evidence.json"
     document = _document()
-    document["heroes"][0]["items"][0]["wins"] = 999
+    document["heroes"][0]["builds"][0]["items"][0]["wins"] = 999
     _write(path, document)
 
     with pytest.raises(ArtifactError, match="fingerprint"):
@@ -272,7 +376,7 @@ def test_loader_rejects_tampering(tmp_path: Path) -> None:
 def test_loader_rejects_duplicate_permitting_sequence_policy(tmp_path: Path) -> None:
     path = tmp_path / "build-evidence.json"
     document = _document()
-    document["heroes"][0]["sequence_policy"]["version"] = 2
+    document["heroes"][0]["builds"][0]["sequence_policy"]["version"] = 2
     _refingerprint(document)
     _write(path, document)
 
@@ -283,12 +387,39 @@ def test_loader_rejects_duplicate_permitting_sequence_policy(tmp_path: Path) -> 
 def test_loader_rejects_repeated_default_path_item(tmp_path: Path) -> None:
     path = tmp_path / "build-evidence.json"
     document = _document()
-    document["heroes"][0]["sequence_policy"]["component_expanded_default_path"][1] = 101
+    document["heroes"][0]["builds"][0]["sequence_policy"][
+        "component_expanded_default_path"
+    ][1] = 101
     _refingerprint(document)
     _write(path, document)
 
     with pytest.raises(ArtifactError, match="repeats an item"):
         load_build_evidence(path)
+
+
+def test_selection_rejects_default_path_outside_soul_windows(tmp_path: Path) -> None:
+    path = tmp_path / "build-evidence.json"
+    document = _document()
+    document["heroes"][0]["builds"][0]["sequence_policy"][
+        "component_expanded_default_path"
+    ] = [
+        102,
+        201,
+        202,
+        301,
+        302,
+        401,
+        402,
+        101,
+    ]
+    _refingerprint(document)
+    _write(path, document)
+
+    catalog = load_build_evidence(path)
+    hero = catalog.heroes[13]
+    assets = _assets()
+    with pytest.raises(ArtifactError, match="first-ownership soul windows"):
+        select_hero_build(hero, assets)
 
 
 def test_compatibility_rejects_identity_drift(tmp_path: Path) -> None:
@@ -350,7 +481,7 @@ def test_situational_branch_requires_every_comparative_gate(tmp_path: Path) -> N
         "execution": "Apply healing reduction after contact.",
         "failure_condition": "Skip when healing is not material.",
     }
-    document["heroes"][0]["situational_policy"]["branches"] = [branch]
+    document["heroes"][0]["builds"][0]["situational_policy"]["branches"] = [branch]
     _refingerprint(document)
     _write(path, document)
 

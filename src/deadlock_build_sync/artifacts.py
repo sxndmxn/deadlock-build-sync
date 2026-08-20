@@ -16,7 +16,7 @@ class ArtifactError(ValueError):
     """Raised when a reusable artifact is incomplete, stale, or incompatible."""
 
 
-POLICY_ARTIFACT_SCHEMA_VERSION = 1
+POLICY_ARTIFACT_SCHEMA_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -92,6 +92,7 @@ class ArtifactCompatibility:
     policy_basis_sha256: str
     prompt_version: int | None = None
     model: str | None = None
+    path_id: str = "default"
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -106,6 +107,7 @@ class ArtifactCompatibility:
             "policy_basis_sha256": self.policy_basis_sha256,
             "prompt_version": self.prompt_version,
             "model": self.model,
+            "path_id": self.path_id,
         }
 
     def assert_reusable_with(self, expected: ArtifactCompatibility) -> None:
@@ -128,11 +130,12 @@ class ArtifactCompatibility:
             )
 
 
-def _validated_hero_id(hero: object) -> int:
+def _validated_build_key(hero: object) -> tuple[int, str]:
     if not isinstance(hero, dict):
         raise ArtifactError("artifact contains a malformed hero")
     hero_id = hero.get("hero_id")
-    if not isinstance(hero_id, int):
+    path_id = hero.get("path_id")
+    if not isinstance(hero_id, int) or not isinstance(path_id, str) or not path_id:
         raise ArtifactError("artifact contains a malformed hero")
     evidence_ids = hero.get("evidence_ids", [])
     evidence = hero.get("evidence", [])
@@ -145,19 +148,20 @@ def _validated_hero_id(hero: object) -> int:
     }
     if not set(evidence_ids) <= available:
         raise ArtifactError(f"hero {hero_id} has dangling evidence references")
-    return hero_id
+    return hero_id, path_id
 
 
 def _validate_hero_coverage(
-    found: list[int],
+    found: list[tuple[int, str]],
     requested_hero_ids: set[int],
     exclusions: dict[int, str],
 ) -> None:
     if len(found) != len(set(found)):
-        raise ArtifactError("artifact contains duplicate heroes")
-    covered = set(found) | set(exclusions)
+        raise ArtifactError("artifact contains duplicate build paths")
+    found_hero_ids = {hero_id for hero_id, _ in found}
+    covered = found_hero_ids | set(exclusions)
     missing = requested_hero_ids - covered
-    extra = set(found) - requested_hero_ids
+    extra = found_hero_ids - requested_hero_ids
     empty_reasons = [
         hero_id for hero_id, reason in exclusions.items() if not reason.strip()
     ]
@@ -191,7 +195,7 @@ def validate_hero_document(
     heroes = document.get("heroes")
     if not isinstance(heroes, list):
         raise ArtifactError("artifact heroes must be an array")
-    found = [_validated_hero_id(hero) for hero in heroes]
+    found = [_validated_build_key(hero) for hero in heroes]
     _validate_hero_coverage(
         found,
         requested_hero_ids,
@@ -289,9 +293,10 @@ def _validate_policy_coverage(
     excluded: dict[int, str],
     requested_ids: list[int],
 ) -> None:
-    hero_ids = [policy.hero_id for policy in decoded]
-    if len(hero_ids) != len(set(hero_ids)):
-        raise ArtifactError("policy artifact contains duplicate heroes")
+    build_keys = [(policy.hero_id, policy.path_id) for policy in decoded]
+    if len(build_keys) != len(set(build_keys)):
+        raise ArtifactError("policy artifact contains duplicate build paths")
+    hero_ids = {policy.hero_id for policy in decoded}
     if set(hero_ids) & set(excluded):
         raise ArtifactError("policy artifact both includes and excludes a hero")
     if set(hero_ids) | set(excluded) != set(requested_ids):
@@ -313,6 +318,32 @@ def validate_policy_artifact(document: dict[str, Any]) -> None:
     excluded = _decode_policy_exclusions(exclusion_rows)
     decoded = _decode_policies(policy_rows, manifest["snapshot_id"])
     _validate_policy_coverage(decoded, excluded, requested_ids)
+
+
+def load_policy_artifact(
+    path: Path,
+) -> tuple[dict[str, Any], dict[tuple[int, str], BuildPolicy]]:
+    """Load a validated policy sidecar and index policies by hero.
+
+    Returns:
+        The snapshot manifest and typed policies keyed by hero ID.
+
+    Raises:
+        ArtifactError: If the file is unreadable, malformed, or internally stale.
+
+    """
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ArtifactError(
+            f"could not read policy artifact {path}: {error}"
+        ) from error
+    if not isinstance(document, dict):
+        raise ArtifactError("policy artifact root must be an object")
+    validate_policy_artifact(document)
+    manifest, _, _, rows = _policy_artifact_header(document)
+    decoded = _decode_policies(rows, manifest["snapshot_id"])
+    return manifest, {(policy.hero_id, policy.path_id): policy for policy in decoded}
 
 
 def _fsync_directory(path: Path) -> None:

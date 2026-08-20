@@ -13,6 +13,7 @@ from deadlock_build_sync.artifacts import (
     atomic_write_json,
     build_policy_artifact,
     load_fingerprinted_json,
+    load_policy_artifact,
     validate_hero_document,
     validate_policy_artifact,
 )
@@ -94,6 +95,7 @@ def test_document_completeness_rejects_missing_duplicates_and_dangling_refs() ->
         "heroes": [
             {
                 "hero_id": 12,
+                "path_id": "default",
                 "evidence_ids": ["claim/1"],
                 "evidence": [{"claim_id": "claim/1"}],
             }
@@ -107,7 +109,16 @@ def test_document_completeness_rejects_missing_duplicates_and_dangling_refs() ->
     )
     with pytest.raises(ArtifactError, match="dangling"):
         validate_hero_document(
-            {"heroes": [{"hero_id": 12, "evidence_ids": ["missing"], "evidence": []}]},
+            {
+                "heroes": [
+                    {
+                        "hero_id": 12,
+                        "path_id": "default",
+                        "evidence_ids": ["missing"],
+                        "evidence": [],
+                    }
+                ]
+            },
             requested_hero_ids={12},
         )
     with pytest.raises(ArtifactError, match="duplicate"):
@@ -143,6 +154,34 @@ def test_policy_sidecar_binds_snapshot_and_complete_roster() -> None:
     document["snapshot_manifest"]["snapshot_id"] = "changed"
     with pytest.raises(ArtifactError, match="another snapshot"):
         validate_policy_artifact(document)
+
+
+def test_policy_sidecar_loader_returns_typed_hero_index(tmp_path: Path) -> None:
+    policy = BuildPolicy(
+        schema_version=1,
+        hero_id=12,
+        variant="fixture",
+        invariant_kit_id="kit",
+        strategic_role="fixture role",
+        snapshot_id="snapshot",
+        entry="end",
+        nodes=(PolicyNode("end", NodeKind.END),),
+        evidence=(),
+    )
+    path = tmp_path / "policies.json"
+    atomic_write_json(
+        path,
+        build_policy_artifact(
+            [policy],
+            snapshot_manifest={"snapshot_id": "snapshot", "client_version": 123},
+            requested_hero_ids={12},
+        ),
+    )
+
+    manifest, policies = load_policy_artifact(path)
+
+    assert manifest["client_version"] == 123
+    assert policies == {(12, "default"): policy}
 
 
 def test_atomic_write_preserves_old_file_when_file_fsync_fails(

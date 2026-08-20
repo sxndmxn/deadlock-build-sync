@@ -177,7 +177,7 @@ def _generate_staged_response(
             schema_path=KIT_SCHEMA_PATH,
             model=resolved_kit_model,
             prompt=generate_narratives.KIT_PROMPT,
-            identity_fields=("hero_id", "kit_basis_sha256"),
+            identity_fields=("hero_id", "path_id", "kit_basis_sha256"),
             validator=generate_narratives.validate_kit_response,
             label=f"kit analysis for {case.name}",
             max_attempts=max_attempts,
@@ -198,6 +198,7 @@ def _generate_staged_response(
             prompt=generate_narratives.PROMPT,
             identity_fields=(
                 "hero_id",
+                "path_id",
                 "snapshot_id",
                 "policy_id",
                 "context_sha256",

@@ -24,9 +24,12 @@ The rich output is a typed, snapshot-bound policy graph:
 - A mechanically legal level/AP ability timeline selected from equivalent reached
   legal states, with support reported at each decision. Price tiers are never treated
   as equal “quarters” of that timeline.
-- A coherent eight-item final-inventory path selected by joint player-match support,
-  ordered by observed acquisition time, and kept within the hero's median final net
-  worth.
+- A mechanics-compatible, temporally stable four-to-six-item backbone completed to
+  a deterministic four-to-nine-item default. The selector targets the Oracle I+
+  median ending inventory economy after reserving three situational item equivalents,
+  requires joint support across time splits, and never optimizes exact-eight frequency.
+- Cross-fitted doubly robust final-slot contrasts admitted only after support,
+  effective-sample-size, overlap, balance, uncertainty, and temporal-stability gates.
 - Four compact price-tier reference menus selected by true player-match adoption and
   ordered left to right by observed first-ownership net worth. They exclude CORE,
   require at least 20 buyer matches, and stay sparse when fewer than ten choices pass.
@@ -39,12 +42,15 @@ The rich output is a typed, snapshot-bound policy graph:
 - An ending-duration profile that describes games ending in each phase. It is not
   a live power curve and never justifies stalling an available close.
 
-Steam receives five rows in a fixed order: `CORE ITEMS`, `TIER 1`, `TIER 2`,
-`TIER 3`, and `TIER 4`. Only the eight-item core enters Queue. Each tier row is an
+Steam receives `CORE ITEMS`, an `OPTIONAL CORE` row when a like-state alternative
+passes every evidence gate, then `TIER 1` through `TIER 4`. Only the complete
+economy-bounded default enters Queue. `OPTIONAL CORE` holds final-slot swaps with explicit
+triggers; an admitted item is removed from its tier row. Each tier row remains an
 optional, non-CORE reference menu of up to ten supported items, not a claim that
 every item should be bought or that popularity proves a situational counter. CORE
-hovers lead with validated hero-specific instructions; all hovers keep timing and
-adoption subordinate and omit raw outcome rates. Deterministic code validates the
+hovers lead with validated hero-specific instructions; all item cards show the observed
+purchase window, adopter win rate, and pick rate without treating win rate as an item
+effect. Deterministic code validates the
 core against components, slots, active bindings, flex unlocks, ability currency, and
 current item/ability qualifiers before serialization.
 
@@ -207,9 +213,11 @@ When build evidence is stale, refresh it before generation:
 uv run deadlock-build-sync refresh-evidence
 ```
 
-The evidence producer defaults to `--xgb-device auto`: it probes CUDA once, uses the
-GPU when available, and otherwise falls back to CPU. Use `--xgb-device cuda` to require
-CUDA or `--xgb-device cpu` for an intentional CPU run.
+The evidence producer reconstructs complete inventories, selects supported legal
+four-to-nine-item cores near the dynamic Oracle I+ economy target, and orders each core
+with deterministic pairwise-precedence dynamic programming subject to mechanics and
+nondecreasing observed first-ownership soul windows. No learned model is part of
+evidence production or runtime selection.
 
 The normal installation workflow remains one command. Close Deadlock, then run:
 
@@ -367,8 +375,8 @@ in-game description.
 - Layered mechanics, analytics, policy, narrative, projection, and whole-document
   fingerprints bound to the complete source manifest.
 
-Every hero requires a supported, mechanically legal eight-item core at or below its
-median final net worth, at least one adequately supported non-CORE option in each
+Every hero requires a supported, mechanically legal four-to-nine-item core at or below
+its median final net worth, at least one adequately supported non-CORE option in each
 price tier, complete current mechanics, a complete ability projection, a duration
 estimate or explicit duration abstention, and policy validation. Every omission
 receives a structured exclusion; all-hero installation fails on any exclusion rather

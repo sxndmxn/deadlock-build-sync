@@ -103,6 +103,7 @@ def test_stage_trace_covers_presentation_and_protobuf_with_safe_facts(
             artifact_id="a" * 64,
             guide_count=1,
             path=tmp_path / "userdata/7654321/artifact.json",
+            removed=2,
         )
         session.finish(0)
 
@@ -116,6 +117,7 @@ def test_stage_trace_covers_presentation_and_protobuf_with_safe_facts(
 
     assert {"presentation", "protobuf.serialization"} <= stages
     assert any(event.get("event") == "stage_facts" for event in events)
+    assert any(event.get("removed") == 2 for event in events)
     assert "7654321" not in raw
     assert "account_id" not in raw
     assert "<numeric-id>" in raw

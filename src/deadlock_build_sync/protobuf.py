@@ -1,16 +1,18 @@
 from __future__ import annotations
 
+import re
 import struct
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from .presentation import MANAGED_MARKER, BuildPresentation
+from .presentation import LEGACY_MANAGED_MARKER, MANAGED_MARKER, BuildPresentation
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
     from .purchase_guide import GuideCategory, GuideItem, PurchaseGuide
 CATEGORY_LABELS = {1: "I", 2: "II", 3: "III", 4: "IV"}
+_BUILD_PATH_PATTERN = re.compile(r"(?m)^Build path: ([a-z0-9-]+)\.$")
 DEFAULT_CATEGORY_SIZE = (760.0, 164.0)
 STANDARD_CATEGORY_SIZES = {
     # Captured from a user-tuned Viscous build at 2560x1440. Source 2 flows
@@ -18,6 +20,7 @@ STANDARD_CATEGORY_SIZES = {
     # CORE/TIER 1 row, a two-column TIER 2/TIER 3 row, and a full-width TIER 4.
     # The CORE block has room for eleven item cards across two lines.
     "CORE ITEMS": (567.0, 307.5),
+    "OPTIONAL CORE": (465.75, 318.75),
     "TIER 1": (465.75, 318.75),
     "TIER 2": (562.5, 315.75),
     "TIER 3": (465.75, 319.5),
@@ -305,14 +308,30 @@ def wrap_hero_build(hero_build: bytes) -> bytes:
     )
 
 
+def managed_build_path(metadata: HeroBuildMetadata) -> str | None:
+    description = metadata.description or ""
+    if MANAGED_MARKER not in description:
+        return None
+    match = _BUILD_PATH_PATTERN.search(description)
+    return match.group(1) if match is not None else None
+
+
 def is_managed_build(
-    metadata: HeroBuildMetadata, *, hero_id: int, account_id: int
+    metadata: HeroBuildMetadata,
+    *,
+    hero_id: int,
+    account_id: int,
+    path_id: str | None = None,
 ) -> bool:
+    description = metadata.description or ""
+    marker_present = (
+        MANAGED_MARKER in description or LEGACY_MANAGED_MARKER in description
+    )
     return (
         metadata.hero_id == hero_id
         and metadata.author_account_id == account_id
-        and metadata.description is not None
-        and MANAGED_MARKER in metadata.description
+        and marker_present
+        and (path_id is None or managed_build_path(metadata) == path_id)
     )
 
 
