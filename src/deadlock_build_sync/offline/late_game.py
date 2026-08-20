@@ -13,27 +13,65 @@ from .api import read_json, write_json
 from .config import RunPaths
 
 
-def reconstruct_final_inventory(
-    purchases: list[tuple[int, int, int]],
+def _component_depth(
+    item_id: int,
     components: Mapping[int, tuple[int, ...]],
-) -> tuple[int, ...]:
-    """Replay buys, component consumption, and explicit sales to match end."""
-    timeline: list[tuple[int, int, int]] = []
-    for item_id, buy_time, sold_time in purchases:
-        if sold_time > 0:
-            timeline.append((sold_time, 0, item_id))
-        timeline.append((buy_time, 1, item_id))
+    depths: dict[int, int],
+) -> int:
+    if item_id not in depths:
+        children = components.get(item_id, ())
+        depths[item_id] = (
+            1 + max(_component_depth(child, components, depths) for child in children)
+            if children
+            else 0
+        )
+    return depths[item_id]
 
-    owned: list[int] = []
-    for _, event_type, item_id in sorted(timeline):
-        if event_type == 0:
-            if item_id in owned:
-                owned.remove(item_id)
-            continue
+
+def _apply_purchase_bucket(
+    owned: list[int],
+    item_ids: list[int],
+    components: Mapping[int, tuple[int, ...]],
+    depths: dict[int, int],
+) -> None:
+    for item_id in sorted(
+        item_ids,
+        key=lambda value: (_component_depth(value, components, depths), value),
+    ):
         for component_id in components.get(item_id, ()):
             if component_id in owned:
                 owned.remove(component_id)
         owned.append(item_id)
+
+
+def _apply_removal_bucket(owned: list[int], item_ids: list[int]) -> None:
+    for item_id in sorted(item_ids):
+        if item_id in owned:
+            owned.remove(item_id)
+
+
+def reconstruct_final_inventory(
+    purchases: list[tuple[int, int, int]],
+    components: Mapping[int, tuple[int, ...]],
+) -> tuple[int, ...]:
+    """Replay timestamp buckets, component consumption, and sales to match end."""
+    buys: dict[int, list[int]] = defaultdict(list)
+    removals: dict[int, list[int]] = defaultdict(list)
+    for item_id, buy_time, sold_time in purchases:
+        buys[buy_time].append(item_id)
+        if sold_time > 0:
+            removals[sold_time].append(item_id)
+
+    depths: dict[int, int] = {}
+
+    owned: list[int] = []
+    for timestamp in sorted(set(buys) | set(removals)):
+        # The API only supplies second-resolution timestamps. Within one bucket,
+        # dependency order is knowable but arbitrary item-ID order is not.
+        _apply_purchase_bucket(owned, buys[timestamp], components, depths)
+        # An explicit removal wins an unresolved buy/removal tie so a sold item
+        # cannot be reconstructed as present at match end.
+        _apply_removal_bucket(owned, removals[timestamp])
     return tuple(sorted(owned))
 
 

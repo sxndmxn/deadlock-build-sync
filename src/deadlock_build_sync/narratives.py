@@ -16,8 +16,8 @@ if TYPE_CHECKING:
     from .api import Patch
     from .purchase_guide import GuideCategory, GuideItem, PurchaseGuide
 
-NARRATIVE_SCHEMA_VERSION = 6
-NARRATIVE_PROMPT_VERSION = 23
+NARRATIVE_SCHEMA_VERSION = 7
+NARRATIVE_PROMPT_VERSION = 24
 DEFAULT_KIT_MODEL = "gpt-5.6-luna"
 DEFAULT_SYNTHESIS_MODEL = "gpt-5.6-luna"
 _PLAYER_DESCRIPTION_SURFACE = "player.description"
@@ -46,7 +46,7 @@ class NarrativeCatalog:
     source_context_sha256: str
     requested_hero_ids: frozenset[int]
     exclusions: dict[int, str]
-    heroes: dict[int, dict[str, Any]]
+    heroes: dict[tuple[int, str], dict[str, Any]]
 
 
 def _is_sha256(value: Any) -> bool:
@@ -163,32 +163,40 @@ def _catalog_heroes(
     path: Path,
     entries: list[Any],
     snapshot_id: str,
-) -> dict[int, dict[str, Any]]:
-    heroes: dict[int, dict[str, Any]] = {}
+) -> dict[tuple[int, str], dict[str, Any]]:
+    heroes: dict[tuple[int, str], dict[str, Any]] = {}
     for entry in entries:
-        if not isinstance(entry, dict) or not isinstance(entry.get("hero_id"), int):
+        if (
+            not isinstance(entry, dict)
+            or not isinstance(entry.get("hero_id"), int)
+            or not isinstance(entry.get("path_id"), str)
+            or not entry["path_id"].strip()
+        ):
             raise NarrativeError(f"{path} contains an invalid hero narrative")
         if entry.get("prompt_version") != NARRATIVE_PROMPT_VERSION:
             raise NarrativeError(
                 f"{path} contains a hero generated with an outdated tactical prompt"
             )
         _require_identity(path, entry, snapshot_id)
-        hero_id = int(entry["hero_id"])
-        if hero_id in heroes:
-            raise NarrativeError(f"{path} contains duplicate hero {hero_id}")
-        heroes[hero_id] = entry
+        build_key = int(entry["hero_id"]), str(entry["path_id"])
+        if build_key in heroes:
+            raise NarrativeError(
+                f"{path} contains duplicate build {build_key[0]}/{build_key[1]}"
+            )
+        heroes[build_key] = entry
     return heroes
 
 
 def _validate_catalog_coverage(
     path: Path,
-    heroes: dict[int, dict[str, Any]],
+    heroes: dict[tuple[int, str], dict[str, Any]],
     exclusion_map: dict[int, str],
     requested_ids: set[int],
 ) -> None:
-    if set(heroes) & set(exclusion_map):
+    hero_ids = {build_key[0] for build_key in heroes}
+    if hero_ids & set(exclusion_map):
         raise NarrativeError(f"{path} both includes and excludes a hero")
-    if set(heroes) | set(exclusion_map) != requested_ids:
+    if hero_ids | set(exclusion_map) != requested_ids:
         raise NarrativeError(f"{path} does not cover every requested hero")
 
 
@@ -242,7 +250,7 @@ def _narrative_entry(
         )
     if catalog.match_mode != guide.match_mode:
         raise NarrativeError("narrative artifact match mode does not match the guide")
-    entry = catalog.heroes.get(guide.hero_id)
+    entry = catalog.heroes.get((guide.hero_id, guide.path_id))
     if entry is None:
         reason = catalog.exclusions.get(guide.hero_id)
         suffix = f": {reason}" if reason else ""

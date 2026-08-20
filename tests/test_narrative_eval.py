@@ -49,6 +49,7 @@ def test_generate_test_case_calls_both_production_stages(
 ) -> None:
     hero = {
         "hero_id": 12,
+        "path_id": "default",
         "hero": "Kelvin",
         "kit_basis_sha256": "d" * 64,
     }
@@ -88,6 +89,7 @@ def test_generate_test_case_calls_both_production_stages(
     assert [stage.model for _, stage in calls] == ["kit-model", "synthesis-model"]
     assert calls[1][1].identity_fields == (
         "hero_id",
+        "path_id",
         "snapshot_id",
         "policy_id",
         "context_sha256",

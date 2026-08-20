@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any, override
 
@@ -11,7 +12,9 @@ from deadlock_build_sync.api import (
 )
 from deadlock_build_sync.build_evidence import (
     BuildEvidenceCatalog,
+    CoreAlternativeEvidence,
     CoreCandidate,
+    CorePolicyEvidence,
     HeroBuildEvidence,
     ItemEvidence,
     SequencePolicy,
@@ -32,6 +35,10 @@ from deadlock_build_sync.snapshot import (
     SnapshotManifest,
     sha256_json,
 )
+from deadlock_build_sync.strategy_context import (
+    build_strategy_context_document,
+    validate_strategy_context_document,
+)
 
 
 class FakeApi(DeadlockApi):
@@ -46,6 +53,7 @@ class FakeApi(DeadlockApi):
         self._ability_rows = ability_rows
         self._duration_points = duration_points
         self.counter_stat_calls: list[bool] = []
+        self.ability_filter_calls: list[tuple[int, ...]] = []
         self._hero: dict[str, Any] = {
             "id": 12,
             "name": "Kelvin",
@@ -193,8 +201,10 @@ class FakeApi(DeadlockApi):
         hero_id: int,
         min_unix_timestamp: int,
         min_matches: int,
+        include_item_ids: tuple[int, ...] = (),
     ) -> list[dict[str, Any]]:
         _ = hero_id, min_unix_timestamp, min_matches
+        self.ability_filter_calls.append(include_item_ids)
         return self._ability_rows
 
     @override
@@ -291,6 +301,7 @@ def build_evidence(
     *,
     with_situational_branch: bool = False,
     with_component_path: bool = False,
+    with_core_alternative: bool = False,
 ) -> BuildEvidenceCatalog:
     eligible = 100
     item_rows = tuple(
@@ -324,8 +335,8 @@ def build_evidence(
                     item_id=103,
                     enemy_hero_id=7,
                     mechanic_ref="item/103/healing",
-                    comparator="same-opportunity item 104 or save",
-                    comparator_item_id=104,
+                    comparator="same-opportunity item 100 or save",
+                    comparator_item_id=100,
                     comparison_support=30,
                     same_opportunity=True,
                     support=40,
@@ -334,7 +345,7 @@ def build_evidence(
                     stable=True,
                     comparative_interval=(0.01, 0.06),
                     trigger="Enemy hero 7 presents material healing.",
-                    replacement="Choose item 103 instead of item 104.",
+                    replacement="Choose item 103 instead of item 100.",
                     execution="Use the verified healing response while observed.",
                     failure_condition="Skip when healing is not material.",
                 ),
@@ -351,6 +362,45 @@ def build_evidence(
         median_final_net_worth=20_000,
         core_candidates=(CoreCandidate((100, 101, 200, 201, 300, 301, 400, 401), 40),),
         items=item_rows,
+        core_policy=CorePolicyEvidence(
+            (100, 101, 200, 201),
+            (100, 101, 200, 201, 300, 301, 400, 401),
+            60,
+            {"train": 20, "validation": 20, "test": 20},
+            40,
+            (
+                CoreAlternativeEvidence(
+                    item_id=103,
+                    comparator_item_id=101,
+                    stage=2,
+                    support=40,
+                    comparison_support=40,
+                    effective_support=30.0,
+                    overlap=0.8,
+                    stable=True,
+                    dr_estimate=0.0,
+                    comparative_interval=(-0.02, 0.02),
+                    trigger=(
+                        "Choose Tier 1 Item 3 over Tier 1 Item 1 when its "
+                        "documented mechanic fits."
+                    ),
+                    execution="Replace Tier 1 Item 1 at stage 2.",
+                    failure_condition=(
+                        "Keep Tier 1 Item 1 when the observable need is absent."
+                    ),
+                    mechanics_refs=("asset:item:103:description",),
+                    fold_estimates={
+                        "train": 0.0,
+                        "validation": 0.01,
+                        "test": -0.01,
+                    },
+                ),
+            )
+            if with_core_alternative
+            else (),
+            (),
+            {"method": "cross-fitted-dr"},
+        ),
         sequence_policy=(
             SequencePolicy(
                 (100, 101, 102, 200, 201, 300, 301, 400, 401),
@@ -358,7 +408,6 @@ def build_evidence(
                 20,
                 "deterministic_backoff",
                 {"chronological_fold": "test"},
-                {"evaluated": True, "passed": False, "promoted": False},
             )
             if with_component_path
             else None
@@ -476,6 +525,59 @@ def test_generated_guide_is_snapshot_bound_policy_projection() -> None:
     )
 
 
+def test_supported_item_paths_create_separate_guides_and_ability_queries() -> None:
+    api = FakeApi(ability_rows=ability_rows(), duration_points=duration_points())
+    catalog = build_evidence(api)
+    base = replace(
+        catalog.heroes[12],
+        path_id="control",
+        path_label="Control Core",
+        signature_item_ids=(100, 101),
+    )
+    second_policy = replace(
+        base.core_policy,
+        backbone_item_ids=(102, 103, 202, 203),
+        default_item_ids=(102, 103, 202, 203, 302, 303, 402, 403),
+    )
+    second = replace(
+        base,
+        path_id="damage",
+        path_label="Damage Core",
+        signature_item_ids=(102, 103),
+        core_candidates=(CoreCandidate((102, 103, 202, 203, 302, 303, 402, 403), 40),),
+        core_policy=second_policy,
+    )
+    catalog = replace(
+        catalog,
+        heroes={12: base},
+        hero_builds={12: (base, second)},
+    )
+
+    generated = generate_guides(
+        api,
+        build_evidence=catalog,
+        account_id=123,
+        hero_query="Kelvin",
+        all_heroes=False,
+    )
+
+    assert [guide.path_id for guide in generated.guides] == ["control", "damage"]
+    assert [policy.path_id for policy in generated.policies] == ["control", "damage"]
+    assert api.ability_filter_calls == [
+        (),
+        (100, 101, 200, 201),
+        (102, 103, 202, 203),
+    ]
+    ability_path = generated.guides[0].ability_path
+    assert ability_path is not None
+    assert ability_path.filter_item_ids == (
+        100,
+        101,
+        200,
+        201,
+    )
+
+
 def test_required_components_join_core_queue_and_leave_optional_rows() -> None:
     api = FakeApi(ability_rows=ability_rows(), duration_points=duration_points())
     parent = next(item for item in api._assets if item.get("id") == 200)
@@ -530,7 +632,7 @@ def test_admitted_situational_branch_reaches_policy_sidecar_and_tier_card() -> N
 
     guide = generated.guides[0]
     policy = generated.policies[0]
-    assert policy.entry == "situational-choice"
+    assert policy.entry == "situational-choice-1"
     assert BuildPolicy.from_dict(policy.as_dict()) == policy
     assert len(policy.counter_cards) == 1
     choice = next(node for node in policy.nodes if node.node_id == policy.entry)
@@ -538,9 +640,12 @@ def test_admitted_situational_branch_reaches_policy_sidecar_and_tier_card() -> N
         "enemy.threats",
         "enemy.heroes",
     ]
+    situational = next(node for node in policy.nodes if node.node_id == "situational-1")
+    assert situational.next_id == "core-2"
+    assert choice.branches[-1].next_id == "core-1"
     tier_item = next(item for item in guide.tiers[1] if item.item_id == 103)
     assert tier_item.tactical_annotation.startswith("If enemy 7's healing")
-    assert "over Tier 1 Item 4" in tier_item.tactical_annotation
+    assert "over Tier 1 Item 0" in tier_item.tactical_annotation
     assert [category.name for category in guide.categories] == [
         "CORE ITEMS",
         "TIER 1",
@@ -560,4 +665,50 @@ def test_admitted_situational_branch_reaches_policy_sidecar_and_tier_card() -> N
         for row in generated.contexts[0]["explainable_actions"]
         if row["node_id"] == "situational-1"
     )
-    assert action["conditional_contract"]["comparator_item"] == "Tier 1 Item 4"
+    assert action["conditional_contract"]["comparator_item"] == "Tier 1 Item 0"
+
+
+def test_admitted_core_alternative_is_a_non_queue_policy_card() -> None:
+    api = FakeApi(ability_rows=ability_rows(), duration_points=duration_points())
+    generated = generate_guides(
+        api,
+        build_evidence=build_evidence(api, with_core_alternative=True),
+        account_id=123,
+        hero_query="Kelvin",
+        all_heroes=False,
+    )
+
+    guide = generated.guides[0]
+    policy = generated.policies[0]
+    assert policy.schema_version == 3
+    assert [card.item_id for card in policy.core_alternatives] == [103]
+    assert [category.name for category in guide.categories] == [
+        "CORE ITEMS",
+        "OPTIONAL CORE",
+        "TIER 1",
+        "TIER 2",
+        "TIER 3",
+        "TIER 4",
+    ]
+    assert [item.item_id for item in guide.categories[1].items] == [103]
+    assert (
+        guide
+        .categories[1]
+        .items[0]
+        .annotation.endswith(
+            "PURCHASE WINDOW: about 1k souls\nWIN RATE: 57.5%\nPICK RATE: 87.0%"
+        )
+    )
+    assert 103 not in {item.item_id for item in guide.tiers[1]}
+    assert all(node.item_id != 103 for node in policy.nodes)
+    assert BuildPolicy.from_dict(policy.as_dict()) == policy
+
+    document = build_strategy_context_document(
+        generated.patch,
+        list(generated.contexts),
+        manifest=generated.manifest,
+        item_mechanics=generated.item_mechanics,
+        requested_hero_ids=set(generated.eligible_hero_ids),
+        exclusions=generated.exclusions,
+    )
+    validate_strategy_context_document(document)

@@ -1,6 +1,6 @@
 # Phase 3 — Sequence and deviation
 
-Status: duplicate-free correction regenerated and audited; reinstall awaits Deadlock shutdown
+Status: variable-size economy policy regenerated, validated, and installed
 
 ## Outcome
 
@@ -8,8 +8,8 @@ The offline pipeline emits an outcome-agnostic next-action policy that expands
 components, respects current inventory/economy, recovers after deviation, and abstains
 outside supported states.
 
-The static Steam CORE row uses that same component-expanded path. The separate
-eight-item set remains the final-inventory estimand, not the literal shopping queue.
+The static Steam CORE row uses that same component-expanded path. Its separate
+four-to-nine-item set remains the final-inventory estimand, not the literal shopping queue.
 
 ## Decisions
 
@@ -29,8 +29,10 @@ eight-item set remains the final-inventory estimand, not the literal shopping qu
   keeping it before its parent. Preserve final-item order and inventory legality,
   reject candidates that require a repeated component card, and exclude every
   CORE-path item from optional rows.
-- Prefer CUDA automatically for XGBoost when a runtime probe succeeds; retain explicit
-  `cuda` and `cpu` overrides and record the resolved device in the experiment manifest.
+- Optimize the supported variable-size target order with pairwise-precedence subset
+  dynamic programming. Admit only orders whose deterministic component expansion is
+  mechanics-legal and admits a nondecreasing soul checkpoint through every observed
+  first-ownership IQR.
 
 ## Work
 
@@ -40,8 +42,8 @@ eight-item set remains the final-inventory estimand, not the literal shopping qu
   build evidence; validate their hashes and legality during admission.
 - Extend the policy evaluator to recalculate from actual ownership instead of restarting
   the eight-card path.
-- Evaluate the challenger and promote it only when every predeclared gate passes;
-  otherwise ship the simpler baseline and record the rejection.
+- Keep observational transitions as review evidence only; the typed policy graph owns
+  runtime decisions and must abstain when no legal branch is represented.
 
 ## Proof
 
@@ -59,9 +61,8 @@ eight-item set remains the final-inventory estimand, not the literal shopping qu
 - Build-evidence schema 2 sequence policy 3 exports chronologically scheduled,
   component-expanded defaults plus deterministic
   first/previous/position/popularity backoffs from training rows only.
-- The existing XGBoost ranker remains a chronological challenger and cannot be
-  promoted without a portable validated policy artifact, even when imitation metrics
-  pass.
+- Learned next-item ranking was removed: its one-step imitation objective did not
+  represent the constrained, completion-aware decision graph used at runtime.
 - `schemas/decision-state.schema.json` and `recommendation.py` provide one strict,
   deidentified patch/client/mode/rank/inventory/composition contract and return only
   buy, save, end, or abstain.
@@ -91,8 +92,9 @@ eight-item set remains the final-inventory estimand, not the literal shopping qu
   38/38 heroes. Its audit found zero repeated CORE IDs, zero optional overlaps, exact
   scheduler/projection agreement, 183 legal component consumptions, and 38 valid final
   inventories. Reinstallation is deferred because Deadlock is running.
-- XGBoost 3.3 uses `tree_method=hist` with the resolved `device`; a real one-round CUDA
-  probe prevents an `auto` run from silently selecting an unavailable GPU.
+- Core target precedence is now solved exactly for the selected targets, while equal-time
+  purchase buckets remain unordered. The exact solver filters the expanded path by
+  mechanics and observed soul-window feasibility; outcome rates remain descriptive.
 
 Traceability: [usage audit](../deadlock-build-usage-audit.md#phase-3-sequence-and-deviation-research),
 [deviation requirement](../deadlock-build-policy-requirements.md#req-pol-007--support-deviation-and-recalculation),

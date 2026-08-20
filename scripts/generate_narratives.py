@@ -36,12 +36,13 @@ from deadlock_build_sync.strategy_context import (
 
 _KitAbilityRole = dict[str, Any]
 _ProjectionCategory = dict[str, Any]
+type BuildKey = tuple[int, str]
 
 SCHEMA_VERSION = NARRATIVE_SCHEMA_VERSION
 PROMPT_VERSION = NARRATIVE_PROMPT_VERSION
 REUSABLE_PROMPT_VERSIONS = frozenset({PROMPT_VERSION})
-KIT_SCHEMA_VERSION = 1
-KIT_PROMPT_VERSION = 4
+KIT_SCHEMA_VERSION = 2
+KIT_PROMPT_VERSION = 5
 DEFAULT_GENERATION_ATTEMPTS = 3
 DEFAULT_GENERATION_CONCURRENCY = 8
 DEFAULT_RATE_LIMIT_BACKOFF_SECONDS = 1.0
@@ -109,7 +110,7 @@ Authority and scope:
 - The deterministic policy, evidence claims, mechanics, guards, action IDs,
   Queue projection, and category membership are already final. Explain them;
   never add, remove, reorder, select, or change them.
-- Copy hero_id, snapshot_id, policy_id, context_sha256, and
+- Copy hero_id, path_id, snapshot_id, policy_id, context_sha256, and
   narrative_basis_sha256 exactly.
 - Use only supplied mechanics and preliminary_kit_analysis. Never invent a
   mechanic, numeric effect, combo, matchup, timing, target, or causal benefit.
@@ -133,7 +134,7 @@ tactical_profile:
   acknowledge the explicit unavailable state without inventing a phase.
 
 build_summary:
-- In 80–700 plain-text characters, describe the invariant role, eight-item CORE
+- In 80–700 plain-text characters, describe the invariant role, supported CORE
   path, and the purpose of the four tier reference menus. Do not dump stats or
   analytics language.
 
@@ -154,7 +155,10 @@ category_summaries:
 - Copy the category name. Each summary must name at least one item from that
   category exactly as supplied and must not name any item from another category,
   even as a comparison.
-- CORE ITEMS is the automatic Queue. TIER 1–4 are optional reference menus:
+- CORE ITEMS is the automatic Queue. OPTIONAL CORE and TIER 1–4 never enter it.
+  OPTIONAL CORE contains supported final-slot swaps: preserve the supplied trigger,
+  replacement, execution, and failure condition without claiming causal benefit.
+  Tier rows are optional reference menus:
   describe candidates conservatively and say to choose one situationally. Never
   describe a tier menu as a combined purchase or claim adoption proves a
   counter/trigger. Do not write "buy all", "buy every", "get all", "get every",
@@ -714,8 +718,11 @@ def _validate_strategy_identity(hero: dict[str, Any], name: str) -> None:
         "kit_basis_sha256",
         "narrative_basis_sha256",
     )
-    if not isinstance(hero.get("hero_id"), int) or any(
-        not _is_sha256(hero.get(field)) for field in identity_fields
+    if (
+        not isinstance(hero.get("hero_id"), int)
+        or not isinstance(hero.get("path_id"), str)
+        or not hero["path_id"].strip()
+        or any(not _is_sha256(hero.get(field)) for field in identity_fields)
     ):
         raise GenerationError(f"strategy context omitted exact identity for {name}")
 
@@ -794,6 +801,7 @@ def kit_context(hero: dict[str, Any]) -> dict[str, Any]:
     """
     return {
         "hero_id": hero.get("hero_id"),
+        "path_id": hero.get("path_id"),
         "hero": hero.get("hero"),
         "kit_basis_sha256": hero.get("kit_basis_sha256"),
         "hero_mechanics": hero.get("hero_mechanics"),
@@ -874,6 +882,7 @@ def synthesis_context(
         key: hero.get(key)
         for key in (
             "hero_id",
+            "path_id",
             "hero",
             "snapshot_id",
             "policy_id",
@@ -909,6 +918,8 @@ def _validate_kit_identity_and_profile(
 ) -> None:
     if response.get("hero_id") != hero.get("hero_id"):
         raise GenerationError(f"kit analysis changed hero_id for {name}")
+    if response.get("path_id") != hero.get("path_id"):
+        raise GenerationError(f"kit analysis changed path_id for {name}")
     if response.get("kit_basis_sha256") != hero.get("kit_basis_sha256"):
         raise GenerationError(f"kit analysis changed kit_basis_sha256 for {name}")
     if any(
@@ -1000,6 +1011,7 @@ def validate_kit_response(
     uncertainties = _validated_kit_uncertainties(response.get("uncertainties"), name)
     return {
         "hero_id": int(response["hero_id"]),
+        "path_id": str(response["path_id"]),
         "hero": name,
         "kit_basis_sha256": str(response["kit_basis_sha256"]),
         "prompt_version": KIT_PROMPT_VERSION,
@@ -1010,26 +1022,37 @@ def validate_kit_response(
     }
 
 
-def _existing_entries(path: Path) -> dict[int, dict[str, Any]]:
+def _build_key(entry: dict[str, Any]) -> BuildKey | None:
+    hero_id = entry.get("hero_id")
+    path_id = entry.get("path_id")
+    if not isinstance(hero_id, int) or not isinstance(path_id, str) or not path_id:
+        return None
+    return hero_id, path_id
+
+
+def _existing_entries(path: Path) -> dict[BuildKey, dict[str, Any]]:
     if not path.is_file():
         return {}
     heroes = _load_object(path).get("heroes")
     if not isinstance(heroes, list):
         return {}
-    return {
-        int(entry["hero_id"]): entry
-        for entry in heroes
-        if isinstance(entry, dict) and isinstance(entry.get("hero_id"), int)
-    }
+    entries: dict[BuildKey, dict[str, Any]] = {}
+    for entry in heroes:
+        if not isinstance(entry, dict):
+            continue
+        key = _build_key(entry)
+        if key is not None:
+            entries[key] = entry
+    return entries
 
 
 def validated_reusable_kit_profiles(
-    existing: dict[int, dict[str, Any]],
-    source_heroes: dict[int, dict[str, Any]],
-) -> dict[int, dict[str, Any]]:
-    reusable: dict[int, dict[str, Any]] = {}
-    for hero_id, entry in existing.items():
-        hero = source_heroes.get(hero_id)
+    existing: dict[BuildKey, dict[str, Any]],
+    source_heroes: dict[BuildKey, dict[str, Any]],
+) -> dict[BuildKey, dict[str, Any]]:
+    reusable: dict[BuildKey, dict[str, Any]] = {}
+    for build_key, entry in existing.items():
+        hero = source_heroes.get(build_key)
         if (
             hero is None
             or entry.get("prompt_version") != KIT_PROMPT_VERSION
@@ -1037,7 +1060,7 @@ def validated_reusable_kit_profiles(
         ):
             continue
         try:
-            reusable[hero_id] = validate_kit_response(entry, hero)
+            reusable[build_key] = validate_kit_response(entry, hero)
         except GenerationError:
             continue
     return reusable
@@ -1214,6 +1237,7 @@ def _validate_narrative_identity(
 ) -> None:
     identity_fields = (
         "hero_id",
+        "path_id",
         "snapshot_id",
         "policy_id",
         "narrative_basis_sha256",
@@ -1511,6 +1535,7 @@ def validate_response(
     _validate_prose_ceiling(combined, hero_name)
     return {
         "hero_id": int(response["hero_id"]),
+        "path_id": str(response["path_id"]),
         "hero": hero_name,
         "snapshot_id": str(response["snapshot_id"]),
         "policy_id": str(response["policy_id"]),
@@ -1540,7 +1565,7 @@ def _write_artifact(path: Path, document: dict[str, Any]) -> None:
 
 def _artifact_document(
     source: dict[str, Any],
-    generated: dict[int, dict[str, Any]],
+    generated: dict[BuildKey, dict[str, Any]],
     *,
     requested_hero_ids: set[int],
     kit_model: str | None,
@@ -1573,14 +1598,14 @@ def _artifact_document(
         "requested_hero_ids": sorted(requested_hero_ids),
         "exclusions": exclusions,
         "heroes": [
-            generated[key] for key in sorted(generated) if key in requested_hero_ids
+            generated[key] for key in sorted(generated) if key[0] in requested_hero_ids
         ],
     }
 
 
 def _kit_artifact_document(
     source: dict[str, Any],
-    generated: dict[int, dict[str, Any]],
+    generated: dict[BuildKey, dict[str, Any]],
     *,
     model: str | None,
 ) -> dict[str, Any]:
@@ -1597,24 +1622,24 @@ def _kit_artifact_document(
 
 
 def validated_reusable_entries(
-    existing: dict[int, dict[str, Any]],
-    source_heroes: dict[int, dict[str, Any]],
-) -> dict[int, dict[str, Any]]:
+    existing: dict[BuildKey, dict[str, Any]],
+    source_heroes: dict[BuildKey, dict[str, Any]],
+) -> dict[BuildKey, dict[str, Any]]:
     """Return only exact-policy, exact-snapshot narrative artifacts.
 
     Returns:
         Revalidated entries keyed by hero ID.
 
     """
-    reusable: dict[int, dict[str, Any]] = {}
+    reusable: dict[BuildKey, dict[str, Any]] = {}
     identity_fields = (
         "snapshot_id",
         "policy_id",
         "context_sha256",
         "narrative_basis_sha256",
     )
-    for hero_id, entry in existing.items():
-        hero = source_heroes.get(hero_id)
+    for build_key, entry in existing.items():
+        hero = source_heroes.get(build_key)
         if (
             hero is None
             or entry.get("prompt_version") not in REUSABLE_PROMPT_VERSIONS
@@ -1622,7 +1647,7 @@ def validated_reusable_entries(
         ):
             continue
         try:
-            reusable[hero_id] = validate_response(entry, hero)
+            reusable[build_key] = validate_response(entry, hero)
         except GenerationError:
             continue
     return reusable
@@ -1636,8 +1661,8 @@ class _NarrativeGenerationRun:
     requested_hero_ids: set[int]
     kit_schema: Path
     kit_output: Path
-    generated_narratives: dict[int, dict[str, Any]]
-    kit_profiles: dict[int, dict[str, Any]]
+    generated_narratives: dict[BuildKey, dict[str, Any]]
+    kit_profiles: dict[BuildKey, dict[str, Any]]
     artifact_lock: threading.Lock
     request_limiter: _RequestLimiter
 
@@ -1666,7 +1691,9 @@ def _prepare_narrative_generation(
             for exclusion in source.get("exclusions") or []
             if isinstance(exclusion, dict) and isinstance(exclusion.get("hero_id"), int)
         )
-    source_heroes = {int(hero["hero_id"]): hero for hero in selected}
+    source_heroes = {
+        (int(hero["hero_id"]), str(hero["path_id"])): hero for hero in selected
+    }
     return _NarrativeGenerationRun(
         args=args,
         source=source,
@@ -1713,21 +1740,21 @@ def _write_narrative_artifact(run: _NarrativeGenerationRun) -> None:
 
 def _checkpoint_kit_profile(
     run: _NarrativeGenerationRun,
-    hero_id: int,
+    build_key: BuildKey,
     kit_profile: dict[str, Any],
 ) -> None:
     with run.artifact_lock:
-        run.kit_profiles[hero_id] = kit_profile
+        run.kit_profiles[build_key] = kit_profile
         _write_kit_profile_artifact(run)
 
 
 def _checkpoint_generated_narrative(
     run: _NarrativeGenerationRun,
-    hero_id: int,
+    build_key: BuildKey,
     narrative: dict[str, Any],
 ) -> None:
     with run.artifact_lock:
-        run.generated_narratives[hero_id] = narrative
+        run.generated_narratives[build_key] = narrative
         _write_narrative_artifact(run)
 
 
@@ -1743,13 +1770,13 @@ def _kit_profile_for_narrative(
     *,
     index: int,
 ) -> dict[str, Any]:
-    hero_id = int(hero["hero_id"])
-    kit_profile = run.kit_profiles.get(hero_id)
+    build_key = int(hero["hero_id"]), str(hero["path_id"])
+    kit_profile = run.kit_profiles.get(build_key)
     if not run.args.force and kit_profile is not None:
         return kit_profile
     print(
         f"[{index}/{len(run.selected_heroes)}] Kit ({run.args.kit_model}): "
-        f"{hero.get('hero')}",
+        f"{hero.get('hero')} / {hero.get('path_label') or hero.get('path_id')}",
         file=sys.stderr,
     )
     kit_profile = generate_validated_response(
@@ -1759,14 +1786,14 @@ def _kit_profile_for_narrative(
             schema_path=run.kit_schema,
             model=run.args.kit_model,
             prompt=KIT_PROMPT,
-            identity_fields=("hero_id", "kit_basis_sha256"),
+            identity_fields=("hero_id", "path_id", "kit_basis_sha256"),
             validator=validate_kit_response,
             label=f"kit analysis for {hero.get('hero')}",
             max_attempts=run.args.max_attempts,
         ),
         request_limiter=run.request_limiter,
     )
-    _checkpoint_kit_profile(run, hero_id, kit_profile)
+    _checkpoint_kit_profile(run, build_key, kit_profile)
     return kit_profile
 
 
@@ -1776,17 +1803,18 @@ def _generate_hero_narrative(
     *,
     index: int,
 ) -> None:
-    hero_id = int(hero["hero_id"])
-    if not run.args.force and hero_id in run.generated_narratives:
+    build_key = int(hero["hero_id"]), str(hero["path_id"])
+    if not run.args.force and build_key in run.generated_narratives:
         print(
-            f"[{index}/{len(run.selected_heroes)}] reuse {hero.get('hero')}",
+            f"[{index}/{len(run.selected_heroes)}] reuse {hero.get('hero')} / "
+            f"{hero.get('path_label') or hero.get('path_id')}",
             file=sys.stderr,
         )
         return
     kit_profile = _kit_profile_for_narrative(run, hero, index=index)
     print(
         f"[{index}/{len(run.selected_heroes)}] Synthesis ({run.args.model}): "
-        f"{hero.get('hero')}",
+        f"{hero.get('hero')} / {hero.get('path_label') or hero.get('path_id')}",
         file=sys.stderr,
     )
     model_context = synthesis_context(
@@ -1803,6 +1831,7 @@ def _generate_hero_narrative(
             prompt=PROMPT,
             identity_fields=(
                 "hero_id",
+                "path_id",
                 "snapshot_id",
                 "policy_id",
                 "context_sha256",
@@ -1815,7 +1844,7 @@ def _generate_hero_narrative(
         ),
         request_limiter=run.request_limiter,
     )
-    _checkpoint_generated_narrative(run, hero_id, narrative)
+    _checkpoint_generated_narrative(run, build_key, narrative)
 
 
 def _pending_hero_pipelines(
@@ -1824,8 +1853,8 @@ def _pending_hero_pipelines(
     pending: list[tuple[int, dict[str, Any]]] = []
     selected_count = len(run.selected_heroes)
     for index, hero in enumerate(run.selected_heroes, start=1):
-        hero_id = int(hero["hero_id"])
-        if not run.args.force and hero_id in run.generated_narratives:
+        build_key = int(hero["hero_id"]), str(hero["path_id"])
+        if not run.args.force and build_key in run.generated_narratives:
             print(
                 f"[{index}/{selected_count}] reuse {hero.get('hero')}",
                 file=sys.stderr,
@@ -1838,8 +1867,8 @@ def _pending_hero_pipelines(
 def _generate_pending_hero_pipelines(
     run: _NarrativeGenerationRun,
     pending: list[tuple[int, dict[str, Any]]],
-) -> dict[int, GenerationError]:
-    failures: dict[int, GenerationError] = {}
+) -> dict[BuildKey, GenerationError]:
+    failures: dict[BuildKey, GenerationError] = {}
     worker_count = min(run.args.concurrency, len(pending))
     print(
         f"Generating {len(pending)} hero pipeline(s) with up to "
@@ -1851,30 +1880,31 @@ def _generate_pending_hero_pipelines(
         thread_name_prefix="deadlock-narrative",
     ) as executor:
         futures = {
-            executor.submit(_generate_hero_narrative, run, hero, index=index): int(
-                hero["hero_id"]
+            executor.submit(_generate_hero_narrative, run, hero, index=index): (
+                int(hero["hero_id"]),
+                str(hero["path_id"]),
             )
             for index, hero in pending
         }
         for future in as_completed(futures):
-            hero_id = futures[future]
+            build_key = futures[future]
             try:
                 future.result()
             except GenerationError as error:
-                failures[hero_id] = error
+                failures[build_key] = error
     return failures
 
 
 def _raise_hero_pipeline_failures(
     run: _NarrativeGenerationRun,
-    failures: dict[int, GenerationError],
+    failures: dict[BuildKey, GenerationError],
 ) -> None:
     if not failures:
         return
     failure_details = "; ".join(
-        f"{hero.get('hero')}: {failures[hero_id]}"
+        f"{hero.get('hero')}/{hero.get('path_id')}: {failures[build_key]}"
         for hero in run.selected_heroes
-        if (hero_id := int(hero["hero_id"])) in failures
+        if (build_key := (int(hero["hero_id"]), str(hero["path_id"]))) in failures
     )
     raise GenerationError(f"hero generation failed: {failure_details}")
 

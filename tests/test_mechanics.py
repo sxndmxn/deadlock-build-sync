@@ -321,3 +321,52 @@ def test_anti_heal_is_not_mislabeled_as_enemy_healing() -> None:
     asset["description"] = {"desc": "Applies healing reduction."}
 
     assert "healing" not in classify_observed_item_threats(asset)
+
+
+def test_disabled_property_labels_do_not_create_observed_threats() -> None:
+    asset = item(99, "neutral")
+    asset["properties"] = {
+        "WeaponPower": {
+            "label": "Weapon Damage",
+            "value": "0",
+            "disable_value": "0",
+        },
+        "TechPower": {
+            "label": "Spirit Power",
+            "value": "0",
+            "disable_value": "0",
+        },
+    }
+
+    assert classify_observed_item_threats(asset) == frozenset()
+
+
+def test_disabled_property_labels_do_not_create_counter_responses() -> None:
+    asset = item(99, "neutral")
+    asset["properties"] = {
+        "BulletResist": {
+            "label": "Bullet Resist",
+            "value": "0",
+            "disable_value": "0",
+        },
+        "SpiritShield": {
+            "label": "Spirit Shield",
+            "value": "0",
+            "disable_value": "0",
+        },
+    }
+
+    assert classify_item_threat_responses(asset) == frozenset()
+
+
+def test_nonzero_typed_property_creates_observed_threat() -> None:
+    asset = item(99, "spirit")
+    asset["properties"] = {
+        "TechPower": {
+            "label": "Spirit Power",
+            "value": "18",
+            "disable_value": "0",
+        }
+    }
+
+    assert classify_observed_item_threats(asset) == frozenset({"spirit_pressure"})

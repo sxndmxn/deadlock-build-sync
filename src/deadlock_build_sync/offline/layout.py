@@ -70,7 +70,7 @@ def create_build_layout(
     hero_name: str,
     tier_item_count: int = TIER_ITEM_COUNT,
 ) -> dict[str, Any]:
-    """Create the five-row shop layout from frozen late-game evidence."""
+    """Create the legacy five-row late-game diagnostic, not production policy."""
     if tier_item_count <= 0:
         raise ValueError("tier item count must be positive")
     core = late_game.get("most_common_eight_item_core")
@@ -150,7 +150,7 @@ def create_build_layout(
 
 
 def render_build_layout_markdown(layout: dict[str, Any]) -> str:
-    """Render a reviewable Markdown preview of a five-row build layout."""
+    """Render the legacy late-game diagnostic used for historical comparison."""
     cohort = layout["cohort"]
     minimum_net_worth = int(layout["minimum_final_net_worth"])
     if minimum_net_worth:
@@ -253,7 +253,7 @@ reference menus; unsupported choices are omitted instead of added as filler.
 
 ## Rendering requirements demonstrated
 
-1. Emit exactly five rows in this order: `CORE ITEMS`, `TIER 1`, `TIER 2`, `TIER 3`, `TIER 4`.
+1. This is the legacy five-row diagnostic; production may insert `OPTIONAL CORE` after `CORE ITEMS`.
 2. Emit exactly eight coherent core targets; never reduce the core to one item per tier.
 3. Select up to ten non-CORE candidates per tier with at least 20 buyer matches, then
    order them left-to-right by valid pre-purchase net-worth windows.

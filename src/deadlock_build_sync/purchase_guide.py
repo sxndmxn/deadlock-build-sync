@@ -8,7 +8,11 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
     from .ability_order import AbilityPath
-    from .build_evidence import ItemEvidence, SelectedHeroBuild
+    from .build_evidence import (
+        CoreAlternativeEvidence,
+        ItemEvidence,
+        SelectedHeroBuild,
+    )
 
 PURCHASE_BUCKET_INCREMENTS = (1000, 2000, 3000, 5000, 7000, 10000)
 LOW_VOLUME_MATCHES = 200
@@ -17,6 +21,9 @@ LOW_VOLUME_AVERAGE_SHARE = 0.15
 MIN_WINDOW_MATCHES = 20
 MIN_WINDOW_SHARE = 0.05
 CORE_CATEGORY_DESCRIPTION = "AUTO QUEUE • Default path, buy left→right."
+OPTIONAL_CORE_CATEGORY_DESCRIPTION = (
+    "Excluded from Queue • Swap only when the card trigger applies."
+)
 TIER_CATEGORY_DESCRIPTION = "Excluded from Queue • Choose deliberately."
 MAX_ITEM_ANNOTATION_BYTES = 240
 MAX_CATEGORY_DESCRIPTION_BYTES = 240
@@ -113,6 +120,9 @@ class PurchaseGuide:
     hero_name: str
     hero_class_name: str
     tiers: dict[int, tuple[GuideItem, ...]]
+    path_id: str = "default"
+    path_label: str = "Evidence Default"
+    signature_item_ids: tuple[int, ...] = ()
     ability_path: AbilityPath | None = None
     summary: str = ""
     tactical_profile: TacticalProfile | None = None
@@ -125,6 +135,11 @@ class PurchaseGuide:
     rank_identity: str = ""
     core_items: tuple[GuideItem, ...] = ()
     core_purchase_items: tuple[GuideItem, ...] = ()
+    backbone_items: tuple[GuideItem, ...] = ()
+    optional_core_items: tuple[GuideItem, ...] = ()
+    core_alternatives: tuple[CoreAlternativeEvidence, ...] = ()
+    backbone_matches: int = 0
+    backbone_share: float = 0.0
     core_joint_matches: int = 0
     core_joint_share: float = 0.0
     median_final_net_worth: int = 0
@@ -134,6 +149,7 @@ class PurchaseGuide:
     build_tag_labels: tuple[str, ...] = ()
     build_tag_catalog_sha256: str = ""
     build_archetype: str = "Evidence Default"
+    analysis_start_timestamp: int = 0
     as_of_timestamp: int = 0
 
     @property
@@ -151,22 +167,32 @@ class PurchaseGuide:
         if self.categories:
             return self.categories
         if self.core_items:
-            return (
+            categories = [
                 GuideCategory(
                     name="CORE ITEMS",
                     items=self.core_purchase_items or self.core_items,
                     description=CORE_CATEGORY_DESCRIPTION,
-                ),
-                *(
+                )
+            ]
+            if self.optional_core_items:
+                categories.append(
                     GuideCategory(
-                        name=f"TIER {tier}",
-                        items=self.tiers.get(tier, ()),
-                        description=TIER_CATEGORY_DESCRIPTION,
+                        name="OPTIONAL CORE",
+                        items=self.optional_core_items,
+                        description=OPTIONAL_CORE_CATEGORY_DESCRIPTION,
                         optional=True,
                     )
-                    for tier in range(1, 5)
-                ),
+                )
+            categories.extend(
+                GuideCategory(
+                    name=f"TIER {tier}",
+                    items=self.tiers.get(tier, ()),
+                    description=TIER_CATEGORY_DESCRIPTION,
+                    optional=True,
+                )
+                for tier in range(1, 5)
             )
+            return tuple(categories)
         result: list[GuideCategory] = []
         for tier in range(1, 5):
             items = self.tiers.get(tier, ())
@@ -193,7 +219,7 @@ class PurchaseGuide:
 
 
 def standard_category_description(name: str) -> str | None:
-    """Return fixed player-facing copy for the standard five-row layout.
+    """Return fixed player-facing copy for the standard policy layout.
 
     Returns:
         The fixed description, or ``None`` for a nonstandard policy category.
@@ -201,6 +227,8 @@ def standard_category_description(name: str) -> str | None:
     """
     if name == "CORE ITEMS":
         return CORE_CATEGORY_DESCRIPTION
+    if name == "OPTIONAL CORE":
+        return OPTIONAL_CORE_CATEGORY_DESCRIPTION
     if name in {f"TIER {tier}" for tier in range(1, 5)}:
         return TIER_CATEGORY_DESCRIPTION
     return None
@@ -299,7 +327,7 @@ def build_purchase_guide_from_evidence(
     """Project validated player-match evidence into the analytic guide model.
 
     Returns:
-        An eight-item coherent core and four compact adoption menus.
+        A state-aware economy-bounded default, optional swaps, and four adoption menus.
 
     """
     by_id = {
@@ -311,6 +339,8 @@ def build_purchase_guide_from_evidence(
         by_id.setdefault(item.item_id, guide_item_from_evidence(item))
     for item in selected.core_purchase_path:
         by_id.setdefault(item.item_id, guide_item_from_evidence(item))
+    for item in selected.optional_core:
+        by_id.setdefault(item.item_id, guide_item_from_evidence(item))
     return PurchaseGuide(
         hero_id=int(hero["id"]),
         hero_name=str(hero.get("name") or f"Hero {hero['id']}"),
@@ -319,11 +349,21 @@ def build_purchase_guide_from_evidence(
             tier: tuple(by_id[item.item_id] for item in items)
             for tier, items in selected.tiers.items()
         },
+        path_id=selected.path_id,
+        path_label=selected.path_label,
+        signature_item_ids=selected.signature_item_ids,
         ability_path=ability_path,
         core_items=tuple(by_id[item.item_id] for item in selected.core),
         core_purchase_items=tuple(
             by_id[item.item_id] for item in selected.core_purchase_path
         ),
+        backbone_items=tuple(by_id[item.item_id] for item in selected.backbone),
+        optional_core_items=tuple(
+            by_id[item.item_id] for item in selected.optional_core
+        ),
+        core_alternatives=selected.core_alternatives,
+        backbone_matches=selected.backbone_matches,
+        backbone_share=selected.backbone_share,
         core_joint_matches=selected.core_joint_matches,
         core_joint_share=selected.core_joint_share,
         median_final_net_worth=selected.median_final_net_worth,

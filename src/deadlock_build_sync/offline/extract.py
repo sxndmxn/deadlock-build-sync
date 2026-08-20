@@ -2,12 +2,20 @@ from __future__ import annotations
 
 import json
 import shutil
+import time
 from pathlib import Path
 from typing import Any
 
 import duckdb
 
 from .config import DUCKLAKE_URL, Cohort, RunPaths
+
+_REMOTE_QUERY_ATTEMPTS = 4
+_RETRYABLE_REMOTE_ERRORS = (
+    "No magic bytes found at end of file",
+    "HTTP GET error",
+    "Connection error",
+)
 
 
 def _sql_timestamp(value: Any) -> str:
@@ -19,11 +27,31 @@ def _cohort_where(cohort: Cohort) -> str:
         match_mode = '{cohort.match_mode}'
         AND game_mode = '{cohort.game_mode}'
         AND start_time >= TIMESTAMPTZ '{_sql_timestamp(cohort.since)}'
-        AND start_time <= TIMESTAMPTZ '{_sql_timestamp(cohort.resolved_as_of())}'
+        AND start_time + duration_s * INTERVAL '1 second'
+            <= TIMESTAMPTZ '{_sql_timestamp(cohort.resolved_as_of())}'
         AND average_badge BETWEEN {cohort.minimum_badge} AND {cohort.maximum_badge}
-        AND rewards_eligible
-        AND player_match_outcome IN ('Win', 'Loss')
-        AND team IN ('Team0', 'Team1')
+    """
+
+
+def _eligible_matches_query(
+    cohort: Cohort,
+    *,
+    source: str = "remote.main.match_player",
+) -> str:
+    """Return the whole-match admission query for a trusted table reference."""
+    return f"""
+        SELECT match_id
+        FROM {source}
+        WHERE {_cohort_where(cohort)}
+        GROUP BY match_id
+        HAVING count(*) = 12
+           AND count(DISTINCT player_slot) = 12
+           AND count(*) FILTER (WHERE team = 'Team0') = 6
+           AND count(*) FILTER (WHERE team = 'Team1') = 6
+           AND bool_and(rewards_eligible)
+           AND bool_and(player_match_outcome IN ('Win', 'Loss'))
+           AND count(*) FILTER (WHERE player_match_outcome = 'Win') = 6
+           AND count(*) FILTER (WHERE player_match_outcome = 'Loss') = 6
     """
 
 
@@ -98,16 +126,42 @@ def _count(con: duckdb.DuckDBPyConnection, query: str) -> int:
     return int(row[0])
 
 
+def _execute_remote_query(
+    con: duckdb.DuckDBPyConnection,
+    query: str,
+) -> duckdb.DuckDBPyConnection:
+    """Retry when DuckLake publishes metadata just before a shard is readable."""
+    for attempt in range(1, _REMOTE_QUERY_ATTEMPTS + 1):
+        try:
+            return con.execute(query)
+        except duckdb.Error as error:
+            retryable = any(marker in str(error) for marker in _RETRYABLE_REMOTE_ERRORS)
+            if not retryable or attempt == _REMOTE_QUERY_ATTEMPTS:
+                raise
+            delay_s = 2 ** (attempt - 1)
+            print(
+                "Remote snapshot is still publishing; "
+                f"retrying in {delay_s}s ({attempt}/{_REMOTE_QUERY_ATTEMPTS})…",
+                flush=True,
+            )
+            time.sleep(delay_s)
+    raise AssertionError("remote query retry loop exhausted")
+
+
 def extract_cohort(paths: RunPaths, cohort: Cohort) -> dict[str, Any]:
     cohort.validate()
-    where = _cohort_where(cohort)
     con = _connect(paths)
     try:
         _load_item_assets(con, paths.raw / "items.json")
+        con.execute("DROP TABLE IF EXISTS eligible_matches")
+        _execute_remote_query(
+            con, "CREATE TABLE eligible_matches AS " + _eligible_matches_query(cohort)
+        )
         print("Extracting deidentified player-match cohort…", flush=True)
         con.execute("DROP TABLE IF EXISTS player_matches")
-        con.execute(
-            f"""
+        _execute_remote_query(
+            con,
+            """
             CREATE TABLE player_matches AS
             SELECT
                 match_id,
@@ -122,19 +176,20 @@ def extract_cohort(paths: RunPaths, cohort: Cohort) -> dict[str, Any]:
                 net_worth AS final_net_worth,
                 coalesce(player_rank_initial_calibration_games, 0) > 0 AS calibration
             FROM remote.main.match_player
-            WHERE {where}
-            """
+            INNER JOIN eligible_matches USING (match_id)
+            """,
         )
         print("Aggregating deidentified unique-player breadth…", flush=True)
         con.execute("DROP TABLE IF EXISTS hero_account_counts")
-        con.execute(
-            f"""
+        _execute_remote_query(
+            con,
+            """
             CREATE TABLE hero_account_counts AS
             SELECT hero_id, count(DISTINCT account_id) AS unique_accounts
             FROM remote.main.match_player
-            WHERE {where}
+            INNER JOIN eligible_matches USING (match_id)
             GROUP BY hero_id
-            """
+            """,
         )
         con.execute(
             """
@@ -166,8 +221,9 @@ def extract_cohort(paths: RunPaths, cohort: Cohort) -> dict[str, Any]:
 
         print("Extracting team net-worth snapshots…", flush=True)
         con.execute("DROP TABLE IF EXISTS team_snapshots")
-        con.execute(
-            f"""
+        _execute_remote_query(
+            con,
+            """
             CREATE TABLE team_snapshots AS
             WITH snapshots AS (
                 SELECT
@@ -176,14 +232,14 @@ def extract_cohort(paths: RunPaths, cohort: Cohort) -> dict[str, Any]:
                     unnest("stats.time_stamp_s") AS stat_time,
                     unnest("stats.net_worth") AS player_net_worth
                 FROM remote.main.match_player
-                WHERE {where}
+                INNER JOIN eligible_matches USING (match_id)
             )
             SELECT match_id, team_id, stat_time,
                    sum(player_net_worth) AS team_net_worth,
                    count(*) AS observed_players
             FROM snapshots
             GROUP BY match_id, team_id, stat_time
-            """
+            """,
         )
 
         print(
@@ -191,8 +247,9 @@ def extract_cohort(paths: RunPaths, cohort: Cohort) -> dict[str, Any]:
             flush=True,
         )
         con.execute("DROP TABLE IF EXISTS purchases")
-        con.execute(
-            f"""
+        _execute_remote_query(
+            con,
+            """
             CREATE TABLE purchases AS
             WITH expanded AS (
                 SELECT
@@ -214,7 +271,7 @@ def extract_cohort(paths: RunPaths, cohort: Cohort) -> dict[str, Any]:
                     "stats.time_stamp_s" AS stat_times,
                     "stats.net_worth" AS stat_net_worths
                 FROM remote.main.match_player
-                WHERE {where}
+                INNER JOIN eligible_matches USING (match_id)
             ), valid AS (
                 SELECT e.*,
                        a.item_name, a.class_name, a.tier, a.cost, a.slot,
@@ -225,7 +282,14 @@ def extract_cohort(paths: RunPaths, cohort: Cohort) -> dict[str, Any]:
                                x -> x[1] <= buy_time
                            ),
                            x -> x[2]
-                       )) AS own_net_worth_at_buy
+                       )) AS own_net_worth_at_buy,
+                       list_last(list_transform(
+                           list_filter(
+                               list_zip(stat_times, stat_net_worths),
+                               x -> x[1] <= buy_time
+                           ),
+                           x -> x[1]
+                       )) AS state_observed_at_s
                 FROM expanded e
                 INNER JOIN item_assets a USING (item_id)
                 WHERE buy_time > 0
@@ -236,12 +300,15 @@ def extract_cohort(paths: RunPaths, cohort: Cohort) -> dict[str, Any]:
                     PARTITION BY match_id, player_slot
                     ORDER BY buy_time, item_id
                 ) AS event_order,
+                count(*) OVER (
+                    PARTITION BY match_id, player_slot, buy_time
+                ) AS same_second_purchase_count,
                 row_number() OVER (
                     PARTITION BY match_id, player_slot, item_id
                     ORDER BY buy_time, sold_time
                 ) AS item_purchase_ordinal
             FROM valid
-            """
+            """,
         )
 
         print("Joining purchase events to team state…", flush=True)
@@ -279,15 +346,17 @@ def extract_cohort(paths: RunPaths, cohort: Cohort) -> dict[str, Any]:
             )
             SELECT *,
                    own_team_net_worth - enemy_team_net_worth AS team_net_worth_lead,
+                   buy_time - state_observed_at_s AS state_age_s,
                    sum(cost) OVER (
                        PARTITION BY match_id, player_slot
-                       ORDER BY buy_time, item_id
-                       ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+                       ORDER BY buy_time
+                       RANGE BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
                    ) AS prior_catalog_spend,
-                   row_number() OVER (
+                   count(*) OVER (
                        PARTITION BY match_id, player_slot
-                       ORDER BY buy_time, item_id
-                   ) - 1 AS prior_purchase_count
+                       ORDER BY buy_time
+                       RANGE BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+                   ) AS prior_purchase_count
             FROM both_states
             """
         )
@@ -295,18 +364,35 @@ def extract_cohort(paths: RunPaths, cohort: Cohort) -> dict[str, Any]:
         con.execute(
             """
             CREATE TABLE decision_opportunities AS
-            SELECT *
-            FROM first_purchases
-            QUALIFY row_number() OVER (
-                PARTITION BY match_id, player_slot, phase, tier
-                ORDER BY buy_time, item_id
-            ) = 1
+            WITH realized AS (
+                SELECT *
+                FROM first_purchases
+                WHERE same_second_purchase_count = 1
+                QUALIFY row_number() OVER (
+                    PARTITION BY match_id, player_slot, phase, tier
+                    ORDER BY buy_time, item_id
+                ) = 1
+            ), slates AS (
+                SELECT tier, list_sort(list(item_id)) AS item_ids
+                FROM item_assets
+                GROUP BY tier
+            )
+            SELECT r.*,
+                   to_json(struct_pack(
+                       item_ids := s.item_ids,
+                       includes_save := true
+                   )) AS candidate_slate_json,
+                   cast(r.item_id AS VARCHAR) AS realized_action,
+                   false AS save_action_observed
+            FROM realized r
+            JOIN slates s USING (tier)
             """
         )
 
         print("Exporting compressed analysis tables…", flush=True)
         for table in (
             "item_assets",
+            "eligible_matches",
             "player_matches",
             "hero_account_counts",
             "match_folds",

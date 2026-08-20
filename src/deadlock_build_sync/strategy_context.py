@@ -18,9 +18,9 @@ if TYPE_CHECKING:
     from .purchase_guide import PurchaseGuide
     from .snapshot import SnapshotManifest
 
-CONTEXT_SCHEMA_VERSION = 9
+CONTEXT_SCHEMA_VERSION = 10
 KIT_BASIS_SCHEMA_VERSION = 3
-NARRATIVE_BASIS_SCHEMA_VERSION = 7
+NARRATIVE_BASIS_SCHEMA_VERSION = 8
 TIER_LABELS = {1: "I", 2: "II", 3: "III", 4: "IV"}
 
 
@@ -112,6 +112,9 @@ def _context_item_records(entry: dict[str, Any]) -> list[dict[str, Any]]:
     core = entry.get("core")
     if isinstance(core, dict) and isinstance(core.get("items"), list):
         records.extend(item for item in core["items"] if isinstance(item, dict))
+        optional = core.get("optional_final_slot_cards")
+        if isinstance(optional, list):
+            records.extend(item for item in optional if isinstance(item, dict))
     tiers = entry.get("tiers")
     if isinstance(tiers, dict):
         for tier_items in tiers.values():
@@ -182,6 +185,8 @@ def _narrative_basis(context: dict[str, Any]) -> dict[str, Any]:
     return {
         "schema_version": NARRATIVE_BASIS_SCHEMA_VERSION,
         "hero_id": context.get("hero_id"),
+        "path_id": context.get("path_id"),
+        "path_label": context.get("path_label"),
         "hero": context.get("hero"),
         "hero_mechanics": context.get("hero_mechanics"),
         "item_mechanics_ids": context.get("item_mechanics_ids"),
@@ -203,6 +208,7 @@ def _kit_basis(context: dict[str, Any]) -> dict[str, Any]:
     return {
         "schema_version": KIT_BASIS_SCHEMA_VERSION,
         "hero_id": context.get("hero_id"),
+        "path_id": context.get("path_id"),
         "hero": context.get("hero"),
         "hero_mechanics": context.get("hero_mechanics"),
         "ability_policy": context.get("ability_policy"),
@@ -289,14 +295,15 @@ def _strategy_context_header(document: dict[str, Any]) -> _StrategyContextHeader
     return manifest, heroes, item_mechanics, requested, exclusions
 
 
-def _context_hero_id(entry: object) -> int:
+def _context_build_key(entry: object) -> tuple[int, str]:
     if not isinstance(entry, dict):
         raise StrategyContextError("strategy context contains an invalid hero")
     hero = cast("dict[str, Any]", entry)
     hero_id = hero.get("hero_id")
-    if not isinstance(hero_id, int):
+    path_id = hero.get("path_id")
+    if not isinstance(hero_id, int) or not isinstance(path_id, str) or not path_id:
         raise StrategyContextError("strategy context contains an invalid hero")
-    return hero_id
+    return hero_id, path_id
 
 
 def _validate_context_hero(
@@ -355,14 +362,17 @@ def validate_strategy_context_document(document: dict[str, Any]) -> None:
         document
     )
 
+    seen_build_keys: set[tuple[int, str]] = set()
     seen_hero_ids: set[int] = set()
     referenced_item_ids: set[int] = set()
     for entry in heroes:
-        hero_id = _context_hero_id(entry)
-        if hero_id in seen_hero_ids:
+        build_key = _context_build_key(entry)
+        hero_id = build_key[0]
+        if build_key in seen_build_keys:
             raise StrategyContextError(
-                f"strategy context contains duplicate hero {hero_id}"
+                f"strategy context contains duplicate build {hero_id}/{build_key[1]}"
             )
+        seen_build_keys.add(build_key)
         seen_hero_ids.add(hero_id)
         referenced_item_ids.update(
             _validate_context_hero(entry, manifest, item_mechanics)
@@ -420,6 +430,7 @@ def _ability_policy(
         purchases[ability_id] += 1
     return {
         "selection": path.selection,
+        "filter_item_ids": list(path.filter_item_ids),
         "language_ceiling": "descriptive default projection, not a universal path",
         "all_valid_telemetry_appearances": path.cohort_matches,
         "complete_path_appearances": path.complete_path_matches,
@@ -570,6 +581,7 @@ def build_hero_strategy_context(
     item_mechanics_ids = sorted(
         {item.item_id for tier_items in guide.tiers.values() for item in tier_items}
         | {item.item_id for item in guide.core_items}
+        | {item.item_id for item in guide.optional_core_items}
     )
     item_mechanics = build_item_mechanics_catalog(assets, set(item_mechanics_ids))
     item_mechanics_sha256 = calculate_item_mechanics_sha256(
@@ -579,6 +591,8 @@ def build_hero_strategy_context(
     projected = projection or guide
     projection_context = {
         "build": {
+            "path_id": projected.path_id,
+            "path_label": projected.path_label,
             "archetype": projected.build_archetype,
             "tag_ids": list(projected.build_tag_ids),
             "tag_classes": list(projected.build_tag_classes),
@@ -605,13 +619,15 @@ def build_hero_strategy_context(
         ],
         "semantics": (
             "CORE ITEMS is the component-expanded non-optional Queue path. "
-            "TIER 1–4 are optional adoption reference menus and never automatic "
-            "purchases."
+            "OPTIONAL CORE contains only admitted like-state final-slot swaps. "
+            "OPTIONAL CORE and TIER 1–4 never enter the automatic Queue."
         ),
     }
     context: dict[str, Any] = {
         "hero_id": guide.hero_id,
         "hero": guide.hero_name,
+        "path_id": guide.path_id,
+        "path_label": guide.path_label,
         "snapshot_id": guide.snapshot_id,
         "policy_id": guide.policy_id,
         "hero_mechanics": kit,
@@ -620,7 +636,10 @@ def build_hero_strategy_context(
         "ability_policy": _ability_policy(guide, kit, ability_timeline),
         "ending_duration_profile": ending_profile,
         "core": {
-            "selection": "highest joint-support legal eight-item final inventory within median final net worth",
+            "selection": "temporally stable supported backbone with a mechanically legal conditional-support completion",
+            "backbone_item_ids": [item.item_id for item in guide.backbone_items],
+            "backbone_player_matches": guide.backbone_matches,
+            "backbone_share": guide.backbone_share,
             "item_ids_in_observed_acquisition_order": [
                 item.item_id for item in guide.core_items
             ],
@@ -647,6 +666,9 @@ def build_hero_strategy_context(
                 }
                 for item in guide.core_items
             ],
+            "optional_final_slot_cards": [
+                card.__dict__ for card in guide.core_alternatives
+            ],
         },
         "tiers": tiers,
         "matchups": matchups or {"same_lane": [], "whole_enemy_team": []},
@@ -658,7 +680,8 @@ def build_hero_strategy_context(
             "Observed adopter outcomes and ending-duration profiles are descriptive associations, not item effects or live power curves.",
             "Ability actions use reached-state support and exact legal levels; price tiers are not ability quarters.",
             "Only mechanics-backed, state-observable policy branches may be explained.",
-            "CORE ITEMS is the component-expanded automatic Queue path; TIER 1–4 are optional reference menus and do not prove a situational trigger.",
+            "CORE ITEMS is the component-expanded automatic Queue path; OPTIONAL CORE contains gated final-slot swaps, and all optional rows remain outside Queue.",
+            "Cross-fitted doubly robust contrasts are assumption-dependent like-state estimates, not proof that an item causes wins.",
             "Do not invent mechanics, numeric effects, threats, combos, or matchups absent from this packet.",
         ],
     }

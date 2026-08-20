@@ -1,17 +1,13 @@
 from __future__ import annotations
 
 import json
-from collections import Counter
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
 from .build_evidence import (
     THREAT_CLASSES,
     BuildEvidenceCatalog,
-    HeroBuildEvidence,
-    SequenceTransition,
-    SituationalBranch,
 )
 from .mechanics import (
     InventoryState,
@@ -20,7 +16,14 @@ from .mechanics import (
     classify_observed_item_threats,
     purchase_item,
 )
-from .snapshot import sha256_json
+from .policy import (
+    BuildPolicy,
+    CounterCard,
+    EvaluationState,
+    NodeKind,
+    PolicyNode,
+    next_policy_decision,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -237,16 +240,6 @@ def _unique_strings(value: object, label: str) -> tuple[str, ...]:
     return result
 
 
-def _policy_id(hero: HeroBuildEvidence) -> str:
-    if hero.sequence_policy is None or hero.situational_policy is None:
-        raise RecommendationError("hero has no admitted recommendation policy")
-    return sha256_json({
-        "hero_id": hero.hero_id,
-        "sequence": asdict(hero.sequence_policy),
-        "situational": asdict(hero.situational_policy),
-    })
-
-
 def _validate_evidence_identity(
     catalog: BuildEvidenceCatalog,
     state: DecisionState,
@@ -298,90 +291,29 @@ def _validate_inventory(state: DecisionState, graph: ItemGraph) -> InventoryStat
     return inventory
 
 
-def _matches(row: SequenceTransition, state: DecisionState) -> bool:
-    first = state.purchases[0] if state.purchases else 0
-    previous = state.purchases[-1] if state.purchases else 0
-    position = len(state.purchases)
-    if row.level == "first_previous_position":
-        return (row.first_item_id, row.previous_item_id, row.position) == (
-            first,
-            previous,
-            position,
-        )
-    if row.level == "previous_position":
-        return (row.previous_item_id, row.position) == (previous, position)
-    if row.level == "position":
-        return row.position == position
-    return row.level == "popularity"
-
-
-def _candidate_rows(
-    hero: HeroBuildEvidence,
-    state: DecisionState,
-) -> tuple[str, tuple[SequenceTransition, ...]]:
-    policy = hero.sequence_policy
-    if policy is None:
-        return "", ()
-    for level in (
-        "first_previous_position",
-        "previous_position",
-        "position",
-        "popularity",
-    ):
-        rows = tuple(
-            sorted(
-                (
-                    row
-                    for row in policy.transitions
-                    if row.level == level and _matches(row, state)
-                ),
-                key=lambda row: (-row.support, row.next_item_id),
-            )
-        )
-        if rows:
-            return level, rows
-    return "", ()
-
-
 def _next_purchase(
     target_item_id: int,
     inventory: InventoryState,
     graph: ItemGraph,
 ) -> tuple[int, int] | None:
-    missing_components = tuple(
-        component_id
-        for component_id in graph.transitive_components(target_item_id)
-        if component_id not in inventory.owned
-    )
-    item_id = missing_components[0] if missing_components else target_item_id
+    def first_missing(item_id: int) -> int | None:
+        if item_id in inventory.owned:
+            return None
+        for component_id in graph.components[graph.require(item_id).item_id]:
+            if component_id in inventory.owned:
+                continue
+            nested = first_missing(component_id)
+            return component_id if nested is None else nested
+        return item_id
+
+    item_id = first_missing(target_item_id)
+    if item_id is None:
+        return None
     try:
         purchase_item(graph, inventory, item_id)
     except MechanicsError:
         return None
     return item_id, graph.incremental_cash_cost(item_id, inventory.owned)
-
-
-def _matching_counter(
-    hero: HeroBuildEvidence,
-    state: DecisionState,
-    threats: frozenset[str],
-) -> SituationalBranch | None:
-    policy = hero.situational_policy
-    if policy is None:
-        return None
-    matches = [
-        branch
-        for branch in policy.branches
-        if branch.threat in threats
-        and (
-            branch.enemy_hero_id is None or branch.enemy_hero_id in state.enemy_hero_ids
-        )
-    ]
-    if len(matches) > 1:
-        raise RecommendationError(
-            "multiple situational branches matched without precedence"
-        )
-    return matches[0] if matches else None
 
 
 def _observed_threats(
@@ -412,21 +344,94 @@ def _decision_mechanics(
         raise RecommendationError(str(error)) from error
 
 
-def _counter_recommendation(
-    hero: HeroBuildEvidence,
+def _evaluation_state(
     state: DecisionState,
     threats: frozenset[str],
     inventory: InventoryState,
+) -> EvaluationState:
+    observable = {
+        "enemy.heroes": state.enemy_hero_ids,
+        "enemy.threats": tuple(sorted(threats)),
+        "enemy.items": state.enemy_item_ids,
+        "ally.heroes": state.allied_hero_ids,
+        "inventory.items": state.owned_items,
+        "inventory.components": state.owned_components,
+        "inventory.open_slots": state.open_slots,
+        "inventory.active_bindings": state.active_bindings,
+        "inventory.flex_slots": state.unlocked_flex_slots,
+        "clock_s": state.clock_s,
+        "economy.liquid": state.liquid_souls,
+        "objectives.available": state.objectives,
+        "objectives.flex_slots": state.unlocked_flex_slots,
+        "cohort.match_mode": state.match_mode,
+        "cohort.rank_badge": state.average_badge,
+    }
+    return EvaluationState(
+        observable,
+        inventory=inventory,
+        learned_abilities=frozenset(state.learned_abilities),
+        clock_s=state.clock_s,
+    )
+
+
+def _required_core_complete(policy: BuildPolicy, inventory: InventoryState) -> bool:
+    required = {
+        node.item_id
+        for node in policy.nodes
+        if node.kind == NodeKind.PURCHASE and not node.optional
+    }
+    return bool(required) and required <= set(inventory.owned)
+
+
+def _policy_node(policy: BuildPolicy, node_id: str) -> PolicyNode:
+    return next(node for node in policy.nodes if node.node_id == node_id)
+
+
+def _counter_card(policy: BuildPolicy, node: PolicyNode) -> CounterCard | None:
+    matches = [
+        card
+        for card in policy.counter_cards
+        if card.item_id == node.item_id and card.evidence_ref == node.evidence_ref
+    ]
+    if len(matches) > 1:
+        raise RecommendationError("policy has ambiguous counter metadata")
+    return matches[0] if matches else None
+
+
+def _recommend_policy_node(
+    policy: BuildPolicy,
+    state: DecisionState,
+    node: PolicyNode,
+    inventory: InventoryState,
     graph: ItemGraph,
-) -> Recommendation | None:
-    counter = _matching_counter(hero, state, threats)
-    if counter is None:
-        return None
-    purchase = _next_purchase(counter.item_id, inventory, graph)
+) -> Recommendation:
+    if node.kind != NodeKind.PURCHASE or node.item_id is None:
+        return Recommendation(
+            RecommendationAction.ABSTAIN,
+            state.hero_id,
+            policy.policy_id,
+            reason=f"policy action {node.kind.value} is not executable by recommend",
+        )
+    purchase = _next_purchase(node.item_id, inventory, graph)
     if purchase is None:
-        return None
-    policy_id = _policy_id(hero)
+        return Recommendation(
+            RecommendationAction.ABSTAIN,
+            state.hero_id,
+            policy.policy_id,
+            reason=f"policy purchase {node.node_id} is illegal in the supplied state",
+        )
     item_id, cost = purchase
+    claim = next(
+        (claim for claim in policy.evidence if claim.claim_id == node.evidence_ref),
+        None,
+    )
+    card = _counter_card(policy, node)
+    support = None
+    if claim is not None:
+        support = claim.numerator if claim.numerator is not None else claim.support
+    support_share = (
+        claim.estimate if claim is not None and claim.numerator is not None else None
+    )
     action = (
         RecommendationAction.BUY
         if state.liquid_souls >= cost
@@ -435,53 +440,21 @@ def _counter_recommendation(
     return Recommendation(
         action,
         state.hero_id,
-        policy_id,
+        policy.policy_id,
         item_id,
-        counter.item_id,
+        node.item_id,
         cost,
-        counter.support,
-        None,
-        "situational",
-        counter.trigger,
-        asdict(counter),
+        support,
+        support_share,
+        "situational" if node.optional else "policy",
+        node.annotation or "Deterministic typed policy graph.",
+        card.as_dict() if card is not None else None,
     )
-
-
-def _sequence_recommendation(
-    hero: HeroBuildEvidence,
-    state: DecisionState,
-    policy_id: str,
-    inventory: InventoryState,
-    graph: ItemGraph,
-) -> Recommendation | None:
-    level, candidates = _candidate_rows(hero, state)
-    for row in candidates:
-        purchase = _next_purchase(row.next_item_id, inventory, graph)
-        if purchase is None:
-            continue
-        item_id, cost = purchase
-        action = (
-            RecommendationAction.BUY
-            if state.liquid_souls >= cost
-            else RecommendationAction.SAVE
-        )
-        return Recommendation(
-            action,
-            state.hero_id,
-            policy_id,
-            item_id,
-            row.next_item_id,
-            cost,
-            row.support,
-            row.support / row.context_support,
-            level,
-            "Observed next-action imitation; not an item-effect claim.",
-        )
-    return None
 
 
 def recommend(
     catalog: BuildEvidenceCatalog,
+    policy: BuildPolicy,
     state: DecisionState,
     assets: list[dict[str, Any]],
 ) -> Recommendation:
@@ -495,44 +468,59 @@ def recommend(
 
     """
     _validate_evidence_identity(catalog, state)
-    hero = catalog.heroes.get(state.hero_id)
-    if hero is None:
+    if state.hero_id not in catalog.heroes:
         raise RecommendationError("decision state hero is absent from build evidence")
-    policy_id = _policy_id(hero)
+    if policy.hero_id != state.hero_id:
+        raise RecommendationError("decision state hero differs from the build policy")
     graph, inventory = _decision_mechanics(state, assets)
     unknown_threats = sorted(set(state.threats) - THREAT_CLASSES)
     if unknown_threats:
         return Recommendation(
             RecommendationAction.ABSTAIN,
             state.hero_id,
-            policy_id,
+            policy.policy_id,
             reason="unknown threat classes: " + ", ".join(unknown_threats),
         )
     try:
         observed_threats = _observed_threats(state, assets, graph)
     except MechanicsError as error:
         raise RecommendationError(str(error)) from error
-    counter = _counter_recommendation(hero, state, observed_threats, inventory, graph)
-    if counter is not None:
-        return counter
-    sequence_recommendation = _sequence_recommendation(
-        hero, state, policy_id, inventory, graph
-    )
-    if sequence_recommendation is not None:
-        return sequence_recommendation
-    sequence = hero.sequence_policy
-    if sequence is not None and not (
-        Counter(sequence.default_path) - Counter(state.purchases)
-    ):
+    if _required_core_complete(policy, inventory):
         return Recommendation(
             RecommendationAction.END,
             state.hero_id,
-            policy_id,
-            reason="component-expanded default path is complete",
+            policy.policy_id,
+            reason="required policy purchases are currently owned",
+        )
+    decision = next_policy_decision(
+        policy,
+        _evaluation_state(state, observed_threats, inventory),
+    )
+    if decision.abstention is not None:
+        return Recommendation(
+            RecommendationAction.ABSTAIN,
+            state.hero_id,
+            policy.policy_id,
+            reason=decision.abstention.detail,
+        )
+    if decision.kind == NodeKind.END:
+        return Recommendation(
+            RecommendationAction.END,
+            state.hero_id,
+            policy.policy_id,
+            reason="typed policy graph is complete",
+        )
+    if decision.node_id is not None:
+        return _recommend_policy_node(
+            policy,
+            state,
+            _policy_node(policy, decision.node_id),
+            inventory,
+            graph,
         )
     return Recommendation(
         RecommendationAction.ABSTAIN,
         state.hero_id,
-        policy_id,
-        reason="no supported legal next action for the supplied state",
+        policy.policy_id,
+        reason="typed policy graph produced no executable action",
     )

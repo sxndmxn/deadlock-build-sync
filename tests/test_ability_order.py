@@ -76,3 +76,15 @@ def test_state_composed_label_is_truthful_when_no_exact_path_was_observed() -> N
     assert selected.ability_ids not in observed
     assert "State-composed observed default" in selected.annotation
     assert "complete path" not in selected.annotation.casefold()
+
+
+def test_skips_more_supported_successor_when_it_cannot_complete() -> None:
+    complete = (2, 1, 3, 4) * 4
+    selected = select_ability_path([
+        path(1, matches=101, wins=51),
+        path(*complete, matches=100, wins=50),
+    ])
+
+    assert selected is not None
+    assert selected.ability_ids == complete
+    assert selected.decision_support[0] == 100

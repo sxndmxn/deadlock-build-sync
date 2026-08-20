@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from .build_evidence import MAXIMUM_CORE_ITEM_COUNT, MINIMUM_BACKBONE_ITEM_COUNT
 from .policy import (
     Branch,
     BuildPolicy,
@@ -14,10 +15,12 @@ from .policy import (
 )
 from .purchase_guide import (
     CORE_CATEGORY_DESCRIPTION,
+    OPTIONAL_CORE_CATEGORY_DESCRIPTION,
     TIER_CATEGORY_DESCRIPTION,
     GuideCategory,
     GuideItem,
     PurchaseGuide,
+    tactical_item_annotation,
 )
 from .snapshot import sha256_json
 
@@ -230,9 +233,14 @@ def _project_evidence_layout(
         for node in default_path
         if node.kind == NodeKind.PURCHASE and node.item_id is not None
     )
-    if len(source_core_ids) != 8 or policy_core_ids != source_core_ids:
+    if (
+        not MINIMUM_BACKBONE_ITEM_COUNT
+        <= len(source_core_ids)
+        <= MAXIMUM_CORE_ITEM_COUNT
+        or policy_core_ids != source_core_ids
+    ):
         raise PolicyError(
-            "policy default path does not match the eight-item evidence core"
+            "policy default path does not match the supported evidence core"
         )
     if any(not 1 <= len(layout.tiers.get(tier, ())) <= 10 for tier in range(1, 5)):
         raise PolicyError("evidence projection requires 1–10 items in every tier")
@@ -246,6 +254,14 @@ def _project_evidence_layout(
             "conditional policy items are missing from tier menus: "
             + ", ".join(str(item_id) for item_id in sorted(missing_conditional))
         )
+    card_by_item = {card.item_id: card for card in policy.core_alternatives}
+    optional_core_ids = {item.item_id for item in layout.optional_core_items}
+    if optional_core_ids != set(card_by_item):
+        raise PolicyError(
+            "OPTIONAL CORE evidence does not match the admitted policy cards"
+        )
+    if optional_core_ids & (core_purchase_ids | tier_item_ids):
+        raise PolicyError("OPTIONAL CORE items must be disjoint from CORE and tiers")
 
     def project_item(item: GuideItem) -> GuideItem:
         node = conditional.get(item.item_id)
@@ -263,36 +279,61 @@ def _project_evidence_layout(
         tier: tuple(project_item(item) for item in items)
         for tier, items in layout.tiers.items()
     }
+    optional_core_items = tuple(
+        _project_guide_item_policy_fields(
+            item,
+            tactical_annotation=tactical_item_annotation(
+                card_by_item[item.item_id].trigger,
+                item,
+            ),
+            required_flex_slots=None,
+            sell_priority=None,
+            imbue_target_ability_id=None,
+        )
+        for item in layout.optional_core_items
+    )
     core_items = _apply_sell_priorities(layout.core_items, policy.nodes)
     core_purchase_items = _apply_sell_priorities(core_purchase_items, policy.nodes)
-    categories = (
+    categories = [
         GuideCategory(
             "CORE ITEMS",
             core_purchase_items,
             CORE_CATEGORY_DESCRIPTION,
-        ),
-        *(
+        )
+    ]
+    if optional_core_items:
+        categories.append(
             GuideCategory(
-                f"TIER {tier}",
-                tiers[tier],
-                TIER_CATEGORY_DESCRIPTION,
+                "OPTIONAL CORE",
+                optional_core_items,
+                OPTIONAL_CORE_CATEGORY_DESCRIPTION,
                 optional=True,
             )
-            for tier in range(1, 5)
-        ),
+        )
+    categories.extend(
+        GuideCategory(
+            f"TIER {tier}",
+            tiers[tier],
+            TIER_CATEGORY_DESCRIPTION,
+            optional=True,
+        )
+        for tier in range(1, 5)
     )
     return PurchaseGuide(
         hero_id=policy.hero_id,
         hero_name=identity.hero_name,
         hero_class_name=identity.hero_class_name,
         tiers=tiers,
+        path_id=policy.path_id,
+        path_label=policy.path_label,
+        signature_item_ids=layout.signature_item_ids,
         summary=(
-            f"{policy.strategic_role}; coherent eight-item core observed in "
-            f"{layout.core_joint_matches:,} player-matches "
-            f"({layout.core_joint_share * 100:.2f}%). Tier rows are "
-            "adoption reference menus, not automatic purchases."
+            f"{policy.strategic_role}; supported {len(layout.backbone_items)}-item "
+            f"backbone observed in {layout.backbone_matches:,} player-matches "
+            f"({layout.backbone_share * 100:.2f}%). OPTIONAL CORE and tier rows "
+            "never enter the automatic Queue."
         ),
-        categories=categories,
+        categories=tuple(categories),
         snapshot_id=policy.snapshot_id,
         policy_id=policy.policy_id,
         client_version=identity.client_version,
@@ -300,6 +341,11 @@ def _project_evidence_layout(
         rank_identity=identity.rank_identity,
         core_items=core_items,
         core_purchase_items=core_purchase_items,
+        backbone_items=layout.backbone_items,
+        optional_core_items=optional_core_items,
+        core_alternatives=layout.core_alternatives,
+        backbone_matches=layout.backbone_matches,
+        backbone_share=layout.backbone_share,
         core_joint_matches=layout.core_joint_matches,
         core_joint_share=layout.core_joint_share,
         median_final_net_worth=layout.median_final_net_worth,
@@ -389,6 +435,8 @@ def project_policy_to_guide(
         hero_name=identity.hero_name,
         hero_class_name=identity.hero_class_name,
         tiers=tiers,
+        path_id=policy.path_id,
+        path_label=policy.path_label,
         summary=(
             f"{policy.strategic_role}; variant {policy.variant}. Rich policy guards and "
             "uncertainty remain in the sidecar; Steam receives the declared projection."
@@ -411,8 +459,12 @@ def projection_fingerprint(guide: PurchaseGuide) -> str:
     """
     return sha256_json({
         "hero_id": guide.hero_id,
+        "path_id": guide.path_id,
+        "path_label": guide.path_label,
         "snapshot_id": guide.snapshot_id,
         "policy_id": guide.policy_id,
+        "analysis_start_timestamp": guide.analysis_start_timestamp,
+        "as_of_timestamp": guide.as_of_timestamp,
         "build": {
             "archetype": guide.build_archetype,
             "tag_ids": list(guide.build_tag_ids),

@@ -1,3 +1,4 @@
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -38,6 +39,7 @@ def guide() -> PurchaseGuide:
         "hero_kelvin",
         {1: (item,), 2: (), 3: (), 4: ()},
         build_tag_ids=(1, 2, 3),
+        analysis_start_timestamp=1_767_225_600,
         as_of_timestamp=1_767_225_600,
     )
 
@@ -72,6 +74,7 @@ def complete_guide() -> PurchaseGuide:
         rank_identity="Phantom I [91]–Eternus VI [116]",
         build_tag_ids=(1, 2, 3),
         build_archetype="Spirit Damage",
+        analysis_start_timestamp=1_767_225_600,
         as_of_timestamp=1_767_225_600,
     )
 
@@ -165,7 +168,7 @@ def test_managed_update_is_idempotent_and_preserves_other_sections() -> None:
         "Unpublished": [],
         "SavedLastUsed": [b"saved"],
     }
-    first, ids, created, updated = update_managed_builds(
+    first, ids, created, updated, removed = update_managed_builds(
         root,
         [guide()],
         account_id=146293212,
@@ -174,13 +177,15 @@ def test_managed_update_is_idempotent_and_preserves_other_sections() -> None:
         patch_title="Patch",
         patch_published_at="2026-01-01T00:00:00Z",
     )
-    assert created == 1 and updated == 0
-    assert ids == {12: 2}
+    assert created == 1
+    assert updated == 0
+    assert removed == 0
+    assert ids == {(12, "default"): 2}
     assert first["Favorites"] == root["Favorites"]
     assert first["SavedLastUsed"] == root["SavedLastUsed"]
     assert first["LastUsedBuilds"] == root["LastUsedBuilds"]
 
-    second, ids2, created2, updated2 = update_managed_builds(
+    second, ids2, created2, updated2, removed2 = update_managed_builds(
         first,
         [guide()],
         account_id=146293212,
@@ -190,9 +195,63 @@ def test_managed_update_is_idempotent_and_preserves_other_sections() -> None:
         patch_published_at="2026-02-01T00:00:00Z",
     )
     assert ids2 == ids
-    assert created2 == 0 and updated2 == 1
+    assert created2 == 0
+    assert updated2 == 1
+    assert removed2 == 0
     assert len(second["Unpublished"]) == 1
     assert hero_build_metadata(second["Unpublished"][0]).build_id == 2
+
+
+def test_multiple_paths_get_separate_builds_and_stale_path_is_removed() -> None:
+    root = {
+        "LastUsedBuilds": {"hero_kelvin": 77},
+        "Favorites": [b"favorite"],
+        "Unpublished": [],
+        "SavedLastUsed": [b"saved"],
+    }
+    control = replace(
+        guide(),
+        path_id="control",
+        path_label="Control Core",
+        policy_id="policy/control",
+    )
+    damage = replace(
+        guide(),
+        path_id="damage",
+        path_label="Damage Core",
+        policy_id="policy/damage",
+    )
+
+    first, ids, created, updated, removed = update_managed_builds(
+        root,
+        [control, damage],
+        account_id=146293212,
+        persona="XMLJDX",
+        timestamp=100,
+        patch_title="Patch",
+        patch_published_at="2026-01-01T00:00:00Z",
+    )
+
+    assert set(ids) == {(12, "control"), (12, "damage")}
+    assert (created, updated, removed) == (2, 0, 0)
+    assert len(first["Unpublished"]) == 2
+
+    second, second_ids, created, updated, removed = update_managed_builds(
+        first,
+        [control],
+        account_id=146293212,
+        persona="XMLJDX",
+        timestamp=200,
+        patch_title="Patch",
+        patch_published_at="2026-01-01T00:00:00Z",
+    )
+
+    assert second_ids == {(12, "control"): ids[12, "control"]}
+    assert (created, updated, removed) == (0, 1, 1)
+    assert len(second["Unpublished"]) == 1
+    assert second["LastUsedBuilds"] == root["LastUsedBuilds"]
+    assert second["Favorites"] == root["Favorites"]
+    assert second["SavedLastUsed"] == root["SavedLastUsed"]
 
 
 def test_v4_cache_decodes_after_managed_update(tmp_path: Path) -> None:
@@ -202,7 +261,7 @@ def test_v4_cache_decodes_after_managed_update(tmp_path: Path) -> None:
         "Unpublished": [],
         "SavedLastUsed": [],
     }
-    updated, _, _, _ = update_managed_builds(
+    updated, _, _, _, _ = update_managed_builds(
         root,
         [guide()],
         account_id=146293212,
@@ -254,7 +313,7 @@ def test_install_creates_backup_and_restore_recovers_original(
     assert (result.backup_directory / "cached_hero_builds.kv3").is_file()
     assert (result.backup_directory / "remotecache.vdf").is_file()
     assert result.snapshot_id == SNAPSHOT_ID
-    assert result.policy_ids == {12: "policy/kelvin"}
+    assert result.policy_ids == {(12, "default"): "policy/kelvin"}
     installed = read_cache(cache_path)
     assert installed["LastUsedBuilds"] == original["LastUsedBuilds"]
     assert len(installed["Unpublished"]) == 1

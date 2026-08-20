@@ -219,8 +219,7 @@ def classify_item_threat_responses(asset: dict[str, Any]) -> frozenset[str]:
         Threats for which the asset text contains a direct response mechanic.
 
     """
-    mechanics = extract_asset_mechanics(asset)
-    normalized = canonical_mechanics_text(mechanics)
+    normalized = canonical_mechanics_text(_observed_item_mechanics(asset))
     responses = {
         threat
         for threat, phrases in _THREAT_RESPONSE_PHRASES.items()
@@ -247,6 +246,55 @@ _OBSERVED_ITEM_THREAT_PHRASES = {
 }
 
 
+def _active_property_mechanics(asset: dict[str, Any]) -> dict[str, Any]:
+    raw_properties = asset.get("properties")
+    if not isinstance(raw_properties, dict):
+        return {}
+    active: dict[str, Any] = {}
+    for name, raw_property in raw_properties.items():
+        if not isinstance(raw_property, dict) or "value" not in raw_property:
+            continue
+        value = raw_property["value"]
+        disabled_value = raw_property.get("disable_value")
+        if disabled_value is not None and str(value) == str(disabled_value):
+            continue
+        if value is None or (
+            isinstance(value, (str, int, float)) and str(value) in {"", "0", "0.0"}
+        ):
+            continue
+        active[str(name)] = {
+            key: raw_property[key]
+            for key in (
+                "css_class",
+                "label",
+                "postvalue_label",
+                "provided_property_type",
+                "value",
+            )
+            if key in raw_property
+        }
+    return active
+
+
+def _observed_item_mechanics(asset: dict[str, Any]) -> dict[str, Any]:
+    mechanics = extract_asset_mechanics(asset)
+    observed = {
+        key: mechanics[key]
+        for key in (
+            "description",
+            "behaviour",
+            "damage_type",
+            "targeting",
+            "weapon_info",
+        )
+        if key in mechanics
+    }
+    active_properties = _active_property_mechanics(asset)
+    if active_properties:
+        observed["properties"] = normalize_mechanical_value(active_properties)
+    return observed
+
+
 def classify_observed_item_threats(asset: dict[str, Any]) -> frozenset[str]:
     """Classify only explicit threat mechanics on an observed enemy item.
 
@@ -254,7 +302,7 @@ def classify_observed_item_threats(asset: dict[str, Any]) -> frozenset[str]:
         Conservative threat labels supported by the pinned item text.
 
     """
-    normalized = canonical_mechanics_text(extract_asset_mechanics(asset))
+    normalized = canonical_mechanics_text(_observed_item_mechanics(asset))
     threats = {
         threat
         for threat, phrases in _OBSERVED_ITEM_THREAT_PHRASES.items()

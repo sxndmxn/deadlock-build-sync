@@ -9,6 +9,8 @@ from .ability_order import AbilityPath
 from .api import Patch
 from .artifacts import ArtifactError, validate_policy_artifact
 from .build_evidence import (
+    MAXIMUM_CORE_ITEM_COUNT,
+    MINIMUM_BACKBONE_ITEM_COUNT,
     BuildEvidenceCatalog,
     HeroBuildEvidence,
     evidence_record_sha256,
@@ -38,6 +40,7 @@ class ArtifactBundleError(ValueError):
 
 
 _COVERAGE_MISMATCH = "artifact bundle coverage differs across files"
+_CORE_CATEGORY_NAME = "CORE ITEMS"
 
 type _PatchDocument = dict[str, Any]
 type _RankBoundary = dict[str, Any]
@@ -62,6 +65,14 @@ class ArtifactBuildIdentity:
     tag_labels: tuple[str, ...]
     catalog_sha256: str
     archetype: str
+
+
+@dataclass(frozen=True)
+class _GuideReconstructionContext:
+    manifest: dict[str, Any]
+    rank_identity: str
+    patch: Patch
+    narratives: NarrativeCatalog
 
 
 def _read_document(path: Path, label: str) -> dict[str, Any]:
@@ -169,9 +180,9 @@ def _policy_core(policy: BuildPolicy) -> tuple[int, ...]:
         current = node.next_id
     else:
         raise ArtifactBundleError(f"hero {policy.hero_id} policy core contains a cycle")
-    if len(item_ids) != 8:
+    if not MINIMUM_BACKBONE_ITEM_COUNT <= len(item_ids) <= MAXIMUM_CORE_ITEM_COUNT:
         raise ArtifactBundleError(
-            f"hero {policy.hero_id} artifact core must contain exactly eight items"
+            f"hero {policy.hero_id} artifact core has an unsupported item count"
         )
     return tuple(item_ids)
 
@@ -222,7 +233,7 @@ def _guide_item(
     )
 
 
-type _CategorySpec = tuple[str, bool, int, int]
+type _CategorySpec = tuple[str, bool, int, int, int | None]
 
 
 def _projection_category_rows(
@@ -234,7 +245,7 @@ def _projection_category_rows(
     rows = projection.get("categories") if isinstance(projection, dict) else None
     if not isinstance(rows, list) or len(rows) != len(expected):
         raise ArtifactBundleError(
-            f"hero {hero_id} artifact projection must contain five rows"
+            f"hero {hero_id} artifact projection has the wrong row count"
         )
     return rows
 
@@ -243,10 +254,9 @@ def _projected_category(
     raw: object,
     spec: _CategorySpec,
     *,
-    index: int,
     evidence: HeroBuildEvidence,
 ) -> tuple[GuideCategory, tuple[GuideItem, ...]]:
-    name, optional, minimum, maximum = spec
+    name, optional, minimum, maximum, expected_tier = spec
     raw_items = raw.get("items") if isinstance(raw, dict) else None
     if (
         not isinstance(raw, dict)
@@ -259,10 +269,12 @@ def _projected_category(
             f"hero {evidence.hero_id} artifact row {name} is malformed"
         )
     items = tuple(
-        _guide_item(item, evidence=evidence, expected_tier=index or None)
+        _guide_item(item, evidence=evidence, expected_tier=expected_tier)
         for item in raw_items
     )
-    if index != 0 and len({item.item_id for item in items}) != len(items):
+    if name != _CORE_CATEGORY_NAME and len({item.item_id for item in items}) != len(
+        items
+    ):
         raise ArtifactBundleError(
             f"hero {evidence.hero_id} artifact row {name} contains duplicates"
         )
@@ -289,6 +301,7 @@ def _final_core_items(
 
 def _validate_projected_item_sets(
     core_items: tuple[GuideItem, ...],
+    optional_core_items: tuple[GuideItem, ...],
     tiers: dict[int, tuple[GuideItem, ...]],
     policy_core_ids: tuple[int, ...],
     hero_id: int,
@@ -299,8 +312,9 @@ def _validate_projected_item_sets(
         )
     core_ids = {item.item_id for item in core_items}
     tier_ids = {item.item_id for tier_items in tiers.values() for item in tier_items}
-    if core_ids & tier_ids:
-        raise ArtifactBundleError(f"hero {hero_id} optional rows repeat CORE items")
+    optional_ids = {item.item_id for item in optional_core_items}
+    if core_ids & (tier_ids | optional_ids) or tier_ids & optional_ids:
+        raise ArtifactBundleError(f"hero {hero_id} policy rows repeat items")
 
 
 def _categories(
@@ -308,7 +322,10 @@ def _categories(
     policy: BuildPolicy,
     evidence: HeroBuildEvidence,
 ) -> tuple[
-    tuple[GuideCategory, ...], tuple[GuideItem, ...], dict[int, tuple[GuideItem, ...]]
+    tuple[GuideCategory, ...],
+    tuple[GuideItem, ...],
+    tuple[GuideItem, ...],
+    dict[int, tuple[GuideItem, ...]],
 ]:
     policy_core_ids = _policy_core(policy)
     core_path_ids = (
@@ -316,33 +333,53 @@ def _categories(
         if evidence.sequence_policy is not None
         else policy_core_ids
     )
-    expected: tuple[_CategorySpec, ...] = (
-        ("CORE ITEMS", False, len(core_path_ids), len(core_path_ids)),
-        ("TIER 1", True, 1, 10),
-        ("TIER 2", True, 1, 10),
-        ("TIER 3", True, 1, 10),
-        ("TIER 4", True, 1, 10),
-    )
+    expected_rows: list[_CategorySpec] = [
+        (_CORE_CATEGORY_NAME, False, len(core_path_ids), len(core_path_ids), None)
+    ]
+    if policy.core_alternatives:
+        expected_rows.append((
+            "OPTIONAL CORE",
+            True,
+            len(policy.core_alternatives),
+            10,
+            None,
+        ))
+    expected_rows.extend((f"TIER {tier}", True, 1, 10, tier) for tier in range(1, 5))
+    expected = tuple(expected_rows)
     raw_categories = _projection_category_rows(hero, expected, policy.hero_id)
     categories: list[GuideCategory] = []
     tiers: dict[int, tuple[GuideItem, ...]] = {}
     core_items: tuple[GuideItem, ...] = ()
-    for index, (raw, spec) in enumerate(zip(raw_categories, expected, strict=True)):
+    optional_core_items: tuple[GuideItem, ...] = ()
+    for raw, spec in zip(raw_categories, expected, strict=True):
         category, items = _projected_category(
             raw,
             spec,
-            index=index,
             evidence=evidence,
         )
         categories.append(category)
-        if index == 0:
+        if spec[0] == _CORE_CATEGORY_NAME:
             core_items = _final_core_items(
                 items, core_path_ids, policy_core_ids, policy.hero_id
             )
-        else:
-            tiers[index] = items
-    _validate_projected_item_sets(core_items, tiers, policy_core_ids, policy.hero_id)
-    return tuple(categories), core_items, tiers
+        elif spec[0] == "OPTIONAL CORE":
+            optional_core_items = items
+        elif spec[4] is not None:
+            tiers[spec[4]] = items
+    if {item.item_id for item in optional_core_items} != {
+        card.item_id for card in policy.core_alternatives
+    }:
+        raise ArtifactBundleError(
+            f"hero {policy.hero_id} OPTIONAL CORE differs from policy cards"
+        )
+    _validate_projected_item_sets(
+        core_items,
+        optional_core_items,
+        tiers,
+        policy_core_ids,
+        policy.hero_id,
+    )
+    return tuple(categories), core_items, optional_core_items, tiers
 
 
 def _ability_projection(
@@ -425,6 +462,11 @@ def _ability_path(hero: dict[str, Any], policy: BuildPolicy) -> AbilityPath:
         complete_path_matches=complete_matches,
         decision_support=decision_support,
         selection=str(raw.get("selection") or "MOST_SUPPORTED_LEGAL_STATE"),
+        filter_item_ids=tuple(
+            int(item_id)
+            for item_id in raw.get("filter_item_ids", [])
+            if isinstance(item_id, int)
+        ),
     )
 
 
@@ -432,7 +474,11 @@ def _hero_identity(hero: dict[str, Any], policy: BuildPolicy) -> tuple[str, str]
     hero_id = hero.get("hero_id")
     hero_name = hero.get("hero")
     mechanics = hero.get("hero_mechanics")
-    if hero_id != policy.hero_id or not isinstance(hero_name, str):
+    if (
+        hero_id != policy.hero_id
+        or hero.get("path_id") != policy.path_id
+        or not isinstance(hero_name, str)
+    ):
         raise ArtifactBundleError(f"hero {policy.hero_id} has inconsistent identity")
     if not hero_name.strip() or not isinstance(mechanics, dict):
         raise ArtifactBundleError(f"hero {policy.hero_id} has inconsistent identity")
@@ -533,6 +579,19 @@ def _build_identity(
     )
 
 
+def _analysis_start_timestamp(manifest: dict[str, Any]) -> int:
+    epochs = manifest.get("epochs")
+    epoch_rows = epochs.values() if isinstance(epochs, dict) else ()
+    starts = [
+        row.get("start_timestamp")
+        for row in epoch_rows
+        if isinstance(row, dict) and isinstance(row.get("start_timestamp"), int)
+    ]
+    if len(starts) != 4:
+        raise ArtifactBundleError("artifact snapshot has invalid epoch boundaries")
+    return max(starts)
+
+
 def _guide(
     hero: dict[str, Any],
     policy: BuildPolicy,
@@ -542,7 +601,9 @@ def _guide(
     rank_identity: str,
 ) -> PurchaseGuide:
     hero_name, class_name = _hero_identity(hero, policy)
-    categories, core_items, tiers = _categories(hero, policy, evidence)
+    categories, core_items, optional_core_items, tiers = _categories(
+        hero, policy, evidence
+    )
     joint_matches, joint_share, median_net_worth, target_cost = _core_evidence(
         hero, policy
     )
@@ -565,6 +626,9 @@ def _guide(
         hero_name=hero_name,
         hero_class_name=class_name,
         tiers=tiers,
+        path_id=policy.path_id,
+        path_label=policy.path_label,
+        signature_item_ids=evidence.signature_item_ids,
         ability_path=_ability_path(hero, policy),
         categories=categories,
         snapshot_id=policy.snapshot_id,
@@ -574,6 +638,18 @@ def _guide(
         rank_identity=rank_identity,
         core_items=core_items,
         core_purchase_items=categories[0].items,
+        backbone_items=tuple(
+            guide_item_from_evidence(
+                next(item for item in evidence.items if item.item_id == item_id)
+            )
+            for item_id in evidence.core_policy.backbone_item_ids
+        ),
+        optional_core_items=optional_core_items,
+        core_alternatives=evidence.core_policy.alternatives,
+        backbone_matches=evidence.core_policy.backbone_matches,
+        backbone_share=(
+            evidence.core_policy.backbone_matches / evidence.eligible_player_matches
+        ),
         core_joint_matches=joint_matches,
         core_joint_share=joint_share,
         median_final_net_worth=median_net_worth,
@@ -583,6 +659,7 @@ def _guide(
         build_tag_labels=build_identity.tag_labels,
         build_tag_catalog_sha256=build_identity.catalog_sha256,
         build_archetype=build_identity.archetype,
+        analysis_start_timestamp=_analysis_start_timestamp(manifest),
         as_of_timestamp=as_of_timestamp,
     )
 
@@ -676,26 +753,31 @@ def _validated_cohort(
     return patch, rank_range, str(rank_data["label"])
 
 
-def _decoded_policies(document: dict[str, Any]) -> dict[int, BuildPolicy]:
+def _decoded_policies(
+    document: dict[str, Any],
+) -> dict[tuple[int, str], BuildPolicy]:
     rows = cast("list[object]", document["policies"])
     decoded = [
         BuildPolicy.from_dict(cast("_PolicyDocumentRow", row))
         for row in rows
         if isinstance(row, dict)
     ]
-    return {policy.hero_id: policy for policy in decoded}
+    return {(policy.hero_id, policy.path_id): policy for policy in decoded}
 
 
-def _hero_contexts(document: dict[str, Any]) -> dict[int, dict[str, Any]]:
+def _hero_contexts(
+    document: dict[str, Any],
+) -> dict[tuple[int, str], dict[str, Any]]:
     rows = cast("list[object]", document["heroes"])
-    heroes: dict[int, dict[str, Any]] = {}
+    heroes: dict[tuple[int, str], dict[str, Any]] = {}
     for row in rows:
         if not isinstance(row, dict):
             continue
         hero = cast("_HeroContextRow", row)
         hero_id = hero.get("hero_id")
-        if isinstance(hero_id, int):
-            heroes[hero_id] = hero
+        path_id = hero.get("path_id")
+        if isinstance(hero_id, int) and isinstance(path_id, str):
+            heroes[hero_id, path_id] = hero
     return heroes
 
 
@@ -778,6 +860,43 @@ def _validated_build_evidence(
     return catalog
 
 
+def _reconstruct_guides(
+    heroes: dict[tuple[int, str], _HeroContextRow],
+    policies: dict[tuple[int, str], BuildPolicy],
+    build_evidence: BuildEvidenceCatalog,
+    context: _GuideReconstructionContext,
+) -> list[PurchaseGuide]:
+    guides = []
+    for hero_id, path_id in sorted(heroes):
+        build_key = hero_id, path_id
+        evidence = next(
+            (
+                build
+                for build in build_evidence.hero_builds.get(hero_id, ())
+                if build.path_id == path_id
+            ),
+            None,
+        )
+        if evidence is None:
+            raise ArtifactBundleError(f"build evidence lacks path {hero_id}/{path_id}")
+        guide = _guide(
+            heroes[build_key],
+            policies[build_key],
+            evidence,
+            manifest=context.manifest,
+            rank_identity=context.rank_identity,
+        )
+        guides.append(
+            apply_narrative(
+                guide,
+                heroes[build_key],
+                context.patch,
+                context.narratives,
+            )
+        )
+    return guides
+
+
 def load_artifact_guide_bundle(
     context_path: Path,
     policy_path: Path,
@@ -815,22 +934,17 @@ def load_artifact_guide_bundle(
             "strategy contexts and policies cover different heroes"
         )
 
-    guides = []
-    for hero_id in sorted(heroes):
-        hero_context = heroes[hero_id]
-        guide = _guide(
-            hero_context,
-            by_policy[hero_id],
-            build_evidence.heroes[hero_id],
-            manifest=manifest,
-            rank_identity=rank_identity,
-        )
-        guides.append(apply_narrative(guide, hero_context, patch, catalog))
+    guides = _reconstruct_guides(
+        heroes,
+        by_policy,
+        build_evidence,
+        _GuideReconstructionContext(manifest, rank_identity, patch, catalog),
+    )
     return ArtifactGuideBundle(
         guides=guides,
         snapshot_manifest=manifest,
         patch=patch,
         rank_range=rank_range,
-        expected_hero_ids=frozenset(heroes),
+        expected_hero_ids=frozenset(build_key[0] for build_key in heroes),
         exclusions=exclusions,
     )

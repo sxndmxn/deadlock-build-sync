@@ -417,6 +417,7 @@ class DeadlockApi:
         hero_id: int,
         min_unix_timestamp: int,
         min_matches: int,
+        include_item_ids: tuple[int, ...] = (),
     ) -> list[dict[str, Any]]:
         data = self.get_json(
             "/v1/analytics/ability-order-stats",
@@ -426,6 +427,7 @@ class DeadlockApi:
                 min_ability_upgrades=1,
                 max_ability_upgrades=16,
                 min_matches=min_matches,
+                include_item_ids=list(include_item_ids) or None,
             ),
         )
         if not isinstance(data, list):

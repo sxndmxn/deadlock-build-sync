@@ -3,6 +3,7 @@
   "type": "object",
   "properties": {
     "hero_id": {"type": "integer"},
+    "path_id": {"type": "string", "minLength": 1},
     "snapshot_id": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
     "policy_id": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
     "context_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
@@ -91,6 +92,7 @@
   },
   "required": [
     "hero_id",
+    "path_id",
     "snapshot_id",
     "policy_id",
     "context_sha256",

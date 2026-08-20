@@ -5,6 +5,10 @@
     "hero_id": {
       "type": "integer"
     },
+    "path_id": {
+      "type": "string",
+      "minLength": 1
+    },
     "kit_basis_sha256": {
       "type": "string",
       "pattern": "^[a-f0-9]{64}$"
@@ -86,6 +90,7 @@
   },
   "required": [
     "hero_id",
+    "path_id",
     "kit_basis_sha256",
     "primary_role",
     "combat_pattern",
