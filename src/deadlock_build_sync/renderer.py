@@ -191,6 +191,10 @@ def _project_guide_item_policy_fields(
         buy_net_worth_q25=item.buy_net_worth_q25,
         buy_net_worth_q75=item.buy_net_worth_q75,
         valid_buy_net_worth_share=item.valid_buy_net_worth_share,
+        imbue_target_ability=item.imbue_target_ability,
+        imbue_target_matches=item.imbue_target_matches,
+        imbue_observations=item.imbue_observations,
+        imbue_target_share=item.imbue_target_share,
     )
 
 
@@ -272,7 +276,9 @@ def _project_evidence_layout(
             tactical_annotation=node.annotation,
             required_flex_slots=node.required_flex_slots or None,
             sell_priority=node.sell_priority,
-            imbue_target_ability_id=node.imbue_target_ability_id,
+            imbue_target_ability_id=(
+                node.imbue_target_ability_id or item.imbue_target_ability_id
+            ),
         )
 
     tiers = {
@@ -288,7 +294,7 @@ def _project_evidence_layout(
             ),
             required_flex_slots=None,
             sell_priority=None,
-            imbue_target_ability_id=None,
+            imbue_target_ability_id=item.imbue_target_ability_id,
         )
         for item in layout.optional_core_items
     )

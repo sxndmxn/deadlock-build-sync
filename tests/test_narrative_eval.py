@@ -30,7 +30,8 @@ def test_load_cases_selects_requested_heroes(tmp_path: Path) -> None:
 
     assert [case.name for case in cases] == ["Shiv", "Kelvin"]
     assert cases[0].hero["hero_id"] == 19
-    assert cases[0].item_mechanics["101"] == {"cost": 500}
+    assert cases[0].hero["path_id"] == "default"
+    assert cases[0].hero["path_label"] == "Evidence Default"
 
 
 def test_load_cases_reports_missing_heroes(tmp_path: Path) -> None:
@@ -44,7 +45,7 @@ def test_load_cases_reports_missing_heroes(tmp_path: Path) -> None:
         narrative_eval.load_cases(context_path, ["Kelvin"])
 
 
-def test_generate_test_case_calls_both_production_stages(
+def test_generate_test_case_calls_description_stage(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     hero = {
@@ -62,8 +63,6 @@ def test_generate_test_case_calls_both_production_stages(
         stage: generate_narratives.GenerationStage,
     ) -> dict[str, Any]:
         calls.append((model_input, stage))
-        if stage.schema_path == narrative_eval.KIT_SCHEMA_PATH:
-            return {"hero_id": 12, "kit_basis_sha256": "d" * 64}
         return {"hero_id": 12, "validated": True}
 
     monkeypatch.setattr(
@@ -74,20 +73,16 @@ def test_generate_test_case_calls_both_production_stages(
 
     test_case = narrative_eval.generate_test_case(
         case,
-        model="synthesis-model",
-        kit_model="kit-model",
+        model="description-model",
     )
 
     assert json.loads(test_case.actual_output or "") == {
         "hero_id": 12,
         "validated": True,
     }
-    assert [stage.schema_path for _, stage in calls] == [
-        narrative_eval.KIT_SCHEMA_PATH,
-        narrative_eval.SCHEMA_PATH,
-    ]
-    assert [stage.model for _, stage in calls] == ["kit-model", "synthesis-model"]
-    assert calls[1][1].identity_fields == (
+    assert [stage.schema_path for _, stage in calls] == [narrative_eval.SCHEMA_PATH]
+    assert [stage.model for _, stage in calls] == ["description-model"]
+    assert calls[0][1].identity_fields == (
         "hero_id",
         "path_id",
         "snapshot_id",
@@ -103,17 +98,12 @@ def test_generate_test_case_calls_both_production_stages(
         stage.timeout_seconds == narrative_eval.EVAL_TIMEOUT_SECONDS
         for _, stage in calls
     )
-    assert calls[1][0]["preliminary_kit_analysis"] == {
-        "hero_id": 12,
-        "kit_basis_sha256": "d" * 64,
-    }
+    assert "preliminary_kit_analysis" not in calls[0][0]
     assert test_case.metadata == {
         "hero": "Kelvin",
         "hero_id": 12,
         "regression": "baseline",
-        "kit_model": "kit-model",
-        "synthesis_model": "synthesis-model",
-        "kit_profile": {"hero_id": 12, "kit_basis_sha256": "d" * 64},
+        "model": "description-model",
     }
 
 
@@ -181,22 +171,20 @@ def test_generate_reliability_case_retains_generation_errors(
         "kit_basis_sha256": "d" * 64,
     }
     case = narrative_eval.NarrativeCase(hero=hero, regression="baseline")
-    synthesis_attempt = 0
+    description_attempt = 0
 
     def generate_validated_response(
         _model_input: dict[str, Any],
         _validation_context: dict[str, Any],
         stage: generate_narratives.GenerationStage,
     ) -> dict[str, Any]:
-        nonlocal synthesis_attempt
+        nonlocal description_attempt
         assert stage.timeout_seconds == 5
         assert stage.max_attempts == generate_narratives.DEFAULT_GENERATION_ATTEMPTS
-        if stage.schema_path == narrative_eval.KIT_SCHEMA_PATH:
-            return {"hero_id": 12, "kit_basis_sha256": "d" * 64}
-        synthesis_attempt += 1
-        if synthesis_attempt == 2:
+        description_attempt += 1
+        if description_attempt == 2:
             raise generate_narratives.GenerationError("timed out")
-        return {"hero_id": 12, "attempt": synthesis_attempt}
+        return {"hero_id": 12, "attempt": description_attempt}
 
     monkeypatch.setattr(
         generate_narratives,

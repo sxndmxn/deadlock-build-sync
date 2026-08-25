@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import pytest
 
 from deadlock_build_sync.purchase_guide import (
@@ -29,6 +31,7 @@ def evidence_item(
         eligible_player_matches=15_639,
         adopter_matches=12_611,
         purchase_adoption=0.8063814822,
+        purchase_events=12_700,
         buy_net_worth_q25=q25,
         buy_net_worth_q75=q75,
     )
@@ -36,8 +39,28 @@ def evidence_item(
 
 def test_evidence_item_annotation_is_compact_player_facing_copy() -> None:
     assert evidence_item().annotation == (
-        "PURCHASE WINDOW: 4k–14k souls\nWIN RATE: 49.0%\nPICK RATE: 80.6%"
+        "PURCHASE WINDOW: 4k–14k souls\n"
+        "WIN RATE: 49.0%\n"
+        "PICK RATE: 80.6%\n"
+        "BUYER MATCHES: 12,611\n"
+        "PURCHASE EVENTS: 12,700"
     )
+
+
+def test_item_annotation_uses_stats_and_observed_imbue_target_only() -> None:
+    item = evidence_item()
+    item = replace(
+        item,
+        tactical_annotation="AI prose must not appear.",
+        imbue_target_ability_id=40,
+        imbue_target_ability="Frozen Shelter",
+        imbue_target_matches=75,
+        imbue_observations=100,
+        imbue_target_share=0.75,
+    )
+
+    assert "AI prose" not in item.annotation
+    assert item.annotation.endswith("IMBUE: Frozen Shelter (75.0%, n=100)")
 
 
 def test_collapsed_and_missing_purchase_windows_remain_readable() -> None:

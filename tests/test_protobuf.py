@@ -121,7 +121,7 @@ def test_build_name_truncates_a_long_deadlock_patch_title() -> None:
     assert metadata.name == "XMLJDX | Spirit Damage | A Very Long D / 0101–0101"
 
 
-def test_build_name_keeps_path_distinguishable_for_dated_patch() -> None:
+def test_build_name_uses_core_archetype_for_dated_patch() -> None:
     guide = replace(
         sample_guide(),
         build_archetype="Mini Turret / Titanic Magazine",
@@ -136,6 +136,54 @@ def test_build_name_keeps_path_distinguishable_for_dated_patch() -> None:
     metadata = hero_build_metadata(build)
 
     assert metadata.name == "XMLJDX | Mini Turret / Titanic | 0812 / 0101–0101"
+
+
+def test_build_name_does_not_let_imbue_path_label_override_weapon_core() -> None:
+    guide = replace(
+        sample_guide(),
+        path_id="path-turret",
+        path_label="Mini Turret",
+        build_archetype="Weapon Damage",
+    )
+
+    metadata = hero_build_metadata(
+        encode_hero_build(
+            presentation(guide, "Minor Update - 08-22-2026"),
+            build_id=34,
+            account_id=146293212,
+            timestamp=1234567890,
+        )
+    )
+
+    assert metadata.name == "XMLJDX | Weapon Damage | 0822 / 0101–0101"
+
+
+def test_encodes_observed_item_imbue_target() -> None:
+    source = sample_guide()
+    item = replace(source.tiers[1][0], imbue_target_ability_id=40)
+    build = encode_hero_build(
+        presentation(replace(source, tiers={1: (item,), 2: (), 3: (), 4: ()})),
+        build_id=34,
+        account_id=146293212,
+        timestamp=1234567890,
+    )
+    details = next(
+        field.value
+        for field in parse_fields(build)
+        if field.number == 10 and isinstance(field.value, bytes)
+    )
+    category = next(
+        field.value
+        for field in parse_fields(details)
+        if field.number == 1 and isinstance(field.value, bytes)
+    )
+    encoded_item = next(
+        field.value
+        for field in parse_fields(category)
+        if field.number == 1 and isinstance(field.value, bytes)
+    )
+
+    assert {field.number: field.value for field in parse_fields(encoded_item)}[5] == 40
 
 
 def test_encodes_native_ability_order_and_descriptions() -> None:

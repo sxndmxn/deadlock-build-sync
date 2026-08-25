@@ -18,6 +18,7 @@ from deadlock_build_sync.offline.production_evidence import (
     _core_target_order,
     _duplicate_free_core_candidates,
     _expanded_default_path,
+    _item_payload,
     _maximum_agreement_orders,
     _parallel_hero_export,
     _patch_content_sha256,
@@ -25,6 +26,49 @@ from deadlock_build_sync.offline.production_evidence import (
     _situational_policy,
     _top_core_candidates,
 )
+
+
+def _item_metric_row() -> dict[str, object]:
+    return {
+        "item_id": 101,
+        "item_name": "Compress Cooldown",
+        "tier": 3,
+        "cost": 3200,
+        "slot": "spirit",
+        "active": False,
+        "adopter_matches": 100,
+        "hero_player_matches": 200,
+        "purchase_events": 105,
+        "wins": 55,
+        "adoption_rate": 0.5,
+        "raw_outcome_rate": 0.55,
+        "median_buy_time_s": 900.0,
+        "median_valid_buy_net_worth": 12_000.0,
+        "buy_nw_q25": 10_000.0,
+        "buy_nw_q75": 14_000.0,
+        "valid_buy_nw_share": 0.95,
+        "imbued_ability_id": 40,
+        "target_matches": 75,
+        "imbue_observations": 100,
+        "target_share": 0.75,
+    }
+
+
+def test_item_payload_admits_only_supported_majority_imbue_target() -> None:
+    assets = {40: {"id": 40, "name": "Frozen Shelter"}}
+
+    supported = _item_payload(_item_metric_row(), assets)
+    weak = _item_payload(
+        {**_item_metric_row(), "target_matches": 49, "target_share": 0.49},
+        assets,
+    )
+
+    assert supported["imbue_target_ability_id"] == 40
+    assert supported["imbue_target_ability"] == "Frozen Shelter"
+    assert supported["imbue_target_matches"] == 75
+    assert supported["imbue_target_share"] == 0.75
+    assert weak["imbue_target_ability_id"] is None
+    assert weak["imbue_observations"] == 0
 
 
 def test_hero_export_runs_eight_workers_and_preserves_order() -> None:

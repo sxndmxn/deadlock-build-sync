@@ -78,6 +78,11 @@ def _item(asset: dict[str, Any], *, eligible: int = 1_000) -> dict[str, Any]:
         "buy_net_worth_q25": median_net_worth,
         "buy_net_worth_q75": median_net_worth,
         "valid_buy_net_worth_share": 0.9,
+        "imbue_target_ability_id": None,
+        "imbue_target_ability": None,
+        "imbue_target_matches": 0,
+        "imbue_observations": 0,
+        "imbue_target_share": 0.0,
     }
 
 
@@ -110,10 +115,10 @@ def _document(
         "evaluation": {"chronological_fold": "test"},
     }
     payload = {
-        "schema_version": 4,
+        "schema_version": 5,
         "producer": "deadlock-build-sync.offline",
         "method": {
-            "version": "state-aware-multi-path-v3",
+            "version": "state-aware-multi-path-v4",
             "core_candidate_item_count": 8,
             "minimum_core_item_count": 4,
             "maximum_core_item_count": 9,
@@ -121,6 +126,8 @@ def _document(
             "minimum_core_support": 20,
             "minimum_tier_support": 20,
             "tier_item_count": 10,
+            "minimum_imbue_support": 20,
+            "minimum_imbue_share": 0.5,
         },
         "cohort": {
             "as_of": "2026-08-09T00:00:00+00:00",
@@ -259,6 +266,27 @@ def test_load_and_select_exact_build_layout(tmp_path: Path) -> None:
         ).observed_outcome_rate
         == 1.0
     )
+
+
+def test_loads_supported_observed_imbue_target(tmp_path: Path) -> None:
+    document = _document()
+    item = document["heroes"][0]["builds"][0]["items"][0]
+    item.update({
+        "imbue_target_ability_id": 40,
+        "imbue_target_ability": "Bullet Dance",
+        "imbue_target_matches": 75,
+        "imbue_observations": 100,
+        "imbue_target_share": 0.75,
+    })
+    _refingerprint(document)
+    path = tmp_path / "build-evidence.json"
+    _write(path, document)
+
+    loaded = load_build_evidence(path).heroes[13].items[0]
+
+    assert loaded.imbue_target_ability_id == 40
+    assert loaded.imbue_target_ability == "Bullet Dance"
+    assert loaded.imbue_target_share == 0.75
 
 
 def test_selection_rejects_policy_core_above_median_final_net_worth(

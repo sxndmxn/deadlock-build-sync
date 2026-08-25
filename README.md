@@ -47,17 +47,21 @@ passes every evidence gate, then `TIER 1` through `TIER 4`. Only the complete
 economy-bounded default enters Queue. `OPTIONAL CORE` holds final-slot swaps with explicit
 triggers; an admitted item is removed from its tier row. Each tier row remains an
 optional, non-CORE reference menu of up to ten supported items, not a claim that
-every item should be bought or that popularity proves a situational counter. CORE
-hovers lead with validated hero-specific instructions; all item cards show the observed
-purchase window, adopter win rate, and pick rate without treating win rate as an item
-effect. Deterministic code validates the
+every item should be bought or that popularity proves a situational counter. Item
+hovers contain deterministic purchase-window, win-rate, pick-rate, buyer-match, and
+purchase-event statistics. When purchase telemetry has a supported majority imbue
+target, the hover names that ability and the Steam build encodes its current ability ID.
+Each build's three header icons are deterministic: the ability maxed first, the
+highest-win-rate Tier 3 CORE item (or Tier 4 when CORE has no Tier 3 item), and the
+dominant functional build tag. The item win rate is descriptive buyer telemetry.
+No model-written item advice is installed. Deterministic code validates the
 core against components, slots, active bindings, flex unlocks, ability currency, and
 current item/ability qualifiers before serialization.
 
-Codex writes explanations only after those decisions are closed. The narrative
-artifact must copy the exact snapshot, policy, action, evidence, and projection
-category identities. It cannot add purchases, change guards, strengthen a claim,
-or redefine Queue behavior.
+Codex writes only the short build-level description after those decisions are closed.
+The narrative artifact must copy the exact snapshot, policy, context, and narrative
+basis identities. It cannot add purchases, rewrite item hovers, change guards,
+strengthen a claim, or redefine Queue behavior.
 
 ## Requirements
 
@@ -170,11 +174,10 @@ uv run deadlock-build-sync trace-summary \
 
 ## Prompt evaluation
 
-DeepEval exercises the exact production kit-analysis and closed-policy explanation
-stages against representative heroes from the latest exported context. It reports
-the production contract, complete policy/category coverage, evidence-language
-ceiling, projection utilization, and repeated-generation structural stability
-separately:
+DeepEval exercises the exact production build-description stage against representative
+heroes from the latest exported context. It reports the response contract,
+evidence-language ceiling, projection utilization, and repeated-generation identity
+stability separately:
 
 ```bash
 uv run deepeval test run tests/evals/test_narrative_prompt.py
@@ -226,18 +229,19 @@ uv run deadlock-build-sync sync
 ```
 
 `sync` discovers the local Steam account, generates every eligible hero from one
-coherent snapshot, builds an ability-only kit profile with `gpt-5.6-luna`, explains
-the closed policy with `gpt-5.6-luna`, validates every artifact, backs up the cache,
-and installs the private builds. An all-hero run refuses installation if any pinned
+coherent snapshot, asks `gpt-5.6-luna` for one build-level description per path,
+validates every artifact, backs up the cache, and installs the private builds. Item
+statistics, imbue targets, categories, tags, and titles stay deterministic. Titles
+come from the CORE item mix, so an ability-path label cannot misname a weapon-heavy
+build. An all-hero run refuses installation if any pinned
 eligible hero lacks a complete policy. Reusable artifacts live under
 `$XDG_STATE_HOME/deadlock-build-sync/artifacts` (or
 `~/.local/state/deadlock-build-sync/artifacts`). Use `--hero NAME` for one hero,
 `--artifacts DIR` to select another artifact directory, or
-`--force-narratives` to regenerate both model stages. A failed model or
-semantic-validation attempt is retried up to three times per stage; change that
-bound with `--max-attempts N`. Independent hero pipelines run concurrently with
-eight workers by default while preserving kit-before-synthesis ordering for each
-hero. Use `--concurrency N` to lower the request pressure or raise it when the
+`--force-narratives` to regenerate descriptions. A failed model or
+semantic-validation attempt is retried up to three times; change that bound with
+`--max-attempts N`. Independent build descriptions run concurrently with eight
+workers by default. Use `--concurrency N` to lower the request pressure or raise it when the
 Codex service limits for your account allow more parallel work. Rate-limit
 responses temporarily halve shared request pressure, honor `Retry-After`, and
 recover concurrency gradually after successful calls.
@@ -287,8 +291,8 @@ and unknown items or conflicting situational branches fail closed.
 
 ### What is cached
 
-`sync` consumes five reviewable artifacts: the deterministic build evidence, exact
-strategy context, rich typed policy sidecar, kit profiles, and final explanations.
+`sync` consumes four reviewable artifacts: the deterministic build evidence, exact
+strategy context, rich typed policy sidecar, and final build descriptions.
 Every artifact carries the source manifest or snapshot identity. A narrative is reusable only when its
 snapshot, policy, context, narrative basis, prompt, and model contract are exactly
 compatible. Changed or malformed entries regenerate; `--force-narratives` bypasses
@@ -372,7 +376,7 @@ in-game description.
   descriptive adopter outcome rates.
 - Separate lane and whole-team matchup rows, an ending-duration estimand, the typed
   policy graph, the compact projection contract, and interpretation constraints.
-- Layered mechanics, analytics, policy, narrative, projection, and whole-document
+- Layered mechanics, analytics, policy, description, projection, and whole-document
   fingerprints bound to the complete source manifest.
 
 Every hero requires a supported, mechanically legal four-to-nine-item core at or below

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from time import monotonic
 from typing import Any
@@ -19,7 +19,6 @@ DEFAULT_CONTEXT_PATH = Path(
     )
 ).expanduser()
 SCHEMA_PATH = PROJECT_ROOT / "schemas/narrative-response.schema.json"
-KIT_SCHEMA_PATH = PROJECT_ROOT / "schemas/kit-analysis-response.schema.json"
 EVAL_TIMEOUT_SECONDS = 120.0
 RELIABILITY_REPEATS = 3
 DEFAULT_CASES = {
@@ -46,7 +45,6 @@ class NarrativeCase:
 
     hero: dict[str, Any]
     regression: str
-    item_mechanics: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     @property
     def name(self) -> str:
@@ -61,7 +59,7 @@ class NarrativeCase:
 
 def _load_context(
     path: Path,
-) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
+) -> list[dict[str, Any]]:
     try:
         document = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
@@ -73,13 +71,7 @@ def _load_context(
         isinstance(hero, dict) for hero in heroes
     ):
         raise NarrativeEvalError(f"{path} does not contain a valid heroes array")
-    item_mechanics = document.get("item_mechanics")
-    if not isinstance(item_mechanics, dict) or not all(
-        isinstance(key, str) and isinstance(value, dict)
-        for key, value in item_mechanics.items()
-    ):
-        raise NarrativeEvalError(f"{path} does not contain valid item mechanics")
-    return heroes, item_mechanics
+    return heroes
 
 
 def load_cases(
@@ -98,8 +90,16 @@ def load_cases(
     requested = hero_names if hero_names is not None else list(DEFAULT_CASES)
     if not requested or any(not name.strip() for name in requested):
         raise NarrativeEvalError("evaluation hero names must be non-empty strings")
-    heroes, item_mechanics = _load_context(context_path)
-    heroes_by_name = {str(hero.get("hero") or "").casefold(): hero for hero in heroes}
+    heroes = _load_context(context_path)
+    normalized_heroes = []
+    for hero in heroes:
+        normalized = dict(hero)
+        normalized.setdefault("path_id", "default")
+        normalized.setdefault("path_label", "Evidence Default")
+        normalized_heroes.append(normalized)
+    heroes_by_name = {
+        str(hero.get("hero") or "").casefold(): hero for hero in normalized_heroes
+    }
     missing = [name for name in requested if name.casefold() not in heroes_by_name]
     if missing:
         raise NarrativeEvalError(
@@ -109,7 +109,6 @@ def load_cases(
         NarrativeCase(
             hero=heroes_by_name[name.casefold()],
             regression=DEFAULT_CASES.get(name, "configured case"),
-            item_mechanics=item_mechanics,
         )
         for name in requested
     ]
@@ -119,82 +118,47 @@ def generate_test_case(
     case: NarrativeCase,
     *,
     model: str | None = None,
-    kit_model: str | None = None,
     timeout_seconds: float = EVAL_TIMEOUT_SECONDS,
 ) -> LLMTestCase:
-    """Run a case through both production generation stages.
+    """Run a case through the production description generator.
 
     Returns:
         A DeepEval test case containing the structured Codex response.
 
     """
-    response, kit_profile = _generate_staged_response(
+    response = _generate_response(
         case,
         model=model,
-        kit_model=kit_model,
         timeout_seconds=timeout_seconds,
         max_attempts=generate_narratives.DEFAULT_GENERATION_ATTEMPTS,
     )
     return LLMTestCase(
         name=case.name,
-        input=_staged_prompt(),
+        input=generate_narratives.PROMPT,
         actual_output=json.dumps(response, ensure_ascii=False),
         context=[json.dumps(case.hero, ensure_ascii=False)],
         metadata={
             "hero": case.name,
             "hero_id": case.hero.get("hero_id"),
             "regression": case.regression,
-            "kit_model": kit_model or generate_narratives.DEFAULT_KIT_MODEL,
-            "synthesis_model": model or generate_narratives.DEFAULT_SYNTHESIS_MODEL,
-            "kit_profile": kit_profile,
+            "model": model or generate_narratives.DEFAULT_SYNTHESIS_MODEL,
         },
     )
 
 
-def _staged_prompt() -> str:
-    return (
-        "KIT ANALYSIS STAGE\n"
-        + generate_narratives.KIT_PROMPT
-        + "\n\nSYNTHESIS STAGE\n"
-        + generate_narratives.PROMPT
-    )
-
-
-def _generate_staged_response(
+def _generate_response(
     case: NarrativeCase,
     *,
     model: str | None,
-    kit_model: str | None,
     timeout_seconds: float,
     max_attempts: int = 1,
-) -> tuple[dict[str, Any], dict[str, Any]]:
-    resolved_kit_model = kit_model or generate_narratives.DEFAULT_KIT_MODEL
-    resolved_synthesis_model = model or generate_narratives.DEFAULT_SYNTHESIS_MODEL
-    kit_profile = generate_narratives.generate_validated_response(
-        generate_narratives.kit_context(case.hero),
-        case.hero,
-        generate_narratives.GenerationStage(
-            schema_path=KIT_SCHEMA_PATH,
-            model=resolved_kit_model,
-            prompt=generate_narratives.KIT_PROMPT,
-            identity_fields=("hero_id", "path_id", "kit_basis_sha256"),
-            validator=generate_narratives.validate_kit_response,
-            label=f"kit analysis for {case.name}",
-            max_attempts=max_attempts,
-            timeout_seconds=timeout_seconds,
-        ),
-    )
-    synthesis_context = generate_narratives.synthesis_context(
-        case.hero,
-        kit_profile,
-        case.item_mechanics,
-    )
-    response = generate_narratives.generate_validated_response(
-        synthesis_context,
+) -> dict[str, Any]:
+    return generate_narratives.generate_validated_response(
+        generate_narratives.synthesis_context(case.hero),
         case.hero,
         generate_narratives.GenerationStage(
             schema_path=SCHEMA_PATH,
-            model=resolved_synthesis_model,
+            model=model or generate_narratives.DEFAULT_SYNTHESIS_MODEL,
             prompt=generate_narratives.PROMPT,
             identity_fields=(
                 "hero_id",
@@ -205,13 +169,12 @@ def _generate_staged_response(
                 "narrative_basis_sha256",
             ),
             validator=generate_narratives.validate_response,
-            label=f"narrative synthesis for {case.name}",
+            label=f"build description for {case.name}",
             max_attempts=max_attempts,
             timeout_seconds=timeout_seconds,
             normalizer=generate_narratives.normalize_narrative_response,
         ),
     )
-    return response, kit_profile
 
 
 def generate_reliability_test_case(
@@ -219,7 +182,6 @@ def generate_reliability_test_case(
     *,
     repeats: int = RELIABILITY_REPEATS,
     model: str | None = None,
-    kit_model: str | None = None,
     timeout_seconds: float = EVAL_TIMEOUT_SECONDS,
 ) -> LLMTestCase:
     """Generate repeated responses while retaining timeouts as scored samples.
@@ -237,10 +199,9 @@ def generate_reliability_test_case(
     for attempt in range(1, repeats + 1):
         started = monotonic()
         try:
-            response, kit_profile = _generate_staged_response(
+            response = _generate_response(
                 case,
                 model=model,
-                kit_model=kit_model,
                 timeout_seconds=timeout_seconds,
                 max_attempts=generate_narratives.DEFAULT_GENERATION_ATTEMPTS,
             )
@@ -255,11 +216,10 @@ def generate_reliability_test_case(
                 "attempt": attempt,
                 "duration_seconds": round(monotonic() - started, 3),
                 "output": response,
-                "kit_profile": kit_profile,
             })
     return LLMTestCase(
         name=f"{case.name} reliability",
-        input=_staged_prompt(),
+        input=generate_narratives.PROMPT,
         actual_output=json.dumps(samples, ensure_ascii=False),
         context=[json.dumps(case.hero, ensure_ascii=False)],
         metadata={
@@ -268,7 +228,6 @@ def generate_reliability_test_case(
             "regression": case.regression,
             "repeats": repeats,
             "timeout_seconds": timeout_seconds,
-            "kit_model": kit_model or generate_narratives.DEFAULT_KIT_MODEL,
-            "synthesis_model": model or generate_narratives.DEFAULT_SYNTHESIS_MODEL,
+            "model": model or generate_narratives.DEFAULT_SYNTHESIS_MODEL,
         },
     )

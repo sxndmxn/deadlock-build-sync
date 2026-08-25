@@ -33,7 +33,6 @@ from .freshness import (
     require_current_build_evidence,
 )
 from .narratives import (
-    DEFAULT_KIT_MODEL,
     DEFAULT_SYNTHESIS_MODEL,
     NarrativeCatalog,
     NarrativeError,
@@ -267,11 +266,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     recommendation.add_argument("--artifacts", type=Path)
     sync.add_argument(
-        "--kit-model",
-        default=DEFAULT_KIT_MODEL,
-        help=f"ability-only analysis model (default: {DEFAULT_KIT_MODEL})",
-    )
-    sync.add_argument(
         "--model",
         default=DEFAULT_SYNTHESIS_MODEL,
         help=f"final narrative model (default: {DEFAULT_SYNTHESIS_MODEL})",
@@ -279,7 +273,7 @@ def build_parser() -> argparse.ArgumentParser:
     sync.add_argument(
         "--force-narratives",
         action="store_true",
-        help="regenerate kit profiles and narratives even when reusable",
+        help="regenerate build descriptions even when reusable",
     )
     sync.add_argument(
         "--max-attempts",
@@ -287,7 +281,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_GENERATION_ATTEMPTS,
         metavar="N",
         help=(
-            "generation/validation attempts per model stage "
+            "generation/validation attempts per build description "
             f"(default: {DEFAULT_GENERATION_ATTEMPTS})"
         ),
     )
@@ -297,7 +291,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_GENERATION_CONCURRENCY,
         metavar="N",
         help=(
-            "maximum concurrent hero narrative pipelines "
+            "maximum concurrent build descriptions "
             f"(default: {DEFAULT_GENERATION_CONCURRENCY})"
         ),
     )
@@ -564,7 +558,6 @@ def _run_sync(args: argparse.Namespace) -> int:
 
     context_path = artifact_directory / "strategy-context.json"
     policy_path = artifact_directory / _POLICY_FILENAME
-    kit_path = artifact_directory / "kit-profiles.json"
     narrative_path = artifact_directory / "narratives.json"
     _write_strategy_context(context_path, generated)
     _write_policy_artifact(policy_path, generated)
@@ -576,10 +569,6 @@ def _run_sync(args: argparse.Namespace) -> int:
         str(context_path),
         "--output",
         str(narrative_path),
-        "--kit-output",
-        str(kit_path),
-        "--kit-model",
-        args.kit_model,
         "--model",
         args.model,
         "--max-attempts",

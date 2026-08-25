@@ -205,7 +205,7 @@ class EvidenceLanguageMetric(_SynchronousNarrativeMetric):
 
 
 class ProjectionUtilizationMetric(_SynchronousNarrativeMetric):
-    """Require every generated narrative family to name a real consumer."""
+    """Require the generated description to name a real consumer."""
 
     metric_name = "Projection utilization"
 
@@ -225,26 +225,7 @@ class ProjectionUtilizationMetric(_SynchronousNarrativeMetric):
         response, error = _parse_object(test_case.actual_output)
         if response is None:
             return self._record(0.0, error or _INVALID_RESPONSE)
-        tactical = response.get("tactical_profile")
-        required = {
-            "build_summary": response.get("build_summary"),
-            "tactical_profile.primary_role": (
-                tactical.get("primary_role") if isinstance(tactical, dict) else None
-            ),
-            "tactical_profile.fight_role": (
-                tactical.get("fight_role") if isinstance(tactical, dict) else None
-            ),
-            "tactical_profile.economy_plan": (
-                tactical.get("economy_plan") if isinstance(tactical, dict) else None
-            ),
-            "tactical_profile.ending_duration_interpretation": (
-                tactical.get("ending_duration_interpretation")
-                if isinstance(tactical, dict)
-                else None
-            ),
-            "action_explanations": response.get("action_explanations"),
-            "category_summaries": response.get("category_summaries"),
-        }
+        required = {"build_description": response.get("build_description")}
         missing = [path for path, value in required.items() if not value]
         unconsumed = [
             path for path in required if not NARRATIVE_FIELD_SURFACES.get(path)
@@ -258,7 +239,7 @@ class ProjectionUtilizationMetric(_SynchronousNarrativeMetric):
             return self._record(0.0, "; ".join(details))
         return self._record(
             1.0,
-            "Every required narrative family has a declared player or audit surface",
+            "The build description has a declared player surface",
         )
 
 
@@ -297,19 +278,17 @@ class RepeatedGenerationStabilityMetric(_SynchronousNarrativeMetric):
         completion = len(outputs) / len(samples)
         valid_outputs = _validated_reliability_outputs(outputs, self.hero)
         contract = len(valid_outputs) / len(samples)
-        action_identities = {
-            _ordered_action_identity(output) for output in valid_outputs
-        }
-        category_identities = {
-            _ordered_category_identity(output) for output in valid_outputs
-        }
-        ending_identities = {
+        artifact_identities = {
             tuple(
-                output
-                .get("tactical_profile", {})
-                .get("ending_duration_interpretation", {})
-                .get(field)
-                for field in ("estimand", "strongest_phase", "weakest_phase")
+                output.get(field)
+                for field in (
+                    "hero_id",
+                    "path_id",
+                    "snapshot_id",
+                    "policy_id",
+                    "context_sha256",
+                    "narrative_basis_sha256",
+                )
             )
             for output in valid_outputs
         }
@@ -317,9 +296,7 @@ class RepeatedGenerationStabilityMetric(_SynchronousNarrativeMetric):
         breakdown = {
             "completion": completion,
             "production_contract": contract,
-            "action_identity": float(enough and len(action_identities) == 1),
-            "category_identity": float(enough and len(category_identities) == 1),
-            "ending_estimand_identity": float(enough and len(ending_identities) == 1),
+            "artifact_identity": float(enough and len(artifact_identities) == 1),
         }
         self.score_breakdown = breakdown
         score = min(breakdown.values())
@@ -334,14 +311,12 @@ class RepeatedGenerationStabilityMetric(_SynchronousNarrativeMetric):
             if errors:
                 reason += "; errors: " + " | ".join(errors)
         else:
-            reason = (
-                f"{len(valid_outputs)}/{len(samples)} stable closed-policy explanations"
-            )
+            reason = f"{len(valid_outputs)}/{len(samples)} stable build descriptions"
         return self._record(score, reason)
 
 
 def production_metrics(hero: dict[str, Any]) -> list[BaseMetric]:
-    """Build separate contract, policy-coverage, and language metrics.
+    """Build contract, language, and UI-consumption metrics.
 
     Returns:
         The production DeepEval metrics for one hero packet.
@@ -349,7 +324,6 @@ def production_metrics(hero: dict[str, Any]) -> list[BaseMetric]:
     """
     return [
         ProductionContractMetric(hero),
-        ClosedPolicyCoverageMetric(hero),
         EvidenceLanguageMetric(hero),
         ProjectionUtilizationMetric(hero),
     ]

@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 
     from .ranks import RankCatalog, RankRange
 
-BUILD_EVIDENCE_SCHEMA_VERSION = 4
+BUILD_EVIDENCE_SCHEMA_VERSION = 5
 
 type _SequencePolicyDocument = dict[str, Any]
 type _SituationalBranchDocument = dict[str, Any]
@@ -36,12 +36,14 @@ CORE_CANDIDATE_LIMIT = 64
 TIER_ITEM_COUNT = 10
 MINIMUM_TIER_SUPPORT = 20
 MINIMUM_CORE_SUPPORT = 20
-METHOD_VERSION = "state-aware-multi-path-v3"
+METHOD_VERSION = "state-aware-multi-path-v4"
 SEQUENCE_POLICY_VERSION = 3
 SITUATIONAL_POLICY_VERSION = 1
 CORE_POLICY_VERSION = 1
 MINIMUM_BACKBONE_ITEM_COUNT = 4
 MAXIMUM_BACKBONE_ITEM_COUNT = 6
+MINIMUM_IMBUE_SUPPORT = 20
+MINIMUM_IMBUE_SHARE = 0.5
 MAXIMUM_CORE_ALTERNATIVES = 10
 MAX_SITUATIONAL_BRANCHES = 7
 MAX_COMPARATIVE_INTERVAL_WIDTH = 0.10
@@ -89,6 +91,11 @@ class ItemEvidence:
     buy_net_worth_q25: float | None
     buy_net_worth_q75: float | None
     valid_buy_net_worth_share: float
+    imbue_target_ability_id: int | None = None
+    imbue_target_ability: str | None = None
+    imbue_target_matches: int = 0
+    imbue_observations: int = 0
+    imbue_target_share: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -385,6 +392,45 @@ def _item(value: object, hero_id: int) -> ItemEvidence:
         raise ArtifactError(
             f"hero {hero_id} item {item_id} has invalid net-worth quantiles"
         )
+    raw_imbue_target_id = value.get("imbue_target_ability_id")
+    imbue_target_id = (
+        None
+        if raw_imbue_target_id is None
+        else _required_int(raw_imbue_target_id, "imbue target ability id", minimum=1)
+    )
+    imbue_target = value.get("imbue_target_ability")
+    imbue_target_matches = _required_int(
+        value.get("imbue_target_matches"), "imbue target matches"
+    )
+    imbue_observations = _required_int(
+        value.get("imbue_observations"), "imbue observations"
+    )
+    imbue_target_share = _required_float(
+        value.get("imbue_target_share"), "imbue target share", maximum=1.0
+    )
+    if (
+        imbue_target_matches > imbue_observations
+        or (imbue_target_id is None) != (imbue_target is None)
+        or (
+            imbue_target_id is None
+            and any((imbue_target_matches, imbue_observations, imbue_target_share))
+        )
+        or (
+            imbue_target_id is not None
+            and (
+                not isinstance(imbue_target, str)
+                or not imbue_target.strip()
+                or imbue_target_matches < MINIMUM_IMBUE_SUPPORT
+                or imbue_target_share <= MINIMUM_IMBUE_SHARE
+                or not math.isclose(
+                    imbue_target_share,
+                    imbue_target_matches / imbue_observations,
+                    abs_tol=1e-9,
+                )
+            )
+        )
+    ):
+        raise ArtifactError(f"hero {hero_id} item {item_id} has invalid imbue evidence")
     return ItemEvidence(
         item_id=item_id,
         item=name.strip(),
@@ -409,6 +455,13 @@ def _item(value: object, hero_id: int) -> ItemEvidence:
             "valid buy net worth share",
             maximum=1.0,
         ),
+        imbue_target_ability_id=imbue_target_id,
+        imbue_target_ability=(
+            str(imbue_target).strip() if isinstance(imbue_target, str) else None
+        ),
+        imbue_target_matches=imbue_target_matches,
+        imbue_observations=imbue_observations,
+        imbue_target_share=imbue_target_share,
     )
 
 
@@ -1008,6 +1061,8 @@ def load_build_evidence(path: Path) -> BuildEvidenceCatalog:
         "minimum_core_support": MINIMUM_CORE_SUPPORT,
         "minimum_tier_support": MINIMUM_TIER_SUPPORT,
         "tier_item_count": TIER_ITEM_COUNT,
+        "minimum_imbue_support": MINIMUM_IMBUE_SUPPORT,
+        "minimum_imbue_share": MINIMUM_IMBUE_SHARE,
     }
     if not isinstance(method, dict) or any(
         method.get(key) != value for key, value in expected_method.items()

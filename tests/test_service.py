@@ -453,6 +453,35 @@ def test_rejects_selected_hero_without_complete_ability_path() -> None:
         )
 
 
+def test_rejects_observed_imbue_target_outside_current_hero_kit() -> None:
+    api = FakeApi(ability_rows=ability_rows(), duration_points=duration_points())
+    catalog = build_evidence(api)
+    hero = catalog.heroes[12]
+    items = tuple(
+        replace(
+            item,
+            imbue_target_ability_id=999,
+            imbue_target_ability="Stale Ability",
+            imbue_target_matches=60,
+            imbue_observations=80,
+            imbue_target_share=0.75,
+        )
+        if item.item_id == 100
+        else item
+        for item in hero.items
+    )
+    evidence = replace(catalog, heroes={12: replace(hero, items=items)})
+
+    with pytest.raises(GuideError, match="not a current hero ability"):
+        generate_guides(
+            api,
+            build_evidence=evidence,
+            account_id=123,
+            hero_query="Kelvin",
+            all_heroes=False,
+        )
+
+
 def test_incomplete_duration_curve_abstains_without_discarding_policy() -> None:
     api = FakeApi(
         ability_rows=ability_rows(),
@@ -517,6 +546,14 @@ def test_generated_guide_is_snapshot_bound_policy_projection() -> None:
     assert [len(category.items) for category in guide.categories] == [8, 8, 8, 8, 8]
     assert guide.item_count == 40
     assert not guide.categories[0].optional
+    assert guide.build_tag_ids == (10, 301, 4)
+    assert guide.build_tag_classes == (
+        "ability_1",
+        "item_3_1",
+        "citadel_build_tag_damage",
+    )
+    assert guide.build_tag_labels == ("Ability 1", "Tier 3 Item 1", "Damage")
+    assert generated.contexts[0]["projection"]["build"]["tag_ids"] == [10, 301, 4]
     assert generated.contexts[0]["ending_duration_profile"]["estimand"] == (
         "ending_duration_profile"
     )
@@ -696,7 +733,11 @@ def test_admitted_core_alternative_is_a_non_queue_policy_card() -> None:
         .categories[1]
         .items[0]
         .annotation.endswith(
-            "PURCHASE WINDOW: about 1k souls\nWIN RATE: 57.5%\nPICK RATE: 87.0%"
+            "PURCHASE WINDOW: about 1k souls\n"
+            "WIN RATE: 57.5%\n"
+            "PICK RATE: 87.0%\n"
+            "BUYER MATCHES: 87\n"
+            "PURCHASE EVENTS: 100"
         )
     )
     assert 103 not in {item.item_id for item in guide.tiers[1]}
