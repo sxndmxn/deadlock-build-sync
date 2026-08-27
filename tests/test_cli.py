@@ -12,7 +12,6 @@ from deadlock_build_sync.cache import CacheError, CacheLocation
 from deadlock_build_sync.cli import DEFAULT_NARRATIVE_PATH, build_parser
 from deadlock_build_sync.freshness import FreshnessError
 from deadlock_build_sync.narratives import (
-    DEFAULT_KIT_MODEL,
     DEFAULT_SYNTHESIS_MODEL,
     NarrativeCatalog,
 )
@@ -31,12 +30,11 @@ from deadlock_build_sync.snapshot import (
 from scripts.generate_narratives import DEFAULT_GENERATION_CONCURRENCY
 
 
-def test_sync_defaults_to_every_eligible_hero_and_staged_models() -> None:
+def test_sync_defaults_to_every_eligible_hero_and_description_model() -> None:
     args = build_parser().parse_args(["sync"])
 
     assert args.hero is None
     assert not args.all
-    assert args.kit_model == DEFAULT_KIT_MODEL
     assert args.model == DEFAULT_SYNTHESIS_MODEL
     assert args.max_attempts == 3
     assert args.concurrency == DEFAULT_GENERATION_CONCURRENCY
@@ -356,8 +354,7 @@ def test_sync_generates_artifacts_and_installs_without_extra_flags(
     assert (tmp_path / "artifacts/policies.json").is_file()
     generation_args = calls["generation_args"]
     assert isinstance(generation_args, list)
-    assert "--kit-model" in generation_args
-    assert DEFAULT_KIT_MODEL in generation_args
+    assert "--kit-model" not in generation_args
     assert "--model" in generation_args
     assert DEFAULT_SYNTHESIS_MODEL in generation_args
     assert "--concurrency" in generation_args

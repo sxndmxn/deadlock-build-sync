@@ -87,11 +87,13 @@ class GuideItem:
     buy_net_worth_q25: float | None = None
     buy_net_worth_q75: float | None = None
     valid_buy_net_worth_share: float = 0.0
+    imbue_target_ability: str | None = None
+    imbue_target_matches: int = 0
+    imbue_observations: int = 0
+    imbue_target_share: float = 0.0
 
     @property
     def annotation(self) -> str:
-        if self.tactical_annotation:
-            return self.tactical_annotation
         if self.eligible_player_matches:
             return item_stat_context(self)
         timing = (
@@ -259,11 +261,19 @@ def item_stat_context(item: GuideItem) -> str:
         item.buy_net_worth_q25,
         item.buy_net_worth_q75,
     )
-    return (
-        f"PURCHASE WINDOW: {window}\n"
-        f"WIN RATE: {item.observed_outcome_rate * 100:.1f}%\n"
-        f"PICK RATE: {item.purchase_adoption * 100:.1f}%"
-    )
+    lines = [
+        f"PURCHASE WINDOW: {window}",
+        f"WIN RATE: {item.observed_outcome_rate * 100:.1f}%",
+        f"PICK RATE: {item.purchase_adoption * 100:.1f}%",
+        f"BUYER MATCHES: {item.adopter_matches:,}",
+        f"PURCHASE EVENTS: {item.purchase_events:,}",
+    ]
+    if item.imbue_target_ability:
+        lines.append(
+            f"IMBUE: {item.imbue_target_ability} "
+            f"({item.imbue_target_share * 100:.1f}%, n={item.imbue_observations:,})"
+        )
+    return "\n".join(lines)
 
 
 def tactical_item_annotation(instruction: str, item: GuideItem) -> str:
@@ -315,6 +325,11 @@ def guide_item_from_evidence(item: ItemEvidence) -> GuideItem:
         buy_net_worth_q25=item.buy_net_worth_q25,
         buy_net_worth_q75=item.buy_net_worth_q75,
         valid_buy_net_worth_share=item.valid_buy_net_worth_share,
+        imbue_target_ability_id=item.imbue_target_ability_id,
+        imbue_target_ability=item.imbue_target_ability,
+        imbue_target_matches=item.imbue_target_matches,
+        imbue_observations=item.imbue_observations,
+        imbue_target_share=item.imbue_target_share,
     )
 
 

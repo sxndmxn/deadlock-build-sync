@@ -181,7 +181,7 @@ def build_presentation(
     return BuildPresentation(
         hero_id=guide.hero_id,
         name=_build_name(
-            (guide.path_label if guide.path_id != "default" else guide.build_archetype),
+            guide.build_archetype,
             patch_title,
             _stats_window(
                 guide.analysis_start_timestamp,

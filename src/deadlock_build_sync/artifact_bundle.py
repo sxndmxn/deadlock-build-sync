@@ -16,7 +16,7 @@ from .build_evidence import (
     evidence_record_sha256,
     load_build_evidence,
 )
-from .build_tags import AXIS_CLASSES, COMPLEXITY_CLASS, FUNCTION_CLASSES
+from .build_tags import FUNCTION_CLASSES
 from .narratives import apply_narrative, load_narrative_catalog
 from .policy import BuildPolicy, NodeKind
 from .purchase_guide import (
@@ -24,6 +24,7 @@ from .purchase_guide import (
     GuideItem,
     PurchaseGuide,
     guide_item_from_evidence,
+    standard_category_description,
 )
 from .ranks import Rank, RankDivision, RankRange, RankTier
 from .snapshot import sha256_json
@@ -278,7 +279,12 @@ def _projected_category(
         raise ArtifactBundleError(
             f"hero {evidence.hero_id} artifact row {name} contains duplicates"
         )
-    return GuideCategory(name, items, optional=optional), items
+    return GuideCategory(
+        name,
+        items,
+        description=standard_category_description(name) or "",
+        optional=optional,
+    ), items
 
 
 def _final_core_items(
@@ -565,9 +571,8 @@ def _build_identity(
     resolved_catalog = cast("str", catalog_sha256)
     resolved_archetype = cast("str", archetype)
     if (
-        resolved_classes[0] not in AXIS_CLASSES
-        or resolved_classes[1] not in FUNCTION_CLASSES
-        or resolved_classes[2] != COMPLEXITY_CLASS
+        not all(value.strip() for value in resolved_classes[:2])
+        or resolved_classes[2] not in FUNCTION_CLASSES
     ):
         raise ArtifactBundleError(f"hero {policy.hero_id} has invalid build tags")
     return ArtifactBuildIdentity(

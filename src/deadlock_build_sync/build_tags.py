@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from .snapshot import sha256_json
+
+if TYPE_CHECKING:
+    from .purchase_guide import GuideItem
 
 AXIS_CLASSES = (
     "citadel_build_tag_weapon",
@@ -164,25 +168,56 @@ def _function_class(asset: dict[str, Any]) -> str:
     return "citadel_build_tag_damage"
 
 
-def select_build_tags(
+def _first_maxed_ability_id(ability_path_ids: tuple[int, ...]) -> int:
+    counts = Counter(ability_path_ids)
+    if (
+        len(ability_path_ids) != 16
+        or len(counts) != 4
+        or any(count != 4 for count in counts.values())
+    ):
+        raise BuildTagError("ability path is not a complete four-ability path")
+    reached: Counter[int] = Counter()
+    for ability_id in ability_path_ids:
+        reached[ability_id] += 1
+        if reached[ability_id] == 4:
+            return ability_id
+    raise BuildTagError("ability path does not max an ability")
+
+
+def _core_icon_item(core_items: tuple[GuideItem, ...]) -> GuideItem:
+    candidates = tuple(item for item in core_items if item.tier == 3)
+    if not candidates:
+        candidates = tuple(item for item in core_items if item.tier == 4)
+    if not candidates:
+        raise BuildTagError("CORE has no Tier 3 or Tier 4 item for its item icon")
+    return min(
+        candidates,
+        key=lambda item: (
+            -item.observed_outcome_rate,
+            -item.adopter_matches,
+            -item.purchase_events,
+            item.item_id,
+        ),
+    )
+
+
+def _asset_identity(asset: dict[str, Any], *, kind: str) -> tuple[str, str]:
+    class_name = asset.get("class_name")
+    label = asset.get("name")
+    if (
+        not isinstance(class_name, str)
+        or not class_name.strip()
+        or not isinstance(label, str)
+        or not label.strip()
+    ):
+        raise BuildTagError(f"selected {kind} icon has no asset identity")
+    return class_name.strip(), label.strip()
+
+
+def _core_taxonomy(
     core_item_ids: tuple[int, ...],
-    assets: list[dict[str, Any]],
-    catalog: BuildTagCatalog,
-) -> BuildTagSelection:
-    """Select one axis, function, and conservative audience tag.
-
-    Returns:
-        The selected tag identities and player-facing archetype.
-
-    Raises:
-        BuildTagError: If CORE references an item missing from the pinned assets.
-
-    """
-    by_id = {
-        int(asset["id"]): asset for asset in assets if isinstance(asset.get("id"), int)
-    }
-    if not core_item_ids or any(item_id not in by_id for item_id in core_item_ids):
-        raise BuildTagError("CORE items are missing from pinned assets")
+    assets_by_id: dict[int, dict[str, Any]],
+) -> tuple[str, str]:
     axis_cost = dict.fromkeys(AXIS_CLASSES, 0)
     function_cost = dict.fromkeys(FUNCTION_CLASSES, 0)
     slot_class = {
@@ -191,7 +226,7 @@ def select_build_tags(
         "vitality": "citadel_build_tag_vitality",
     }
     for item_id in core_item_ids:
-        asset = by_id[item_id]
+        asset = assets_by_id[item_id]
         cost = int(asset.get("cost") or 0)
         axis = slot_class.get(str(asset.get("item_slot_type") or "").casefold())
         if axis is not None:
@@ -208,17 +243,51 @@ def select_build_tags(
             FUNCTION_CLASSES.index(class_name),
         ),
     )
-    axis = catalog.require(axis_class)
+    return axis_class, function_class
+
+
+def select_build_tags(
+    ability_path_ids: tuple[int, ...],
+    core_items: tuple[GuideItem, ...],
+    assets: list[dict[str, Any]],
+    catalog: BuildTagCatalog,
+) -> BuildTagSelection:
+    """Select the first-maxed ability, best CORE item, and build function icons.
+
+    Returns:
+        The selected tag identities and player-facing archetype.
+
+    Raises:
+        BuildTagError: If the ability path or CORE icon cannot be resolved.
+
+    """
+    by_id = {
+        int(asset["id"]): asset for asset in assets if isinstance(asset.get("id"), int)
+    }
+    core_item_ids = tuple(item.item_id for item in core_items)
+    if not core_item_ids or any(item_id not in by_id for item_id in core_item_ids):
+        raise BuildTagError("CORE items are missing from pinned assets")
+    ability_id = _first_maxed_ability_id(ability_path_ids)
+    ability_asset = by_id.get(ability_id)
+    if ability_asset is None:
+        raise BuildTagError("first-maxed ability is missing from pinned assets")
+    icon_item = _core_icon_item(core_items)
+    ability_class, ability_label = _asset_identity(ability_asset, kind="ability")
+    item_class, item_label = _asset_identity(by_id[icon_item.item_id], kind="CORE item")
+    axis_class, function_class = _core_taxonomy(core_item_ids, by_id)
     function = catalog.require(function_class)
-    complexity = catalog.require(COMPLEXITY_CLASS)
+    axis = catalog.require(axis_class)
     archetype = (
         f"{axis.label} Damage"
         if function_class == "citadel_build_tag_damage"
         else f"{function.label} / {axis.label}"
     )
+    tag_ids = (ability_id, icon_item.item_id, function.tag_id)
+    if len(set(tag_ids)) != 3:
+        raise BuildTagError("selected build icons are not distinct")
     return BuildTagSelection(
-        (axis.tag_id, function.tag_id, complexity.tag_id),
-        (axis.class_name, function.class_name, complexity.class_name),
-        (axis.label, function.label, complexity.label),
+        tag_ids,
+        (ability_class, item_class, function.class_name),
+        (ability_label, item_label, function.label),
         archetype,
     )

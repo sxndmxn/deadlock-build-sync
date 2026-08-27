@@ -138,13 +138,13 @@ def guide(item: GuideItem) -> PurchaseGuide:
         client_version=123,
         match_mode="ranked",
         rank_identity="Mystic–Emissary",
-        build_tag_ids=(1, 2, 3),
+        build_tag_ids=(10, 101, 3),
         build_tag_classes=(
-            "citadel_build_tag_weapon",
+            "ability_10",
+            "item_101",
             "citadel_build_tag_damage",
-            "citadel_build_tag_complexity_2",
         ),
-        build_tag_labels=("Weapon", "Damage", "For Intermediate Players"),
+        build_tag_labels=("Grenade", "Rapid Recharge", "Damage"),
         build_tag_catalog_sha256="b" * 64,
         build_archetype="Weapon Damage",
         as_of_timestamp=200,
@@ -261,7 +261,7 @@ def test_document_binds_snapshot_coverage_and_fingerprints() -> None:
         validate_strategy_context_document(duplicated)
 
 
-def test_narrative_basis_changes_when_claim_bearing_analytics_change() -> None:
+def test_description_basis_ignores_item_stats_but_context_tracks_them() -> None:
     original = build_hero_strategy_context(
         guide(item(200)),
         {"id": 12, "name": "Kelvin"},
@@ -278,7 +278,7 @@ def test_narrative_basis_changes_when_claim_bearing_analytics_change() -> None:
     )
 
     assert original["kit_basis_sha256"] == advanced["kit_basis_sha256"]
-    assert original["narrative_basis_sha256"] != advanced["narrative_basis_sha256"]
+    assert original["narrative_basis_sha256"] == advanced["narrative_basis_sha256"]
     assert original["context_sha256"] != advanced["context_sha256"]
 
 

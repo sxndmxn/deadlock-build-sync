@@ -148,13 +148,13 @@ def _projection() -> dict[str, Any]:
     return {
         "build": {
             "archetype": "Weapon Damage",
-            "tag_ids": [1, 2, 3],
+            "tag_ids": [10, 1005, 3],
             "tag_classes": [
-                "citadel_build_tag_weapon",
+                "ability_10",
+                "item_1005",
                 "citadel_build_tag_damage",
-                "citadel_build_tag_complexity_2",
             ],
-            "tag_labels": ["Weapon", "Damage", "For Intermediate Players"],
+            "tag_labels": ["Ability 10", "Item 1005", "Damage"],
             "tag_catalog_sha256": "b" * 64,
         },
         "categories": rows,
@@ -189,13 +189,18 @@ def _build_evidence() -> dict[str, Any]:
                 "buy_net_worth_q25": q25,
                 "buy_net_worth_q75": q75,
                 "valid_buy_net_worth_share": 0.95,
+                "imbue_target_ability_id": None,
+                "imbue_target_ability": None,
+                "imbue_target_matches": 0,
+                "imbue_observations": 0,
+                "imbue_target_share": 0.0,
             })
     boundary = EpochBoundary(PATCH.identity, 100)
     payload = {
-        "schema_version": 4,
+        "schema_version": 5,
         "producer": "fixture",
         "method": {
-            "version": "state-aware-multi-path-v3",
+            "version": "state-aware-multi-path-v4",
             "core_candidate_item_count": 8,
             "minimum_core_item_count": 4,
             "maximum_core_item_count": 9,
@@ -203,6 +208,8 @@ def _build_evidence() -> dict[str, Any]:
             "minimum_core_support": 20,
             "minimum_tier_support": 20,
             "tier_item_count": 10,
+            "minimum_imbue_support": 20,
+            "minimum_imbue_share": 0.5,
         },
         "cohort": {
             "as_of": datetime.fromtimestamp(200, UTC).isoformat(),
@@ -394,26 +401,10 @@ def _write_bundle(root: Path) -> tuple[Path, Path, Path, Path]:
                 "policy_id": policy.policy_id,
                 "context_sha256": hero["context_sha256"],
                 "narrative_basis_sha256": hero["narrative_basis_sha256"],
-                "tactical_profile": {
-                    "primary_role": "control support",
-                    "fight_role": "Control committed fights around allied pressure.",
-                    "economy_plan": "Take safe income before grouping for objectives.",
-                },
-                "build_summary": "Use the reviewed coherent core.",
-                "action_explanations": [
-                    {
-                        "node_id": f"core-{index}",
-                        "evidence_ref": f"core-evidence-{index}",
-                        "instruction": (
-                            f"Use Item {item_id} at its observed place in the core."
-                        ),
-                    }
-                    for index, item_id in enumerate(range(1001, 1009), start=1)
-                ],
-                "category_summaries": [
-                    {"category": name, "summary": f"Reviewed summary for {name}."}
-                    for name in ("CORE ITEMS", "TIER 1", "TIER 2", "TIER 3", "TIER 4")
-                ],
+                "build_description": (
+                    "Control committed fights around allied pressure while the "
+                    "reviewed CORE path keeps reliable damage available."
+                ),
             }
         ],
     }
@@ -447,7 +438,10 @@ def test_loads_exact_reviewed_bundle_without_analytics_refetch(tmp_path: Path) -
         10,
         10,
     ]
-    assert guide.summary == "Use the reviewed coherent core."
+    assert guide.summary == (
+        "Control committed fights around allied pressure while the reviewed CORE "
+        "path keeps reliable damage available."
+    )
     assert guide.rendered_categories[0].description == (
         "AUTO QUEUE • Default path, buy left→right."
     )
@@ -455,16 +449,23 @@ def test_loads_exact_reviewed_bundle_without_analytics_refetch(tmp_path: Path) -
         "Excluded from Queue • Choose deliberately."
     )
     assert guide.rendered_categories[0].items[0].annotation == (
-        "Use Item 1001 at its observed place in the core.\n"
         "PURCHASE WINDOW: 4k–14k souls\n"
         "WIN RATE: 50.0%\n"
-        "PICK RATE: 80.0%"
+        "PICK RATE: 80.0%\n"
+        "BUYER MATCHES: 80\n"
+        "PURCHASE EVENTS: 80"
     )
     assert guide.rendered_categories[1].items[0].annotation == (
-        "PURCHASE WINDOW: 4k–14k souls\nWIN RATE: 50.0%\nPICK RATE: 80.0%"
+        "PURCHASE WINDOW: 4k–14k souls\n"
+        "WIN RATE: 50.0%\n"
+        "PICK RATE: 80.0%\n"
+        "BUYER MATCHES: 80\n"
+        "PURCHASE EVENTS: 80"
     )
     assert guide.ability_path is not None
     assert len(guide.ability_path.ability_ids) == 16
+    assert guide.build_tag_ids == (10, 1005, 3)
+    assert guide.build_tag_labels == ("Ability 10", "Item 1005", "Damage")
 
 
 def test_rejects_edited_projection_even_when_other_artifacts_are_unchanged(
