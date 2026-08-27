@@ -352,7 +352,6 @@ def update_managed_builds(
     patch_published_at: str,
     rank_range: RankRange = DEFAULT_RANK_RANGE,
 ) -> tuple[dict[str, Any], dict[BuildKey, int], int, int, int]:
-    _ = persona
     updated_root = deepcopy(root)
     unpublished = updated_root["Unpublished"]
     desired = {(guide.hero_id, guide.path_id) for guide in guides}
@@ -381,6 +380,7 @@ def update_managed_builds(
         hero_build = encode_hero_build(
             build_presentation(
                 guide,
+                persona=persona,
                 patch_title=patch_title,
                 patch_published_at=patch_published_at,
                 rank_range=rank_range,

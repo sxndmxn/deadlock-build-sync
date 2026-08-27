@@ -145,9 +145,19 @@ def test_install_artifacts_refuses_before_loading_when_deadlock_is_running(
         cli_module._run_install_artifacts(args)
 
 
+@pytest.mark.parametrize(
+    ("persona_arguments", "local_persona", "expected_persona"),
+    [
+        ([], "Local Player", "Local Player"),
+        (["--persona", "Explicit Player"], "Local Player", "Explicit Player"),
+    ],
+)
 def test_install_artifacts_loads_frozen_build_evidence_from_the_bundle(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    persona_arguments: list[str],
+    local_persona: str,
+    expected_persona: str,
 ) -> None:
     artifact_directory = tmp_path / "artifacts"
     cache_path = tmp_path / "cached_hero_builds.kv3"
@@ -156,7 +166,11 @@ def test_install_artifacts_loads_frozen_build_evidence_from_the_bundle(
     seen: dict[str, object] = {}
     monkeypatch.setattr(cli_module, "_location", lambda _args: location)
     monkeypatch.setattr(cli_module, "deadlock_is_running", lambda: False)
-    monkeypatch.setattr(cli_module, "local_steam_persona", lambda _account_id: "XMLJDX")
+    monkeypatch.setattr(
+        cli_module,
+        "local_steam_persona",
+        lambda _account_id: local_persona,
+    )
 
     def load_bundle(*paths: Path) -> SimpleNamespace:
         seen["paths"] = paths
@@ -197,6 +211,7 @@ def test_install_artifacts_loads_frozen_build_evidence_from_the_bundle(
                 "install-artifacts",
                 "--artifacts",
                 str(artifact_directory),
+                *persona_arguments,
             ])
         )
         == 0
@@ -207,7 +222,7 @@ def test_install_artifacts_loads_frozen_build_evidence_from_the_bundle(
         artifact_directory / "narratives.json",
         artifact_directory / "build-evidence.json",
     )
-    assert seen["persona"] == "XMLJDX"
+    assert seen["persona"] == expected_persona
 
 
 def snapshot() -> SnapshotManifest:

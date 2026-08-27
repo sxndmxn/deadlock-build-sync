@@ -507,6 +507,7 @@ def _describe_preview_guide(
 ) -> dict[str, Any]:
     presentation = build_presentation(
         guide,
+        persona=generated.persona,
         patch_title=generated.patch.title,
         patch_published_at=generated.patch.published_at,
         rank_range=generated.rank_range,

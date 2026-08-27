@@ -89,6 +89,7 @@ def test_stage_trace_covers_presentation_and_protobuf_with_safe_facts(
     with session:
         presentation = build_presentation(
             guide,
+            persona="Player",
             patch_title="Patch",
             patch_published_at="2026-08-15T00:00:00Z",
         )
@@ -129,6 +130,7 @@ def test_call_tracing_does_not_change_projection_or_serialization(
     guide = _guide()
     presentation = build_presentation(
         guide,
+        persona="Player",
         patch_title="Patch",
         patch_published_at="2026-08-15T00:00:00Z",
     )
