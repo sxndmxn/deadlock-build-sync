@@ -7,6 +7,10 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Use the selected or resolved Steam persona as the installed build-title prefix.
+
 ### Added
 
 - Bounded concurrent hero narrative pipelines with atomic progress checkpoints and

@@ -1,8 +1,14 @@
 import struct
 from dataclasses import replace
 
+import pytest
+
 from deadlock_build_sync.ability_order import AbilityPath
-from deadlock_build_sync.presentation import BuildPresentation, build_presentation
+from deadlock_build_sync.presentation import (
+    MAX_BUILD_NAME_CHARACTERS,
+    BuildPresentation,
+    build_presentation,
+)
 from deadlock_build_sync.protobuf import (
     MANAGED_MARKER,
     encode_hero_build,
@@ -32,10 +38,13 @@ def sample_guide() -> PurchaseGuide:
 
 
 def presentation(
-    guide: PurchaseGuide, patch_title: str = "Test Patch"
+    guide: PurchaseGuide,
+    patch_title: str = "Test Patch",
+    persona: str = "XMLJDX",
 ) -> BuildPresentation:
     return build_presentation(
         guide,
+        persona=persona,
         patch_title=patch_title,
         patch_published_at="2026-01-01T00:00:00Z",
     )
@@ -156,6 +165,39 @@ def test_build_name_does_not_let_imbue_path_label_override_weapon_core() -> None
     )
 
     assert metadata.name == "XMLJDX | Weapon Damage | 0822 / 0101–0101"
+
+
+def test_build_name_uses_normalized_persona_prefix() -> None:
+    metadata = hero_build_metadata(
+        encode_hero_build(
+            presentation(sample_guide(), persona="  Player   1  "),
+            build_id=34,
+            account_id=146293212,
+            timestamp=1234567890,
+        )
+    )
+
+    assert metadata.name == "Player 1 | Spirit Damage | Test Patch / 0101–0101"
+
+
+def test_build_name_truncates_unicode_persona_within_title_limit() -> None:
+    metadata = hero_build_metadata(
+        encode_hero_build(
+            presentation(sample_guide(), persona="玩家" * 20),
+            build_id=34,
+            account_id=146293212,
+            timestamp=1234567890,
+        )
+    )
+
+    assert metadata.name is not None
+    assert metadata.name.startswith(f"{'玩家' * 10} | ")
+    assert len(metadata.name) <= MAX_BUILD_NAME_CHARACTERS
+
+
+def test_build_name_rejects_empty_persona() -> None:
+    with pytest.raises(ValueError, match="persona must contain visible text"):
+        presentation(sample_guide(), persona=" \t\n ")
 
 
 def test_encodes_observed_item_imbue_target() -> None:
