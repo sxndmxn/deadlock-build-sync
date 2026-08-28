@@ -24,6 +24,8 @@ from deadlock_build_sync.build_evidence import (
     MAX_COMPARATIVE_INTERVAL_WIDTH,
     MAX_SITUATIONAL_BRANCHES,
     MECHANIC_RESPONSE_THREATS,
+    MINIMUM_IMBUE_SHARE,
+    MINIMUM_IMBUE_SUPPORT,
     SEQUENCE_POLICY_VERSION,
     THREAT_CLASSES,
     nondecreasing_window_schedule,
@@ -53,13 +55,13 @@ from .core_policy import (
 )
 from .late_game import _asset_maps, reconstruct_final_inventory
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 CORE_ITEM_COUNT = 8
 CORE_CANDIDATE_LIMIT = 64
 TIER_ITEM_COUNT = 10
 MINIMUM_CORE_SUPPORT = 20
 HERO_EXPORT_WORKERS = 8
-METHOD_VERSION = "state-aware-multi-path-v3"
+METHOD_VERSION = "state-aware-multi-path-v4"
 SEQUENCE_MINIMUM_SUPPORT = 20
 CORE_ECONOMY_REFERENCE_MINIMUM_BADGE = 81
 DEFAULT_BUILD_PATH_LABEL = "Evidence Default"
@@ -284,6 +286,28 @@ def _path_item_metrics(
                 FROM purchases p
                 JOIN _build_path_members m USING (match_id, player_slot)
                 GROUP BY p.item_id
+            ), imbue_counts AS (
+                SELECT p.item_id, p.imbued_ability_id,
+                       count(*) AS target_matches
+                FROM first_purchases p
+                JOIN _build_path_members m USING (match_id, player_slot)
+                WHERE p.imbued_ability_id > 0
+                GROUP BY p.item_id, p.imbued_ability_id
+            ), ranked_imbues AS (
+                SELECT *,
+                       sum(target_matches) OVER (PARTITION BY item_id)
+                           AS imbue_observations,
+                       row_number() OVER (
+                           PARTITION BY item_id
+                           ORDER BY target_matches DESC, imbued_ability_id
+                       ) AS target_rank
+                FROM imbue_counts
+            ), dominant_imbues AS (
+                SELECT item_id, imbued_ability_id, target_matches,
+                       imbue_observations,
+                       target_matches / imbue_observations::DOUBLE AS target_share
+                FROM ranked_imbues
+                WHERE target_rank = 1
             ), items AS (
                 SELECT
                     p.hero_id, p.item_id, any_value(p.item_name) AS item_name,
@@ -305,9 +329,12 @@ def _path_item_metrics(
                 HAVING count(*) >= {MINIMUM_CORE_SUPPORT}
             )
             SELECT i.*, e.purchase_events,
+                   d.imbued_ability_id, d.target_matches,
+                   d.imbue_observations, d.target_share,
                    {len(member_ids)}::BIGINT AS hero_player_matches,
                    i.adopter_matches / {len(member_ids)}::DOUBLE AS adoption_rate
             FROM items i JOIN events e USING (item_id)
+            LEFT JOIN dominant_imbues d USING (item_id)
             """
         ).pl()
     finally:
@@ -452,7 +479,23 @@ def _optional_float(value: float | None) -> float | None:
     return float(value) if value is not None else None
 
 
-def _item_payload(row: dict[str, Any]) -> dict[str, Any]:
+def _item_payload(
+    row: dict[str, Any],
+    assets_by_id: dict[int, dict[str, Any]],
+) -> dict[str, Any]:
+    target_id = row.get("imbued_ability_id")
+    resolved_target_id = int(target_id) if target_id is not None else None
+    target_matches = int(row.get("target_matches") or 0)
+    observations = int(row.get("imbue_observations") or 0)
+    target_share = float(row.get("target_share") or 0.0)
+    target = assets_by_id.get(resolved_target_id, {}) if resolved_target_id else {}
+    target_name = target.get("name")
+    target_supported = (
+        isinstance(target_name, str)
+        and bool(target_name.strip())
+        and target_matches >= MINIMUM_IMBUE_SUPPORT
+        and target_share > MINIMUM_IMBUE_SHARE
+    )
     return {
         "item_id": int(row["item_id"]),
         "item": str(row["item_name"]),
@@ -473,6 +516,11 @@ def _item_payload(row: dict[str, Any]) -> dict[str, Any]:
         "buy_net_worth_q25": _optional_float(row["buy_nw_q25"]),
         "buy_net_worth_q75": _optional_float(row["buy_nw_q75"]),
         "valid_buy_net_worth_share": float(row["valid_buy_nw_share"]),
+        "imbue_target_ability_id": resolved_target_id if target_supported else None,
+        "imbue_target_ability": target_name.strip() if target_supported else None,
+        "imbue_target_matches": target_matches if target_supported else 0,
+        "imbue_observations": observations if target_supported else 0,
+        "imbue_target_share": target_share if target_supported else 0.0,
     }
 
 
@@ -1468,7 +1516,7 @@ def _build_path_payload(
             "evaluation": _core_evaluation_contract(),
         },
         "items": [
-            _item_payload(row)
+            _item_payload(row, context.mechanics_assets_by_id)
             for row in path_metrics.sort("item_id").iter_rows(named=True)
         ],
         "sequence_policy": {
@@ -1669,6 +1717,8 @@ def export_production_evidence(paths: RunPaths, output: Path) -> dict[str, Any]:
             "minimum_core_support": MINIMUM_CORE_SUPPORT,
             "minimum_tier_support": SEQUENCE_MINIMUM_SUPPORT,
             "tier_item_count": TIER_ITEM_COUNT,
+            "minimum_imbue_support": MINIMUM_IMBUE_SUPPORT,
+            "minimum_imbue_share": MINIMUM_IMBUE_SHARE,
             "core_selection": (
                 "temporally stable supported four-to-six-item backbone, then a "
                 "jointly supported mechanically legal completion of up to nine items "

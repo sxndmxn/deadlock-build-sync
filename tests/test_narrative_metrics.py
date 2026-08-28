@@ -26,7 +26,10 @@ def hero() -> dict[str, Any]:
 
 def response() -> dict[str, Any]:
     return {
-        "build_summary": "Follow the default and adapt through optional menus.",
+        "build_description": (
+            "Follow the supported CORE while using the hero's supplied mechanics "
+            "to control committed fights and protect allied pressure."
+        ),
         "action_explanations": [
             {
                 "node_id": "core",
@@ -101,16 +104,16 @@ def test_evidence_language_metric_reports_claim_failure(
     assert metric.reason == "causal language"
 
 
-def test_projection_utilization_requires_every_generated_field_family() -> None:
+def test_projection_utilization_requires_build_description() -> None:
     metric = metrics.ProjectionUtilizationMetric(hero())
 
     assert metric.measure(case(response())) == 1.0
 
     incomplete = response()
-    incomplete.pop("build_summary")
+    incomplete.pop("build_description")
     assert metric.measure(case(incomplete)) == 0.0
     assert isinstance(metric.reason, str)
-    assert "build_summary" in metric.reason
+    assert "build_description" in metric.reason
 
 
 def test_repeated_metric_passes_structurally_stable_outputs(
@@ -122,8 +125,9 @@ def test_repeated_metric_passes_structurally_stable_outputs(
         lambda value, _hero: value,
     )
     varied = response()
-    varied["tactical_profile"]["ending_duration_interpretation"]["plan"] = (
-        "Use a different but still conservative plan."
+    varied["build_description"] = (
+        "Use a different but still grounded description for the same exact artifact "
+        "identity and supported CORE path."
     )
     samples = [
         {"attempt": 1, "output": response(), "duration_seconds": 1.0},
@@ -136,9 +140,7 @@ def test_repeated_metric_passes_structurally_stable_outputs(
     assert metric.score_breakdown == {
         "completion": 1.0,
         "production_contract": 1.0,
-        "action_identity": 1.0,
-        "category_identity": 1.0,
-        "ending_estimand_identity": 1.0,
+        "artifact_identity": 1.0,
     }
 
 

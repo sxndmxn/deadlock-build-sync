@@ -12,7 +12,6 @@ from deadlock_build_sync.cache import CacheError, CacheLocation
 from deadlock_build_sync.cli import DEFAULT_NARRATIVE_PATH, build_parser
 from deadlock_build_sync.freshness import FreshnessError
 from deadlock_build_sync.narratives import (
-    DEFAULT_KIT_MODEL,
     DEFAULT_SYNTHESIS_MODEL,
     NarrativeCatalog,
 )
@@ -31,12 +30,11 @@ from deadlock_build_sync.snapshot import (
 from scripts.generate_narratives import DEFAULT_GENERATION_CONCURRENCY
 
 
-def test_sync_defaults_to_every_eligible_hero_and_staged_models() -> None:
+def test_sync_defaults_to_every_eligible_hero_and_description_model() -> None:
     args = build_parser().parse_args(["sync"])
 
     assert args.hero is None
     assert not args.all
-    assert args.kit_model == DEFAULT_KIT_MODEL
     assert args.model == DEFAULT_SYNTHESIS_MODEL
     assert args.max_attempts == 3
     assert args.concurrency == DEFAULT_GENERATION_CONCURRENCY
@@ -147,9 +145,19 @@ def test_install_artifacts_refuses_before_loading_when_deadlock_is_running(
         cli_module._run_install_artifacts(args)
 
 
+@pytest.mark.parametrize(
+    ("persona_arguments", "local_persona", "expected_persona"),
+    [
+        ([], "Local Player", "Local Player"),
+        (["--persona", "Explicit Player"], "Local Player", "Explicit Player"),
+    ],
+)
 def test_install_artifacts_loads_frozen_build_evidence_from_the_bundle(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    persona_arguments: list[str],
+    local_persona: str,
+    expected_persona: str,
 ) -> None:
     artifact_directory = tmp_path / "artifacts"
     cache_path = tmp_path / "cached_hero_builds.kv3"
@@ -158,7 +166,11 @@ def test_install_artifacts_loads_frozen_build_evidence_from_the_bundle(
     seen: dict[str, object] = {}
     monkeypatch.setattr(cli_module, "_location", lambda _args: location)
     monkeypatch.setattr(cli_module, "deadlock_is_running", lambda: False)
-    monkeypatch.setattr(cli_module, "local_steam_persona", lambda _account_id: "XMLJDX")
+    monkeypatch.setattr(
+        cli_module,
+        "local_steam_persona",
+        lambda _account_id: local_persona,
+    )
 
     def load_bundle(*paths: Path) -> SimpleNamespace:
         seen["paths"] = paths
@@ -199,6 +211,7 @@ def test_install_artifacts_loads_frozen_build_evidence_from_the_bundle(
                 "install-artifacts",
                 "--artifacts",
                 str(artifact_directory),
+                *persona_arguments,
             ])
         )
         == 0
@@ -209,7 +222,7 @@ def test_install_artifacts_loads_frozen_build_evidence_from_the_bundle(
         artifact_directory / "narratives.json",
         artifact_directory / "build-evidence.json",
     )
-    assert seen["persona"] == "XMLJDX"
+    assert seen["persona"] == expected_persona
 
 
 def snapshot() -> SnapshotManifest:
@@ -356,8 +369,7 @@ def test_sync_generates_artifacts_and_installs_without_extra_flags(
     assert (tmp_path / "artifacts/policies.json").is_file()
     generation_args = calls["generation_args"]
     assert isinstance(generation_args, list)
-    assert "--kit-model" in generation_args
-    assert DEFAULT_KIT_MODEL in generation_args
+    assert "--kit-model" not in generation_args
     assert "--model" in generation_args
     assert DEFAULT_SYNTHESIS_MODEL in generation_args
     assert "--concurrency" in generation_args

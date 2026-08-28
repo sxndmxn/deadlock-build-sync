@@ -760,6 +760,36 @@ def _ability_path_for_build(
     return global_path
 
 
+def _invalid_imbue_target(
+    selected_build: SelectedHeroBuild,
+    definitions: dict[int, AbilityDefinition],
+) -> str | None:
+    """Return the first telemetry target that is not in the current hero kit.
+
+    Returns:
+        A validation failure, or ``None`` when every target is current.
+
+    """
+    items = (
+        *selected_build.core,
+        *selected_build.core_purchase_path,
+        *selected_build.optional_core,
+        *(item for tier in selected_build.tiers.values() for item in tier),
+    )
+    checked: set[int] = set()
+    for item in items:
+        if item.item_id in checked:
+            continue
+        checked.add(item.item_id)
+        target_id = item.imbue_target_ability_id
+        if target_id is not None and target_id not in definitions:
+            return (
+                f"item {item.item} has observed imbue target {target_id}, "
+                "which is not a current hero ability"
+            )
+    return None
+
+
 def _prepare_hero_inputs(
     api: DeadlockApi,
     hero: dict[str, Any],
@@ -794,6 +824,9 @@ def _prepare_hero_inputs(
                 f"{hero_name} path {build_evidence.path_id} has invalid build "
                 f"evidence: {error}"
             ) from error
+        invalid_imbue = _invalid_imbue_target(selected_build, definitions)
+        if invalid_imbue is not None:
+            return f"path {build_evidence.path_label} with valid imbue data: {invalid_imbue}"
         ability_path = _ability_path_for_build(
             api,
             hero_id=hero_id,
@@ -904,9 +937,12 @@ def _project_hero_guide(
         layout_source=inputs.analytic_guide,
     )
     projected = replace(projected, ability_path=inputs.analytic_guide.ability_path)
+    if projected.ability_path is None:
+        raise GuideError(f"{projected.hero_name} has no complete ability path")
     try:
         tag_selection = select_build_tags(
-            tuple(item.item_id for item in projected.core_items),
+            projected.ability_path.ability_ids,
+            projected.core_items,
             environment.assets,
             environment.build_tag_catalog,
         )

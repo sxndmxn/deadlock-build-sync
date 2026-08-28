@@ -7,6 +7,10 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Use the selected or resolved Steam persona as the installed build-title prefix.
+
 ### Added
 
 - Bounded concurrent hero narrative pipelines with atomic progress checkpoints and
@@ -22,10 +26,16 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Keep CORE as the only automatic path while making all four tier menus sparse,
   disjoint, mechanics-labeled optional references.
-- Route validated player-first narrative instructions into descriptions and exact
-  item hovers while retaining complete artifact provenance.
-- Reject incomplete or corrupted primary-role prose and version the stronger narrative
-  schema and prompt as 6 / 22.
+- Limit Luna generation to one validated build-level description per path; item
+  hovers and category text are deterministic.
+- Show purchase window, win rate, pick rate, buyer matches, and purchase events in
+  item hovers. Encode a supported majority imbue target when it is a current hero
+  ability.
+- Derive visible build titles from CORE item composition so an ability-path label
+  cannot misname a weapon-, spirit-, or vitality-heavy build.
+- Show the first-maxed ability, highest-win-rate Tier 3 CORE item (Tier 4 fallback),
+  and dominant build function as the three ordered build icons.
+- Version the description-only narrative schema and prompt as 8 / 25.
 
 ## [0.1.0] - 2026-08-01
 

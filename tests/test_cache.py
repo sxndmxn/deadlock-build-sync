@@ -172,7 +172,7 @@ def test_managed_update_is_idempotent_and_preserves_other_sections() -> None:
         root,
         [guide()],
         account_id=146293212,
-        persona="XMLJDX",
+        persona="Player One",
         timestamp=100,
         patch_title="Patch",
         patch_published_at="2026-01-01T00:00:00Z",
@@ -185,11 +185,15 @@ def test_managed_update_is_idempotent_and_preserves_other_sections() -> None:
     assert first["SavedLastUsed"] == root["SavedLastUsed"]
     assert first["LastUsedBuilds"] == root["LastUsedBuilds"]
 
+    first_metadata = hero_build_metadata(first["Unpublished"][0])
+    assert first_metadata.name is not None
+    assert first_metadata.name.startswith("Player One | ")
+
     second, ids2, created2, updated2, removed2 = update_managed_builds(
         first,
         [guide()],
         account_id=146293212,
-        persona="XMLJDX",
+        persona="Player One",
         timestamp=200,
         patch_title="Patch 2",
         patch_published_at="2026-02-01T00:00:00Z",

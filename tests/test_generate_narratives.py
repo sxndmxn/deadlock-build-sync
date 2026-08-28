@@ -15,6 +15,7 @@ def packet_and_response() -> tuple[dict[str, Any], dict[str, Any]]:
     packet: dict[str, Any] = {
         "hero_id": 12,
         "path_id": "default",
+        "path_label": "Weapon Damage",
         "hero": "Kelvin",
         "snapshot_id": "1" * 64,
         "policy_id": "2" * 64,
@@ -34,14 +35,14 @@ def packet_and_response() -> tuple[dict[str, Any], dict[str, Any]]:
             ],
         },
         "ability_policy": {
-            "language_ceiling": "descriptive default projection, not a universal path",
+            "language_ceiling": "descriptive default projection",
             "steps": [
                 {
                     "position": index,
                     "earliest_legal_level": index,
                     "ability_id": ability_id,
                     "ability": name,
-                    "action": "UNLOCK" if index <= 4 else "UPGRADE_1",
+                    "action": "UNLOCK",
                 }
                 for index, (ability_id, name) in enumerate(
                     (
@@ -59,63 +60,32 @@ def packet_and_response() -> tuple[dict[str, Any], dict[str, Any]]:
             "strongest_phase": "LATE (45m+)",
             "weakest_phase": "EARLY (<30m)",
         },
-        "policy": {"policy_id": "2" * 64, "nodes": []},
-        "explainable_actions": [
-            {
-                "node_id": "core",
-                "kind": "purchase",
-                "action_id": 101,
-                "action": "Frost Core",
-                "evidence_ref": "item/101/purchase-events",
-                "claim_class": "descriptive",
-                "language_ceiling": ["observed"],
-                "mechanics_refs": ["item/101"],
-                "annotation": "",
-            },
-            {
-                "node_id": "counter",
-                "kind": "purchase",
-                "action_id": 102,
-                "action": "Reactive Barrier",
-                "evidence_ref": "item/102/purchase-events",
-                "claim_class": "descriptive",
-                "language_ceiling": ["observed"],
-                "mechanics_refs": ["item/102/burst-response"],
-                "annotation": (
-                    "If enemy 7's spirit pressure is material, choose Reactive Barrier "
-                    "instead of Frost Core; use before committing; skip unless observed."
-                ),
-                "conditional_contract": {
-                    "threat": "spirit_pressure",
-                    "item_id": 102,
-                    "item": "Reactive Barrier",
-                    "comparator_item_id": 101,
-                    "comparator_item": "Frost Core",
-                    "enemy_hero_id": 7,
-                    "mechanic_ref": "item/102/burst-response",
-                    "legal_timing": "same observed decision opportunity",
-                    "alternative": "Frost Core or save",
-                    "replacement": "Choose Reactive Barrier instead of Frost Core.",
-                    "execution_mode": "Use before committing.",
-                    "failure_condition": "Skip unless spirit pressure is observed.",
-                    "evidence_ref": "item/102/purchase-events",
-                },
-            },
-        ],
+        "policy": {
+            "variant": "control",
+            "invariant_kit_id": "kit",
+            "strategic_role": "control support",
+            "abstentions": [],
+        },
+        "core": {
+            "items": [
+                {"item_id": 101, "item": "Frost Core"},
+                {"item_id": 102, "item": "Titanic Magazine"},
+            ]
+        },
         "projection": {
             "categories": [
                 {
-                    "name": "CORE — DEFAULT QUEUE",
+                    "name": "CORE ITEMS",
                     "optional": False,
-                    "items": [{"item_id": 101, "item": "Frost Core"}],
-                },
-                {
-                    "name": "IF BURST",
-                    "optional": True,
-                    "items": [{"item_id": 102, "item": "Reactive Barrier"}],
-                },
+                    "items": [
+                        {"item_id": 101, "item": "Frost Core"},
+                        {"item_id": 102, "item": "Titanic Magazine"},
+                    ],
+                }
             ]
         },
+        "interpretation_constraints": ["observational"],
+        "explainable_actions": [],
     }
     response: dict[str, Any] = {
         "hero_id": 12,
@@ -124,122 +94,51 @@ def packet_and_response() -> tuple[dict[str, Any], dict[str, Any]]:
         "policy_id": "2" * 64,
         "context_sha256": "3" * 64,
         "narrative_basis_sha256": "5" * 64,
-        "tactical_profile": {
-            "primary_role": "Control support.",
-            "fight_role": "Protect allied pressure and control committed enemies.",
-            "economy_plan": "Take safe income, then group when allied pressure is ready.",
-            "ending_duration_interpretation": {
-                "estimand": "ending_duration_profile",
-                "strongest_phase": "LATE (45m+)",
-                "weakest_phase": "EARLY (<30m)",
-                "plan": "Convert clean openings now while retaining options if play runs late.",
-            },
-        },
-        "build_summary": (
-            "Control committed fights around a compact default path, protect allied "
-            "pressure, and recalculate when an observable defensive trigger appears."
+        "build_description": (
+            "Control committed fights with Kelvin's space denial while the weapon "
+            "CORE keeps steady pressure available between protective rotations."
         ),
-        "action_explanations": [
-            {
-                "node_id": "core",
-                "evidence_ref": "item/101/purchase-events",
-                "instruction": "Use Frost Core as the coherent default purchase.",
-            },
-            {
-                "node_id": "counter",
-                "evidence_ref": "item/102/purchase-events",
-                "instruction": (
-                    "If enemy 7's spirit pressure is observed, choose Reactive Barrier over "
-                    "Frost Core; use before committing; skip unless material."
-                ),
-            },
-        ],
-        "category_summaries": [
-            {
-                "category": "CORE — DEFAULT QUEUE",
-                "summary": "Follow Frost Core as the minimal coherent default path.",
-            },
-            {
-                "category": "IF BURST",
-                "summary": (
-                    "When burst is material, choose Reactive Barrier as a conditional "
-                    "replacement rather than an automatic purchase."
-                ),
-            },
-        ],
     }
     return packet, response
 
 
 def test_generator_uses_installer_prompt_version() -> None:
-    assert generate_narratives.PROMPT_VERSION == NARRATIVE_PROMPT_VERSION == 24
+    assert generate_narratives.PROMPT_VERSION == NARRATIVE_PROMPT_VERSION == 25
 
 
-def test_kit_context_excludes_items_outcomes_and_policy() -> None:
+def test_description_context_excludes_item_hover_and_outcome_evidence() -> None:
     packet, _ = packet_and_response()
 
-    context = generate_narratives.kit_context(packet)
+    context = generate_narratives.synthesis_context(packet)
 
-    assert context["kit_basis_sha256"] == "4" * 64
-    assert len(context["hero_mechanics"]["abilities"]) == 4
-    assert "abilities" not in context
-    assert "hero_description" not in context
-    assert "projection" not in context
-    assert "ending_duration_profile" not in context
-    assert "policy" not in context
-
-
-def test_synthesis_context_contains_only_selected_policy_evidence() -> None:
-    source, _ = packet_and_response()
-    source["policy"]["variant"] = "control"
-    source["tiers"] = {
-        "TIER 1": [
-            {"item_id": 101, "item": "Frost Core"},
-            {"item_id": 999, "item": "Unused"},
-        ]
-    }
-
-    context = generate_narratives.synthesis_context(
-        source,
-        {"hero_id": 12, "kit_basis_sha256": "4" * 64},
-        {"101": {"cost": 500}, "999": {"cost": 999}},
-    )
-
+    assert context["hero_mechanics"] == packet["hero_mechanics"]
+    assert context["core_items"] == [
+        {"item_id": 101, "item": "Frost Core", "tier": None},
+        {"item_id": 102, "item": "Titanic Magazine", "tier": None},
+    ]
+    assert context["path_label"] == "Weapon Damage"
+    assert "explainable_actions" not in context
     assert "tiers" not in context
-    assert "matchups" not in context
-    assert "policy" not in context
-    assert [item["item_id"] for item in context["selected_action_mechanics"]] == [101]
-    assert context["selected_action_mechanics"][0]["mechanics"] == {"cost": 500}
-    assert context["hero_description"]["role"] == "Protect allies"
-    assert context["policy_summary"]["variant"] == "control"
+    assert "ending_duration_profile" not in context
 
 
-def test_rejects_legacy_ability_quarter() -> None:
-    packet, _ = packet_and_response()
-    packet["ability_policy"]["steps"][0]["quarter"] = 1
-
-    with pytest.raises(
-        generate_narratives.GenerationError, match="legal ability timeline"
-    ):
-        generate_narratives.validate_hero_context(packet)
-
-
-def test_validates_closed_policy_explanation() -> None:
+def test_validates_build_description_only() -> None:
     packet, response = packet_and_response()
 
     validated = generate_narratives.validate_response(response, packet)
 
-    assert validated["prompt_version"] == 24
-
-
-def test_rejects_core_instruction_over_utf8_byte_budget() -> None:
-    packet, response = packet_and_response()
-    response["action_explanations"][0]["instruction"] = (
-        "Use Frost Core " + "é" * 80 + "."
-    )
-
-    with pytest.raises(generate_narratives.GenerationError, match="165-byte"):
-        generate_narratives.validate_response(response, packet)
+    assert validated["prompt_version"] == 25
+    assert set(validated) == {
+        "hero_id",
+        "path_id",
+        "hero",
+        "snapshot_id",
+        "policy_id",
+        "context_sha256",
+        "narrative_basis_sha256",
+        "prompt_version",
+        "build_description",
+    }
 
 
 def test_rejects_changed_snapshot_or_policy() -> None:
@@ -250,186 +149,49 @@ def test_rejects_changed_snapshot_or_policy() -> None:
         generate_narratives.validate_response(response, packet)
 
 
-def test_rejects_missing_or_reordered_action() -> None:
-    packet, response = packet_and_response()
-    response["action_explanations"].reverse()
-
-    with pytest.raises(generate_narratives.GenerationError, match="closed action set"):
-        generate_narratives.validate_response(response, packet)
-
-
-def test_rejects_cross_category_item() -> None:
-    packet, response = packet_and_response()
-    response["category_summaries"][0]["summary"] += " Buy Reactive Barrier too."
-
-    with pytest.raises(generate_narratives.GenerationError, match="cross-category"):
-        generate_narratives.validate_response(response, packet)
-
-
-def test_allows_exact_annotated_replacement_in_optional_summary() -> None:
-    packet, response = packet_and_response()
-    response["category_summaries"][1]["summary"] = (
-        "When burst is material, choose Reactive Barrier instead of Frost Core as "
-        "a conditional replacement, not an automatic Queue purchase."
-    )
-
-    validated = generate_narratives.validate_response(response, packet)
-
-    assert "instead of Frost Core" in validated["category_summaries"][1]["summary"]
-
-
-def test_rejects_optional_category_without_observable_condition() -> None:
-    packet, response = packet_and_response()
-    response["category_summaries"][1]["summary"] = (
-        "Reactive Barrier is a conditional replacement and is never automatic."
-    )
-
-    with pytest.raises(generate_narratives.GenerationError, match="optional trigger"):
-        generate_narratives.validate_response(response, packet)
-
-
 @pytest.mark.parametrize(
-    ("instruction", "reason"),
+    ("description", "reason"),
     [
+        ("Too short.", "out-of-range"),
         (
-            "If enemy 7's spirit pressure is observed, choose Reactive Barrier over the default; use it; skip unless material.",
-            "comparator",
+            (
+                "Control space with the supplied kit because this guarantees victories "
+                "in every fight while keeping the supported path intact."
+            ),
+            "non-causal claim",
         ),
         (
-            "Against enemy 7's spirit pressure, choose Reactive Barrier over Frost Core; use it; skip unless material.",
-            "trigger",
+            (
+                "Control space through the supplied kit while following the observed "
+                "purchase-event volume and keeping the supported path intact."
+            ),
+            "analytic-unit language",
         ),
         (
-            "If enemy 7's spirit pressure is observed, take Reactive Barrier with Frost Core; use it; skip unless material.",
-            "replacement",
-        ),
-        (
-            "If enemy 7's spirit pressure is observed, choose Reactive Barrier over Frost Core; keep observing; skip unless material.",
-            "execution",
-        ),
-        (
-            "If enemy 7's spirit pressure is observed, choose Reactive Barrier over Frost Core; use it while material.",
-            "failure condition",
-        ),
-        (
-            "If enemy 7's spirit pressure and healing are observed, choose Reactive Barrier over Frost Core; use it; skip unless material.",
-            "invented a threat",
+            (
+                "Control space through the supplied kit⁠ while keeping the supported "
+                "CORE path intact and protecting allied pressure in committed fights."
+            ),
+            "corrupted build description",
         ),
     ],
 )
-def test_rejects_incomplete_or_invented_conditional_contract(
-    instruction: str,
-    reason: str,
-) -> None:
+def test_rejects_invalid_build_description(description: str, reason: str) -> None:
     packet, response = packet_and_response()
-    response["action_explanations"][1]["instruction"] = instruction
+    response["build_description"] = description
 
     with pytest.raises(generate_narratives.GenerationError, match=reason):
         generate_narratives.validate_response(response, packet)
 
 
-def test_tier_reference_menu_does_not_require_invented_trigger() -> None:
-    packet, response = packet_and_response()
-    packet["projection"]["categories"][1]["name"] = "TIER 1"
-    response["category_summaries"][1] = {
-        "category": "TIER 1",
-        "summary": (
-            "Reactive Barrier is a situational reference option, not an automatic "
-            "purchase."
-        ),
-    }
-
-    validated = generate_narratives.validate_response(response, packet)
-
-    assert validated["category_summaries"][1]["category"] == "TIER 1"
-
-
-def test_tier_reference_menu_rejects_buying_all_items() -> None:
-    packet, response = packet_and_response()
-    packet["projection"]["categories"][1]["name"] = "TIER 1"
-    response["category_summaries"][1] = {
-        "category": "TIER 1",
-        "summary": "Buy all Reactive Barrier options from this situational menu.",
-    }
-
-    with pytest.raises(generate_narratives.GenerationError, match="all-item"):
-        generate_narratives.validate_response(response, packet)
-
-
-@pytest.mark.parametrize("phrase", ["improves win rate", "purchase-event volume"])
-def test_rejects_causal_or_analytic_language(phrase: str) -> None:
-    packet, response = packet_and_response()
-    response["build_summary"] += f" It {phrase}."
-
-    with pytest.raises(
-        generate_narratives.GenerationError, match=r"claim|analytic-unit"
-    ):
-        generate_narratives.validate_response(response, packet)
-
-
-def test_rejects_changed_ending_duration_estimand() -> None:
-    packet, response = packet_and_response()
-    response["tactical_profile"]["ending_duration_interpretation"][
-        "strongest_phase"
-    ] = "MID (30–45m)"
-
-    with pytest.raises(generate_narratives.GenerationError, match="strongest_phase"):
-        generate_narratives.validate_response(response, packet)
-
-
-@pytest.mark.parametrize(
-    "primary_role",
-    [
-        "Protect allies and control committed enemies",
-        "Protect allies or56.",
-        "Protect allies 和 control enemies.",
-        "Protect allies\u2060 and control enemies.",
-    ],
-)
-def test_rejects_incomplete_or_corrupted_primary_role(primary_role: str) -> None:
-    packet, response = packet_and_response()
-    response["tactical_profile"]["primary_role"] = primary_role
-
-    with pytest.raises(generate_narratives.GenerationError, match=r"primary role"):
-        generate_narratives.validate_response(response, packet)
-
-
-def test_normalizes_only_sentence_endings() -> None:
+def test_normalizes_only_description_sentence_ending() -> None:
     _, response = packet_and_response()
-    response["build_summary"] = "A complete default plan"
-    response["action_explanations"][0]["instruction"] = "Use Frost Core"
+    response["build_description"] = response["build_description"].rstrip(".")
 
     normalized = generate_narratives.normalize_narrative_response(response)
 
-    assert normalized["build_summary"] == "A complete default plan."
-    assert normalized["action_explanations"][0]["instruction"] == "Use Frost Core."
-    assert response["build_summary"] == "A complete default plan"
-
-
-def test_binds_source_owned_row_identities_without_repairing_omissions() -> None:
-    packet, response = packet_and_response()
-    response["action_explanations"][0]["node_id"] = "changed"
-    response["action_explanations"][0]["evidence_ref"] = "changed"
-    response["category_summaries"][0]["category"] = "changed"
-
-    bound = generate_narratives.bind_response_structure(response, packet)
-
-    assert bound["action_explanations"][0]["node_id"] == "core"
-    assert bound["action_explanations"][0]["evidence_ref"] == "item/101/purchase-events"
-    assert bound["category_summaries"][0]["category"] == "CORE — DEFAULT QUEUE"
-
-    truncated = {
-        **response,
-        "action_explanations": response["action_explanations"][:-1],
-    }
-    assert (
-        len(
-            generate_narratives.bind_response_structure(truncated, packet)[
-                "action_explanations"
-            ]
-        )
-        == 1
-    )
+    assert normalized["build_description"].endswith(".")
+    assert not response["build_description"].endswith(".")
 
 
 def test_generation_retries_semantic_failure(
@@ -510,59 +272,49 @@ def test_rate_limit_halves_pressure_and_retries_affected_request(
     assert validated["hero_id"] == packet["hero_id"]
 
 
-def test_hero_pipelines_overlap_and_checkpoint_in_deterministic_order(
+def test_build_descriptions_overlap_and_checkpoint_in_deterministic_order(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    first, _ = packet_and_response()
+    first, response = packet_and_response()
     second = copy.deepcopy(first)
     second.update({"hero_id": 13, "hero": "Viscous"})
     selected = [second, first]
     source = {
-        "snapshot_manifest": {"snapshot_id": "1" * 64},
+        "snapshot_manifest": {
+            "snapshot_id": "1" * 64,
+            "client_version": 123,
+            "match_mode": "ranked",
+            "game_mode": "normal",
+            "rank_range": {},
+            "as_of_timestamp": 1,
+        },
         "source_context_sha256": "6" * 64,
         "patch": {},
         "exclusions": [],
-        "item_mechanics": {},
     }
-    stage_order: dict[int, list[str]] = {12: [], 13: []}
     active = 0
     peak_active = 0
     lock = threading.Lock()
-    kit_barrier = threading.Barrier(2)
+    barrier = threading.Barrier(2)
 
     def fake_generate(
         _model_input: dict[str, Any],
         validation_context: dict[str, Any],
-        stage: generate_narratives.GenerationStage,
+        _stage: generate_narratives.GenerationStage,
         **_kwargs: object,
     ) -> dict[str, Any]:
         nonlocal active, peak_active
-        hero_id = int(validation_context["hero_id"])
-        is_kit = stage.prompt == generate_narratives.KIT_PROMPT
         with lock:
             active += 1
             peak_active = max(peak_active, active)
-        if is_kit:
-            kit_barrier.wait(timeout=1)
+        barrier.wait(timeout=1)
         with lock:
-            if not is_kit:
-                assert stage_order[hero_id] == ["kit"]
-            stage_order[hero_id].append("kit" if is_kit else "synthesis")
             active -= 1
-        if is_kit:
-            return {
-                "hero_id": hero_id,
-                "path_id": validation_context["path_id"],
-                "kit_basis_sha256": validation_context["kit_basis_sha256"],
-            }
         return {
-            "hero_id": hero_id,
+            **response,
+            "hero_id": validation_context["hero_id"],
             "path_id": validation_context["path_id"],
-            "snapshot_id": validation_context["snapshot_id"],
-            "policy_id": validation_context["policy_id"],
-            "context_sha256": validation_context["context_sha256"],
-            "narrative_basis_sha256": validation_context["narrative_basis_sha256"],
         }
 
     monkeypatch.setattr(
@@ -571,12 +323,10 @@ def test_hero_pipelines_overlap_and_checkpoint_in_deterministic_order(
         fake_generate,
     )
     output = tmp_path / "narratives.json"
-    kit_output = tmp_path / "kit-profiles.json"
     run = generate_narratives._NarrativeGenerationRun(
         args=argparse.Namespace(
             force=True,
-            kit_model="kit-model",
-            model="synthesis-model",
+            model="description-model",
             max_attempts=1,
             concurrency=2,
             schema=tmp_path / "narrative.schema.json",
@@ -585,55 +335,17 @@ def test_hero_pipelines_overlap_and_checkpoint_in_deterministic_order(
         source=source,
         selected_heroes=selected,
         requested_hero_ids={12, 13},
-        kit_schema=tmp_path / "kit.schema.json",
-        kit_output=kit_output,
         generated_narratives={},
-        kit_profiles={},
         artifact_lock=threading.Lock(),
         request_limiter=generate_narratives._RequestLimiter(2),
     )
     generate_narratives._generate_selected_narratives(run)
 
     assert peak_active == 2
-    assert stage_order == {12: ["kit", "synthesis"], 13: ["kit", "synthesis"]}
-    assert [hero["hero_id"] for hero in selected] == [13, 12]
     assert [hero["hero_id"] for hero in json.loads(output.read_text())["heroes"]] == [
         12,
         13,
     ]
-    assert [
-        hero["hero_id"] for hero in json.loads(kit_output.read_text())["heroes"]
-    ] == [12, 13]
-
-
-def test_kit_validator_preserves_exact_abilities() -> None:
-    packet, _ = packet_and_response()
-    response = {
-        "hero_id": 12,
-        "path_id": "default",
-        "kit_basis_sha256": "4" * 64,
-        "primary_role": "control support",
-        "combat_pattern": "Control committed enemies while protecting allied pressure.",
-        "economy_tendencies": "Take safe income before grouping around allied pressure.",
-        "scaling_profile": "Use the supplied legal upgrades to deepen control options.",
-        "ability_roles": [
-            {
-                "ability_id": ability["id"],
-                "ability": ability["name"],
-                "tactical_role": "Use this supplied ability in the documented fight role.",
-                "scaling_hooks": "Follow only its supplied properties and legal upgrades.",
-            }
-            for ability in packet["hero_mechanics"]["abilities"]
-        ],
-        "synergies": [
-            "Frost Grenade can precede Arctic Beam using supplied mechanics."
-        ],
-        "uncertainties": [],
-    }
-
-    validated = generate_narratives.validate_kit_response(response, packet)
-
-    assert validated["ability_roles"][3]["ability_id"] == 40
 
 
 def test_reuse_requires_exact_context_snapshot_and_policy() -> None:

@@ -6,7 +6,7 @@ from collections import Counter
 from typing import TYPE_CHECKING, Any, cast
 
 from .artifacts import FingerprintLayers
-from .build_tags import AXIS_CLASSES, COMPLEXITY_CLASS, FUNCTION_CLASSES
+from .build_tags import FUNCTION_CLASSES
 from .mechanics import build_hero_mechanics, extract_asset_mechanics
 from .power_curve import summarize_ending_duration_profile
 from .purchase_guide import format_purchase_window
@@ -18,9 +18,9 @@ if TYPE_CHECKING:
     from .purchase_guide import PurchaseGuide
     from .snapshot import SnapshotManifest
 
-CONTEXT_SCHEMA_VERSION = 10
+CONTEXT_SCHEMA_VERSION = 11
 KIT_BASIS_SCHEMA_VERSION = 3
-NARRATIVE_BASIS_SCHEMA_VERSION = 8
+NARRATIVE_BASIS_SCHEMA_VERSION = 9
 TIER_LABELS = {1: "I", 2: "II", 3: "III", 4: "IV"}
 
 
@@ -49,9 +49,8 @@ def _validate_build_identity(entry: dict[str, Any], manifest: dict[str, Any]) ->
     if not valid:
         raise StrategyContextError("strategy context has invalid build tags")
     if (
-        classes[0] not in AXIS_CLASSES
-        or classes[1] not in FUNCTION_CLASSES
-        or classes[2] != COMPLEXITY_CLASS
+        not all(isinstance(value, str) and value.strip() for value in classes[:2])
+        or classes[2] not in FUNCTION_CLASSES
         or build.get("tag_catalog_sha256") != manifest.get("build_tags_sha256")
         or not isinstance(build.get("archetype"), str)
         or not build["archetype"].strip()
@@ -182,6 +181,20 @@ def _validate_hero_item_mechanics(
 
 
 def _narrative_basis(context: dict[str, Any]) -> dict[str, Any]:
+    core = context.get("core")
+    core_items = core.get("items") if isinstance(core, dict) else None
+    policy = context.get("policy")
+    policy_summary = None
+    if isinstance(policy, dict):
+        policy_summary = {
+            key: policy.get(key)
+            for key in (
+                "variant",
+                "invariant_kit_id",
+                "strategic_role",
+                "abstentions",
+            )
+        }
     return {
         "schema_version": NARRATIVE_BASIS_SCHEMA_VERSION,
         "hero_id": context.get("hero_id"),
@@ -189,18 +202,17 @@ def _narrative_basis(context: dict[str, Any]) -> dict[str, Any]:
         "path_label": context.get("path_label"),
         "hero": context.get("hero"),
         "hero_mechanics": context.get("hero_mechanics"),
-        "item_mechanics_ids": context.get("item_mechanics_ids"),
-        "item_mechanics_sha256": context.get("item_mechanics_sha256"),
         "ability_policy": context.get("ability_policy"),
-        "ending_duration_profile": context.get("ending_duration_profile"),
-        "core": context.get("core"),
-        "tiers": context.get("tiers"),
-        "policy": context.get("policy"),
-        "explainable_actions": context.get("explainable_actions"),
-        "projection": context.get("projection"),
-        "fingerprints": context.get("fingerprints"),
-        "matchups": context.get("matchups"),
-        "interpretation_constraints": context.get("interpretation_constraints"),
+        "core_items": [
+            {
+                "item_id": item.get("item_id"),
+                "item": item.get("item"),
+                "tier": item.get("tier"),
+            }
+            for item in core_items or []
+            if isinstance(item, dict)
+        ],
+        "policy_summary": policy_summary,
     }
 
 

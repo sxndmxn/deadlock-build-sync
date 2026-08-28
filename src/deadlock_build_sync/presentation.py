@@ -18,8 +18,9 @@ if TYPE_CHECKING:
 
 LEGACY_MANAGED_MARKER = "[deadlock-build-sync:v1]"
 MANAGED_MARKER = "[deadlock-build-sync:v2]"
-AUTHOR_PREFIX = "XMLJDX"
 MAX_BUILD_NAME_CHARACTERS = 50
+MIN_BUILD_LABEL_CHARACTERS = 8
+MIN_PATCH_LABEL_CHARACTERS = 4
 _PATCH_DATE = re.compile(r"(?<!\d)(\d{1,2})-(\d{1,2})-\d{4}(?!\d)")
 
 
@@ -81,20 +82,38 @@ def _stats_window(start_timestamp: int, end_timestamp: int) -> str:
 
 
 def _build_name(
+    persona: str,
     build_name: str,
     patch_title: str,
     stats_window: str,
 ) -> str:
-    prefix = f"{AUTHOR_PREFIX} | "
     suffix = f" / {stats_window}"
     separator = " | "
+    normalized_persona = " ".join(persona.split())
+    if not normalized_persona:
+        raise ValueError("persona must contain visible text")
+    persona_budget = (
+        MAX_BUILD_NAME_CHARACTERS
+        - (2 * len(separator))
+        - len(suffix)
+        - MIN_BUILD_LABEL_CHARACTERS
+        - MIN_PATCH_LABEL_CHARACTERS
+    )
+    persona_label = normalized_persona[:persona_budget].rstrip()
+    prefix = f"{persona_label}{separator}"
     available = MAX_BUILD_NAME_CHARACTERS - len(prefix) - len(separator) - len(suffix)
     build_label = build_name.strip() or "Evidence Default"
     patch_label = patch_title.strip() or "Unknown Patch"
     patch_date = _PATCH_DATE.search(patch_label)
     if patch_date is not None:
         patch_label = f"{int(patch_date.group(1)):02}{int(patch_date.group(2)):02}"
-    build_budget = min(len(build_label), max(8, available - min(len(patch_label), 4)))
+    build_budget = min(
+        len(build_label),
+        max(
+            MIN_BUILD_LABEL_CHARACTERS,
+            available - min(len(patch_label), MIN_PATCH_LABEL_CHARACTERS),
+        ),
+    )
     patch_budget = available - build_budget
     return (
         f"{prefix}{build_label[:build_budget].rstrip()}{separator}"
@@ -137,6 +156,7 @@ def _ability_summary(guide: PurchaseGuide) -> str | None:
 def build_presentation(
     guide: PurchaseGuide,
     *,
+    persona: str,
     patch_title: str,
     patch_published_at: str,
     rank_range: RankRange = DEFAULT_RANK_RANGE,
@@ -181,7 +201,8 @@ def build_presentation(
     return BuildPresentation(
         hero_id=guide.hero_id,
         name=_build_name(
-            (guide.path_label if guide.path_id != "default" else guide.build_archetype),
+            persona,
+            guide.build_archetype,
             patch_title,
             _stats_window(
                 guide.analysis_start_timestamp,
