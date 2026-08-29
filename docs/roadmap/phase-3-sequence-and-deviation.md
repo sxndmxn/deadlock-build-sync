@@ -54,11 +54,11 @@ four-to-nine-item set remains the final-inventory estimand, not the literal shop
 - Live Queue acceptance for parent upgrades, manual deviation, component ownership, and
   imbue prompts only with explicit authorization.
 - Projection regression proving a component appears in CORE, remains outside the final
-  eight-item inventory, and cannot also appear in an optional row.
+  four-to-nine-item target set, and cannot also appear in an optional row.
 
 ## Implementation record
 
-- Build-evidence schema 2 sequence policy 3 exports chronologically scheduled,
+- Build-evidence schema 7 sequence policy 3 exports chronologically scheduled,
   component-expanded defaults plus deterministic
   first/previous/position/popularity backoffs from training rows only.
 - Learned next-item ranking was removed: its one-step imitation objective did not

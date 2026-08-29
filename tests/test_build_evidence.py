@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -9,8 +10,11 @@ from deadlock_build_sync.artifacts import ArtifactError
 from deadlock_build_sync.build_evidence import (
     assert_build_evidence_compatible,
     load_build_evidence,
+    nondecreasing_window_schedule,
+    reliable_purchase_window,
     select_hero_build,
 )
+from deadlock_build_sync.mechanics import ItemGraph
 from deadlock_build_sync.ranks import DEFAULT_RANK_RANGE, RankCatalog
 from deadlock_build_sync.snapshot import (
     EpochBoundary,
@@ -60,6 +64,10 @@ def _item(asset: dict[str, Any], *, eligible: int = 1_000) -> dict[str, Any]:
     adopters = 200 - index
     wins = adopters if index == 11 else adopters // 2
     median_net_worth = None if index == 10 else float(item_id * 10)
+    training_adopters = round(adopters * 0.6)
+    validation_adopters = round(adopters * 0.2)
+    test_adopters = adopters - training_adopters - validation_adopters
+    selection_adopters = training_adopters + validation_adopters
     return {
         "item_id": item_id,
         "item": asset["name"],
@@ -78,6 +86,38 @@ def _item(asset: dict[str, Any], *, eligible: int = 1_000) -> dict[str, Any]:
         "buy_net_worth_q25": median_net_worth,
         "buy_net_worth_q75": median_net_worth,
         "valid_buy_net_worth_share": 0.9,
+        "selection_adopter_matches": selection_adopters,
+        "selection_eligible_player_matches": 800,
+        "training_adopter_matches": training_adopters,
+        "training_eligible_player_matches": 600,
+        "validation_adopter_matches": validation_adopters,
+        "validation_eligible_player_matches": 200,
+        "test_adopter_matches": test_adopters,
+        "test_eligible_player_matches": 200,
+        "selection_adoption": selection_adopters / 800,
+        "training_adoption": training_adopters / 600,
+        "validation_adoption": validation_adopters / 200,
+        "test_adoption": test_adopters / 200,
+        "selection_median_buy_time_s": float(10_000 - item_id),
+        "selection_median_valid_buy_net_worth": median_net_worth,
+        "selection_buy_net_worth_q25": median_net_worth,
+        "selection_buy_net_worth_q75": median_net_worth,
+        "selection_valid_buy_net_worth_share": (
+            0.0 if median_net_worth is None else 1.0
+        ),
+        "selection_valid_buy_net_worth_observations": (
+            0 if median_net_worth is None else selection_adopters
+        ),
+        "training_valid_buy_net_worth_observations": (
+            0 if median_net_worth is None else training_adopters
+        ),
+        "validation_valid_buy_net_worth_observations": (
+            0 if median_net_worth is None else validation_adopters
+        ),
+        "training_buy_net_worth_q25": median_net_worth,
+        "training_buy_net_worth_q75": median_net_worth,
+        "validation_buy_net_worth_q25": median_net_worth,
+        "validation_buy_net_worth_q75": median_net_worth,
         "imbue_target_ability_id": None,
         "imbue_target_ability": None,
         "imbue_target_matches": 0,
@@ -94,7 +134,56 @@ def _document(
     default_item_ids: list[int] | None = None,
     core_alternatives: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    del candidates
     current_assets = assets or _assets()
+    item_rows = [_item(asset) for asset in current_assets]
+    selected_default = default_item_ids or [101, 102, 201, 202, 301, 302, 401, 402]
+    optional_ids = {int(row["item_id"]) for row in (core_alternatives or [])}
+    graph = ItemGraph.from_assets(current_assets)
+    visible_higher_tier_ids: set[int] = set()
+    tier_membership: dict[str, list[int]] = {}
+    for tier in range(4, 0, -1):
+        qualified = []
+        for item in item_rows:
+            item_id = int(item["item_id"])
+            if (
+                int(item["tier"]) != tier
+                or item_id in selected_default
+                or item_id in optional_ids
+            ):
+                continue
+            upgrades_by_tier = {
+                child_tier: {
+                    child_id
+                    for child_id in graph.children[item_id]
+                    if graph.nodes[child_id].tier == child_tier
+                }
+                for child_tier in range(tier + 1, 5)
+            }
+            if all(
+                not child_ids or bool(child_ids & visible_higher_tier_ids)
+                for child_ids in upgrades_by_tier.values()
+            ):
+                qualified.append(item)
+        selected = sorted(
+            qualified,
+            key=lambda item: (
+                -float(item["training_adoption"]),
+                -int(item["training_adopter_matches"]),
+                int(item["item_id"]),
+            ),
+        )[:10]
+        selected = sorted(
+            selected,
+            key=lambda item: (
+                item["selection_median_valid_buy_net_worth"] is None,
+                float(item["selection_median_valid_buy_net_worth"] or float("inf")),
+                float(item["selection_median_buy_time_s"] or float("inf")),
+                int(item["item_id"]),
+            ),
+        )
+        tier_membership[str(tier)] = [int(item["item_id"]) for item in selected]
+        visible_higher_tier_ids.update(tier_membership[str(tier)])
     heroes = [{"id": 13, "name": "Haze"}]
     sequence_policy = {
         "version": 3,
@@ -115,17 +204,19 @@ def _document(
         "evaluation": {"chronological_fold": "test"},
     }
     payload = {
-        "schema_version": 6,
+        "schema_version": 8,
         "producer": "deadlock-build-sync.offline",
         "method": {
-            "version": "state-aware-multi-path-v5",
-            "core_candidate_item_count": 8,
+            "version": "state-aware-multi-path-v7",
             "minimum_core_item_count": 4,
             "maximum_core_item_count": 9,
-            "core_candidate_limit": 64,
             "minimum_core_support": 20,
             "minimum_tier_support": 20,
+            "minimum_tier_adoption": 0.05,
+            "maximum_tier_adoption_drift": 0.1,
             "tier_item_count": 10,
+            "minimum_purchase_window_coverage": 0.5,
+            "minimum_purchase_window_observations": 20,
             "minimum_imbue_support": 20,
             "minimum_imbue_share": 0.5,
         },
@@ -154,49 +245,48 @@ def _document(
                         "signature_item_ids": [],
                         "discovery": {"method": "single-supported-path"},
                         "eligible_player_matches": 1_000,
+                        "selection_eligible_player_matches": 800,
+                        "fold_eligible_player_matches": {
+                            "train": 600,
+                            "validation": 200,
+                            "test": 200,
+                        },
                         "median_final_net_worth": median_final_net_worth,
-                        "core_candidates": candidates
-                        or [
-                            {
-                                "item_ids": [
-                                    101,
-                                    102,
-                                    201,
-                                    202,
-                                    301,
-                                    302,
-                                    401,
-                                    402,
-                                ],
-                                "joint_matches": 80,
-                            }
-                        ],
                         "core_policy": {
-                            "version": 2,
+                            "version": 3,
                             "backbone_item_ids": [101, 102, 201, 202],
-                            "default_item_ids": default_item_ids
-                            or [101, 102, 201, 202, 301, 302, 401, 402],
-                            "backbone_matches": 90,
+                            "default_item_ids": selected_default,
+                            "backbone_matches": 60,
                             "backbone_fold_matches": {
                                 "train": 30,
                                 "validation": 30,
                                 "test": 30,
                             },
                             "default_matches": 80,
+                            "default_fold_matches": {
+                                "train": 40,
+                                "validation": 40,
+                                "test": 20,
+                            },
                             "alternatives": core_alternatives or [],
                             "candidate_audit": [],
                             "evaluation": {"method": "cross-fitted-dr"},
                         },
-                        "items": [_item(asset) for asset in current_assets],
+                        "items": item_rows,
+                        "tier_policy": {
+                            "version": 1,
+                            "item_ids_by_tier": tier_membership,
+                        },
                         "sequence_policy": sequence_policy,
                         "situational_policy": {
-                            "version": 1,
+                            "version": 2,
                             "threat_vocabulary": [
                                 "active_slot_burden",
                                 "ally_protection",
                                 "bullet_pressure",
                                 "control",
                                 "healing",
+                                "mobility_denial",
                                 "mobility_escape",
                                 "spirit_pressure",
                             ],
@@ -220,6 +310,51 @@ def _refingerprint(document: dict[str, Any]) -> None:
     document["artifact_id"] = sha256_json(document)
 
 
+def test_rejects_previous_build_evidence_schema(tmp_path: Path) -> None:
+    path = tmp_path / "build-evidence.json"
+    document = _document()
+    document["schema_version"] = 6
+    _refingerprint(document)
+    _write(path, document)
+
+    with pytest.raises(ArtifactError, match="unsupported build-evidence schema"):
+        load_build_evidence(path)
+
+
+def test_purchase_window_requires_fold_support_and_overlap(tmp_path: Path) -> None:
+    path = tmp_path / "build-evidence.json"
+    _write(path, _document())
+    item = load_build_evidence(path).heroes[13].items[0]
+
+    assert reliable_purchase_window(item) == (
+        item.selection_buy_net_worth_q25,
+        item.selection_buy_net_worth_q75,
+    )
+    assert (
+        reliable_purchase_window(
+            replace(item, validation_valid_buy_net_worth_observations=19)
+        )
+        is None
+    )
+    assert (
+        reliable_purchase_window(
+            replace(
+                item,
+                validation_buy_net_worth_q25=20_000,
+                validation_buy_net_worth_q75=22_000,
+            )
+        )
+        is None
+    )
+
+
+def test_unavailable_purchase_window_does_not_constrain_route() -> None:
+    assert nondecreasing_window_schedule(
+        (1, 2, 3),
+        {1: (100.0, 200.0), 3: (150.0, 300.0)},
+    ) == (100.0, 100.0, 150.0)
+
+
 def test_load_and_select_exact_build_layout(tmp_path: Path) -> None:
     path = tmp_path / "build-evidence.json"
     _write(path, _document())
@@ -238,7 +373,7 @@ def test_load_and_select_exact_build_layout(tmp_path: Path) -> None:
         402,
     ]
     assert selected.core_joint_matches == 80
-    assert selected.core_joint_share == 0.08
+    assert selected.core_joint_share == 0.10
     assert selected.core_target_cost == 20_000
     assert {tier: len(items) for tier, items in selected.tiers.items()} == {
         1: 9,
@@ -308,13 +443,8 @@ def test_selection_rejects_policy_core_above_median_final_net_worth(
 
 def test_sparse_supported_tiers_do_not_require_filler(tmp_path: Path) -> None:
     path = tmp_path / "build-evidence.json"
-    document = _document()
-    document["heroes"][0]["builds"][0]["items"] = [
-        item
-        for item in document["heroes"][0]["builds"][0]["items"]
-        if item["item_id"] % 100 <= 3
-    ]
-    _refingerprint(document)
+    sparse_assets = [asset for asset in _assets() if int(asset["id"]) % 100 <= 3]
+    document = _document(assets=sparse_assets)
     _write(path, document)
 
     selected = select_hero_build(load_build_evidence(path).heroes[13], _assets())
@@ -373,8 +503,8 @@ def test_admitted_core_alternative_moves_out_of_its_tier_row(
         "effective_support": 30.0,
         "overlap": 0.8,
         "stable": True,
-        "dr_estimate": -0.02,
-        "comparative_interval": [-0.04, -0.01],
+        "dr_estimate": 0.03,
+        "comparative_interval": [0.01, 0.05],
         "vs": "Heavy Spirit damage",
         "why": "Spirit Resist",
         "swap": "Replaces Tier 3 Item 2",
@@ -383,9 +513,21 @@ def test_admitted_core_alternative_moves_out_of_its_tier_row(
         "mechanics_refs": ["asset:item:303:description"],
         "comparator_mechanics_refs": ["asset:item:302:description"],
         "fold_estimates": {
-            "train": -0.01,
-            "validation": -0.02,
+            "train": 0.03,
+            "validation": 0.04,
             "test": -0.03,
+        },
+        "fold_diagnostics": {
+            fold: {
+                "support": 40,
+                "comparison_support": 50,
+                "effective_support": 30.0,
+                "overlap": 0.8,
+                "maximum_standardized_mean_difference": 0.05,
+                "estimate": estimate,
+                "interval": [0.01, 0.05],
+            }
+            for fold, estimate in (("train", 0.03), ("validation", 0.04))
         },
     }
     _write(path, _document(core_alternatives=[alternative]))
@@ -501,9 +643,13 @@ def test_situational_branch_requires_every_comparative_gate(tmp_path: Path) -> N
         "threat": "healing",
         "item_id": 103,
         "enemy_hero_id": 7,
+        "enemy_scope": "whole_enemy_team",
+        "phase": 1,
+        "tier": 1,
         "mechanic_ref": "item/103/healing-reduction",
+        "enemy_mechanics_refs": ["asset:ability:7:description"],
         "comparator": "same-tier default continuation or save",
-        "comparator_item_id": 104,
+        "comparator_item_id": 101,
         "comparison_support": 20,
         "same_opportunity": True,
         "support": 20,
@@ -511,6 +657,16 @@ def test_situational_branch_requires_every_comparative_gate(tmp_path: Path) -> N
         "overlap": 0.5,
         "stable": True,
         "comparative_interval": [0.01, 0.06],
+        "fold_comparative_estimates": {
+            "train": 0.03,
+            "validation": 0.04,
+            "test": 0.02,
+        },
+        "fold_support": {
+            "train": {"item": 20, "comparator": 20},
+            "validation": {"item": 20, "comparator": 20},
+            "test": {"item": 20, "comparator": 20},
+        },
         "trigger": "Enemy healing is observed.",
         "replacement": "Replace the next optional purchase.",
         "execution": "Apply healing reduction after contact.",
@@ -532,6 +688,26 @@ def test_situational_branch_requires_every_comparative_gate(tmp_path: Path) -> N
         ({"support": 19}, "situational support"),
         ({"effective_support": 19.0}, "effective support"),
         ({"comparison_support": 19}, "comparison support"),
+        (
+            {
+                "fold_comparative_estimates": {
+                    "train": 0.03,
+                    "validation": 0.04,
+                    "test": -0.02,
+                }
+            },
+            "unstable situational fold evidence",
+        ),
+        (
+            {
+                "fold_support": {
+                    "train": {"item": 20, "comparator": 20},
+                    "validation": {"item": 20, "comparator": 20},
+                    "test": {"item": 19, "comparator": 20},
+                }
+            },
+            "situational test item support",
+        ),
         ({"comparative_interval": [-0.01, 0.06]}, "interval"),
         ({"comparative_interval": [0.01, 0.12]}, "interval"),
         ({"mechanic_ref": "item/999/healing"}, "mechanic reference"),
@@ -542,3 +718,21 @@ def test_situational_branch_requires_every_comparative_gate(tmp_path: Path) -> N
         _write(path, document)
         with pytest.raises(ArtifactError, match=error):
             load_build_evidence(path)
+
+    active_assets = [
+        {
+            **asset,
+            "is_active_item": int(asset["id"]) in {103, 102, 201, 202, 301},
+        }
+        for asset in _assets()
+    ]
+    active_document = _document(assets=active_assets)
+    active_document["heroes"][0]["builds"][0]["situational_policy"]["branches"] = [
+        baseline
+    ]
+    _refingerprint(active_document)
+    _write(path, active_document)
+    active_catalog = load_build_evidence(path)
+
+    with pytest.raises(ArtifactError, match="illegal situational replacement"):
+        select_hero_build(active_catalog.heroes[13], active_assets)

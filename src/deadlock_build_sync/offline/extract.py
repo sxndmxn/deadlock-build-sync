@@ -177,6 +177,7 @@ def extract_cohort(paths: RunPaths, cohort: Cohort) -> dict[str, Any]:
                 coalesce(player_rank_initial_calibration_games, 0) > 0 AS calibration
             FROM remote.main.match_player
             INNER JOIN eligible_matches USING (match_id)
+            ORDER BY hero_id, match_id, player_slot
             """,
         )
         print("Aggregating deidentified unique-player breadth…", flush=True)
@@ -308,6 +309,7 @@ def extract_cohort(paths: RunPaths, cohort: Cohort) -> dict[str, Any]:
                     ORDER BY buy_time, sold_time
                 ) AS item_purchase_ordinal
             FROM valid
+            ORDER BY hero_id, match_id, player_slot, buy_time, event_order
             """,
         )
 
@@ -358,6 +360,7 @@ def extract_cohort(paths: RunPaths, cohort: Cohort) -> dict[str, Any]:
                        RANGE BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
                    ) AS prior_purchase_count
             FROM both_states
+            ORDER BY hero_id, match_id, player_slot, buy_time, item_id
             """
         )
         con.execute("DROP TABLE IF EXISTS decision_opportunities")
@@ -386,6 +389,7 @@ def extract_cohort(paths: RunPaths, cohort: Cohort) -> dict[str, Any]:
                    false AS save_action_observed
             FROM realized r
             JOIN slates s USING (tier)
+            ORDER BY r.hero_id, r.match_id, r.player_slot, r.buy_time, r.item_id
             """
         )
 

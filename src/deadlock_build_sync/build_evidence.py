@@ -23,23 +23,26 @@ if TYPE_CHECKING:
 
     from .ranks import RankCatalog, RankRange
 
-BUILD_EVIDENCE_SCHEMA_VERSION = 6
+BUILD_EVIDENCE_SCHEMA_VERSION = 8
 
 type _SequencePolicyDocument = dict[str, Any]
 type _SituationalBranchDocument = dict[str, Any]
 type _SituationalPolicyDocument = dict[str, Any]
 
 
-CORE_ITEM_COUNT = 8
 MAXIMUM_CORE_ITEM_COUNT = 9
-CORE_CANDIDATE_LIMIT = 64
 TIER_ITEM_COUNT = 10
 MINIMUM_TIER_SUPPORT = 20
+MINIMUM_TIER_ADOPTION = 0.05
+MAXIMUM_TIER_ADOPTION_DRIFT = 0.10
+MINIMUM_PURCHASE_WINDOW_COVERAGE = 0.50
+MINIMUM_PURCHASE_WINDOW_OBSERVATIONS = 20
 MINIMUM_CORE_SUPPORT = 20
-METHOD_VERSION = "state-aware-multi-path-v5"
+METHOD_VERSION = "state-aware-multi-path-v7"
 SEQUENCE_POLICY_VERSION = 3
-SITUATIONAL_POLICY_VERSION = 1
-CORE_POLICY_VERSION = 2
+SITUATIONAL_POLICY_VERSION = 2
+CORE_POLICY_VERSION = 3
+TIER_POLICY_VERSION = 1
 MINIMUM_BACKBONE_ITEM_COUNT = 4
 MAXIMUM_BACKBONE_ITEM_COUNT = 6
 MINIMUM_IMBUE_SUPPORT = 20
@@ -59,6 +62,7 @@ THREAT_CLASSES = frozenset({
     "spirit_pressure",
     "control",
     "mobility_escape",
+    "mobility_denial",
     "ally_protection",
     "active_slot_burden",
 })
@@ -68,6 +72,7 @@ MECHANIC_RESPONSE_THREATS = {
     "bullet_pressure": "bullet_pressure",
     "spirit_burst": "spirit_pressure",
     "mobility_denial": "mobility_escape",
+    "slow_resistance": "mobility_denial",
     "ally_protection": "ally_protection",
 }
 
@@ -91,11 +96,60 @@ class ItemEvidence:
     buy_net_worth_q25: float | None
     buy_net_worth_q75: float | None
     valid_buy_net_worth_share: float
+    selection_adopter_matches: int
+    selection_eligible_player_matches: int
+    training_adopter_matches: int
+    training_eligible_player_matches: int
+    validation_adopter_matches: int
+    validation_eligible_player_matches: int
+    test_adopter_matches: int
+    test_eligible_player_matches: int
+    selection_adoption: float
+    training_adoption: float
+    validation_adoption: float
+    test_adoption: float
+    selection_median_buy_time_s: float | None
+    selection_median_valid_buy_net_worth: float | None
+    selection_buy_net_worth_q25: float | None
+    selection_buy_net_worth_q75: float | None
+    selection_valid_buy_net_worth_share: float
+    selection_valid_buy_net_worth_observations: int
+    training_valid_buy_net_worth_observations: int
+    validation_valid_buy_net_worth_observations: int
+    training_buy_net_worth_q25: float | None
+    training_buy_net_worth_q75: float | None
+    validation_buy_net_worth_q25: float | None
+    validation_buy_net_worth_q75: float | None
     imbue_target_ability_id: int | None = None
     imbue_target_ability: str | None = None
     imbue_target_matches: int = 0
     imbue_observations: int = 0
     imbue_target_share: float = 0.0
+
+
+def reliable_purchase_window(item: ItemEvidence) -> tuple[float, float] | None:
+    lower = item.selection_buy_net_worth_q25
+    upper = item.selection_buy_net_worth_q75
+    train_lower = item.training_buy_net_worth_q25
+    train_upper = item.training_buy_net_worth_q75
+    validation_lower = item.validation_buy_net_worth_q25
+    validation_upper = item.validation_buy_net_worth_q75
+    if (
+        item.selection_valid_buy_net_worth_share < MINIMUM_PURCHASE_WINDOW_COVERAGE
+        or item.training_valid_buy_net_worth_observations
+        < MINIMUM_PURCHASE_WINDOW_OBSERVATIONS
+        or item.validation_valid_buy_net_worth_observations
+        < MINIMUM_PURCHASE_WINDOW_OBSERVATIONS
+        or lower is None
+        or upper is None
+        or train_lower is None
+        or train_upper is None
+        or validation_lower is None
+        or validation_upper is None
+        or max(train_lower, validation_lower) > min(train_upper, validation_upper)
+    ):
+        return None
+    return lower, upper
 
 
 @dataclass(frozen=True)
@@ -124,6 +178,7 @@ class CoreAlternativeEvidence:
     mechanics_refs: tuple[str, ...]
     comparator_mechanics_refs: tuple[str, ...]
     fold_estimates: dict[str, float]
+    fold_diagnostics: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -136,6 +191,12 @@ class CorePolicyEvidence:
     alternatives: tuple[CoreAlternativeEvidence, ...]
     candidate_audit: tuple[dict[str, Any], ...]
     evaluation: dict[str, Any]
+    default_fold_matches: dict[str, int] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class TierPolicyEvidence:
+    item_ids_by_tier: dict[int, tuple[int, ...]]
 
 
 @dataclass(frozen=True)
@@ -177,6 +238,12 @@ class SituationalBranch:
     replacement: str
     execution: str
     failure_condition: str
+    enemy_scope: str = "whole_enemy_team"
+    phase: int = 0
+    tier: int = 1
+    enemy_mechanics_refs: tuple[str, ...] = ()
+    fold_comparative_estimates: dict[str, float] = field(default_factory=dict)
+    fold_support: dict[str, dict[str, int]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -190,10 +257,12 @@ class HeroBuildEvidence:
     hero_id: int
     hero: str
     eligible_player_matches: int
+    selection_eligible_player_matches: int
+    fold_eligible_player_matches: dict[str, int]
     median_final_net_worth: int
-    core_candidates: tuple[CoreCandidate, ...]
     items: tuple[ItemEvidence, ...]
     core_policy: CorePolicyEvidence
+    tier_policy: TierPolicyEvidence
     sequence_policy: SequencePolicy | None = None
     situational_policy: SituationalPolicy | None = None
     path_id: str = "default"
@@ -257,12 +326,11 @@ def nondecreasing_window_schedule(
     path: Sequence[int],
     bounds: Mapping[int, tuple[float, float]],
 ) -> tuple[float, ...] | None:
-    """Return the earliest feasible soul checkpoints through observed IQRs.
+    """Return the earliest feasible checkpoints through reliable observed IQRs.
 
-    A purchase path is feasible only when every item has a finite first-ownership
-    net-worth interval and one nondecreasing sequence of checkpoints can pass
-    through all of those intervals. This keeps outcome rates descriptive while
-    making the displayed soul windows a hard ordering constraint.
+    A missing interval gives no route constraint. Every supplied interval must be
+    finite, and one nondecreasing checkpoint sequence must pass through all supplied
+    intervals. This keeps unreliable timing out of route selection.
 
     Returns:
         The earliest feasible checkpoint per purchase, or ``None``.
@@ -273,7 +341,8 @@ def nondecreasing_window_schedule(
     for item_id in path:
         window = bounds.get(item_id)
         if window is None:
-            return None
+            schedule.append(current)
+            continue
         lower, upper = window
         if not math.isfinite(lower) or not math.isfinite(upper) or lower > upper:
             return None
@@ -284,8 +353,19 @@ def nondecreasing_window_schedule(
     return tuple(schedule)
 
 
-def _required_int(value: object, label: str, *, minimum: int = 0) -> int:
-    if not isinstance(value, int) or isinstance(value, bool) or value < minimum:
+def _required_int(
+    value: object,
+    label: str,
+    *,
+    minimum: int = 0,
+    maximum: int | None = None,
+) -> int:
+    if (
+        not isinstance(value, int)
+        or isinstance(value, bool)
+        or value < minimum
+        or (maximum is not None and value > maximum)
+    ):
         raise ArtifactError(f"build evidence has invalid {label}")
     return value
 
@@ -340,7 +420,7 @@ def _document(value: object, error_message: str) -> dict[str, Any]:
     return cast("dict[str, Any]", value)
 
 
-def _item(value: object, hero_id: int) -> ItemEvidence:
+def _item(value: object, hero_id: int) -> ItemEvidence:  # ruff: ignore[too-many-statements]
     if not isinstance(value, dict):
         raise ArtifactError(f"hero {hero_id} has a malformed item evidence row")
     item_id = _required_int(value.get("item_id"), "item id", minimum=1)
@@ -394,6 +474,141 @@ def _item(value: object, hero_id: int) -> ItemEvidence:
     ):
         raise ArtifactError(
             f"hero {hero_id} item {item_id} has invalid net-worth quantiles"
+        )
+    fold_counts = {
+        fold: (
+            _required_int(
+                value.get(f"{fold}_adopter_matches"),
+                f"{fold} adopter matches",
+            ),
+            _required_int(
+                value.get(f"{fold}_eligible_player_matches"),
+                f"{fold} eligible player matches",
+                minimum=0 if fold == "test" else 1,
+            ),
+        )
+        for fold in ("training", "validation", "test")
+    }
+    fold_adoption = {
+        fold: _required_float(
+            value.get(f"{fold}_adoption"),
+            f"{fold} adoption",
+            maximum=1.0,
+        )
+        for fold in fold_counts
+    }
+    if any(
+        adopters > fold_eligible
+        or not math.isclose(
+            fold_adoption[fold],
+            adopters / fold_eligible if fold_eligible else 0.0,
+            abs_tol=1e-9,
+        )
+        for fold, (adopters, fold_eligible) in fold_counts.items()
+    ):
+        raise ArtifactError(f"hero {hero_id} item {item_id} has invalid fold counts")
+    selection_adopters = _required_int(
+        value.get("selection_adopter_matches"), "selection adopter matches"
+    )
+    selection_eligible = _required_int(
+        value.get("selection_eligible_player_matches"),
+        "selection eligible player matches",
+        minimum=1,
+    )
+    selection_adoption = _required_float(
+        value.get("selection_adoption"), "selection adoption", maximum=1.0
+    )
+    if (
+        selection_adopters != fold_counts["training"][0] + fold_counts["validation"][0]
+        or selection_eligible
+        != fold_counts["training"][1] + fold_counts["validation"][1]
+        or adopter_matches != selection_adopters + fold_counts["test"][0]
+        or eligible != selection_eligible + fold_counts["test"][1]
+        or not math.isclose(
+            selection_adoption,
+            selection_adopters / selection_eligible,
+            abs_tol=1e-9,
+        )
+    ):
+        raise ArtifactError(
+            f"hero {hero_id} item {item_id} has inconsistent selection counts"
+        )
+    selection_buy_time = _optional_float(
+        value.get("selection_median_buy_time_s"), "selection median buy time"
+    )
+    selection_median_net_worth = _optional_float(
+        value.get("selection_median_valid_buy_net_worth"),
+        "selection median buy net worth",
+    )
+    selection_q25 = _optional_float(
+        value.get("selection_buy_net_worth_q25"),
+        "selection buy net worth q25",
+    )
+    selection_q75 = _optional_float(
+        value.get("selection_buy_net_worth_q75"),
+        "selection buy net worth q75",
+    )
+    selection_valid_observations = _required_int(
+        value.get("selection_valid_buy_net_worth_observations"),
+        "selection valid buy net worth observations",
+    )
+    selection_valid_share = _required_float(
+        value.get("selection_valid_buy_net_worth_share"),
+        "selection valid buy net worth share",
+        maximum=1.0,
+    )
+    if (
+        (selection_buy_time is None) != (selection_adopters == 0)
+        or selection_valid_observations > selection_adopters
+        or not math.isclose(
+            selection_valid_share,
+            selection_valid_observations / selection_adopters
+            if selection_adopters
+            else 0.0,
+            abs_tol=1e-9,
+        )
+        or (selection_median_net_worth is None) != (selection_valid_observations == 0)
+        or (selection_q25 is None) != (selection_valid_observations == 0)
+        or (selection_q75 is None) != (selection_valid_observations == 0)
+        or (
+            selection_median_net_worth is not None
+            and selection_q25 is not None
+            and selection_q75 is not None
+            and not selection_q25 <= selection_median_net_worth <= selection_q75
+        )
+    ):
+        raise ArtifactError(
+            f"hero {hero_id} item {item_id} has invalid selection timing evidence"
+        )
+    fold_window_evidence: dict[str, tuple[int, float | None, float | None]] = {}
+    for fold in ("training", "validation"):
+        observations = _required_int(
+            value.get(f"{fold}_valid_buy_net_worth_observations"),
+            f"{fold} valid buy net worth observations",
+        )
+        lower = _optional_float(
+            value.get(f"{fold}_buy_net_worth_q25"),
+            f"{fold} buy net worth q25",
+        )
+        upper = _optional_float(
+            value.get(f"{fold}_buy_net_worth_q75"),
+            f"{fold} buy net worth q75",
+        )
+        if (
+            observations > fold_counts[fold][0]
+            or (lower is None) != (observations == 0)
+            or (upper is None) != (observations == 0)
+            or (lower is not None and upper is not None and lower > upper)
+        ):
+            raise ArtifactError(
+                f"hero {hero_id} item {item_id} has invalid {fold} window evidence"
+            )
+        fold_window_evidence[fold] = observations, lower, upper
+    if selection_valid_observations != sum(
+        row[0] for row in fold_window_evidence.values()
+    ):
+        raise ArtifactError(
+            f"hero {hero_id} item {item_id} has inconsistent window counts"
         )
     raw_imbue_target_id = value.get("imbue_target_ability_id")
     imbue_target_id = (
@@ -458,6 +673,32 @@ def _item(value: object, hero_id: int) -> ItemEvidence:
             "valid buy net worth share",
             maximum=1.0,
         ),
+        selection_adopter_matches=selection_adopters,
+        selection_eligible_player_matches=selection_eligible,
+        training_adopter_matches=fold_counts["training"][0],
+        training_eligible_player_matches=fold_counts["training"][1],
+        validation_adopter_matches=fold_counts["validation"][0],
+        validation_eligible_player_matches=fold_counts["validation"][1],
+        test_adopter_matches=fold_counts["test"][0],
+        test_eligible_player_matches=fold_counts["test"][1],
+        selection_adoption=selection_adoption,
+        training_adoption=fold_adoption["training"],
+        validation_adoption=fold_adoption["validation"],
+        test_adoption=fold_adoption["test"],
+        selection_median_buy_time_s=selection_buy_time,
+        selection_median_valid_buy_net_worth=selection_median_net_worth,
+        selection_buy_net_worth_q25=selection_q25,
+        selection_buy_net_worth_q75=selection_q75,
+        selection_valid_buy_net_worth_share=selection_valid_share,
+        selection_valid_buy_net_worth_observations=selection_valid_observations,
+        training_valid_buy_net_worth_observations=fold_window_evidence["training"][0],
+        validation_valid_buy_net_worth_observations=fold_window_evidence["validation"][
+            0
+        ],
+        training_buy_net_worth_q25=fold_window_evidence["training"][1],
+        training_buy_net_worth_q75=fold_window_evidence["training"][2],
+        validation_buy_net_worth_q25=fold_window_evidence["validation"][1],
+        validation_buy_net_worth_q75=fold_window_evidence["validation"][2],
         imbue_target_ability_id=imbue_target_id,
         imbue_target_ability=(
             str(imbue_target).strip() if isinstance(imbue_target, str) else None
@@ -539,6 +780,7 @@ def _situational_branch(value: object, hero_id: int) -> SituationalBranch:
     data = cast("_SituationalBranchDocument", value)
     threat = data.get("threat")
     enemy_hero_id = data.get("enemy_hero_id")
+    enemy_scope = data.get("enemy_scope")
     text_fields = (
         "mechanic_ref",
         "comparator",
@@ -547,9 +789,13 @@ def _situational_branch(value: object, hero_id: int) -> SituationalBranch:
         "execution",
         "failure_condition",
     )
-    if threat not in THREAT_CLASSES or any(
-        not isinstance(data.get(field), str) or not str(data[field]).strip()
-        for field in text_fields
+    if (
+        threat not in THREAT_CLASSES
+        or enemy_scope not in {"same_lane", "whole_enemy_team"}
+        or any(
+            not isinstance(data.get(field), str) or not str(data[field]).strip()
+            for field in text_fields
+        )
     ):
         raise ArtifactError(f"hero {hero_id} has an incomplete situational branch")
     if enemy_hero_id is not None:
@@ -565,6 +811,15 @@ def _situational_branch(value: object, hero_id: int) -> SituationalBranch:
     if not str(data["mechanic_ref"]).startswith(f"item/{item_id}/"):
         raise ArtifactError(
             f"hero {hero_id} has a mismatched situational mechanic reference"
+        )
+    raw_enemy_refs = data.get("enemy_mechanics_refs")
+    if (
+        not isinstance(raw_enemy_refs, list)
+        or not raw_enemy_refs
+        or not all(isinstance(ref, str) and ref.strip() for ref in raw_enemy_refs)
+    ):
+        raise ArtifactError(
+            f"hero {hero_id} situational branch lacks enemy mechanics refs"
         )
     same_opportunity = _required_bool(
         data.get("same_opportunity"), "situational same-opportunity gate"
@@ -595,11 +850,53 @@ def _situational_branch(value: object, hero_id: int) -> SituationalBranch:
         raise ArtifactError(
             f"hero {hero_id} contains an unqualified situational branch"
         )
+    raw_fold_estimates = data.get("fold_comparative_estimates")
+    raw_fold_support = data.get("fold_support")
+    if (
+        not isinstance(raw_fold_estimates, dict)
+        or not isinstance(raw_fold_support, dict)
+        or not {"train", "validation", "test"} <= set(raw_fold_estimates)
+        or not {"train", "validation", "test"} <= set(raw_fold_support)
+    ):
+        raise ArtifactError(f"hero {hero_id} lacks situational fold evidence")
+    fold_estimates = {
+        fold: _finite_float(estimate, f"situational {fold} comparative estimate")
+        for fold, estimate in raw_fold_estimates.items()
+    }
+    fold_support: dict[str, dict[str, int]] = {}
+    for fold in ("train", "validation", "test"):
+        support_document = _document(
+            raw_fold_support[fold],
+            f"hero {hero_id} lacks situational {fold} support",
+        )
+        fold_support[fold] = {
+            side: _required_int(
+                support_document.get(side),
+                f"situational {fold} {side} support",
+                minimum=20,
+            )
+            for side in ("item", "comparator")
+        }
+    if (
+        fold_estimates["train"] <= 0
+        or fold_estimates["validation"] <= 0
+        or fold_estimates["test"] <= 0
+        or abs(fold_estimates["train"] - fold_estimates["validation"]) > 0.05
+    ):
+        raise ArtifactError(f"hero {hero_id} has unstable situational fold evidence")
     return SituationalBranch(
         threat=str(threat),
         item_id=item_id,
         enemy_hero_id=enemy_hero_id,
+        enemy_scope=str(enemy_scope),
+        phase=_required_int(data.get("phase"), "situational phase", maximum=3),
+        tier=_required_int(
+            data.get("tier"), "situational decision tier", minimum=1, maximum=4
+        ),
         mechanic_ref=str(data["mechanic_ref"]),
+        enemy_mechanics_refs=tuple(str(ref).strip() for ref in raw_enemy_refs),
+        fold_comparative_estimates=fold_estimates,
+        fold_support=fold_support,
         comparator=str(data["comparator"]),
         comparator_item_id=comparator_item_id,
         comparison_support=comparison_support,
@@ -667,52 +964,6 @@ def _hero_items(
     return items, item_ids
 
 
-def _core_candidate(
-    row: object,
-    hero_id: int,
-    item_ids: list[int],
-    eligible: int,
-) -> CoreCandidate:
-    if not isinstance(row, dict):
-        raise ArtifactError(f"hero {hero_id} has a malformed core candidate")
-    raw_item_ids = row.get("item_ids")
-    if not isinstance(raw_item_ids, list):
-        raise ArtifactError(f"hero {hero_id} has a malformed core candidate")
-    candidate_ids = tuple(
-        _required_int(item_id, "core item id", minimum=1) for item_id in raw_item_ids
-    )
-    matches = _required_int(row.get("joint_matches"), "core support")
-    if (
-        len(candidate_ids) != CORE_ITEM_COUNT
-        or len(set(candidate_ids)) != CORE_ITEM_COUNT
-        or tuple(sorted(candidate_ids)) != candidate_ids
-        or not set(candidate_ids) <= set(item_ids)
-        or matches < MINIMUM_CORE_SUPPORT
-        or matches > eligible
-    ):
-        raise ArtifactError(f"hero {hero_id} has an invalid core candidate")
-    return CoreCandidate(candidate_ids, matches)
-
-
-def _core_candidates(
-    raw_candidates: Sequence[object],
-    hero_id: int,
-    item_ids: list[int],
-    eligible: int,
-) -> list[CoreCandidate]:
-    candidates = [
-        _core_candidate(row, hero_id, item_ids, eligible) for row in raw_candidates
-    ]
-    if not candidates or len(candidates) > CORE_CANDIDATE_LIMIT:
-        raise ArtifactError(f"hero {hero_id} has no bounded supported core candidates")
-    if len({candidate.item_ids for candidate in candidates}) != len(candidates):
-        raise ArtifactError(f"hero {hero_id} has duplicate core candidates")
-    expected = sorted(candidates, key=lambda row: (-row.joint_matches, row.item_ids))
-    if candidates != expected:
-        raise ArtifactError(f"hero {hero_id} core candidates are not deterministic")
-    return candidates
-
-
 def _core_alternative_interval(
     document: dict[str, Any], hero_id: int
 ) -> tuple[float, float, float]:
@@ -727,6 +978,7 @@ def _core_alternative_interval(
     if (
         lower > upper
         or not lower <= estimate <= upper
+        or lower <= 0
         or upper - lower > MAX_COMPARATIVE_INTERVAL_WIDTH
     ):
         raise ArtifactError(f"hero {hero_id} has an invalid core alternative interval")
@@ -773,11 +1025,10 @@ def _core_alternative(
         raise ArtifactError(f"hero {hero_id} core alternative lacks mechanics refs")
     lower, upper, estimate = _core_alternative_interval(document, hero_id)
     fold_estimates = document.get("fold_estimates")
-    if not isinstance(fold_estimates, dict) or set(fold_estimates) != {
+    if not isinstance(fold_estimates, dict) or not {
         "train",
         "validation",
-        "test",
-    }:
+    } <= set(fold_estimates):
         raise ArtifactError(f"hero {hero_id} core alternative lacks temporal estimates")
     fold_document = _document(
         fold_estimates,
@@ -785,8 +1036,82 @@ def _core_alternative(
     )
     parsed_folds = {
         fold: _finite_float(fold_document[fold], f"core alternative {fold} estimate")
-        for fold in ("train", "validation", "test")
+        for fold in fold_document
     }
+    raw_fold_diagnostics = document.get("fold_diagnostics")
+    if not isinstance(raw_fold_diagnostics, dict) or not {
+        "train",
+        "validation",
+    } <= set(raw_fold_diagnostics):
+        raise ArtifactError(f"hero {hero_id} core alternative lacks fold diagnostics")
+    parsed_fold_diagnostics: dict[str, dict[str, Any]] = {}
+    for fold in ("train", "validation"):
+        diagnostics = _document(
+            raw_fold_diagnostics[fold],
+            f"hero {hero_id} core alternative lacks {fold} diagnostics",
+        )
+        raw_fold_interval = diagnostics.get("interval")
+        if not isinstance(raw_fold_interval, list) or len(raw_fold_interval) != 2:
+            raise ArtifactError(
+                f"hero {hero_id} core alternative lacks a {fold} interval"
+            )
+        fold_lower = _finite_float(
+            raw_fold_interval[0], f"core alternative {fold} interval lower"
+        )
+        fold_upper = _finite_float(
+            raw_fold_interval[1], f"core alternative {fold} interval upper"
+        )
+        fold_estimate = _finite_float(
+            diagnostics.get("estimate"), f"core alternative {fold} estimate"
+        )
+        fold_support = _required_int(
+            diagnostics.get("support"),
+            f"core alternative {fold} support",
+            minimum=MINIMUM_CORE_SUPPORT,
+        )
+        fold_comparison_support = _required_int(
+            diagnostics.get("comparison_support"),
+            f"core alternative {fold} comparison support",
+            minimum=MINIMUM_CORE_SUPPORT,
+        )
+        fold_effective_support = _required_float(
+            diagnostics.get("effective_support"),
+            f"core alternative {fold} effective support",
+            minimum=MINIMUM_CORE_SUPPORT,
+        )
+        fold_overlap = _required_float(
+            diagnostics.get("overlap"),
+            f"core alternative {fold} overlap",
+            maximum=1.0,
+        )
+        fold_smd = _required_float(
+            diagnostics.get("maximum_standardized_mean_difference"),
+            f"core alternative {fold} balance",
+        )
+        if (
+            fold_lower <= 0
+            or fold_lower > fold_upper
+            or not fold_lower <= fold_estimate <= fold_upper
+            or fold_upper - fold_lower > MAX_COMPARATIVE_INTERVAL_WIDTH
+            or fold_overlap < 0.5
+            or fold_smd > 0.1
+            or not math.isclose(parsed_folds[fold], fold_estimate, abs_tol=1e-12)
+        ):
+            raise ArtifactError(
+                f"hero {hero_id} contains an unqualified {fold} core alternative"
+            )
+        parsed_fold_diagnostics[fold] = {
+            **diagnostics,
+            "support": fold_support,
+            "comparison_support": fold_comparison_support,
+            "effective_support": fold_effective_support,
+            "overlap": fold_overlap,
+            "maximum_standardized_mean_difference": fold_smd,
+            "estimate": fold_estimate,
+            "interval": [fold_lower, fold_upper],
+        }
+    if abs(parsed_folds["train"] - parsed_folds["validation"]) > 0.05:
+        raise ArtifactError(f"hero {hero_id} has an unstable core alternative")
     effective_support = _required_float(
         document.get("effective_support"),
         "core alternative effective support",
@@ -827,6 +1152,7 @@ def _core_alternative(
             str(ref).strip() for ref in raw_comparator_refs
         ),
         fold_estimates=parsed_folds,
+        fold_diagnostics=parsed_fold_diagnostics,
     )
 
 
@@ -842,6 +1168,7 @@ def _core_policy(
     raw_default = value.get("default_item_ids")
     raw_alternatives = value.get("alternatives")
     raw_fold_matches = value.get("backbone_fold_matches")
+    raw_default_fold_matches = value.get("default_fold_matches")
     candidate_audit = value.get("candidate_audit")
     evaluation = value.get("evaluation")
     if (
@@ -849,6 +1176,7 @@ def _core_policy(
         or not isinstance(raw_default, list)
         or not isinstance(raw_alternatives, list)
         or not isinstance(raw_fold_matches, dict)
+        or not isinstance(raw_default_fold_matches, dict)
         or not isinstance(candidate_audit, list)
         or not isinstance(evaluation, dict)
     ):
@@ -875,16 +1203,19 @@ def _core_policy(
         fold: _required_int(
             raw_fold_matches.get(fold),
             f"{fold} backbone support",
-            minimum=MINIMUM_CORE_SUPPORT,
+            minimum=0 if fold == "test" else MINIMUM_CORE_SUPPORT,
         )
         for fold in ("train", "validation", "test")
     }
     backbone_matches = _required_int(
         value.get("backbone_matches"),
         "backbone support",
-        minimum=sum(fold_matches.values()),
+        minimum=fold_matches["train"] + fold_matches["validation"],
     )
-    if backbone_matches > eligible:
+    if (
+        backbone_matches != fold_matches["train"] + fold_matches["validation"]
+        or backbone_matches > eligible
+    ):
         raise ArtifactError(f"hero {hero_id} backbone support exceeds its cohort")
     alternatives = tuple(
         _core_alternative(row, hero_id, item_ids, set(default))
@@ -898,7 +1229,19 @@ def _core_policy(
     ):
         raise ArtifactError(f"hero {hero_id} has invalid core alternatives")
     default_matches = _required_int(value.get("default_matches"), "default support")
-    if default_matches > eligible:
+    default_fold_matches = {
+        fold: _required_int(
+            raw_default_fold_matches.get(fold),
+            f"{fold} default support",
+            minimum=0 if fold == "test" else MINIMUM_CORE_SUPPORT,
+        )
+        for fold in ("train", "validation", "test")
+    }
+    if (
+        default_matches
+        != default_fold_matches["train"] + default_fold_matches["validation"]
+        or default_matches > eligible
+    ):
         raise ArtifactError(f"hero {hero_id} default support exceeds its cohort")
     return CorePolicyEvidence(
         backbone_item_ids=backbone,
@@ -906,6 +1249,7 @@ def _core_policy(
         backbone_matches=backbone_matches,
         backbone_fold_matches=fold_matches,
         default_matches=default_matches,
+        default_fold_matches=default_fold_matches,
         alternatives=alternatives,
         candidate_audit=tuple(
             _document(row, f"hero {hero_id} has a malformed core candidate audit")
@@ -913,6 +1257,59 @@ def _core_policy(
         ),
         evaluation=_document(evaluation, f"hero {hero_id} has no policy evaluation"),
     )
+
+
+def _tier_policy(
+    value: object,
+    hero_id: int,
+    items: tuple[ItemEvidence, ...],
+) -> TierPolicyEvidence:
+    if not isinstance(value, dict) or value.get("version") != TIER_POLICY_VERSION:
+        raise ArtifactError(f"hero {hero_id} has no supported tier policy")
+    raw_membership_value = value.get("item_ids_by_tier")
+    if not isinstance(raw_membership_value, dict) or set(raw_membership_value) != {
+        "1",
+        "2",
+        "3",
+        "4",
+    }:
+        raise ArtifactError(f"hero {hero_id} has an incomplete tier policy")
+    raw_membership = cast("dict[str, Any]", raw_membership_value)
+    by_id = {item.item_id: item for item in items}
+    item_ids_by_tier: dict[int, tuple[int, ...]] = {}
+    all_item_ids: list[int] = []
+    for tier in range(1, 5):
+        raw_item_ids = raw_membership[str(tier)]
+        if not isinstance(raw_item_ids, list):
+            raise ArtifactError(f"hero {hero_id} has a malformed Tier {tier} policy")
+        item_ids = tuple(
+            _required_int(item_id, "tier policy item id", minimum=1)
+            for item_id in raw_item_ids
+        )
+        if not 1 <= len(item_ids) <= TIER_ITEM_COUNT or len(item_ids) != len(
+            set(item_ids)
+        ):
+            raise ArtifactError(f"hero {hero_id} has invalid Tier {tier} membership")
+        for item_id in item_ids:
+            item = by_id.get(item_id)
+            if (
+                item is None
+                or item.tier != tier
+                or item.training_adopter_matches < MINIMUM_TIER_SUPPORT
+                or item.validation_adopter_matches < MINIMUM_TIER_SUPPORT
+                or item.training_adoption < MINIMUM_TIER_ADOPTION
+                or item.validation_adoption < MINIMUM_TIER_ADOPTION
+                or abs(item.training_adoption - item.validation_adoption)
+                > MAXIMUM_TIER_ADOPTION_DRIFT
+            ):
+                raise ArtifactError(
+                    f"hero {hero_id} has an unsupported Tier {tier} item"
+                )
+        item_ids_by_tier[tier] = item_ids
+        all_item_ids.extend(item_ids)
+    if len(all_item_ids) != len(set(all_item_ids)):
+        raise ArtifactError(f"hero {hero_id} repeats an item across tier menus")
+    return TierPolicyEvidence(item_ids_by_tier)
 
 
 def _validate_item_tier_coverage(items: tuple[ItemEvidence, ...], hero_id: int) -> None:
@@ -923,8 +1320,10 @@ def _validate_item_tier_coverage(items: tuple[ItemEvidence, ...], hero_id: int) 
 
 def _validate_policy_item_references(
     core_policy: CorePolicyEvidence,
+    tier_policy: TierPolicyEvidence,
     sequence_policy: SequencePolicy,
     situational_policy: SituationalPolicy,
+    *,
     items: tuple[ItemEvidence, ...],
     hero_id: int,
 ) -> None:
@@ -934,6 +1333,11 @@ def _validate_policy_item_references(
         | set(core_policy.default_item_ids)
         | {row.item_id for row in core_policy.alternatives}
         | {row.comparator_item_id for row in core_policy.alternatives}
+        | {
+            item_id
+            for tier_item_ids in tier_policy.item_ids_by_tier.values()
+            for item_id in tier_item_ids
+        }
         | set(sequence_policy.default_path)
         | {row.next_item_id for row in sequence_policy.transitions}
         | {branch.item_id for branch in situational_policy.branches}
@@ -947,6 +1351,14 @@ def _validate_policy_item_references(
         for branch in situational_policy.branches
     ):
         raise ArtifactError(f"hero {hero_id} has a weak situational tier item")
+    core_target_ids = set(core_policy.default_item_ids)
+    if any(
+        branch.comparator_item_id not in core_target_ids
+        or items_by_id[branch.item_id].tier != branch.tier
+        or items_by_id[branch.comparator_item_id].tier != branch.tier
+        for branch in situational_policy.branches
+    ):
+        raise ArtifactError(f"hero {hero_id} has an invalid situational comparator")
 
 
 def _build_path(
@@ -977,31 +1389,65 @@ def _build_path(
     eligible = _required_int(
         value.get("eligible_player_matches"), "eligible player matches", minimum=1
     )
+    raw_fold_eligible = value.get("fold_eligible_player_matches")
+    if not isinstance(raw_fold_eligible, dict):
+        raise ArtifactError(f"hero {hero_id} lacks fold cohort counts")
+    fold_eligible = {
+        fold: _required_int(
+            raw_fold_eligible.get(fold),
+            f"{fold} eligible player matches",
+            minimum=0 if fold == "test" else 1,
+        )
+        for fold in ("train", "validation", "test")
+    }
+    selection_eligible = _required_int(
+        value.get("selection_eligible_player_matches"),
+        "selection eligible player matches",
+        minimum=1,
+    )
+    if (
+        sum(fold_eligible.values()) != eligible
+        or fold_eligible["train"] + fold_eligible["validation"] != selection_eligible
+    ):
+        raise ArtifactError(f"hero {hero_id} has inconsistent fold cohort counts")
     raw_items = value.get("items")
-    raw_candidates = value.get("core_candidates")
-    if not isinstance(raw_items, list) or not isinstance(raw_candidates, list):
+    if not isinstance(raw_items, list):
         raise ArtifactError(f"hero {hero_id} has incomplete build evidence")
     items, item_ids = _hero_items(raw_items, hero_id, eligible)
-    candidates = _core_candidates(raw_candidates, hero_id, item_ids, eligible)
+    if any(
+        item.selection_eligible_player_matches != selection_eligible
+        or item.training_eligible_player_matches != fold_eligible["train"]
+        or item.validation_eligible_player_matches != fold_eligible["validation"]
+        or item.test_eligible_player_matches != fold_eligible["test"]
+        for item in items
+    ):
+        raise ArtifactError(f"hero {hero_id} item fold denominators disagree")
     core_policy = _core_policy(
         value.get("core_policy"), hero_id, set(item_ids), eligible
     )
-    _validate_item_tier_coverage(items, hero_id)
     sequence_policy = _sequence_policy(value.get("sequence_policy"), hero_id)
     situational_policy = _situational_policy(value.get("situational_policy"), hero_id)
+    tier_policy = _tier_policy(value.get("tier_policy"), hero_id, items)
     _validate_policy_item_references(
-        core_policy, sequence_policy, situational_policy, items, hero_id
+        core_policy,
+        tier_policy,
+        sequence_policy,
+        situational_policy,
+        items=items,
+        hero_id=hero_id,
     )
     return HeroBuildEvidence(
         hero_id=hero_id,
         hero=hero_name,
         eligible_player_matches=eligible,
+        selection_eligible_player_matches=selection_eligible,
+        fold_eligible_player_matches=fold_eligible,
         median_final_net_worth=_required_int(
             value.get("median_final_net_worth"), "median final net worth", minimum=1
         ),
-        core_candidates=tuple(candidates),
         items=items,
         core_policy=core_policy,
+        tier_policy=tier_policy,
         sequence_policy=sequence_policy,
         situational_policy=situational_policy,
         path_id=path_id.strip(),
@@ -1066,13 +1512,15 @@ def load_build_evidence(path: Path) -> BuildEvidenceCatalog:
     method = document.get("method")
     expected_method = {
         "version": METHOD_VERSION,
-        "core_candidate_item_count": CORE_ITEM_COUNT,
         "minimum_core_item_count": MINIMUM_BACKBONE_ITEM_COUNT,
         "maximum_core_item_count": MAXIMUM_CORE_ITEM_COUNT,
-        "core_candidate_limit": CORE_CANDIDATE_LIMIT,
         "minimum_core_support": MINIMUM_CORE_SUPPORT,
         "minimum_tier_support": MINIMUM_TIER_SUPPORT,
+        "minimum_tier_adoption": MINIMUM_TIER_ADOPTION,
+        "maximum_tier_adoption_drift": MAXIMUM_TIER_ADOPTION_DRIFT,
         "tier_item_count": TIER_ITEM_COUNT,
+        "minimum_purchase_window_coverage": MINIMUM_PURCHASE_WINDOW_COVERAGE,
+        "minimum_purchase_window_observations": MINIMUM_PURCHASE_WINDOW_OBSERVATIONS,
         "minimum_imbue_support": MINIMUM_IMBUE_SUPPORT,
         "minimum_imbue_share": MINIMUM_IMBUE_SHARE,
     }
@@ -1211,10 +1659,12 @@ def _expand_component_path(
 ) -> tuple[int, ...]:
     priorities = {
         item_id: (
-            item.median_valid_buy_net_worth
-            if item.median_valid_buy_net_worth is not None
+            item.selection_median_valid_buy_net_worth
+            if item.selection_median_valid_buy_net_worth is not None
             else math.inf,
-            item.median_buy_time_s,
+            item.selection_median_buy_time_s
+            if item.selection_median_buy_time_s is not None
+            else math.inf,
             item_id,
         )
         for item_id, item in evidence_by_id.items()
@@ -1279,10 +1729,9 @@ def _replay_selected_path(
 ) -> tuple[int, ...]:
     window_bounds: dict[int, tuple[float, float]] = {}
     for item in by_id.values():
-        lower = item.buy_net_worth_q25
-        upper = item.buy_net_worth_q75
-        if lower is not None and upper is not None:
-            window_bounds[item.item_id] = (lower, upper)
+        window = reliable_purchase_window(item)
+        if window is not None:
+            window_bounds[item.item_id] = window
     path_ids = (
         evidence.sequence_policy.default_path
         if evidence.sequence_policy is not None
@@ -1328,65 +1777,53 @@ def _tier_selection(
     tier: int,
     core_ids: set[int],
     optional_core_ids: set[int],
-    situational_ids: set[int],
     *,
     graph: ItemGraph,
     visible_higher_tier_ids: set[int],
 ) -> tuple[ItemEvidence, ...]:
     def has_visible_upgrade(item: ItemEvidence) -> bool:
-        upgrades_by_tier = {
-            child_tier: {
-                child_id
-                for child_id in graph.children[item.item_id]
-                if graph.nodes[child_id].tier == child_tier
-            }
-            for child_tier in range(tier + 1, 5)
-        }
-        return all(
-            not child_ids or bool(child_ids & visible_higher_tier_ids)
-            for child_ids in upgrades_by_tier.values()
-        )
+        upgrades = set(graph.children[item.item_id])
+        return not upgrades or bool(upgrades & visible_higher_tier_ids)
 
-    ranked = sorted(
-        (
-            item
-            for item in evidence.items
-            if item.tier == tier
-            and item.item_id not in core_ids
-            and item.item_id not in optional_core_ids
-            and item.adopter_matches >= MINIMUM_TIER_SUPPORT
-            and has_visible_upgrade(item)
-        ),
-        key=lambda item: (-item.adoption, -item.adopter_matches, item.item_id),
+    by_id = {item.item_id: item for item in evidence.items}
+    membership = tuple(
+        by_id[item_id] for item_id in evidence.tier_policy.item_ids_by_tier[tier]
     )
-    required = [item for item in ranked if item.item_id in situational_ids]
-    if len(required) > TIER_ITEM_COUNT:
+    if any(
+        item.item_id in core_ids
+        or item.item_id in optional_core_ids
+        or not has_visible_upgrade(item)
+        for item in membership
+    ):
         raise ArtifactError(
-            f"hero {evidence.hero_id} has too many Tier {tier} situational items"
+            f"hero {evidence.hero_id} has an invalid Tier {tier} policy"
         )
-    membership = (
-        required
-        + [item for item in ranked if item.item_id not in situational_ids][
-            : TIER_ITEM_COUNT - len(required)
-        ]
-    )
-    if not membership:
-        raise ArtifactError(
-            f"hero {evidence.hero_id} lacks a supported non-CORE Tier {tier} item"
-        )
-    return tuple(
+    expected_order = tuple(
         sorted(
             membership,
             key=lambda item: (
-                item.median_valid_buy_net_worth is None,
-                item.median_valid_buy_net_worth
-                if item.median_valid_buy_net_worth is not None
-                else math.inf,
-                item.median_buy_time_s,
+                reliable_purchase_window(item) is None,
+                (
+                    item.selection_median_valid_buy_net_worth
+                    if reliable_purchase_window(item) is not None
+                    and item.selection_median_valid_buy_net_worth is not None
+                    else math.inf
+                ),
+                (
+                    item.selection_median_buy_time_s
+                    if reliable_purchase_window(item) is not None
+                    and item.selection_median_buy_time_s is not None
+                    else math.inf
+                ),
                 item.item_id,
             ),
         )
     )
+    if membership != expected_order:
+        raise ArtifactError(
+            f"hero {evidence.hero_id} Tier {tier} policy order is not deterministic"
+        )
+    return membership
 
 
 def select_hero_build(
@@ -1403,6 +1840,31 @@ def select_hero_build(
     selected, selected_order, selected_cost = _select_core_candidate(
         graph, evidence, by_id
     )
+
+    for branch in (
+        evidence.situational_policy.branches if evidence.situational_policy else ()
+    ):
+        replacement = tuple(
+            branch.item_id if item_id == branch.comparator_item_id else item_id
+            for item_id in selected_order
+        )
+        try:
+            replacement_path = _expand_component_path(graph, replacement, by_id)
+            replacement_state = _replay_component_path(
+                graph,
+                by_id,
+                replacement_path,
+            )
+        except MechanicsError as error:
+            raise ArtifactError(
+                f"hero {evidence.hero_id} has an illegal situational replacement"
+            ) from error
+        if len(replacement) != len(set(replacement)) or set(
+            replacement_state.owned
+        ) != set(replacement):
+            raise ArtifactError(
+                f"hero {evidence.hero_id} has an illegal situational replacement"
+            )
 
     path_ids = _replay_selected_path(graph, evidence, by_id, selected, selected_order)
 
@@ -1421,18 +1883,23 @@ def select_hero_build(
         raise ArtifactError(
             f"hero {evidence.hero_id} situational items repeat the selected CORE"
         )
-    visible_higher_tier_ids: set[int] = set()
+    visible_higher_tier_ids = core_ids | optional_core_ids
     for tier in range(4, 0, -1):
         tiers[tier] = _tier_selection(
             evidence,
             tier,
             core_ids,
             optional_core_ids,
-            situational_ids,
             graph=graph,
             visible_higher_tier_ids=visible_higher_tier_ids,
         )
         visible_higher_tier_ids.update(item.item_id for item in tiers[tier])
+    if not situational_ids <= {
+        item.item_id for tier_items in tiers.values() for item in tier_items
+    }:
+        raise ArtifactError(
+            f"hero {evidence.hero_id} situational items are absent from tier policy"
+        )
     return SelectedHeroBuild(
         hero_id=evidence.hero_id,
         path_id=evidence.path_id,
@@ -1454,10 +1921,13 @@ def select_hero_build(
         core_alternatives=evidence.core_policy.alternatives,
         backbone_matches=evidence.core_policy.backbone_matches,
         backbone_share=(
-            evidence.core_policy.backbone_matches / evidence.eligible_player_matches
+            evidence.core_policy.backbone_matches
+            / evidence.selection_eligible_player_matches
         ),
         core_joint_matches=selected.joint_matches,
-        core_joint_share=selected.joint_matches / evidence.eligible_player_matches,
+        core_joint_share=(
+            selected.joint_matches / evidence.selection_eligible_player_matches
+        ),
         median_final_net_worth=evidence.median_final_net_worth,
         core_target_cost=selected_cost,
     )

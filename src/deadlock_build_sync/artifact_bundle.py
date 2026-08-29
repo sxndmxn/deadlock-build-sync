@@ -26,6 +26,7 @@ from .purchase_guide import (
     PurchaseGuide,
     guide_item_from_evidence,
     standard_category_description,
+    validate_tier_annotation,
 )
 from .ranks import Rank, RankDivision, RankRange, RankTier
 from .renderer import validate_optional_annotation
@@ -171,6 +172,14 @@ def _policy_core(policy: BuildPolicy) -> tuple[int, ...]:
             )
         if node.kind == NodeKind.END:
             break
+        if node.kind == NodeKind.CHOICE:
+            defaults = [branch for branch in node.branches if branch.is_default]
+            if len(defaults) != 1:
+                raise ArtifactBundleError(
+                    f"hero {policy.hero_id} artifact core choice has no unique default"
+                )
+            current = defaults[0].next_id
+            continue
         if node.kind != NodeKind.PURCHASE or node.item_id is None:
             raise ArtifactBundleError(
                 f"hero {policy.hero_id} artifact core is not a purchase-only path"
@@ -196,6 +205,32 @@ def _optional_int(value: object, label: str) -> int | None:
     if not isinstance(value, int) or value < 0:
         raise ArtifactBundleError(f"artifact projection has an invalid {label}")
     return value
+
+
+def _apply_projected_annotation(
+    projected: GuideItem,
+    annotation: object,
+    expected_tier: int | None,
+) -> GuideItem:
+    if not isinstance(annotation, str):
+        raise ArtifactBundleError("artifact projection has no item annotation")
+    if annotation.startswith("VS: "):
+        try:
+            validate_optional_annotation(annotation)
+        except ValueError as error:
+            raise ArtifactBundleError(
+                "artifact projection has an invalid conditional annotation"
+            ) from error
+        return replace(projected, conditional_annotation=annotation)
+    if expected_tier is None:
+        return projected
+    try:
+        validate_tier_annotation(annotation)
+    except ValueError as error:
+        raise ArtifactBundleError(
+            "artifact projection has an invalid tier annotation"
+        ) from error
+    return replace(projected, verified_tier_annotation=annotation)
 
 
 def _guide_item(
@@ -234,18 +269,9 @@ def _guide_item(
             value.get("imbue_target_ability_id"), "imbue target"
         ),
     )
-    annotation = value.get("annotation")
-    if not isinstance(annotation, str):
-        raise ArtifactBundleError("artifact projection has no item annotation")
-    if annotation.startswith("VS: "):
-        try:
-            validate_optional_annotation(annotation)
-        except ValueError as error:
-            raise ArtifactBundleError(
-                "artifact projection has an invalid conditional annotation"
-            ) from error
-        return replace(projected, conditional_annotation=annotation)
-    return projected
+    return _apply_projected_annotation(
+        projected, value.get("annotation"), expected_tier
+    )
 
 
 type _CategorySpec = tuple[str, bool, int, int, int | None]

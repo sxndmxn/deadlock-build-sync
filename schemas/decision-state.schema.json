@@ -17,10 +17,11 @@
     "liquid_souls",
     "purchases",
     "inventory",
-    "learned_abilities"
+    "learned_abilities",
+    "lane_enemy_hero_ids"
   ],
   "properties": {
-    "schema_version": {"const": 1},
+    "schema_version": {"const": 2},
     "build_evidence_id": {"$ref": "#/$defs/sha256"},
     "client_version": {"type": "integer", "minimum": 1},
     "patch_identity": {"$ref": "#/$defs/sha256"},
@@ -51,6 +52,7 @@
     },
     "learned_abilities": {"$ref": "#/$defs/unique_id_list"},
     "enemy_hero_ids": {"$ref": "#/$defs/unique_id_list"},
+    "lane_enemy_hero_ids": {"$ref": "#/$defs/unique_id_list"},
     "enemy_item_ids": {"$ref": "#/$defs/unique_id_list"},
     "allied_hero_ids": {"$ref": "#/$defs/unique_id_list"},
     "objectives": {
@@ -66,6 +68,7 @@
           "bullet_pressure",
           "spirit_pressure",
           "control",
+          "mobility_denial",
           "mobility_escape",
           "ally_protection",
           "active_slot_burden"

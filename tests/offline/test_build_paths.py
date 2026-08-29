@@ -47,8 +47,39 @@ def test_keeps_one_build_when_final_paths_are_not_early_identifiable() -> None:
     assert len(paths[0].member_ids) == 360
 
 
-def test_keeps_one_build_when_a_path_lacks_temporal_support() -> None:
+def test_test_support_does_not_select_the_path_tree() -> None:
     paths = discover_build_paths(*_two_paths(omit_test_path=True))
 
-    assert len(paths) == 1
-    assert paths[0].path_id == "default"
+    assert len(paths) == 2
+    assert {path.signature_item_ids for path in paths} == {(10, 11), (20, 21)}
+
+
+def test_test_inventory_does_not_change_selected_path_identity() -> None:
+    inventories, early, folds = _two_paths()
+    baseline = discover_build_paths(inventories, early, folds)
+    changed = {
+        identity: ((90, 91) if folds[identity[0]] == "test" else item_ids)
+        for identity, item_ids in inventories.items()
+    }
+    changed_early = {
+        identity: ((92, 93) if folds[identity[0]] == "test" else item_ids)
+        for identity, item_ids in early.items()
+    }
+
+    result = discover_build_paths(changed, changed_early, folds)
+
+    assert [path.path_id for path in result] == [path.path_id for path in baseline]
+    assert [path.signature_item_ids for path in result] == [
+        path.signature_item_ids for path in baseline
+    ]
+    assert [
+        frozenset(
+            identity for identity in path.member_ids if folds[identity[0]] != "test"
+        )
+        for path in result
+    ] == [
+        frozenset(
+            identity for identity in path.member_ids if folds[identity[0]] != "test"
+        )
+        for path in baseline
+    ]

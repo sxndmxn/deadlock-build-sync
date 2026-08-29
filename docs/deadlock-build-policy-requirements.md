@@ -494,11 +494,16 @@ The key words **MUST**, **MUST NOT**, **REQUIRED**, **SHOULD**, **SHOULD NOT**, 
 - **Requirement:** A counter purchase **MUST** identify an observed threat, a current item
   mechanic that can answer it, legal timing, a comparable alternative or save action,
   replacement/sell behavior, execution mode, and failure condition. Matchup rate alone
-  **MUST NOT** justify a counter item.
+  **MUST NOT** justify a counter item. The response and threat classifiers **MUST** use
+  only the base description or an important active property. They **MUST** distinguish
+  defense from enemy resistance reduction and **MUST NOT** use upgrade-only ability
+  text. Target and comparator support **MUST** be at least 20, and the comparative
+  estimate **MUST** be positive, in training, validation, and untouched test folds.
 - **Research basis:** [Counter purchases and situational branches](deadlock-strategy-description-research.md#counter-purchases-and-situational-branches), F-12.
 - **Acceptance:** Counter cards lacking any contract field are rejected; hard-control,
   healing, bullet, spirit, mobility, and ally-protection fixtures map only to mechanically
-  valid responses.
+  valid responses. Hidden minor resistance, resistance reduction, upgrade-only threats,
+  weak test support, and a nonpositive test estimate fail closed.
 - **Proof:** Threat-classifier, evidence-ladder, and policy validation tests.
 - **Dependencies:** REQ-MEC-002, REQ-ANA-011.
 
@@ -546,17 +551,21 @@ The key words **MUST**, **MUST NOT**, **REQUIRED**, **SHOULD**, **SHOULD NOT**, 
 
 - **Priority/stage:** `P0`
 - **Status:** `Verified`
-- **Requirement:** For each hero, production **MUST** choose the highest-joint-support
-  legal eight-item reconstructed final-inventory candidate whose catalog investment does
-  not exceed the hero's cohort median final net worth. The core **MUST** be ordered by
-  median first-ownership time. Each Tier I–IV menu **MUST** exclude CORE, require at
-  least 20 adopting player-matches, select up to ten items by unique player-match
-  adoption, then display them left to right by median valid pre-purchase net worth,
-  median time, and item ID, with missing net worth last. Outcome rate **MUST NOT**
-  select or order items, and weak items **MUST NOT** be added as filler.
-- **Acceptance:** Fixtures prove an exact eight-item core, one-through-ten optional-row
+- **Requirement:** For each hero and supported build path, production **MUST** select a
+  mechanics-compatible four-to-six-item backbone from training rows, then complete it
+  to a legal four-to-nine-item default. Validation rows **MUST** gate support and
+  stability. Test rows **MUST** be audit-only. The default catalog investment **MUST
+  NOT** exceed the training-and-validation cohort median final net worth. Each Tier
+  I–IV menu **MUST** exclude the complete CORE path, contain one through ten items,
+  and require at least 20 adopters and 5% adoption in both training and validation.
+  Training-to-validation adoption drift **MUST NOT** exceed ten percentage points.
+  Upgrades **MUST** remain visible when their components are visible. Display order
+  **MUST** use a stable purchase window from training and validation. Outcome rate
+  **MUST NOT** select or order items, and weak items **MUST NOT** be added as filler.
+- **Acceptance:** Fixtures prove variable CORE size, one-through-ten optional-row
   cardinality, CORE disjointness, support and budget fallback, deterministic ties,
-  net-worth ordering, missing-value placement, and outcome independence.
+  validation stability, upgrade visibility, purchase-window reliability, test-fold
+  independence, and outcome independence.
 - **Proof:** Build-evidence selection, service projection, and renderer tests.
 - **Dependencies:** REQ-ANA-001, REQ-ANA-004, REQ-ANA-005, REQ-MEC-004, REQ-MEC-007.
 
@@ -702,7 +711,7 @@ The key words **MUST**, **MUST NOT**, **REQUIRED**, **SHOULD**, **SHOULD NOT**, 
 - **Priority/stage:** `P0`
 - **Status:** `Verified`
 - **Requirement:** `CORE ITEMS` **MUST** be the first and only non-optional category and
-  contain the component-expanded purchase path that realizes the coherent eight-item
+  contain the component-expanded purchase path that realizes the selected four-to-nine-item
   final inventory. The complete row **MUST** be scheduled by observed first-ownership
   net worth subject to hard legality constraints. Required components **MUST** precede
   their parents, final items **MUST** retain their evidence order, and no item card
@@ -781,18 +790,17 @@ The key words **MUST**, **MUST NOT**, **REQUIRED**, **SHOULD**, **SHOULD NOT**, 
   within Valve UI limits. Optional tier reference menus **MUST** instead identify their
   non-automatic reference semantics and **MUST NOT** invent a trigger from adoption.
   Evidence-backed CORE tiles **MUST** lead with the exact validated hero-specific action
-  instruction when the complete annotation fits. Every item **MUST** retain the compact
-  `PURCHASE WINDOW`, `WIN RATE`, and `PICK RATE` analytics block. `WIN RATE` is the raw
-  buyer outcome and **MUST NOT** be described causally; `PICK RATE` is unique
-  hero-player-match purchase adoption. Optional reference tiles **MUST NOT** repeat
-  mechanics already visible in Valve's native tooltip. Denominators, coverage, medians,
-  and statistical caveats belong in the evidence artifact and guide
-  description/sidecar, not duplicated on every tile.
+  instruction when the complete annotation fits. Normal optional tier tiles **MUST** use
+  fixed `USE`, `WHY`, `SKIP`, and `DATA` lines grounded in the base description or a
+  visible innate/active property. `DATA` **MUST** include purchase window, pick rate, and
+  buyer count, and **MUST NOT** include raw win rate. An item without a concrete
+  controlled purpose **MUST** be excluded; an empty tier causes the build to abstain. CORE tiles
+  retain the compact analytics block. Denominators, coverage, medians, and statistical
+  caveats belong in the evidence artifact and guide description/sidecar.
 - **Research basis:** [Keep the menu small and actionable](deadlock-strategy-description-research.md#keep-the-menu-small-and-actionable).
 - **Acceptance:** Generated CORE instructions fit 165 UTF-8 bytes, complete annotations
-  fit 240 bytes, CORE action identity is exact when included, the complete three-line
-  stats block is never displaced, and unreviewed optional hovers contain no generated
-  mechanics description.
+  fit 240 bytes, CORE action identity is exact when included, normal optional tiles use
+  only deterministic tactical copy, and unreviewed AI prose never enters an item hover.
 - **Proof:** Renderer snapshot and Unicode/length tests.
 - **Dependencies:** REQ-ANA-012.
 

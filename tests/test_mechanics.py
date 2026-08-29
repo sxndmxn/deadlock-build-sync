@@ -14,6 +14,7 @@ from deadlock_build_sync.mechanics import (
     classify_item_threat_responses,
     classify_observed_item_threats,
     conditional_item_decision,
+    optional_item_decision,
     purchase_item,
     schedule_component_path,
     sell_item,
@@ -224,6 +225,18 @@ def test_ability_definitions_preserve_asset_unlocks_costs_and_qualifiers() -> No
                 "unlock_level": 8 if slot == 4 else slot,
                 "upgrade_costs": [1, 3, 6],
                 "description": {"desc": "Channeled" if slot == 2 else "Basic"},
+                **(
+                    {
+                        "properties": {
+                            "AbilityChannelTime": {
+                                "value": "2.5",
+                                "disable_value": "0",
+                            }
+                        }
+                    }
+                    if slot == 3
+                    else {}
+                ),
             }
             for slot, ability_id in enumerate((10, 20, 30, 40), start=1)
         ]
@@ -232,6 +245,7 @@ def test_ability_definitions_preserve_asset_unlocks_costs_and_qualifiers() -> No
     assert definitions[40].unlock_level == 8
     assert definitions[10].upgrade_costs == (1, 3, 6)
     assert definitions[20].qualifiers == frozenset({"channeled"})
+    assert definitions[30].qualifiers == frozenset({"channeled"})
     assert definitions[40].ultimate
 
 
@@ -282,7 +296,7 @@ def test_imbue_requires_learned_qualified_allowed_ability() -> None:
         ("Applies healing reduction.", "healing"),
         ("Gain bullet resist.", "bullet_pressure"),
         ("Gain spirit shield.", "spirit_burst"),
-        ("Gain slow immunity.", "mobility_denial"),
+        ("Gain slow immunity.", "slow_resistance"),
         ("Shield an ally.", "ally_protection"),
     ],
 )
@@ -332,6 +346,62 @@ def test_reverse_decision_keeps_scourge_when_survival_matters_more() -> None:
         "Ground and Disarm",
         "Before fighting an evasive target",
         "Keep default when survival matters more",
+    )
+    assert classify_item_threat_responses(phantom) == frozenset({"mobility_denial"})
+
+
+def test_unstoppable_immunity_is_control_defense_and_protects_singularity() -> None:
+    unstoppable = item(3357231760, "upgrade_unstoppable", active=True)
+    unstoppable["name"] = "Unstoppable"
+    unstoppable["description"] = {
+        "desc": (
+            "Temporarily suppress negative status effects and become immune to "
+            "Stun, Silence, Sleep, Root, and Disarm. Cannot be used while Stunned "
+            "or Slept."
+        )
+    }
+    unstoppable["properties"] = {
+        "AbilityDuration": {
+            "label": "Duration",
+            "tooltip_is_important": True,
+            "value": "5.5",
+        }
+    }
+    weapon = item(100, "weapon_item")
+    weapon["description"] = {"desc": "Gain Weapon Damage."}
+    hero_mechanics = {
+        "abilities": [
+            {
+                "id": 30,
+                "slot": 3,
+                "name": "Rejuvenating Aurora",
+                "properties": {"AbilityChannelTime": {"value": "4.0"}},
+            },
+            {
+                "id": 40,
+                "slot": 4,
+                "name": "Singularity",
+                "properties": {"AbilityChannelTime": {"value": "3.5"}},
+            },
+        ]
+    }
+
+    assert classify_item_threat_responses(unstoppable) == frozenset({"hard_control"})
+    assert optional_item_decision(unstoppable) == (
+        "Enemy control blocks your next commit",
+        "Control Immunity",
+        "Damage or mobility matters more",
+    )
+    assert optional_item_decision(unstoppable, hero_mechanics=hero_mechanics) == (
+        "Activate before Singularity when enemy control can interrupt it",
+        "Control Immunity protects the channel",
+        "Enemy control cannot threaten Singularity",
+    )
+    assert conditional_item_decision(unstoppable, weapon) == (
+        "Hard control or debuffs",
+        "Control Immunity",
+        "Before entering the next control-heavy fight",
+        "Keep default when weapon pressure matters more",
     )
 
 
@@ -399,14 +469,146 @@ def test_disabled_property_labels_do_not_create_counter_responses() -> None:
     assert classify_item_threat_responses(asset) == frozenset()
 
 
-def test_nonzero_typed_property_creates_observed_threat() -> None:
+def test_only_important_typed_properties_create_observed_threats() -> None:
     asset = item(99, "spirit")
     asset["properties"] = {
         "TechPower": {
             "label": "Spirit Power",
             "value": "18",
             "disable_value": "0",
+            "tooltip_is_important": False,
         }
     }
 
+    assert classify_observed_item_threats(asset) == frozenset()
+
+    asset["properties"]["TechPower"]["tooltip_is_important"] = True
+
     assert classify_observed_item_threats(asset) == frozenset({"spirit_pressure"})
+
+
+def test_hidden_minor_resist_does_not_make_melee_charge_a_bullet_response() -> None:
+    asset = item(99, "melee_charge")
+    asset["description"] = {"desc": "Charge a heavy melee attack faster."}
+    asset["properties"] = {
+        "BulletResist": {
+            "label": "Bullet Resist",
+            "provided_property_type": "MODIFIER_VALUE_BULLET_ARMOR_DAMAGE_RESIST",
+            "tooltip_is_important": False,
+            "value": "0.06",
+        }
+    }
+
+    assert "bullet_pressure" not in classify_item_threat_responses(asset)
+
+
+def test_enemy_resist_reduction_is_not_a_defensive_response() -> None:
+    hunter_aura = item(99, "hunters_aura")
+    hunter_aura["description"] = {
+        "desc": "Reduces nearby enemies' Bullet Resist and Fire Rate."
+    }
+    hunter_aura["properties"] = {
+        "BulletArmorReduction": {
+            "label": "Enemy Bullet Resist",
+            "provided_property_type": "MODIFIER_VALUE_BULLET_ARMOR_RESIST_REDUCTION",
+            "tooltip_is_important": True,
+            "value": "-0.12",
+        },
+        "FireRateSlow": {
+            "label": "Enemy Fire Rate Slow",
+            "provided_property_type": "MODIFIER_VALUE_FIRE_RATE_SLOW",
+            "tooltip_is_important": True,
+            "value": "0.15",
+        },
+    }
+    comparator = item(100, "weapon_item")
+    comparator["description"] = {"desc": "Gain Weapon Damage."}
+
+    assert classify_item_threat_responses(hunter_aura) == frozenset({"bullet_pressure"})
+    assert conditional_item_decision(hunter_aura, comparator) == (
+        "Heavy bullet damage",
+        "Fire Rate Slow",
+        "Before the next bullet-heavy fight",
+        "Keep default when weapon pressure matters more",
+    )
+
+
+def test_bullet_resist_reduction_label_is_not_bullet_defense() -> None:
+    shredder = item(99, "bullet_resist_shredder")
+    shredder["description"] = {"desc": "Reduces Bullet Resist on enemies."}
+    shredder["properties"] = {
+        "BulletArmorReduction": {
+            "label": "Bullet Resist",
+            "tooltip_is_important": True,
+            "value": "-10",
+        }
+    }
+
+    assert "bullet_pressure" not in classify_item_threat_responses(shredder)
+
+
+def test_automatically_does_not_create_ally_protection() -> None:
+    active_reload = item(99, "active_reload")
+    active_reload["description"] = {
+        "desc": "Automatically finish reloading and gain Bullet Lifesteal."
+    }
+
+    assert "ally_protection" not in classify_item_threat_responses(active_reload)
+    assert optional_item_decision(active_reload) == (
+        "You need sustain between fights",
+        "Sustain",
+        "Immediate damage or defense matters more",
+    )
+
+
+def test_upgrade_only_ability_text_does_not_create_enemy_threat() -> None:
+    rising_ram = item(99, "rising_ram")
+    rising_ram["type"] = "ability"
+    rising_ram["description"] = {
+        "desc": "Charge forward and knock enemies upward.",
+        "t1_desc": "+25% Weapon Damage for 5s.",
+    }
+
+    assert "bullet_pressure" not in classify_observed_item_threats(rising_ram)
+
+    assassinate = item(100, "assassinate")
+    assassinate["type"] = "ability"
+    assassinate["description"] = {
+        "desc": "Deal damage with bonus Weapon Damage against wounded targets."
+    }
+
+    assert "bullet_pressure" in classify_observed_item_threats(assassinate)
+
+
+def test_optional_item_copy_uses_only_controlled_grounded_purposes() -> None:
+    weapon = item(99, "weapon")
+    weapon["description"] = {"desc": "Gain Weapon Damage and Fire Rate."}
+
+    assert optional_item_decision(weapon) == (
+        "Weapon pressure is your next priority",
+        "Weapon Pressure",
+        "Defense or Spirit pressure matters more",
+    )
+
+    unknown = item(100, "unknown")
+    unknown["description"] = {"desc": "A mysterious item."}
+    assert optional_item_decision(unknown) is None
+
+
+def test_optional_item_copy_uses_visible_innate_properties() -> None:
+    extra_spirit = item(99, "extra_spirit")
+    extra_spirit["properties"] = {
+        "TechPower": {
+            "label": "Spirit Power",
+            "provided_property_type": "MODIFIER_VALUE_TECH_POWER",
+            "tooltip_is_elevated": True,
+            "tooltip_is_important": False,
+            "value": "10",
+        }
+    }
+
+    assert optional_item_decision(extra_spirit) == (
+        "Spirit pressure is your next priority",
+        "Spirit Pressure",
+        "Defense or weapon pressure matters more",
+    )

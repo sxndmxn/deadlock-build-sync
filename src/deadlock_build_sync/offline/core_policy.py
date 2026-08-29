@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 from collections import Counter
 from dataclasses import dataclass
-from itertools import combinations
+from itertools import chain, combinations
 from typing import Any
 
 import numpy as np
@@ -34,6 +34,7 @@ MINIMUM_EFFECTIVE_SUPPORT = 20.0
 PROPENSITY_FLOOR = 0.05
 CLIPS = (5.0, 10.0, 20.0)
 CORE_TARGET_TOLERANCE_SHARE = 0.10
+SELECTION_FOLDS = ("train", "validation")
 
 STATE_FEATURES = (
     "average_badge",
@@ -71,17 +72,11 @@ class DrContrast:
     estimate: float
     interval: tuple[float, float]
     fold_estimates: dict[str, float]
+    fold_diagnostics: dict[str, dict[str, Any]]
     clipped_sensitivity: dict[str, float]
     stable: bool
     admitted: bool
     failed_gates: tuple[str, ...]
-
-
-def _bundle_score(
-    item_ids: tuple[int, ...], support: int, affinity: dict[int, int]
-) -> float:
-    mechanic_score = sum(affinity.get(item_id, 0) for item_id in item_ids)
-    return (1 + math.log1p(mechanic_score)) * math.log1p(support)
 
 
 def _legal_target(graph: ItemGraph, item_ids: tuple[int, ...]) -> bool:
@@ -99,27 +94,36 @@ def _legal_target(graph: ItemGraph, item_ids: tuple[int, ...]) -> bool:
 type _BackboneRow = tuple[tuple[int, ...], int, dict[str, int]]
 
 
-def _bundle_support_by_fold(
+def _bundle_support_by_size_and_fold(
     inventories: dict[tuple[int, int], tuple[int, ...]],
     folds_by_match: dict[int, str],
-    size: int,
     excluded_item_ids: frozenset[int],
-) -> tuple[Counter[tuple[int, ...]], dict[str, Counter[tuple[int, ...]]]]:
-    counts: Counter[tuple[int, ...]] = Counter()
-    fold_counts = {fold: Counter() for fold in ("train", "validation", "test")}
+) -> dict[int, dict[str, Counter[tuple[int, ...]]]]:
+    inventories_by_fold: dict[str, list[tuple[int, ...]]] = {
+        fold: [] for fold in ("train", "validation", "test")
+    }
     for (match_id, _), inventory in inventories.items():
         distinct = tuple(sorted(set(inventory) - excluded_item_ids))
-        if len(distinct) < size:
+        if len(distinct) < MINIMUM_BACKBONE_SIZE:
             continue
-        bundles = tuple(combinations(distinct, size))
-        counts.update(bundles)
-        fold_counts[folds_by_match[match_id]].update(bundles)
-    return counts, fold_counts
+        inventories_by_fold[folds_by_match[match_id]].append(distinct)
+    result: dict[int, dict[str, Counter[tuple[int, ...]]]] = {}
+    for size in range(MINIMUM_BACKBONE_SIZE, MAXIMUM_BACKBONE_SIZE + 1):
+        fold_counts: dict[str, Counter[tuple[int, ...]]] = {}
+        for fold, fold_inventories in inventories_by_fold.items():
+            fold_counts[fold] = Counter(
+                chain.from_iterable(
+                    combinations(inventory, size)
+                    for inventory in fold_inventories
+                    if len(inventory) >= size
+                )
+            )
+        result[size] = fold_counts
+    return result
 
 
 def _qualified_backbones_at_size(
     size: int,
-    counts: Counter[tuple[int, ...]],
     fold_counts: dict[str, Counter[tuple[int, ...]]],
     fold_totals: Counter[str],
     graph: ItemGraph,
@@ -128,21 +132,26 @@ def _qualified_backbones_at_size(
     audit: list[dict[str, Any]],
 ) -> list[_BackboneRow]:
     qualified = []
-    ranked = sorted(counts.items(), key=lambda row: (-row[1], row[0]))[:256]
-    for item_ids, support in ranked:
-        if support < minimum_support:
+    ranked = sorted(fold_counts["train"].items(), key=lambda row: (-row[1], row[0]))[
+        :256
+    ]
+    for item_ids, training_support in ranked:
+        if training_support < minimum_support:
             break
         fold_matches = {
             fold: matches[item_ids] for fold, matches in fold_counts.items()
         }
+        support = sum(fold_matches[fold] for fold in SELECTION_FOLDS)
         fold_shares = [
             fold_matches[fold] / fold_totals[fold]
-            for fold in fold_counts
+            for fold in SELECTION_FOLDS
             if fold_totals[fold]
         ]
         gates = {
             "mechanically_legal": _legal_target(graph, item_ids),
-            "effective_support": min(fold_matches.values()) >= minimum_support,
+            "effective_support": all(
+                fold_matches[fold] >= minimum_support for fold in SELECTION_FOLDS
+            ),
             "temporally_stable": bool(fold_shares)
             and max(fold_shares) - min(fold_shares) <= MAXIMUM_TEMPORAL_SHARE_RANGE,
         }
@@ -153,7 +162,6 @@ def _qualified_backbones_at_size(
             "matches": support,
             "fold_matches": fold_matches,
             "mechanic_affinity": sum(affinity.get(item_id, 0) for item_id in item_ids),
-            "bundle_score": _bundle_score(item_ids, support, affinity),
             "gates": gates,
             "admitted": admitted,
         })
@@ -162,8 +170,8 @@ def _qualified_backbones_at_size(
     return sorted(
         qualified,
         key=lambda row: (
-            -_bundle_score(row[0], row[1], affinity),
             -row[1],
+            -sum(affinity.get(item_id, 0) for item_id in row[0]),
             row[0],
         ),
     )
@@ -183,14 +191,15 @@ def select_supported_backbone(
     fold_totals = Counter(folds_by_match[identity[0]] for identity in inventories)
     ranked_by_size: dict[int, list[tuple[tuple[int, ...], int, dict[str, int]]]] = {}
     audit: list[dict[str, Any]] = []
+    fold_counts_by_size = _bundle_support_by_size_and_fold(
+        inventories,
+        folds_by_match,
+        excluded_item_ids,
+    )
     for size in range(MINIMUM_BACKBONE_SIZE, MAXIMUM_BACKBONE_SIZE + 1):
-        counts, fold_counts = _bundle_support_by_fold(
-            inventories, folds_by_match, size, excluded_item_ids
-        )
         ranked_by_size[size] = _qualified_backbones_at_size(
             size,
-            counts,
-            fold_counts,
+            fold_counts_by_size[size],
             fold_totals,
             graph,
             affinity,
@@ -241,8 +250,12 @@ def _addition_support(
         additions = set(inventory) - backbone_ids - excluded_item_ids
         item_counts.update(additions)
         fold_item_counts[folds_by_match[match_id]].update(additions)
-    ranked = sorted(item_counts, key=lambda item_id: (-item_counts[item_id], item_id))
-    return item_counts, fold_item_counts, ranked[:20]
+    selection_counts = fold_item_counts["train"] + fold_item_counts["validation"]
+    ranked = sorted(
+        fold_item_counts["train"],
+        key=lambda item_id: (-fold_item_counts["train"][item_id], item_id),
+    )
+    return selection_counts, fold_item_counts, ranked[:20]
 
 
 def _joint_addition_support(
@@ -268,7 +281,7 @@ def _joint_addition_support(
             bundles = tuple(combinations(available, needed))
             counts.update(bundles)
             fold_counts[folds_by_match[match_id]].update(bundles)
-        joint_counts[needed] = counts
+        joint_counts[needed] = fold_counts["train"]
         joint_fold_counts[needed] = fold_counts
     return joint_counts, joint_fold_counts
 
@@ -298,7 +311,7 @@ def _evaluate_completion(
     target = (*backbone.item_ids, *additions)
     fold_shares = [
         joint_fold_matches[fold] / supporting_fold_totals[fold]
-        for fold in joint_fold_matches
+        for fold in SELECTION_FOLDS
         if supporting_fold_totals[fold]
     ]
     total_cost = sum(item_costs.get(item_id, maximum_cost + 1) for item_id in target)
@@ -310,10 +323,12 @@ def _evaluate_completion(
         ),
         "temporal_support": all(
             fold_item_counts[fold][item_id] >= MINIMUM_SUPPORT
-            for fold in ("train", "validation", "test")
+            for fold in SELECTION_FOLDS
             for item_id in additions
         ),
-        "joint_effective_support": min(joint_fold_matches.values()) >= MINIMUM_SUPPORT,
+        "joint_effective_support": all(
+            joint_fold_matches[fold] >= MINIMUM_SUPPORT for fold in SELECTION_FOLDS
+        ),
         "joint_temporal_stability": bool(fold_shares)
         and max(fold_shares) - min(fold_shares) <= MAXIMUM_TEMPORAL_SHARE_RANGE,
     }
@@ -387,14 +402,14 @@ def complete_default_core(
     )
     candidates: list[_CompletionScore] = []
     audit: list[dict[str, Any]] = []
-    for needed, counts in joint_counts.items():
+    for needed in joint_counts:
         for additions in combinations(pool, needed):
             bundle = tuple(sorted(additions))
-            joint = counts[bundle]
             joint_fold_matches = {
                 fold: fold_counts[bundle]
                 for fold, fold_counts in joint_fold_counts[needed].items()
             }
+            joint = sum(joint_fold_matches[fold] for fold in SELECTION_FOLDS)
             record, score = _evaluate_completion(
                 backbone,
                 additions,
@@ -580,11 +595,8 @@ def cross_fitted_dr_contrast(
     ).with_columns(
         (pl.col("item_id") == treatment_item_id).cast(pl.Int8).alias("treatment")
     )
-    support = frame.filter(frame["treatment"] == 1).height
-    comparison_support = frame.height - support
-    if support < 2 or comparison_support < 2:
-        raise ValueError("contrast lacks both logged actions")
-    fold_scores = {}
+    fold_scores: dict[str, dict[str, np.ndarray]] = {}
+    fold_diagnostics: dict[str, dict[str, Any]] = {}
     for fold_name in ("train", "validation", "test"):
         subset = frame.filter(pl.col("fold") == fold_name)
         if (
@@ -592,10 +604,36 @@ def cross_fitted_dr_contrast(
             or subset["treatment"].n_unique() < 2
             or subset["match_id"].n_unique() < 2
         ):
-            raise ValueError(f"{fold_name} lacks cross-fitting support")
-        fold_scores[fold_name] = _cross_fitted_scores(subset, folds)
+            if fold_name in SELECTION_FOLDS:
+                raise ValueError(f"{fold_name} lacks cross-fitting support")
+            continue
+        result = _cross_fitted_scores(subset, folds)
+        fold_scores[fold_name] = result
+        fold_treatment = result["treatment"]
+        fold_propensity = result["propensity"]
+        fold_observed_propensity = np.where(
+            fold_treatment == 1, fold_propensity, 1 - fold_propensity
+        )
+        fold_weights = 1 / fold_observed_propensity
+        fold_interval = _cluster_interval(result["influence"], result["match_ids"])
+        fold_diagnostics[fold_name] = {
+            "support": int(fold_treatment.sum()),
+            "comparison_support": int(len(fold_treatment) - fold_treatment.sum()),
+            "effective_support": float(
+                fold_weights.sum() ** 2 / np.square(fold_weights).sum()
+            ),
+            "overlap": float(
+                np.mean((fold_propensity >= 0.1) & (fold_propensity <= 0.9))
+            ),
+            "maximum_weight": float(fold_weights.max()),
+            "maximum_standardized_mean_difference": _weighted_smd(
+                result["x"], fold_treatment, fold_propensity
+            ),
+            "estimate": float(result["influence"].mean()),
+            "interval": [float(fold_interval[0]), float(fold_interval[1])],
+        }
     scores = {
-        key: np.concatenate([fold_scores[fold][key] for fold in fold_scores])
+        key: np.concatenate([fold_scores[fold][key] for fold in SELECTION_FOLDS])
         for key in next(iter(fold_scores.values()))
     }
     treatment = scores["treatment"]
@@ -608,7 +646,8 @@ def cross_fitted_dr_contrast(
     estimate = float(scores["influence"].mean())
     interval = _cluster_interval(scores["influence"], scores["match_ids"])
     fold_estimates = {
-        fold: float(result["influence"].mean()) for fold, result in fold_scores.items()
+        fold: float(diagnostics["estimate"])
+        for fold, diagnostics in fold_diagnostics.items()
     }
     clipped_sensitivity = {}
     for clip in CLIPS:
@@ -623,15 +662,46 @@ def cross_fitted_dr_contrast(
         clipped_sensitivity[f"clip={clip:g}"] = float(
             np.mean(treated_score - control_score)
         )
-    stable = max(fold_estimates.values()) - min(fold_estimates.values()) <= 0.05
+    selection_estimates = [fold_estimates[fold] for fold in SELECTION_FOLDS]
+    stable = max(selection_estimates) - min(selection_estimates) <= 0.05
     gates = {
-        "support": min(support, comparison_support) >= MINIMUM_SUPPORT,
-        "effective_support": effective_support >= MINIMUM_EFFECTIVE_SUPPORT,
-        "overlap": overlap >= MINIMUM_OVERLAP,
-        "balance": maximum_smd <= MAXIMUM_STANDARDIZED_MEAN_DIFFERENCE,
-        "bounded_uncertainty": interval[1] - interval[0] <= MAXIMUM_INTERVAL_WIDTH,
+        "support": all(
+            min(
+                int(fold_diagnostics[fold]["support"]),
+                int(fold_diagnostics[fold]["comparison_support"]),
+            )
+            >= MINIMUM_SUPPORT
+            for fold in SELECTION_FOLDS
+        ),
+        "effective_support": all(
+            float(fold_diagnostics[fold]["effective_support"])
+            >= MINIMUM_EFFECTIVE_SUPPORT
+            for fold in SELECTION_FOLDS
+        ),
+        "overlap": all(
+            float(fold_diagnostics[fold]["overlap"]) >= MINIMUM_OVERLAP
+            for fold in SELECTION_FOLDS
+        ),
+        "balance": all(
+            float(fold_diagnostics[fold]["maximum_standardized_mean_difference"])
+            <= MAXIMUM_STANDARDIZED_MEAN_DIFFERENCE
+            for fold in SELECTION_FOLDS
+        ),
+        "bounded_uncertainty": all(
+            float(fold_diagnostics[fold]["interval"][1])
+            - float(fold_diagnostics[fold]["interval"][0])
+            <= MAXIMUM_INTERVAL_WIDTH
+            for fold in SELECTION_FOLDS
+        ),
+        "positive_advantage": all(
+            float(fold_diagnostics[fold]["interval"][0]) > 0 for fold in SELECTION_FOLDS
+        ),
         "temporal_stability": stable,
     }
+    support = sum(int(fold_diagnostics[fold]["support"]) for fold in SELECTION_FOLDS)
+    comparison_support = sum(
+        int(fold_diagnostics[fold]["comparison_support"]) for fold in SELECTION_FOLDS
+    )
     return DrContrast(
         treatment_item_id=treatment_item_id,
         comparator_item_id=comparator_item_id,
@@ -644,6 +714,7 @@ def cross_fitted_dr_contrast(
         estimate=estimate,
         interval=interval,
         fold_estimates=fold_estimates,
+        fold_diagnostics=fold_diagnostics,
         clipped_sensitivity=clipped_sensitivity,
         stable=stable,
         admitted=all(gates.values()),

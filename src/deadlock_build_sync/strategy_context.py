@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from .purchase_guide import PurchaseGuide
     from .snapshot import SnapshotManifest
 
-CONTEXT_SCHEMA_VERSION = 12
+CONTEXT_SCHEMA_VERSION = 15
 KIT_BASIS_SCHEMA_VERSION = 3
 NARRATIVE_BASIS_SCHEMA_VERSION = 10
 TIER_LABELS = {1: "I", 2: "II", 3: "III", 4: "IV"}
@@ -111,7 +111,7 @@ def _context_item_records(entry: dict[str, Any]) -> list[dict[str, Any]]:
     core = entry.get("core")
     if isinstance(core, dict) and isinstance(core.get("items"), list):
         records.extend(item for item in core["items"] if isinstance(item, dict))
-        optional = core.get("optional_final_slot_cards")
+        optional = core.get("optional_core_substitution_cards")
         if isinstance(optional, list):
             records.extend(item for item in optional if isinstance(item, dict))
     tiers = entry.get("tiers")
@@ -633,7 +633,8 @@ def build_hero_strategy_context(
         ],
         "semantics": (
             "CORE ITEMS is the component-expanded non-optional Queue path. "
-            "OPTIONAL CORE contains only admitted like-state final-slot swaps. "
+            "OPTIONAL CORE contains only admitted like-state non-backbone CORE "
+            "substitutions. "
             "OPTIONAL CORE and TIER 1–4 never enter the automatic Queue."
         ),
     }
@@ -680,7 +681,7 @@ def build_hero_strategy_context(
                 }
                 for item in guide.core_items
             ],
-            "optional_final_slot_cards": [
+            "optional_core_substitution_cards": [
                 card.__dict__ for card in guide.core_alternatives
             ],
         },
@@ -694,7 +695,7 @@ def build_hero_strategy_context(
             "Observed adopter outcomes and ending-duration profiles are descriptive associations, not item effects or live power curves.",
             "Ability actions use reached-state support and exact legal levels; price tiers are not ability quarters.",
             "Only mechanics-backed, state-observable policy branches may be explained.",
-            "CORE ITEMS is the component-expanded automatic Queue path; OPTIONAL CORE contains gated final-slot swaps, and all optional rows remain outside Queue.",
+            "CORE ITEMS is the component-expanded automatic Queue path; OPTIONAL CORE contains gated non-backbone CORE substitutions, and all optional rows remain outside Queue.",
             "Cross-fitted doubly robust contrasts are assumption-dependent like-state estimates, not proof that an item causes wins.",
             "Conditional item cards must use VS, WHY, SWAP, WHEN, and SKIP lines grounded in both item mechanics; they must not state an outcome effect.",
             "Do not invent mechanics, numeric effects, threats, combos, or matchups absent from this packet.",

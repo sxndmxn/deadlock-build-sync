@@ -157,6 +157,7 @@ class GuardOperator(StrEnum):
 
 _OBSERVABLE_FIELDS: dict[str, type[Any] | tuple[type[Any], ...]] = {
     "enemy.heroes": (list, tuple, set),
+    "enemy.lane_heroes": (list, tuple, set),
     "enemy.threats": (list, tuple, set),
     "enemy.items": (list, tuple, set),
     "ally.heroes": (list, tuple, set),
@@ -503,7 +504,7 @@ class BuildPolicy:
             PolicyError: If identity fields or node/claim IDs are invalid.
 
         """
-        if self.schema_version not in {1, 2, 3, 4}:
+        if self.schema_version not in {1, 2, 3, 4, 5}:
             raise PolicyError(f"unsupported policy schema {self.schema_version}")
         if self.hero_id <= 0:
             raise PolicyError("policy hero id must be positive")
@@ -938,6 +939,10 @@ class CounterCard:
     failure_condition: str
     evidence_ref: str
     enemy_hero_id: int | None = None
+    enemy_scope: str = "whole_enemy_team"
+    phase: int = 0
+    tier: int = 1
+    enemy_mechanics_refs: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         """Require the complete mechanics-first counter contract.
@@ -967,6 +972,13 @@ class CounterCard:
             )
         if self.enemy_hero_id is not None and self.enemy_hero_id <= 0:
             raise PolicyError("counter card enemy hero id must be positive")
+        if (
+            self.enemy_scope not in {"same_lane", "whole_enemy_team"}
+            or not 0 <= self.phase <= 3
+            or not 1 <= self.tier <= 4
+            or not self.enemy_mechanics_refs
+        ):
+            raise PolicyError("counter card has invalid enemy-state evidence")
 
     def as_dict(self) -> dict[str, Any]:
         """Return the complete serializable decision contract.
@@ -1015,7 +1027,7 @@ class CoreAlternativeCard:
     fold_estimates: dict[str, float]
 
     def __post_init__(self) -> None:
-        """Require an estimable, mechanics-grounded final-slot decision card.
+        """Require an estimable, mechanics-grounded CORE substitution card.
 
         Raises:
             PolicyError: If the card fails its identity or evidence contract.
@@ -1041,7 +1053,8 @@ class CoreAlternativeCard:
             or not 0.5 <= self.overlap <= 1
         )
         interval_invalid = (
-            self.interval[0] > self.interval[1]
+            self.interval[0] <= 0
+            or self.interval[0] > self.interval[1]
             or self.interval[1] - self.interval[0] > 0.10
         )
         content_invalid = (
@@ -1049,7 +1062,14 @@ class CoreAlternativeCard:
             or not self.mechanics_refs
             or not self.comparator_mechanics_refs
         )
-        folds_invalid = set(self.fold_estimates) != {"train", "validation", "test"}
+        folds_invalid = (
+            not {"train", "validation"} <= set(self.fold_estimates)
+            or abs(
+                self.fold_estimates.get("train", 0.0)
+                - self.fold_estimates.get("validation", 0.0)
+            )
+            > 0.05
+        )
         if any((
             identity_invalid,
             evidence_invalid,

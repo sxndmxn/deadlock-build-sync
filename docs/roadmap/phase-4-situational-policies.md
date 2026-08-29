@@ -13,8 +13,9 @@ are all proven.
 - Use a versioned mechanics-first threat vocabulary: healing, bullet pressure, spirit
   pressure, control, mobility/escape, ally protection, and active/slot burden. Unknown
   threats abstain.
-- Extend decision state with enemy heroes/items, allied heroes, and objectives. These
-  values are inputs to recommendation, never inferred from raw matchup win rate.
+- Extend decision state with whole-team and same-lane enemy heroes, enemy items, allied
+  heroes, and objectives. These values are inputs to recommendation, never inferred
+  from raw matchup win rate.
 - Generate candidates from pinned item mechanics, then compare only alternatives that
   were legal and similarly accessible at the same decision opportunity. Include save
   and the default continuation as comparators.
@@ -47,16 +48,20 @@ are all proven.
 
 ## Implementation record
 
-- Evidence schema 2 admits at most seven distinct branches from the seven-item threat
-  vocabulary and requires a mechanic reference, same-opportunity comparator, both
-  supports at 20, effective support 20, overlap 0.5, temporal stability, and a bounded
-  positive comparative interval no wider than 0.10.
+- Evidence schema 8 admits only branches with an exact enemy scope, match phase, price
+  tier, and enemy-mechanic reference. It requires a same-opportunity comparator, at
+  least 20 target and comparator observations in training, validation, and untouched
+  test, positive estimates in all three folds, and a bounded train-to-validation
+  difference. Base descriptions and important active properties are the only mechanics
+  inputs; hidden minor stats, resistance reduction, and upgrade-only ability text do not
+  qualify.
 - The producer compares items within the same hero, enemy scope, price tier, and match
   phase, retaining the existing partial pooling and overlap diagnostics. Every candidate
   and gate remains in `candidate_audit`; failed comparisons emit explicit abstentions.
-- Admitted branches enter one typed choice with conjunctive threat/enemy guards and a
-  `CounterCard`. The default still enters CORE, while optional tier cards receive only
-  their compact validated conditional instruction.
+- Admitted branches enter one typed choice with conjunctive threat, exact enemy-scope,
+  and phase guards plus a `CounterCard`. The default still enters CORE, while optional
+  tier cards receive only their compact validated conditional instruction. Player text
+  names the threat, while enemy identity remains in the guards and audit evidence.
 - The read-only recommender combines explicit threats with conservative pinned
   enemy-item mechanics, recognizes four-active slot burden, rejects unknown items or
   conflicting branches, filters illegal purchases, and exposes the admitted contract.

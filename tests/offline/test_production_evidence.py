@@ -1,30 +1,39 @@
 from collections import Counter
-from itertools import combinations, islice
+from itertools import combinations
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any, cast
 from unittest.mock import patch
 
 import duckdb
 import polars as pl
+import pytest
 
 from deadlock_build_sync.mechanics import ItemGraph
+from deadlock_build_sync.offline.build_paths import DiscoveredBuildPath
 from deadlock_build_sync.offline.config import RunPaths
 from deadlock_build_sync.offline.core_policy import (
     BackboneSelection,
+    _bundle_support_by_size_and_fold,
     complete_default_core,
     cross_fitted_dr_contrast,
     select_supported_backbone,
 )
 from deadlock_build_sync.offline.production_evidence import (
+    UnsupportedBuildPathError,
+    _core_economy_reference,
     _core_target_order,
-    _duplicate_free_core_candidates,
     _expanded_default_path,
     _item_payload,
     _maximum_agreement_orders,
     _parallel_hero_export,
     _patch_content_sha256,
+    _path_cohort_summary,
+    _path_payloads,
     _sequence_rows,
     _situational_policy,
-    _top_core_candidates,
+    _situational_selection_matchups,
+    _tier_policy,
 )
 
 
@@ -37,6 +46,10 @@ def _item_metric_row() -> dict[str, object]:
         "slot": "spirit",
         "active": False,
         "adopter_matches": 100,
+        "selection_adopter_matches": 100,
+        "training_adopter_matches": 50,
+        "validation_adopter_matches": 50,
+        "test_adopter_matches": 0,
         "hero_player_matches": 200,
         "purchase_events": 105,
         "wins": 55,
@@ -47,6 +60,17 @@ def _item_metric_row() -> dict[str, object]:
         "buy_nw_q25": 10_000.0,
         "buy_nw_q75": 14_000.0,
         "valid_buy_nw_share": 0.95,
+        "selection_median_buy_time_s": 900.0,
+        "selection_median_valid_buy_net_worth": 12_000.0,
+        "selection_buy_nw_q25": 10_000.0,
+        "selection_buy_nw_q75": 14_000.0,
+        "selection_valid_buy_nw_observations": 100,
+        "training_valid_buy_nw_observations": 50,
+        "validation_valid_buy_nw_observations": 50,
+        "training_buy_nw_q25": 10_000.0,
+        "training_buy_nw_q75": 14_000.0,
+        "validation_buy_nw_q25": 10_000.0,
+        "validation_buy_nw_q75": 14_000.0,
         "imbued_ability_id": 40,
         "target_matches": 75,
         "imbue_observations": 100,
@@ -54,13 +78,45 @@ def _item_metric_row() -> dict[str, object]:
     }
 
 
+def test_situational_matchups_keep_full_64_bit_item_ids_after_early_rows() -> None:
+    item_ids = [
+        item_id
+        for enemy_id in range(1, 53)
+        for item_id in (
+            (100 + enemy_id * 2, 101 + enemy_id * 2)
+            if enemy_id < 52
+            else (2_717_651_715, 2_717_651_716)
+        )
+    ]
+    cells = pl.DataFrame(
+        {
+            "scope": ["same_lane"] * len(item_ids),
+            "hero_id": [6] * len(item_ids),
+            "enemy_hero_id": [enemy_id for enemy_id in range(1, 53) for _ in range(2)],
+            "phase": [1] * len(item_ids),
+            "tier": [2] * len(item_ids),
+            "item_id": item_ids,
+            "observations": [40] * len(item_ids),
+            "outcome_rate": [0.6, 0.5] * 52,
+        },
+        schema_overrides={"item_id": pl.Int64},
+    )
+
+    matchups = _situational_selection_matchups(cells)
+
+    assert matchups["comparator_item_id"].dtype == pl.Int64
+    assert 2_717_651_716 in matchups["comparator_item_id"].to_list()
+
+
 def test_item_payload_admits_only_supported_majority_imbue_target() -> None:
     assets = {40: {"id": 40, "name": "Frozen Shelter"}}
+    fold_eligible = {"train": 100, "validation": 100, "test": 0}
 
-    supported = _item_payload(_item_metric_row(), assets)
+    supported = _item_payload(_item_metric_row(), assets, fold_eligible)
     weak = _item_payload(
         {**_item_metric_row(), "target_matches": 49, "target_share": 0.49},
         assets,
+        fold_eligible,
     )
 
     assert supported["imbue_target_ability_id"] == 40
@@ -96,7 +152,151 @@ def test_hero_export_runs_eight_workers_and_preserves_order() -> None:
     assert [row["hero_id"] for row in result] == list(range(1, 11))
 
 
-def test_supported_backbone_uses_generic_mechanics_and_temporal_support() -> None:
+def test_batched_backbone_counts_match_per_inventory_counting() -> None:
+    inventories = {
+        (1, 0): (1, 2, 3, 4, 5, 6),
+        (2, 0): (1, 2, 3, 4, 5),
+        (3, 0): (1, 2, 3, 4),
+        (4, 0): (1, 2, 3, 4, 4),
+    }
+    folds = {1: "train", 2: "validation", 3: "test", 4: "train"}
+
+    batched = _bundle_support_by_size_and_fold(
+        inventories,
+        folds,
+        frozenset({6}),
+    )
+
+    for size in (4, 5, 6):
+        expected = {fold: Counter() for fold in ("train", "validation", "test")}
+        for (match_id, _), inventory in inventories.items():
+            distinct = tuple(sorted(set(inventory) - {6}))
+            if len(distinct) >= size:
+                expected[folds[match_id]].update(combinations(distinct, size))
+        assert batched[size] == expected
+
+
+def test_path_export_retains_valid_sibling_when_one_path_abstains() -> None:
+    bad = DiscoveredBuildPath(
+        "bad",
+        frozenset({(1, 0)}),
+        (101,),
+        {"train": 1},
+        {},
+    )
+    good = DiscoveredBuildPath(
+        "good",
+        frozenset({(2, 0)}),
+        (102,),
+        {"train": 1},
+        {},
+    )
+    context = cast(
+        "Any",
+        SimpleNamespace(
+            mechanics_assets_by_id={},
+            folds_by_match={1: "train", 2: "train"},
+        ),
+    )
+
+    def build_payload(*args: object, **kwargs: object) -> dict[str, str]:
+        del kwargs
+        path = cast("DiscoveredBuildPath", args[3])
+        if path.path_id == "bad":
+            raise UnsupportedBuildPathError("unsupported tier")
+        return {"path_id": path.path_id}
+
+    con = duckdb.connect()
+    try:
+        with (
+            patch(
+                "deadlock_build_sync.offline.production_evidence._path_label",
+                side_effect=["Bad", "Good"],
+            ),
+            patch(
+                "deadlock_build_sync.offline.production_evidence._build_path_payload",
+                side_effect=build_payload,
+            ),
+        ):
+            payloads, abstentions = _path_payloads(
+                con,
+                12,
+                {"id": 12},
+                (bad, good),
+                {(1, 0): (101,), (2, 0): (102,)},
+                context,
+            )
+    finally:
+        con.close()
+
+    assert payloads == [{"path_id": "good"}]
+    assert abstentions == [{"path_id": "bad", "reason": "unsupported tier"}]
+
+
+def test_core_budget_summaries_ignore_test_rows() -> None:
+    con = duckdb.connect()
+    try:
+        con.execute(
+            """
+            CREATE TABLE player_matches(
+                match_id INTEGER,
+                player_slot INTEGER,
+                duration_s INTEGER,
+                final_net_worth INTEGER,
+                average_badge INTEGER
+            )
+            """
+        )
+        con.execute(
+            "INSERT INTO player_matches VALUES "
+            "(1, 0, 1000, 10000, 90), "
+            "(2, 0, 2000, 20000, 90), "
+            "(3, 0, 9999, 1000000, 90)"
+        )
+        con.execute("CREATE TABLE match_folds(match_id INTEGER, fold VARCHAR)")
+        con.execute(
+            "INSERT INTO match_folds VALUES "
+            "(1, 'train'), (2, 'validation'), (3, 'test')"
+        )
+        con.execute(
+            """
+            CREATE TABLE purchases(
+                match_id INTEGER,
+                player_slot INTEGER,
+                average_badge INTEGER,
+                sold_time INTEGER,
+                cost INTEGER
+            )
+            """
+        )
+        con.execute(
+            """
+            INSERT INTO purchases
+            SELECT match_id, 0, 90, 0,
+                   CASE WHEN match_id = 3 THEN 100000 ELSE 1000 END
+            FROM range(1, 4) matches(match_id), range(4)
+            """
+        )
+
+        cohort = _path_cohort_summary(
+            con,
+            frozenset({(1, 0), (2, 0), (3, 0)}),
+        )
+        reference = _core_economy_reference(
+            con,
+            {"minimum_badge": 71, "maximum_badge": 115},
+        )
+    finally:
+        con.close()
+
+    assert cohort == (3, 15_000)
+    assert reference["matches"] == 2
+    assert reference["player_matches"] == 2
+    assert reference["median_final_net_worth"] == 15_000
+    assert reference["median_final_inventory_cost"] == 4_000
+
+
+def test_supported_backbone_uses_support_before_mechanic_affinity() -> None:
     item_ids = range(1, 17)
     graph = ItemGraph.from_assets([
         {
@@ -145,9 +345,9 @@ def test_supported_backbone_uses_generic_mechanics_and_temporal_support() -> Non
         20,
     )
 
-    nucleus = set(range(1, 6))
+    nucleus = set(range(9, 15))
     assert set(backbone.item_ids) == nucleus
-    assert len(backbone.item_ids) == 5
+    assert len(backbone.item_ids) == 6
     assert nucleus <= set(default)
 
 
@@ -299,14 +499,14 @@ def test_default_completion_can_choose_nine_items_to_reach_budget() -> None:
     assert default == tuple(range(1, 10))
 
 
-def test_cross_fitted_dr_contrast_admits_a_stable_like_state_tie() -> None:
-    rows = [
+def _contrast_rows(*, positive: bool) -> list[dict[str, object]]:
+    return [
         {
             "match_id": index + 1,
             "player_slot": 0,
             "fold": ("train", "validation", "test")[index // 800],
             "item_id": 10 if index % 2 == 0 else 20,
-            "won": (index // 2) % 2,
+            "won": int(index % 2 == 0) if positive else (index // 2) % 2,
             "average_badge": 90,
             "phase": 2,
             "buy_time": 1_200,
@@ -322,13 +522,42 @@ def test_cross_fitted_dr_contrast_admits_a_stable_like_state_tie() -> None:
         for index in range(2_400)
     ]
 
-    contrast = cross_fitted_dr_contrast(pl.DataFrame(rows), 10, 20)
+
+def test_cross_fitted_dr_contrast_rejects_a_stable_like_state_tie() -> None:
+    contrast = cross_fitted_dr_contrast(
+        pl.DataFrame(_contrast_rows(positive=False)), 10, 20
+    )
+
+    assert not contrast.admitted
+    assert contrast.estimate == 0
+    assert "positive_advantage" in contrast.failed_gates
+
+
+def test_cross_fitted_dr_contrast_admits_positive_train_and_validation() -> None:
+    contrast = cross_fitted_dr_contrast(
+        pl.DataFrame(_contrast_rows(positive=True)), 10, 20
+    )
 
     assert contrast.admitted
-    assert contrast.estimate == 0
+    assert contrast.estimate == 1
     assert contrast.overlap == 1
     assert contrast.effective_support >= 20
     assert set(contrast.fold_estimates) == {"train", "validation", "test"}
+
+
+def test_test_outcomes_do_not_admit_optional_core_substitutions() -> None:
+    rows = _contrast_rows(positive=True)
+    baseline = cross_fitted_dr_contrast(pl.DataFrame(rows), 10, 20)
+    without_test = cross_fitted_dr_contrast(
+        pl.DataFrame([row for row in rows if row["fold"] != "test"]),
+        10,
+        20,
+    )
+
+    assert baseline.admitted == without_test.admitted
+    assert baseline.estimate == without_test.estimate
+    assert baseline.interval == without_test.interval
+    assert set(without_test.fold_estimates) == {"train", "validation"}
 
 
 def _item_graph(components: dict[int, tuple[int, ...]]) -> ItemGraph:
@@ -352,73 +581,135 @@ def _item_graph(components: dict[int, tuple[int, ...]]) -> ItemGraph:
     ])
 
 
-def test_core_candidates_are_supported_and_deterministically_ranked() -> None:
-    first = tuple(range(1, 9))
-    second = (*range(1, 8), 9)
-    third = (*range(1, 8), 10)
-    sparse = (*range(1, 8), 11)
-
-    candidates = _top_core_candidates(
-        [first] * 30 + [second] * 20 + [third] * 20 + [sparse] * 19,
-        dict.fromkeys(range(1, 12), 1),
-        8,
-    )
-
-    assert candidates == [
-        {"item_ids": list(first), "joint_matches": 30},
-        {"item_ids": list(second), "joint_matches": 20},
-        {"item_ids": list(third), "joint_matches": 20},
-    ]
-
-
-def test_core_candidate_cap_is_applied_after_budget_filter() -> None:
-    over_budget = tuple(range(1, 9))
-    within_budget = (*range(1, 8), 9)
-
-    candidates = _top_core_candidates(
-        [over_budget] * 40 + [within_budget] * 30,
-        {**dict.fromkeys(range(1, 10), 1), 8: 100},
-        8,
-    )
-
-    assert candidates == [{"item_ids": list(within_budget), "joint_matches": 30}]
-
-
-def test_core_candidate_cap_is_applied_after_path_legality_filter() -> None:
-    invalid_suffixes = list(islice(combinations(range(3, 16), 6), 65))
-    valid = tuple(range(2, 10))
-    inventories = [
-        inventory for suffix in invalid_suffixes for inventory in [(1, 2, *suffix)] * 21
-    ] + [valid] * 20
-    graph = ItemGraph.from_assets([
+def test_tier_policy_uses_train_and_validation_only() -> None:
+    assets = [
         {
-            "id": item_id,
-            "class_name": f"item_{item_id}",
-            "name": f"Item {item_id}",
-            "cost": 1,
+            "id": tier,
+            "class_name": f"item_{tier}",
+            "name": f"Tier {tier}",
+            "cost": tier * 500,
             "item_slot_type": "weapon",
-            "item_tier": 1,
-            "component_items": ["item_1"] if item_id == 2 else [],
+            "item_tier": tier,
+            "component_items": [],
             "shopable": True,
             "disabled": False,
             "is_active_item": False,
             "is_unique": True,
         }
-        for item_id in range(1, 16)
-    ])
-    priorities = {
-        item_id: (float(item_id), float(item_id), item_id) for item_id in graph.nodes
-    }
+        for tier in range(1, 5)
+    ]
+    assets.append({
+        **assets[0],
+        "id": 6,
+        "class_name": "item_6",
+        "name": "Tier 1 Without Reliable Timing",
+    })
+    rows = [
+        {
+            "item_id": tier,
+            "tier": tier,
+            "training_adopter_matches": 30,
+            "validation_adopter_matches": 30,
+            "test_adopter_matches": test_support,
+            "selection_median_valid_buy_net_worth": tier * 1_000.0,
+            "selection_median_buy_time_s": tier * 60.0,
+            "selection_adopter_matches": 60,
+            "selection_valid_buy_nw_observations": 60,
+            "training_valid_buy_nw_observations": 30,
+            "validation_valid_buy_nw_observations": 30,
+            "selection_buy_nw_q25": tier * 900.0,
+            "selection_buy_nw_q75": tier * 1_100.0,
+            "training_buy_nw_q25": tier * 900.0,
+            "training_buy_nw_q75": tier * 1_100.0,
+            "validation_buy_nw_q25": tier * 900.0,
+            "validation_buy_nw_q75": tier * 1_100.0,
+        }
+        for tier, test_support in zip(range(1, 5), (0, 100, 1_000, 10_000), strict=True)
+    ]
+    rows.append({
+        **rows[0],
+        "item_id": 6,
+        "training_adopter_matches": 40,
+        "validation_adopter_matches": 31,
+        "selection_adopter_matches": 71,
+        "selection_valid_buy_nw_observations": 49,
+        "validation_valid_buy_nw_observations": 19,
+        "selection_median_valid_buy_net_worth": 500.0,
+    })
+    fold_eligible = {"train": 100, "validation": 100, "test": 10_000}
+    graph = ItemGraph.from_assets(assets)
 
-    candidates = _top_core_candidates(
-        inventories,
-        dict.fromkeys(range(1, 16), 1),
-        100,
-        graph=graph,
-        priorities=priorities,
+    selected = _tier_policy(
+        12,
+        pl.DataFrame(rows),
+        (),
+        frozenset(),
+        graph,
+        fold_eligible,
     )
 
-    assert candidates == [{"item_ids": list(valid), "joint_matches": 20}]
+    assert selected["item_ids_by_tier"] == {
+        "1": [1, 6],
+        "2": [2],
+        "3": [3],
+        "4": [4],
+    }
+
+    weak_validation = pl.DataFrame([
+        {**row, "validation_adopter_matches": 1} if row["tier"] == 1 else row
+        for row in rows
+    ])
+    with pytest.raises(UnsupportedBuildPathError, match="Tier 1"):
+        _tier_policy(
+            12,
+            weak_validation,
+            (),
+            frozenset(),
+            graph,
+            fold_eligible,
+        )
+
+
+def test_tier_policy_requires_one_visible_upgrade_route() -> None:
+    assets = [
+        {
+            "id": item_id,
+            "class_name": f"item_{item_id}",
+            "name": f"Item {item_id}",
+            "cost": tier * 500,
+            "item_slot_type": "weapon",
+            "item_tier": tier,
+            "component_items": (["item_1"] if item_id in {2, 3} else []),
+            "shopable": True,
+            "disabled": False,
+            "is_active_item": False,
+            "is_unique": True,
+        }
+        for item_id, tier in ((1, 1), (2, 2), (3, 3), (4, 3), (5, 4))
+    ]
+    rows = [
+        {
+            "item_id": item_id,
+            "tier": tier,
+            "training_adopter_matches": 30,
+            "validation_adopter_matches": 30,
+            "test_adopter_matches": 0,
+            "selection_median_valid_buy_net_worth": tier * 1_000.0,
+            "selection_median_buy_time_s": tier * 60.0,
+        }
+        for item_id, tier in ((1, 1), (2, 2), (4, 3), (5, 4))
+    ]
+
+    selected = _tier_policy(
+        12,
+        pl.DataFrame(rows),
+        (),
+        frozenset(),
+        ItemGraph.from_assets(assets),
+        {"train": 100, "validation": 100, "test": 0},
+    )
+
+    assert selected["item_ids_by_tier"]["1"] == [1]
 
 
 def test_subset_dp_maximizes_pairwise_target_precedence() -> None:
@@ -495,40 +786,18 @@ def test_component_expanded_default_path_buys_missing_components_first() -> None
     metrics = pl.DataFrame([
         {
             "item_id": item_id,
-            "median_valid_buy_net_worth": item_id * 1_000,
-            "median_buy_time_s": item_id * 60,
+            "selection_median_valid_buy_net_worth": item_id * 1_000,
+            "selection_median_buy_time_s": item_id * 60,
         }
         for item_id in range(2, 10)
     ])
 
     path = _expanded_default_path(
-        [{"item_ids": list(range(2, 10)), "joint_matches": 30}],
+        tuple(range(2, 10)),
         metrics,
         _item_graph({2: (1,)}),
     )
 
-    assert path == list(range(1, 10))
-
-
-def test_duplicate_free_core_filter_uses_next_supported_candidate() -> None:
-    metrics = pl.DataFrame([
-        {
-            "item_id": item_id,
-            "median_valid_buy_net_worth": 1_000 if item_id == 2 else item_id * 2_000,
-            "median_buy_time_s": item_id * 60,
-        }
-        for item_id in range(1, 10)
-    ])
-    candidates = [
-        {"item_ids": list(range(1, 9)), "joint_matches": 30},
-        {"item_ids": list(range(2, 10)), "joint_matches": 25},
-    ]
-    graph = _item_graph({2: (1,)})
-
-    filtered = _duplicate_free_core_candidates(candidates, metrics, graph)
-    path = _expanded_default_path(filtered, metrics, graph)
-
-    assert filtered == [candidates[1]]
     assert path == list(range(1, 10))
 
 
@@ -598,6 +867,8 @@ def test_situational_candidates_are_audited_but_abstain_without_uncertainty_gate
             "item_id": 3,
             "enemy_hero_id": 7,
             "scope": "same_lane",
+            "phase": 1,
+            "tier": 2,
             "observations": 40,
         }
     ]).write_csv(paths.tables / "matchup_interactions.csv")
@@ -619,15 +890,24 @@ def test_situational_candidates_are_audited_but_abstain_without_uncertainty_gate
     ]).write_csv(paths.tables / "matchup_temporal_stability.csv")
     assets = [{"id": 3, "description": {"desc": "Applies healing reduction."}}]
 
-    policy = _situational_policy(paths, 12, assets)
+    enemy_threat_evidence: dict[int, dict[str, tuple[str, ...]]] = {
+        7: {"healing": ("asset:ability:7:description",)}
+    }
+    policy = _situational_policy(
+        paths,
+        12,
+        assets,
+        enemy_threat_evidence=enemy_threat_evidence,
+    )
 
     assert policy["branches"] == []
-    assert policy["candidate_audit"][0]["threat"] == "healing"
-    assert not policy["candidate_audit"][0]["gates"]["bounded_comparative_uncertainty"]
+    candidate = policy["candidate_audit"]["sample"][0]
+    assert candidate["threat"] == "healing"
+    assert not candidate["gates"]["bounded_comparative_uncertainty"]
     assert policy["abstentions"]
 
 
-def test_situational_branch_is_emitted_only_when_every_gate_is_present(
+def test_situational_branch_requires_untouched_fold_evidence(
     tmp_path: Path,
 ) -> None:
     paths = RunPaths.create(tmp_path, "run")
@@ -637,6 +917,8 @@ def test_situational_branch_is_emitted_only_when_every_gate_is_present(
             "item_id": 3,
             "enemy_hero_id": 7,
             "scope": "same_lane",
+            "phase": 1,
+            "tier": 2,
             "observations": 40,
             "same_opportunity": True,
             "comparator_item_id": 4,
@@ -666,23 +948,28 @@ def test_situational_branch_is_emitted_only_when_every_gate_is_present(
         {"id": 4, "description": {"desc": "Gain Weapon Damage."}},
     ]
 
-    policy = _situational_policy(paths, 12, assets)
+    enemy_threat_evidence: dict[int, dict[str, tuple[str, ...]]] = {
+        7: {"healing": ("asset:ability:7:description",)}
+    }
+    policy = _situational_policy(
+        paths,
+        12,
+        assets,
+        enemy_threat_evidence=enemy_threat_evidence,
+    )
 
-    assert len(policy["branches"]) == 1
-    assert policy["branches"][0]["comparator"] == ("same-opportunity item 4 or save")
-    assert policy["branches"][0]["failure_condition"]
-    assert policy["candidate_audit"][0]["admitted"]
-    assert policy["abstentions"] == []
+    assert policy["branches"] == []
+    assert not policy["candidate_audit"]["sample"][0]["gates"]["test_support"]
 
     missing_comparator = _situational_policy(
         paths,
         12,
         assets,
         eligible_item_ids=frozenset({3}),
+        enemy_threat_evidence=enemy_threat_evidence,
     )
 
     assert missing_comparator["branches"] == []
-    assert missing_comparator["candidate_audit"] == []
 
     pl.DataFrame([
         {
@@ -690,6 +977,8 @@ def test_situational_branch_is_emitted_only_when_every_gate_is_present(
             "item_id": 3,
             "enemy_hero_id": 7,
             "scope": "same_lane",
+            "phase": 1,
+            "tier": 2,
             "observations": 40,
             "same_opportunity": True,
             "comparator_item_id": 4,
@@ -699,7 +988,164 @@ def test_situational_branch_is_emitted_only_when_every_gate_is_present(
         }
     ]).write_csv(paths.tables / "matchup_interactions.csv")
 
-    unsupported = _situational_policy(paths, 12, assets)
+    unsupported = _situational_policy(
+        paths,
+        12,
+        assets,
+        enemy_threat_evidence=enemy_threat_evidence,
+    )
 
     assert unsupported["branches"] == []
-    assert not unsupported["candidate_audit"][0]["gates"]["comparative_advantage"]
+    assert not unsupported["candidate_audit"]["sample"][0]["gates"][
+        "comparative_advantage"
+    ]
+
+
+def test_situational_admission_requires_all_three_fold_cells(tmp_path: Path) -> None:
+    paths = RunPaths.create(tmp_path, "run")
+    decisions = []
+    enemies = []
+    compositions = []
+    match_id = 1
+    for fold in ("train", "validation", "test"):
+        for item_id in (3, 4):
+            for offset in range(200):
+                target = item_id == 3
+                won = offset < (180 if target else 40)
+                decisions.append({
+                    "match_id": match_id,
+                    "player_slot": 0,
+                    "hero_id": 12,
+                    "phase": 1,
+                    "tier": 2,
+                    "item_id": item_id,
+                    "won": won,
+                    "team_id": 0,
+                    "assigned_lane": 1,
+                    "fold": fold,
+                    "own_net_worth_at_buy": 10_000,
+                    "team_net_worth_lead": 0,
+                })
+                enemies.append({
+                    "match_id": match_id,
+                    "team_id": 1,
+                    "assigned_lane": 1,
+                    "hero_id": 7,
+                })
+                compositions.append({
+                    "match_id": match_id,
+                    "team_id": 1,
+                    "hero_ids": [7],
+                })
+                match_id += 1
+    con = duckdb.connect()
+    try:
+        con.register("decisions_source", pl.DataFrame(decisions))
+        con.register("enemies_source", pl.DataFrame(enemies))
+        con.register("compositions_source", pl.DataFrame(compositions))
+        con.execute(
+            "CREATE TABLE decision_opportunities AS SELECT * FROM decisions_source"
+        )
+        con.execute("CREATE TABLE player_matches AS SELECT * FROM enemies_source")
+        con.execute("CREATE TABLE compositions AS SELECT * FROM compositions_source")
+        admitted_policy = _situational_policy(
+            paths,
+            12,
+            [
+                {"id": 3, "description": {"desc": "Applies healing reduction."}},
+                {"id": 4, "description": {"desc": "Gain Weapon Damage."}},
+            ],
+            eligible_item_ids=frozenset({3}),
+            comparator_item_ids=frozenset({4}),
+            enemy_threat_evidence={7: {"healing": ("asset:ability:7:description",)}},
+            con=con,
+        )
+        con.execute(
+            """
+            UPDATE decision_opportunities
+            SET won = CASE WHEN item_id = 3 THEN false ELSE true END
+            WHERE fold = 'test'
+            """
+        )
+        policy = _situational_policy(
+            paths,
+            12,
+            [
+                {"id": 3, "description": {"desc": "Applies healing reduction."}},
+                {"id": 4, "description": {"desc": "Gain Weapon Damage."}},
+            ],
+            eligible_item_ids=frozenset({3}),
+            comparator_item_ids=frozenset({4}),
+            enemy_threat_evidence={7: {"healing": ("asset:ability:7:description",)}},
+            con=con,
+        )
+        invalid_comparator = _situational_policy(
+            paths,
+            12,
+            [
+                {"id": 3, "description": {"desc": "Applies healing reduction."}},
+                {"id": 4, "description": {"desc": "Gain Weapon Damage."}},
+            ],
+            eligible_item_ids=frozenset({3}),
+            comparator_item_ids=frozenset({99}),
+            enemy_threat_evidence={7: {"healing": ("asset:ability:7:description",)}},
+            con=con,
+        )
+        replacement_assets = [
+            {
+                "id": item_id,
+                "class_name": f"item_{item_id}",
+                "name": f"Item {item_id}",
+                "cost": 1_250,
+                "item_tier": 2,
+                "item_slot_type": "spirit",
+                "component_items": [],
+                "shopable": True,
+                "disabled": False,
+                "is_active_item": item_id != 4,
+                "is_unique": True,
+            }
+            for item_id in range(3, 9)
+        ]
+        replacement_graph = ItemGraph.from_assets(replacement_assets)
+        invalid_replacement = _situational_policy(
+            paths,
+            12,
+            [
+                {"id": 3, "description": {"desc": "Applies healing reduction."}},
+                {"id": 4, "description": {"desc": "Gain Weapon Damage."}},
+            ],
+            eligible_item_ids=frozenset({3}),
+            comparator_item_ids=frozenset({4}),
+            default_item_ids=(4, 5, 6, 7, 8),
+            graph=replacement_graph,
+            priorities={
+                item_id: (float(item_id), float(item_id), item_id)
+                for item_id in replacement_graph.nodes
+            },
+            enemy_threat_evidence={7: {"healing": ("asset:ability:7:description",)}},
+            con=con,
+        )
+    finally:
+        con.close()
+
+    assert len(admitted_policy["branches"]) == 1
+    assert any(
+        candidate["admitted"]
+        for candidate in admitted_policy["candidate_audit"]["sample"]
+    )
+    assert policy["branches"] == []
+    candidate = policy["candidate_audit"]["sample"][0]
+    assert candidate["fold_comparative_estimates"]["train"] > 0
+    assert candidate["fold_comparative_estimates"]["validation"] > 0
+    assert candidate["fold_comparative_estimates"]["test"] < 0
+    assert candidate["fold_support"]["train"] == {
+        "item": 200,
+        "comparator": 200,
+    }
+    assert not candidate["gates"]["test_advantage"]
+    assert invalid_comparator["branches"] == []
+    assert invalid_replacement["branches"] == []
+    assert not invalid_replacement["candidate_audit"]["sample"][0]["gates"][
+        "replacement_legality"
+    ]

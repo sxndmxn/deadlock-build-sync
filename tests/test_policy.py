@@ -52,8 +52,8 @@ def test_core_alternative_accepts_the_ninth_universal_slot() -> None:
         support=40,
         effective_support=30,
         overlap=0.8,
-        interval=(-0.02, 0.02),
-        fold_estimates={"train": 0.0, "validation": 0.0, "test": 0.0},
+        interval=(0.01, 0.05),
+        fold_estimates={"train": 0.03, "validation": 0.04, "test": 0.0},
     )
 
     assert card.stage == 9

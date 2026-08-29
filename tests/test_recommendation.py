@@ -13,6 +13,7 @@ from deadlock_build_sync.build_evidence import (
     SequenceTransition,
     SituationalBranch,
     SituationalPolicy,
+    TierPolicyEvidence,
 )
 from deadlock_build_sync.policy import (
     Branch,
@@ -125,13 +126,14 @@ def catalog(*, branch: bool = False) -> BuildEvidenceCatalog:
         ("unsupported branches abstain",),
     )
     hero = HeroBuildEvidence(
-        12,
-        "Kelvin",
-        100,
-        20_000,
-        (),
-        (),
-        CorePolicyEvidence(
+        hero_id=12,
+        hero="Kelvin",
+        eligible_player_matches=100,
+        selection_eligible_player_matches=80,
+        fold_eligible_player_matches={"train": 40, "validation": 40, "test": 20},
+        median_final_net_worth=20_000,
+        items=(),
+        core_policy=CorePolicyEvidence(
             (1, 2, 4, 5),
             (1, 2, 4, 5, 6, 7, 8, 9),
             60,
@@ -141,14 +143,15 @@ def catalog(*, branch: bool = False) -> BuildEvidenceCatalog:
             (),
             {"method": "cross-fitted-dr"},
         ),
-        SequencePolicy(
+        tier_policy=TierPolicyEvidence({}),
+        sequence_policy=SequencePolicy(
             (1, 2),
             (SequenceTransition("popularity", 0, 0, 0, 2, 40, 100),),
             20,
             "deterministic_backoff",
             {"fold": "test"},
         ),
-        situational,
+        situational_policy=situational,
     )
     return BuildEvidenceCatalog(
         "a" * 64,
@@ -244,6 +247,7 @@ def build_policy(*, branch: bool = False) -> BuildPolicy:
                 "Apply the supplied healing reduction after contact.",
                 "Skip when healing is not material.",
                 counter_claim.claim_id,
+                enemy_mechanics_refs=("asset:ability:7:description",),
             ),
         )
     nodes.extend((
@@ -494,7 +498,7 @@ def test_stale_or_out_of_cohort_state_fails_closed(
 def test_decision_state_file_requires_complete_context(tmp_path: Path) -> None:
     path = tmp_path / "state.json"
     path.write_text(
-        json.dumps({"schema_version": 1, "build_evidence_id": "a" * 64}),
+        json.dumps({"schema_version": 2, "build_evidence_id": "a" * 64}),
         encoding="utf-8",
     )
 
@@ -503,7 +507,7 @@ def test_decision_state_file_requires_complete_context(tmp_path: Path) -> None:
 
     path.write_text(
         json.dumps({
-            "schema_version": 1,
+            "schema_version": 2,
             "account_id": 123,
             "build_evidence_id": "a" * 64,
         }),
@@ -517,7 +521,7 @@ def test_decision_state_file_admits_deidentified_enemy_items(tmp_path: Path) -> 
     path = tmp_path / "state.json"
     path.write_text(
         json.dumps({
-            "schema_version": 1,
+            "schema_version": 2,
             "build_evidence_id": "a" * 64,
             "client_version": 123,
             "patch_identity": "b" * 64,
@@ -537,6 +541,7 @@ def test_decision_state_file_admits_deidentified_enemy_items(tmp_path: Path) -> 
             },
             "learned_abilities": [],
             "enemy_hero_ids": [7],
+            "lane_enemy_hero_ids": [7],
             "enemy_item_ids": [4],
             "allied_hero_ids": [8],
             "objectives": ["mid boss"],
@@ -548,6 +553,7 @@ def test_decision_state_file_admits_deidentified_enemy_items(tmp_path: Path) -> 
     decision_state = DecisionState.from_file(path)
 
     assert decision_state.enemy_item_ids == (4,)
+    assert decision_state.lane_enemy_hero_ids == (7,)
 
 
 def test_situational_branch_and_unknown_threat_are_explicit() -> None:

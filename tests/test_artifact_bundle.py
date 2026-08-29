@@ -1,11 +1,13 @@
 import hashlib
 import json
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+from deadlock_build_sync import artifact_bundle
 from deadlock_build_sync.api import Patch
 from deadlock_build_sync.artifact_bundle import load_artifact_guide_bundle
 from deadlock_build_sync.artifacts import build_policy_artifact
@@ -13,7 +15,14 @@ from deadlock_build_sync.narratives import (
     NARRATIVE_GENERATOR_VERSION,
     NARRATIVE_SCHEMA_VERSION,
 )
-from deadlock_build_sync.policy import BuildPolicy, NodeKind, PolicyNode
+from deadlock_build_sync.policy import (
+    Branch,
+    BuildPolicy,
+    Guard,
+    GuardOperator,
+    NodeKind,
+    PolicyNode,
+)
 from deadlock_build_sync.ranks import DEFAULT_RANK_RANGE
 from deadlock_build_sync.snapshot import (
     EpochBoundary,
@@ -69,7 +78,7 @@ def _manifest(evidence: dict[str, Any], raw_evidence: bytes) -> SnapshotManifest
                 {
                     "artifact_id": evidence["artifact_id"],
                     "hero_count": 1,
-                    "method": "state-aware-multi-path-v3",
+                    "method": "state-aware-multi-path-v7",
                 },
                 datetime.now(UTC).isoformat(),
                 hashlib.sha256(raw_evidence).hexdigest(),
@@ -107,9 +116,9 @@ def _policy(snapshot_id: str) -> BuildPolicy:
         for index, ability_id in enumerate(ability_ids, start=1)
     )
     return BuildPolicy(
-        schema_version=1,
+        schema_version=5,
         hero_id=12,
-        variant="coherent-eight-item-core",
+        variant="state-aware-multi-path-v5",
         invariant_kit_id="kit",
         strategic_role="Control committed fights",
         snapshot_id=snapshot_id,
@@ -118,6 +127,35 @@ def _policy(snapshot_id: str) -> BuildPolicy:
         evidence=(),
         ability_plan=ability_plan,
     )
+
+
+def test_policy_core_follows_default_through_situational_choice() -> None:
+    policy = _policy("snapshot")
+    choice = PolicyNode(
+        "choice",
+        NodeKind.CHOICE,
+        branches=(
+            Branch(
+                "situational",
+                Guard("enemy.threats", GuardOperator.CONTAINS, "healing"),
+            ),
+            Branch("core-1"),
+        ),
+    )
+    situational = PolicyNode(
+        "situational",
+        NodeKind.PURCHASE,
+        next_id="end",
+        item_id=999,
+        optional=True,
+    )
+    branched = replace(
+        policy,
+        entry="choice",
+        nodes=(choice, situational, *policy.nodes),
+    )
+
+    assert artifact_bundle._policy_core(branched) == tuple(range(1001, 1009))
 
 
 def _projection() -> dict[str, Any]:
@@ -147,7 +185,16 @@ def _projection() -> dict[str, Any]:
                 {
                     "item_id": start + offset,
                     "item": f"Item {start + offset}",
-                    "annotation": f"Observed evidence for item {start + offset}.",
+                    "annotation": (
+                        f"Observed evidence for item {start + offset}."
+                        if row_index == 0
+                        else (
+                            "USE: Spirit pressure is your next priority\n"
+                            "WHY: Spirit Pressure\n"
+                            "SKIP: Defense or weapon pressure matters more\n"
+                            "DATA: 1k–2k souls • PICK 50.0% • BUYERS 50"
+                        )
+                    ),
                     "required_flex_slots": None,
                     "sell_priority": None,
                     "imbue_target_ability_id": None,
@@ -178,6 +225,10 @@ def _build_evidence() -> dict[str, Any]:
         for offset, projected in enumerate(row["items"]):
             tier = (offset // 2) + 1 if row_index == 0 else row_index
             adopters = 80 - offset
+            training_adopters = 40
+            validation_adopters = 20
+            test_adopters = adopters - training_adopters - validation_adopters
+            selection_adopters = training_adopters + validation_adopters
             wins = adopters // 2
             q25 = float(4_000 * tier + offset * 100)
             q75 = q25 + 10_000
@@ -199,6 +250,30 @@ def _build_evidence() -> dict[str, Any]:
                 "buy_net_worth_q25": q25,
                 "buy_net_worth_q75": q75,
                 "valid_buy_net_worth_share": 0.95,
+                "selection_adopter_matches": selection_adopters,
+                "selection_eligible_player_matches": 75,
+                "training_adopter_matches": training_adopters,
+                "training_eligible_player_matches": 50,
+                "validation_adopter_matches": validation_adopters,
+                "validation_eligible_player_matches": 25,
+                "test_adopter_matches": test_adopters,
+                "test_eligible_player_matches": 25,
+                "selection_adoption": selection_adopters / 75,
+                "training_adoption": training_adopters / 50,
+                "validation_adoption": validation_adopters / 25,
+                "test_adoption": test_adopters / 25,
+                "selection_median_buy_time_s": float(300 + offset),
+                "selection_median_valid_buy_net_worth": (q25 + q75) / 2,
+                "selection_buy_net_worth_q25": q25,
+                "selection_buy_net_worth_q75": q75,
+                "selection_valid_buy_net_worth_share": 1.0,
+                "selection_valid_buy_net_worth_observations": selection_adopters,
+                "training_valid_buy_net_worth_observations": training_adopters,
+                "validation_valid_buy_net_worth_observations": validation_adopters,
+                "training_buy_net_worth_q25": q25,
+                "training_buy_net_worth_q75": q75,
+                "validation_buy_net_worth_q25": q25,
+                "validation_buy_net_worth_q75": q75,
                 "imbue_target_ability_id": None,
                 "imbue_target_ability": None,
                 "imbue_target_matches": 0,
@@ -207,17 +282,19 @@ def _build_evidence() -> dict[str, Any]:
             })
     boundary = EpochBoundary(PATCH.identity, 100)
     payload = {
-        "schema_version": 6,
+        "schema_version": 8,
         "producer": "fixture",
         "method": {
-            "version": "state-aware-multi-path-v5",
-            "core_candidate_item_count": 8,
+            "version": "state-aware-multi-path-v7",
             "minimum_core_item_count": 4,
             "maximum_core_item_count": 9,
-            "core_candidate_limit": 64,
             "minimum_core_support": 20,
             "minimum_tier_support": 20,
+            "minimum_tier_adoption": 0.05,
+            "maximum_tier_adoption_drift": 0.1,
             "tier_item_count": 10,
+            "minimum_purchase_window_coverage": 0.5,
+            "minimum_purchase_window_observations": 20,
             "minimum_imbue_support": 20,
             "minimum_imbue_share": 0.5,
         },
@@ -240,29 +317,44 @@ def _build_evidence() -> dict[str, Any]:
                 "hero_id": 12,
                 "hero": "Kelvin",
                 "eligible_player_matches": 100,
+                "selection_eligible_player_matches": 75,
+                "fold_eligible_player_matches": {
+                    "train": 50,
+                    "validation": 25,
+                    "test": 25,
+                },
                 "median_final_net_worth": 38_000,
-                "core_candidates": [
-                    {
-                        "item_ids": list(range(1001, 1009)),
-                        "joint_matches": 50,
-                    }
-                ],
                 "core_policy": {
-                    "version": 2,
+                    "version": 3,
                     "backbone_item_ids": list(range(1001, 1005)),
                     "default_item_ids": list(range(1001, 1009)),
-                    "backbone_matches": 60,
+                    "backbone_matches": 40,
                     "backbone_fold_matches": {
                         "train": 20,
                         "validation": 20,
                         "test": 20,
                     },
                     "default_matches": 50,
+                    "default_fold_matches": {
+                        "train": 30,
+                        "validation": 20,
+                        "test": 10,
+                    },
                     "alternatives": [],
                     "candidate_audit": [],
                     "evaluation": {"method": "cross-fitted-dr"},
                 },
                 "items": items,
+                "tier_policy": {
+                    "version": 1,
+                    "item_ids_by_tier": {
+                        str(tier): [
+                            int(item["item_id"])
+                            for item in _projection()["categories"][tier]["items"]
+                        ]
+                        for tier in range(1, 5)
+                    },
+                },
                 "sequence_policy": {
                     "version": 3,
                     "minimum_support": 20,
@@ -282,13 +374,14 @@ def _build_evidence() -> dict[str, Any]:
                     "evaluation": {"chronological_fold": "test"},
                 },
                 "situational_policy": {
-                    "version": 1,
+                    "version": 2,
                     "threat_vocabulary": [
                         "active_slot_burden",
                         "ally_protection",
                         "bullet_pressure",
                         "control",
                         "healing",
+                        "mobility_denial",
                         "mobility_escape",
                         "spirit_pressure",
                     ],
@@ -462,15 +555,14 @@ def test_loads_exact_reviewed_bundle_without_analytics_refetch(tmp_path: Path) -
         "PURCHASE WINDOW: 4k–14k souls\n"
         "WIN RATE: 50.0%\n"
         "PICK RATE: 80.0%\n"
-        "BUYER MATCHES: 80\n"
+        "BUYER MATCHES: 60\n"
         "PURCHASE EVENTS: 80"
     )
     assert guide.rendered_categories[1].items[0].annotation == (
-        "PURCHASE WINDOW: 4k–14k souls\n"
-        "WIN RATE: 50.0%\n"
-        "PICK RATE: 80.0%\n"
-        "BUYER MATCHES: 80\n"
-        "PURCHASE EVENTS: 80"
+        "USE: Spirit pressure is your next priority\n"
+        "WHY: Spirit Pressure\n"
+        "SKIP: Defense or weapon pressure matters more\n"
+        "DATA: 1k–2k souls • PICK 50.0% • BUYERS 50"
     )
     assert guide.ability_path is not None
     assert len(guide.ability_path.ability_ids) == 16

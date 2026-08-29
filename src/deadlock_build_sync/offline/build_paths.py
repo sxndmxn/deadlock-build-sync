@@ -13,8 +13,8 @@ from sklearn.metrics import precision_recall_fscore_support
 MINIMUM_PATH_SUPPORT = 20
 MINIMUM_VALIDATION_GAIN = 0.10
 MINIMUM_ASSIGNMENT_CONFIDENCE = 0.70
-MINIMUM_TEST_PRECISION = 0.75
-MINIMUM_TEST_RECALL = 0.50
+MINIMUM_VALIDATION_PRECISION = 0.75
+MINIMUM_VALIDATION_RECALL = 0.50
 MINIMUM_DISTINCT_ITEMS = 2
 MINIMUM_SIGNATURE_LIFT = 0.20
 
@@ -82,7 +82,7 @@ def _has_fold_support(counts: dict[int, dict[str, int]]) -> bool:
     return all(
         counts[label].get(fold, 0) >= MINIMUM_PATH_SUPPORT
         for label in (0, 1)
-        for fold in ("train", "validation", "test")
+        for fold in ("train", "validation")
     )
 
 
@@ -153,7 +153,10 @@ def _attempt_split(
     members: frozenset[PlayerIdentity],
 ) -> tuple[_Leaf, _Leaf] | None:
     identities = sorted(members)
-    item_ids = _item_universe(inventories, members)
+    training_members = frozenset(
+        identity for identity in members if folds_by_match[identity[0]] == "train"
+    )
+    item_ids = _item_universe(inventories, training_members)
     if len(item_ids) < MINIMUM_DISTINCT_ITEMS:
         return None
     fold_rows = {
@@ -170,7 +173,10 @@ def _attempt_split(
     validation_rows = fold_rows["validation"]
     test_rows = fold_rows["test"]
     if (
-        any(len(rows) < MINIMUM_PATH_SUPPORT * 2 for rows in fold_rows.values())
+        any(
+            len(fold_rows[fold]) < MINIMUM_PATH_SUPPORT * 2
+            for fold in ("train", "validation")
+        )
         or len(np.unique(final[train_rows], axis=0)) < 2
     ):
         return None
@@ -211,20 +217,31 @@ def _attempt_split(
     ):
         return None
 
+    confident_validation_rows = [
+        row
+        for row in validation_rows
+        if confidence[row] >= MINIMUM_ASSIGNMENT_CONFIDENCE
+    ]
+    validation_metrics = _early_metrics(
+        early[train_rows],
+        train_labels,
+        early[confident_validation_rows],
+        labels[confident_validation_rows],
+    )
+    if validation_metrics is None or any(
+        precision < MINIMUM_VALIDATION_PRECISION or recall < MINIMUM_VALIDATION_RECALL
+        for precision, recall in validation_metrics
+    ):
+        return None
     confident_test_rows = [
         row for row in test_rows if confidence[row] >= MINIMUM_ASSIGNMENT_CONFIDENCE
     ]
-    metrics = _early_metrics(
+    test_metrics = _early_metrics(
         early[train_rows],
         train_labels,
         early[confident_test_rows],
         labels[confident_test_rows],
     )
-    if metrics is None or any(
-        precision < MINIMUM_TEST_PRECISION or recall < MINIMUM_TEST_RECALL
-        for precision, recall in metrics
-    ):
-        return None
 
     children: list[_Leaf] = []
     for label in (0, 1):
@@ -243,8 +260,14 @@ def _attempt_split(
                         "validation_distortion_gain": gain,
                         "assignment_confidence_floor": MINIMUM_ASSIGNMENT_CONFIDENCE,
                         "fold_support": counts[label],
-                        "test_precision": metrics[label][0],
-                        "test_recall": metrics[label][1],
+                        "validation_precision": validation_metrics[label][0],
+                        "validation_recall": validation_metrics[label][1],
+                        "test_precision": (
+                            test_metrics[label][0] if test_metrics is not None else None
+                        ),
+                        "test_recall": (
+                            test_metrics[label][1] if test_metrics is not None else None
+                        ),
                         "distinct_item_ids": list(distinct),
                         "abstained_matches": len(identities) - len(admitted_rows),
                     },
@@ -347,8 +370,21 @@ def discover_build_paths(
 
     paths = []
     for leaf in leaves:
-        others = root_ids - leaf.member_ids
-        signature = _signature_items(inventories, leaf.member_ids, others)
+        training_members = frozenset(
+            identity
+            for identity in leaf.member_ids
+            if folds_by_match[identity[0]] == "train"
+        )
+        other_training_members = frozenset(
+            identity
+            for identity in root_ids - leaf.member_ids
+            if folds_by_match[identity[0]] == "train"
+        )
+        signature = _signature_items(
+            inventories,
+            training_members,
+            other_training_members,
+        )
         fold_support = dict(
             Counter(folds_by_match[identity[0]] for identity in leaf.member_ids)
         )

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import html
 import json
+import math
 import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
@@ -194,31 +195,6 @@ def build_hero_mechanics(
     return result
 
 
-_THREAT_RESPONSE_PHRASES = {
-    "hard_control": (
-        "debuff immunity",
-        "debuff resist",
-        "remove all negative",
-        "unstoppable",
-        "control immunity",
-    ),
-    "healing": ("healing reduction", "reduce healing", "anti-heal"),
-    "bullet_pressure": (
-        "bullet resist",
-        "bullet shield",
-        "weapon damage resistance",
-    ),
-    "spirit_burst": ("spirit resist", "spirit shield"),
-    "mobility_denial": (
-        "slow immunity",
-        "movement slow resistance",
-        "ground",
-        "movement slow",
-        "applies slow",
-    ),
-}
-
-
 def classify_item_threat_responses(asset: dict[str, Any]) -> frozenset[str]:
     """Map only explicit current item mechanics to conservative threat classes.
 
@@ -226,13 +202,9 @@ def classify_item_threat_responses(asset: dict[str, Any]) -> frozenset[str]:
         Threats for which the asset text contains a direct response mechanic.
 
     """
-    normalized = canonical_mechanics_text(_observed_item_mechanics(asset))
-    responses = {
-        threat
-        for threat, phrases in _THREAT_RESPONSE_PHRASES.items()
-        if any(phrase in normalized for phrase in phrases)
-    }
-    if any(target in normalized for target in ("ally", "friendly target")) and any(
+    responses = set(_response_mechanic_labels(asset))
+    normalized = canonical_mechanics_text(_material_observed_mechanics(asset))
+    if _has_ally_target(normalized) and any(
         phrase in normalized for phrase in ("shield", "heal", "resist")
     ):
         responses.add("ally_protection")
@@ -260,6 +232,10 @@ _CONDITIONAL_RESPONSE_COPY = {
         "Slows or movement denial",
         "Before the next fight with heavy slows",
     ),
+    "slow_resistance": (
+        "Enemy slows or movement denial",
+        "Before the next fight with heavy slows",
+    ),
     "ally_protection": (
         "A focused ally needs protection",
         "Before the ally commits to the next fight",
@@ -270,6 +246,7 @@ _CONDITIONAL_RESPONSE_PRIORITY = (
     "bullet_pressure",
     "healing",
     "hard_control",
+    "slow_resistance",
     "mobility_denial",
     "ally_protection",
 )
@@ -282,14 +259,37 @@ _RESPONSE_MECHANIC_COPY = (
     ("unstoppable", "Unstoppable"),
     ("bullet resist", "Bullet Resist"),
     ("bullet shield", "Bullet Shield"),
+    ("weapon damage resistance", "Weapon Damage Resistance"),
     ("healing reduction", "Healing Reduction"),
     ("reduce healing", "Healing Reduction"),
+    ("anti-heal", "Healing Reduction"),
+    ("remove all negative", "Negative Effect Removal"),
     ("slow immunity", "Slow Immunity"),
     ("movement slow resistance", "Movement Slow Resist"),
     ("ground", "Ground"),
     ("disarm", "Disarm"),
     ("movement slow", "Movement Slow"),
 )
+_RESPONSE_BY_MECHANIC_PHRASE = {
+    "spirit resist": "spirit_burst",
+    "spirit shield": "spirit_burst",
+    "debuff resist": "hard_control",
+    "debuff immunity": "hard_control",
+    "control immunity": "hard_control",
+    "unstoppable": "hard_control",
+    "remove all negative": "hard_control",
+    "bullet resist": "bullet_pressure",
+    "bullet shield": "bullet_pressure",
+    "weapon damage resistance": "bullet_pressure",
+    "healing reduction": "healing",
+    "reduce healing": "healing",
+    "anti-heal": "healing",
+    "slow immunity": "slow_resistance",
+    "movement slow resistance": "slow_resistance",
+    "ground": "mobility_denial",
+    "disarm": "mobility_denial",
+    "movement slow": "mobility_denial",
+}
 _COMPARATOR_PURPOSES = (
     (("teleport", "pull", "ground", "disarm"), "catch"),
     (("bullet resist", "spirit resist", "shield"), "survival"),
@@ -330,21 +330,25 @@ def conditional_item_decision(
         or selected not in _CONDITIONAL_RESPONSE_COPY
     ):
         return None
-    item_text = canonical_mechanics_text(_observed_item_mechanics(asset))
-    mechanics: list[str] = []
-    for phrase, label in _RESPONSE_MECHANIC_COPY:
-        if phrase in item_text and label not in mechanics:
-            mechanics.append(label)
+    item_text = canonical_mechanics_text(_material_observed_mechanics(asset))
+    response_labels = _response_mechanic_labels(asset)
+    mechanics = list(response_labels[selected])
+    for candidate in _CONDITIONAL_RESPONSE_PRIORITY:
+        if candidate == "ally_protection" and selected != candidate:
+            continue
+        for label in response_labels.get(candidate, ()):
+            if label not in mechanics:
+                mechanics.append(label)
     if not mechanics:
         return None
-    friendly = "ally" in item_text or "friendly target" in item_text
+    friendly = _has_ally_target(item_text)
     self_cast = "self cast" in item_text or "self-cast" in item_text
     target = (
         " for self/ally" if friendly and self_cast else " for ally" if friendly else ""
     )
     why = " and ".join(mechanics[:3]) + target
 
-    comparator_text = canonical_mechanics_text(_observed_item_mechanics(comparator))
+    comparator_text = canonical_mechanics_text(_material_observed_mechanics(comparator))
     purpose = next(
         (
             label
@@ -357,7 +361,14 @@ def conditional_item_decision(
         return None
     vs, when = _CONDITIONAL_RESPONSE_COPY[selected]
     if selected == "mobility_denial" and any(
-        phrase in item_text for phrase in ("ground", "disarm", "applies slow")
+        phrase in item_text
+        for phrase in (
+            "become grounded",
+            "causes grounded",
+            "ground, slow",
+            "disarm",
+            "applies slow",
+        )
     ):
         vs = "Enemy escape or mobility"
         when = "Before fighting an evasive target"
@@ -367,8 +378,20 @@ def conditional_item_decision(
 _OBSERVED_ITEM_THREAT_PHRASES = {
     "bullet_pressure": ("bullet damage", "weapon damage"),
     "spirit_pressure": ("spirit damage", "spirit power"),
-    "control": ("apply a stun", "silence", "immobilize", "rooted"),
-    "mobility_escape": ("dash", "teleport", "leap", "move speed"),
+    "control": (
+        "apply a stun",
+        "applies a stun",
+        "silences the target",
+        "immobilizes",
+        "become rooted",
+    ),
+    "mobility_escape": ("dash", "teleport", "leap", "blink"),
+    "mobility_denial": (
+        "applies a movement slow",
+        "applies movement slow",
+        "become grounded",
+        "causes grounded",
+    ),
     "ally_protection": (
         "target ally",
         "allied target",
@@ -401,6 +424,10 @@ def _active_property_mechanics(asset: dict[str, Any]) -> dict[str, Any]:
                 "label",
                 "postvalue_label",
                 "provided_property_type",
+                "tooltip_is_elevated",
+                "tooltip_is_important",
+                "tooltip_section",
+                "usage_flags",
                 "value",
             )
             if key in raw_property
@@ -408,23 +435,206 @@ def _active_property_mechanics(asset: dict[str, Any]) -> dict[str, Any]:
     return active
 
 
-def _observed_item_mechanics(asset: dict[str, Any]) -> dict[str, Any]:
-    mechanics = extract_asset_mechanics(asset)
-    observed = {
-        key: mechanics[key]
-        for key in (
-            "description",
-            "behaviour",
-            "damage_type",
-            "targeting",
-            "weapon_info",
-        )
-        if key in mechanics
+def _base_description(asset: dict[str, Any]) -> object:
+    description = asset.get("description")
+    if isinstance(description, dict):
+        return {
+            key: description[key]
+            for key in ("desc", "passive", "active")
+            if _is_populated(description.get(key))
+        }
+    return description
+
+
+def _important_property_mechanics(asset: dict[str, Any]) -> dict[str, Any]:
+    return {
+        name: value
+        for name, value in _active_property_mechanics(asset).items()
+        if value.get("tooltip_is_important") is True
     }
-    active_properties = _active_property_mechanics(asset)
-    if active_properties:
-        observed["properties"] = normalize_mechanical_value(active_properties)
+
+
+def _is_resistance_reduction_property(name: str, value: dict[str, Any]) -> bool:
+    identity = " ".join((
+        name,
+        str(value.get("label") or ""),
+        str(value.get("provided_property_type") or ""),
+    )).casefold()
+    return "resist" in identity and (
+        "reduction" in identity or str(value.get("value") or "").startswith("-")
+    )
+
+
+def _response_property_mechanics(asset: dict[str, Any]) -> dict[str, Any]:
+    return {
+        name: value
+        for name, value in _important_property_mechanics(asset).items()
+        if not _is_resistance_reduction_property(name, value)
+    }
+
+
+def _visible_property_mechanics(asset: dict[str, Any]) -> dict[str, Any]:
+    return {
+        name: value
+        for name, value in _active_property_mechanics(asset).items()
+        if value.get("tooltip_is_important") is True
+        or value.get("tooltip_is_elevated") is True
+    }
+
+
+def _material_observed_mechanics(asset: dict[str, Any]) -> dict[str, Any]:
+    mechanics = extract_asset_mechanics(asset)
+    observed: dict[str, Any] = {}
+    description = _base_description(asset)
+    if _is_populated(description):
+        observed["description"] = normalize_mechanical_value(description)
+    for key in ("behaviour", "damage_type", "targeting", "weapon_info"):
+        if key in mechanics:
+            observed[key] = mechanics[key]
+    important_properties = _response_property_mechanics(asset)
+    if important_properties:
+        observed["properties"] = normalize_mechanical_value(important_properties)
     return observed
+
+
+def _optional_observed_mechanics(asset: dict[str, Any]) -> dict[str, Any]:
+    observed = _material_observed_mechanics(asset)
+    visible_properties = _visible_property_mechanics(asset)
+    if visible_properties:
+        observed["properties"] = normalize_mechanical_value(visible_properties)
+    return observed
+
+
+_RESISTANCE_REDUCTION_WORDS = (
+    "reduce",
+    "reduces",
+    "reduced",
+    "reduction",
+    "lower",
+    "lowers",
+    "lowered",
+    "remove",
+    "removes",
+    "enemy",
+    "enemies",
+)
+
+
+def _has_positive_resistance_text(text: str, phrase: str) -> bool:
+    start = 0
+    while (index := text.find(phrase, start)) >= 0:
+        prefix = text[max(0, index - 48) : index]
+        suffix = text[index + len(phrase) : index + len(phrase) + 24]
+        if not any(
+            re.search(rf"\b{re.escape(word)}\b", prefix)
+            for word in _RESISTANCE_REDUCTION_WORDS
+        ) and not re.search(r"\b(reduction|shred)\b", suffix):
+            return True
+        start = index + len(phrase)
+    return False
+
+
+def _has_control_immunity_text(text: str) -> bool:
+    return "suppress negative status effects" in text or bool(
+        re.search(
+            r"\bimmune\b[^.!?]{0,96}\b(stun|silence|sleep|root|disarm)\b",
+            text,
+        )
+    )
+
+
+def _has_offensive_response_phrase(text: str, phrase: str) -> bool:
+    """Check whether a control phrase is not part of defensive copy.
+
+    Returns:
+        True when at least one occurrence describes an offensive effect.
+
+    """
+    start = 0
+    while (index := text.find(phrase, start)) >= 0:
+        prefix = text[max(0, index - 96) : index]
+        suffix = text[index + len(phrase) : index + len(phrase) + 24]
+        defensive_prefix = re.search(
+            r"\b(immune|immunity|resistant|resistance)\b[^.!?]{0,96}$",
+            prefix,
+        )
+        defensive_suffix = (
+            re.match(r"\s+resistance\b", suffix) if phrase == "movement slow" else None
+        )
+        if defensive_prefix is None and defensive_suffix is None:
+            return True
+        start = index + len(phrase)
+    return False
+
+
+def _important_property_labels(asset: dict[str, Any]) -> dict[str, tuple[str, ...]]:
+    labels: dict[str, list[str]] = {}
+    for prop in _response_property_mechanics(asset).values():
+        property_type = str(prop.get("provided_property_type") or "").upper()
+        label = clean_mechanical_text(prop.get("label"))
+        normalized = canonical_mechanics_text(prop)
+        response: str | None = None
+        copy = label
+        if "RESIST_REDUCTION" in property_type:
+            continue
+        if "BULLET_ARMOR_DAMAGE_RESIST" in property_type:
+            response, copy = "bullet_pressure", "Bullet Resist"
+        elif "BULLET_SHIELD" in property_type:
+            response, copy = "bullet_pressure", label or "Bullet Shield"
+        elif "FIRE_RATE_SLOW" in property_type:
+            response, copy = "bullet_pressure", "Fire Rate Slow"
+        elif "SPIRIT_ARMOR_DAMAGE_RESIST" in property_type:
+            response, copy = "spirit_burst", "Spirit Resist"
+        elif "SPIRIT_SHIELD" in property_type:
+            response, copy = "spirit_burst", label or "Spirit Shield"
+        elif "bullet shield" in normalized:
+            response, copy = "bullet_pressure", label or "Bullet Shield"
+        elif "spirit shield" in normalized:
+            response, copy = "spirit_burst", label or "Spirit Shield"
+        if response is not None and copy not in labels.setdefault(response, []):
+            labels[response].append(copy)
+    return {response: tuple(values) for response, values in labels.items()}
+
+
+def _response_mechanic_labels(asset: dict[str, Any]) -> dict[str, tuple[str, ...]]:
+    text = canonical_mechanics_text(_material_observed_mechanics(asset))
+    labels = {
+        key: list(value) for key, value in _important_property_labels(asset).items()
+    }
+    if _has_positive_resistance_text(text, "bullet resist"):
+        labels.setdefault("bullet_pressure", []).append("Bullet Resist")
+    if _has_positive_resistance_text(text, "spirit resist"):
+        labels.setdefault("spirit_burst", []).append("Spirit Resist")
+    if _has_control_immunity_text(text):
+        labels.setdefault("hard_control", []).append("Control Immunity")
+    for phrase, label in _RESPONSE_MECHANIC_COPY:
+        if phrase not in text:
+            continue
+        if phrase in {
+            "bullet resist",
+            "spirit resist",
+        } and not _has_positive_resistance_text(text, phrase):
+            continue
+        if phrase in {"ground", "disarm", "movement slow"} and not (
+            _has_offensive_response_phrase(text, phrase)
+        ):
+            continue
+        response = _RESPONSE_BY_MECHANIC_PHRASE[phrase]
+        if label not in labels.setdefault(response, []):
+            labels[response].append(label)
+    if _has_ally_target(text) and any(
+        phrase in text for phrase in ("shield", "heal", "resist")
+    ):
+        labels.setdefault("ally_protection", []).append("Ally Protection")
+    return {
+        response: tuple(dict.fromkeys(values))
+        for response, values in labels.items()
+        if values
+    }
+
+
+def _has_ally_target(text: str) -> bool:
+    return bool(re.search(r"\bally\b|\bfriendly target\b", text))
 
 
 def classify_observed_item_threats(asset: dict[str, Any]) -> frozenset[str]:
@@ -434,7 +644,7 @@ def classify_observed_item_threats(asset: dict[str, Any]) -> frozenset[str]:
         Conservative threat labels supported by the pinned item text.
 
     """
-    normalized = canonical_mechanics_text(_observed_item_mechanics(asset))
+    normalized = canonical_mechanics_text(_material_observed_mechanics(asset))
     threats = {
         threat
         for threat, phrases in _OBSERVED_ITEM_THREAT_PHRASES.items()
@@ -451,6 +661,218 @@ def classify_observed_item_threats(asset: dict[str, Any]) -> frozenset[str]:
     if healing and not healing_response:
         threats.add("healing")
     return frozenset(threats)
+
+
+_OPTIONAL_PURPOSE_COPY = {
+    "bullet defense": (
+        "Enemy bullet pressure is material",
+        "Spirit defense or CORE timing matters more",
+    ),
+    "spirit defense": (
+        "Enemy Spirit burst is material",
+        "Bullet defense or CORE timing matters more",
+    ),
+    "control defense": (
+        "Enemy control blocks your next commit",
+        "Damage or mobility matters more",
+    ),
+    "anti-heal": (
+        "Enemy healing is material",
+        "Healing is not changing the fight",
+    ),
+    "ally protection": (
+        "A focused ally needs protection",
+        "Your own survival matters more",
+    ),
+    "sustain": (
+        "You need sustain between fights",
+        "Immediate damage or defense matters more",
+    ),
+    "ability uptime": (
+        "Your abilities need more uptime",
+        "One-fight power matters more",
+    ),
+    "mobility": (
+        "You need safer entry or escape",
+        "You can already reach and leave fights",
+    ),
+    "control/catch": (
+        "Your team needs reliable catch",
+        "Targets cannot escape your team",
+    ),
+    "melee": (
+        "You can safely force melee range",
+        "You cannot stay in melee range",
+    ),
+    "weapon pressure": (
+        "Weapon pressure is your next priority",
+        "Defense or Spirit pressure matters more",
+    ),
+    "Spirit pressure": (
+        "Spirit pressure is your next priority",
+        "Defense or weapon pressure matters more",
+    ),
+    "range": (
+        "You need safer effective range",
+        "Close-range pressure is already safe",
+    ),
+    "farming/tempo": (
+        "You need faster lane and farm tempo",
+        "The next fight needs immediate power",
+    ),
+}
+_OPTIONAL_PURPOSE_PHRASES = (
+    (
+        "sustain",
+        (
+            "restore health",
+            "health regen",
+            "lifesteal",
+            "life steal",
+            "heal",
+            "bonus health",
+            "health max",
+        ),
+        "Sustain",
+    ),
+    (
+        "ability uptime",
+        ("cooldown", "recharge", "ability charges"),
+        "Ability Uptime",
+    ),
+    (
+        "mobility",
+        (
+            "dash",
+            "teleport",
+            "move speed",
+            "movement speed",
+            "sprint",
+            "stamina",
+        ),
+        "Mobility",
+    ),
+    (
+        "control/catch",
+        ("stun", "silence", "root", "ground", "disarm", "movement slow"),
+        "Control",
+    ),
+    ("melee", ("melee",), "Melee Power"),
+    (
+        "range",
+        ("weapon range", "cast range", "attack range", "increase its range"),
+        "Range",
+    ),
+    (
+        "farming/tempo",
+        ("bonus souls", "souls over time", "creep damage", "farm", "npcs"),
+        "Farm Tempo",
+    ),
+    (
+        "weapon pressure",
+        (
+            "weapon damage",
+            "bullet damage",
+            "fire rate",
+            "ammo",
+            "bullet velocity",
+        ),
+        "Weapon Pressure",
+    ),
+    ("Spirit pressure", ("spirit damage", "spirit power"), "Spirit Pressure"),
+)
+
+
+def _property_number(asset: dict[str, Any], name: str) -> float | None:
+    properties = asset.get("properties")
+    if not isinstance(properties, dict):
+        return None
+    prop = properties.get(name)
+    if not isinstance(prop, dict):
+        return None
+    value = prop.get("value")
+    if not isinstance(value, (str, int, float)):
+        return None
+    try:
+        number = float(value)
+    except ValueError:
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _channel_protection_decision(
+    asset: dict[str, Any],
+    hero_mechanics: dict[str, Any] | None,
+) -> tuple[str, str, str] | None:
+    if hero_mechanics is None:
+        return None
+    protection_duration = _property_number(asset, "AbilityDuration")
+    abilities = hero_mechanics.get("abilities")
+    if protection_duration is None or not isinstance(abilities, list):
+        return None
+    candidates: list[tuple[bool, int, int, str]] = []
+    for ability in abilities:
+        if not isinstance(ability, dict):
+            continue
+        channel_duration = _property_number(ability, "AbilityChannelTime")
+        ability_id = ability.get("id")
+        slot = ability.get("slot")
+        name = clean_mechanical_text(ability.get("name"))
+        if not isinstance(ability_id, int) or not isinstance(slot, int) or not name:
+            continue
+        if (
+            channel_duration is None
+            or channel_duration <= 0
+            or channel_duration > protection_duration
+        ):
+            continue
+        candidates.append((slot != 4, slot, ability_id, name))
+    if not candidates:
+        return None
+    _, _, _, ability_name = min(candidates)
+    return (
+        f"Activate before {ability_name} when enemy control can interrupt it",
+        "Control Immunity protects the channel",
+        f"Enemy control cannot threaten {ability_name}",
+    )
+
+
+def optional_item_decision(
+    asset: dict[str, Any],
+    *,
+    hero_mechanics: dict[str, Any] | None = None,
+) -> tuple[str, str, str] | None:
+    """Create controlled USE, WHY, and SKIP copy from material item mechanics.
+
+    Returns:
+        Three tactical fields, or ``None`` when no concrete purpose is present.
+
+    """
+    responses = _response_mechanic_labels(asset)
+    if responses.get("hard_control"):
+        channel_decision = _channel_protection_decision(asset, hero_mechanics)
+        if channel_decision is not None:
+            return channel_decision
+    response_purposes = (
+        ("healing", "anti-heal"),
+        ("hard_control", "control defense"),
+        ("slow_resistance", "control defense"),
+        ("bullet_pressure", "bullet defense"),
+        ("spirit_burst", "spirit defense"),
+        ("ally_protection", "ally protection"),
+        ("mobility_denial", "control/catch"),
+    )
+    for response, purpose in response_purposes:
+        labels = responses.get(response)
+        if labels:
+            use, skip = _OPTIONAL_PURPOSE_COPY[purpose]
+            return use, " and ".join(labels[:2]), skip
+    text = canonical_mechanics_text(_optional_observed_mechanics(asset))
+    for purpose, phrases, why in _OPTIONAL_PURPOSE_PHRASES:
+        if any(phrase in text for phrase in phrases):
+            use, skip = _OPTIONAL_PURPOSE_COPY[purpose]
+            return use, why, skip
+    return None
 
 
 def canonical_mechanics_text(mechanics: dict[str, Any]) -> str:
@@ -493,6 +915,10 @@ def ability_definitions_from_kit(
             qualifier
             for qualifier in ("charged", "channeled", "airborne")
             if qualifier in normalized
+            or (
+                qualifier == "channeled"
+                and (_property_number(raw, "AbilityChannelTime") or 0) > 0
+            )
         )
         raw_unlock_level = raw.get("unlock_level")
         unlock_level = (

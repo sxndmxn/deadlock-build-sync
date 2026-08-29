@@ -21,13 +21,23 @@ import polars as pl
 from joblib import Parallel, delayed, parallel_config
 
 from deadlock_build_sync.build_evidence import (
+    BUILD_EVIDENCE_SCHEMA_VERSION,
+    CORE_POLICY_VERSION,
     MAX_COMPARATIVE_INTERVAL_WIDTH,
     MAX_SITUATIONAL_BRANCHES,
+    MAXIMUM_TIER_ADOPTION_DRIFT,
     MECHANIC_RESPONSE_THREATS,
+    METHOD_VERSION,
     MINIMUM_IMBUE_SHARE,
     MINIMUM_IMBUE_SUPPORT,
+    MINIMUM_PURCHASE_WINDOW_COVERAGE,
+    MINIMUM_PURCHASE_WINDOW_OBSERVATIONS,
+    MINIMUM_TIER_ADOPTION,
     SEQUENCE_POLICY_VERSION,
+    SITUATIONAL_POLICY_VERSION,
     THREAT_CLASSES,
+    TIER_ITEM_COUNT,
+    TIER_POLICY_VERSION,
     nondecreasing_window_schedule,
 )
 from deadlock_build_sync.mechanics import (
@@ -37,6 +47,7 @@ from deadlock_build_sync.mechanics import (
     ItemGraph,
     MechanicsError,
     classify_item_threat_responses,
+    classify_observed_item_threats,
     conditional_item_decision,
     purchase_item,
     schedule_component_path,
@@ -56,13 +67,9 @@ from .core_policy import (
 )
 from .late_game import _asset_maps, reconstruct_final_inventory
 
-SCHEMA_VERSION = 6
-CORE_ITEM_COUNT = 8
-CORE_CANDIDATE_LIMIT = 64
-TIER_ITEM_COUNT = 10
+SCHEMA_VERSION = BUILD_EVIDENCE_SCHEMA_VERSION
 MINIMUM_CORE_SUPPORT = 20
 HERO_EXPORT_WORKERS = 8
-METHOD_VERSION = "state-aware-multi-path-v5"
 SEQUENCE_MINIMUM_SUPPORT = 20
 CORE_ECONOMY_REFERENCE_MINIMUM_BADGE = 81
 DEFAULT_BUILD_PATH_LABEL = "Evidence Default"
@@ -87,6 +94,41 @@ class _HeroExportContext:
     mechanics_assets_by_id: dict[int, dict[str, Any]]
     item_costs: dict[int, int]
     target_core_cost: int
+    enemy_threat_evidence: dict[int, dict[str, tuple[str, ...]]]
+
+
+def _enemy_threat_evidence(
+    heroes: list[dict[str, Any]],
+    assets: list[dict[str, Any]],
+) -> dict[int, dict[str, tuple[str, ...]]]:
+    by_class = {
+        str(asset["class_name"]): asset
+        for asset in assets
+        if isinstance(asset.get("class_name"), str)
+    }
+    result: dict[int, dict[str, tuple[str, ...]]] = {}
+    for hero in heroes:
+        hero_id = hero.get("id")
+        signatures = hero.get("items")
+        if not isinstance(hero_id, int) or not isinstance(signatures, dict):
+            continue
+        refs_by_threat: dict[str, set[str]] = {}
+        for class_name in signatures.values():
+            if not isinstance(class_name, str):
+                continue
+            asset = by_class.get(class_name)
+            if asset is None:
+                continue
+            refs = asset_mechanics_refs(asset)
+            for threat in classify_observed_item_threats(asset):
+                refs_by_threat.setdefault(threat, set()).update(refs)
+        if refs_by_threat:
+            result[hero_id] = {
+                threat: tuple(sorted(refs))
+                for threat, refs in refs_by_threat.items()
+                if refs
+            }
+    return result
 
 
 def _patch_guid(value: object) -> str:
@@ -172,52 +214,6 @@ def _rank_labels_sha256(paths: RunPaths) -> str:
         and row["name"].strip()
     }
     return sha256_json(labels)
-
-
-def _supported_core_candidate_is_legal(
-    candidate: dict[str, Any],
-    graph: ItemGraph | None,
-    priorities: dict[int, tuple[float, float, int]] | None,
-) -> bool:
-    if graph is None or priorities is None:
-        return True
-    try:
-        path = _candidate_path(candidate, graph, priorities)
-    except (KeyError, MechanicsError):
-        return False
-    return _candidate_path_is_legal(candidate, path, graph)
-
-
-def _top_core_candidates(
-    inventories: list[tuple[int, ...]],
-    item_costs: dict[int, int],
-    maximum_cost: int,
-    *,
-    graph: ItemGraph | None = None,
-    priorities: dict[int, tuple[float, float, int]] | None = None,
-) -> list[dict[str, Any]]:
-    counts: Counter[tuple[int, ...]] = Counter()
-    for inventory in inventories:
-        distinct = tuple(sorted(set(inventory)))
-        if len(distinct) >= CORE_ITEM_COUNT:
-            counts.update(combinations(distinct, CORE_ITEM_COUNT))
-    ranked = sorted(counts.items(), key=lambda value: (-value[1], value[0]))
-    candidates = []
-    for item_ids, matches in ranked:
-        if matches < MINIMUM_CORE_SUPPORT:
-            break
-        if (
-            sum(item_costs.get(item_id, maximum_cost + 1) for item_id in item_ids)
-            > maximum_cost
-        ):
-            continue
-        candidate = {"item_ids": list(item_ids), "joint_matches": matches}
-        if not _supported_core_candidate_is_legal(candidate, graph, priorities):
-            continue
-        candidates.append(candidate)
-        if len(candidates) == CORE_CANDIDATE_LIMIT:
-            break
-    return candidates
 
 
 def _inventories_for_hero(
@@ -315,6 +311,18 @@ def _path_item_metrics(
                     any_value(p.tier) AS tier, any_value(p.cost) AS cost,
                     any_value(p.slot) AS slot, any_value(p.active) AS active,
                     count(*) AS adopter_matches,
+                    count(*) FILTER (
+                        WHERE p.fold IN ('train', 'validation')
+                    ) AS selection_adopter_matches,
+                    count(*) FILTER (
+                        WHERE p.fold = 'train'
+                    ) AS training_adopter_matches,
+                    count(*) FILTER (
+                        WHERE p.fold = 'validation'
+                    ) AS validation_adopter_matches,
+                    count(*) FILTER (
+                        WHERE p.fold = 'test'
+                    ) AS test_adopter_matches,
                     sum(p.won::INTEGER) AS wins,
                     avg(p.won::INTEGER) AS raw_outcome_rate,
                     median(p.buy_time) AS median_buy_time_s,
@@ -323,7 +331,40 @@ def _path_item_metrics(
                     median(p.own_net_worth_at_buy) AS median_valid_buy_net_worth,
                     quantile_cont(p.own_net_worth_at_buy, 0.25) AS buy_nw_q25,
                     quantile_cont(p.own_net_worth_at_buy, 0.75) AS buy_nw_q75,
-                    count(p.own_net_worth_at_buy) / count(*) AS valid_buy_nw_share
+                    count(p.own_net_worth_at_buy) / count(*) AS valid_buy_nw_share,
+                    median(p.buy_time) FILTER (
+                        WHERE p.fold IN ('train', 'validation')
+                    ) AS selection_median_buy_time_s,
+                    median(p.own_net_worth_at_buy) FILTER (
+                        WHERE p.fold IN ('train', 'validation')
+                    ) AS selection_median_valid_buy_net_worth,
+                    quantile_cont(p.own_net_worth_at_buy, 0.25) FILTER (
+                        WHERE p.fold IN ('train', 'validation')
+                    ) AS selection_buy_nw_q25,
+                    quantile_cont(p.own_net_worth_at_buy, 0.75) FILTER (
+                        WHERE p.fold IN ('train', 'validation')
+                    ) AS selection_buy_nw_q75,
+                    count(p.own_net_worth_at_buy) FILTER (
+                        WHERE p.fold IN ('train', 'validation')
+                    ) AS selection_valid_buy_nw_observations,
+                    count(p.own_net_worth_at_buy) FILTER (
+                        WHERE p.fold = 'train'
+                    ) AS training_valid_buy_nw_observations,
+                    count(p.own_net_worth_at_buy) FILTER (
+                        WHERE p.fold = 'validation'
+                    ) AS validation_valid_buy_nw_observations,
+                    quantile_cont(p.own_net_worth_at_buy, 0.25) FILTER (
+                        WHERE p.fold = 'train'
+                    ) AS training_buy_nw_q25,
+                    quantile_cont(p.own_net_worth_at_buy, 0.75) FILTER (
+                        WHERE p.fold = 'train'
+                    ) AS training_buy_nw_q75,
+                    quantile_cont(p.own_net_worth_at_buy, 0.25) FILTER (
+                        WHERE p.fold = 'validation'
+                    ) AS validation_buy_nw_q25,
+                    quantile_cont(p.own_net_worth_at_buy, 0.75) FILTER (
+                        WHERE p.fold = 'validation'
+                    ) AS validation_buy_nw_q75
                 FROM first_purchases p
                 JOIN _build_path_members m USING (match_id, player_slot)
                 GROUP BY p.hero_id, p.item_id
@@ -354,9 +395,13 @@ def _path_cohort_summary(
     try:
         row = con.execute(
             """
-            SELECT count(*), median(final_net_worth)
+            SELECT count(*),
+                   median(final_net_worth) FILTER (
+                       WHERE f.fold IN ('train', 'validation')
+                   )
             FROM player_matches p
             JOIN _build_path_members m USING (match_id, player_slot)
+            JOIN match_folds f USING (match_id)
             """
         ).fetchone()
     finally:
@@ -382,7 +427,8 @@ def _path_label(
             SELECT imbued_ability_id, count(DISTINCT (match_id, player_slot)) AS players
             FROM purchases p
             JOIN _build_path_members m USING (match_id, player_slot)
-            WHERE imbued_ability_id > 0
+            JOIN match_folds f USING (match_id)
+            WHERE f.fold = 'train' AND imbued_ability_id > 0
             GROUP BY imbued_ability_id
             ORDER BY players DESC, imbued_ability_id
             LIMIT 1
@@ -424,16 +470,20 @@ def _core_economy_reference(
     row = con.execute(
         """
         WITH reference_players AS (
-            SELECT match_id, player_slot, duration_s, final_net_worth
-            FROM player_matches
-            WHERE average_badge BETWEEN ? AND ?
+            SELECT p.match_id, p.player_slot, p.duration_s, p.final_net_worth
+            FROM player_matches p
+            JOIN match_folds f USING (match_id)
+            WHERE p.average_badge BETWEEN ? AND ?
+              AND f.fold IN ('train', 'validation')
         ), final_inventories AS (
-            SELECT match_id, player_slot,
+            SELECT p.match_id, p.player_slot,
                    count(*) FILTER (WHERE sold_time = 0) AS item_count,
                    sum(cost) FILTER (WHERE sold_time = 0) AS inventory_cost
-            FROM purchases
-            WHERE average_badge BETWEEN ? AND ?
-            GROUP BY match_id, player_slot
+            FROM purchases p
+            JOIN match_folds f USING (match_id)
+            WHERE p.average_badge BETWEEN ? AND ?
+              AND f.fold IN ('train', 'validation')
+            GROUP BY p.match_id, p.player_slot
         ), observed AS (
             SELECT players.match_id, players.player_slot, players.duration_s,
                    players.final_net_worth,
@@ -483,6 +533,7 @@ def _optional_float(value: float | None) -> float | None:
 def _item_payload(
     row: dict[str, Any],
     assets_by_id: dict[int, dict[str, Any]],
+    fold_eligible_matches: dict[str, int],
 ) -> dict[str, Any]:
     target_id = row.get("imbued_ability_id")
     resolved_target_id = int(target_id) if target_id is not None else None
@@ -497,6 +548,15 @@ def _item_payload(
         and target_matches >= MINIMUM_IMBUE_SUPPORT
         and target_share > MINIMUM_IMBUE_SHARE
     )
+    training_eligible = fold_eligible_matches["train"]
+    validation_eligible = fold_eligible_matches["validation"]
+    test_eligible = fold_eligible_matches["test"]
+    selection_eligible = training_eligible + validation_eligible
+    training_adopters = int(row["training_adopter_matches"])
+    validation_adopters = int(row["validation_adopter_matches"])
+    test_adopters = int(row["test_adopter_matches"])
+    selection_adopters = int(row["selection_adopter_matches"])
+    selection_valid_observations = int(row["selection_valid_buy_nw_observations"])
     return {
         "item_id": int(row["item_id"]),
         "item": str(row["item_name"]),
@@ -517,6 +577,42 @@ def _item_payload(
         "buy_net_worth_q25": _optional_float(row["buy_nw_q25"]),
         "buy_net_worth_q75": _optional_float(row["buy_nw_q75"]),
         "valid_buy_net_worth_share": float(row["valid_buy_nw_share"]),
+        "selection_adopter_matches": selection_adopters,
+        "selection_eligible_player_matches": selection_eligible,
+        "training_adopter_matches": training_adopters,
+        "training_eligible_player_matches": training_eligible,
+        "validation_adopter_matches": validation_adopters,
+        "validation_eligible_player_matches": validation_eligible,
+        "test_adopter_matches": test_adopters,
+        "test_eligible_player_matches": test_eligible,
+        "selection_adoption": selection_adopters / selection_eligible,
+        "training_adoption": training_adopters / training_eligible,
+        "validation_adoption": validation_adopters / validation_eligible,
+        "test_adoption": test_adopters / test_eligible if test_eligible else 0.0,
+        "selection_median_buy_time_s": _optional_float(
+            row["selection_median_buy_time_s"]
+        ),
+        "selection_median_valid_buy_net_worth": _optional_float(
+            row["selection_median_valid_buy_net_worth"]
+        ),
+        "selection_buy_net_worth_q25": _optional_float(row["selection_buy_nw_q25"]),
+        "selection_buy_net_worth_q75": _optional_float(row["selection_buy_nw_q75"]),
+        "selection_valid_buy_net_worth_share": (
+            selection_valid_observations / selection_adopters
+            if selection_adopters
+            else 0.0
+        ),
+        "selection_valid_buy_net_worth_observations": (selection_valid_observations),
+        "training_valid_buy_net_worth_observations": int(
+            row["training_valid_buy_nw_observations"]
+        ),
+        "validation_valid_buy_net_worth_observations": int(
+            row["validation_valid_buy_nw_observations"]
+        ),
+        "training_buy_net_worth_q25": _optional_float(row["training_buy_nw_q25"]),
+        "training_buy_net_worth_q75": _optional_float(row["training_buy_nw_q75"]),
+        "validation_buy_net_worth_q25": _optional_float(row["validation_buy_nw_q25"]),
+        "validation_buy_net_worth_q75": _optional_float(row["validation_buy_nw_q75"]),
         "imbue_target_ability_id": resolved_target_id if target_supported else None,
         "imbue_target_ability": target_name.strip() if target_supported else None,
         "imbue_target_matches": target_matches if target_supported else 0,
@@ -530,8 +626,8 @@ def _purchase_priorities(
 ) -> dict[int, tuple[float, float, int]]:
     return {
         item_id: (
-            float(row.get("median_valid_buy_net_worth") or float("inf")),
-            float(row.get("median_buy_time_s") or float("inf")),
+            float(row.get("selection_median_valid_buy_net_worth") or float("inf")),
+            float(row.get("selection_median_buy_time_s") or float("inf")),
             item_id,
         )
         for row in hero_metrics.iter_rows(named=True)
@@ -544,11 +640,123 @@ def _purchase_window_bounds(
 ) -> dict[int, tuple[float, float]]:
     result: dict[int, tuple[float, float]] = {}
     for row in hero_metrics.iter_rows(named=True):
-        lower = row.get("buy_nw_q25")
-        upper = row.get("buy_nw_q75")
-        if lower is not None and upper is not None:
+        lower = row.get("selection_buy_nw_q25")
+        upper = row.get("selection_buy_nw_q75")
+        training_lower = row.get("training_buy_nw_q25")
+        training_upper = row.get("training_buy_nw_q75")
+        validation_lower = row.get("validation_buy_nw_q25")
+        validation_upper = row.get("validation_buy_nw_q75")
+        reliable = (
+            float(row.get("selection_valid_buy_nw_observations") or 0)
+            / max(float(row.get("selection_adopter_matches") or 0), 1.0)
+            >= MINIMUM_PURCHASE_WINDOW_COVERAGE
+            and int(row.get("training_valid_buy_nw_observations") or 0)
+            >= MINIMUM_PURCHASE_WINDOW_OBSERVATIONS
+            and int(row.get("validation_valid_buy_nw_observations") or 0)
+            >= MINIMUM_PURCHASE_WINDOW_OBSERVATIONS
+            and training_lower is not None
+            and training_upper is not None
+            and validation_lower is not None
+            and validation_upper is not None
+            and max(float(training_lower), float(validation_lower))
+            <= min(float(training_upper), float(validation_upper))
+        )
+        if reliable and lower is not None and upper is not None:
             result[int(row["item_id"])] = (float(lower), float(upper))
     return result
+
+
+def _tier_policy(
+    hero_id: int,
+    hero_metrics: pl.DataFrame,
+    core_item_ids: tuple[int, ...],
+    optional_core_item_ids: frozenset[int],
+    graph: ItemGraph,
+    fold_eligible_matches: dict[str, int],
+) -> dict[str, Any]:
+    rows = {int(row["item_id"]): row for row in hero_metrics.iter_rows(named=True)}
+    excluded = set(core_item_ids) | set(optional_core_item_ids)
+    visible_higher_tier_ids = set(core_item_ids) | set(optional_core_item_ids)
+    reliable_window_bounds = _purchase_window_bounds(hero_metrics)
+    item_ids_by_tier: dict[str, list[int]] = {}
+    rejection_counts: Counter[str] = Counter()
+
+    def has_visible_upgrade(item_id: int) -> bool:
+        upgrades = set(graph.children[item_id])
+        return not upgrades or bool(upgrades & visible_higher_tier_ids)
+
+    for tier in range(4, 0, -1):
+        qualified: list[dict[str, Any]] = []
+        for item_id, row in rows.items():
+            if int(row["tier"]) != tier or item_id in excluded:
+                continue
+            training_support = int(row["training_adopter_matches"])
+            validation_support = int(row["validation_adopter_matches"])
+            training_adoption = training_support / fold_eligible_matches["train"]
+            validation_adoption = (
+                validation_support / fold_eligible_matches["validation"]
+            )
+            gates = {
+                "training_support": training_support >= MINIMUM_CORE_SUPPORT,
+                "validation_support": validation_support >= MINIMUM_CORE_SUPPORT,
+                "training_adoption": training_adoption >= MINIMUM_TIER_ADOPTION,
+                "validation_adoption": validation_adoption >= MINIMUM_TIER_ADOPTION,
+                "adoption_stability": abs(training_adoption - validation_adoption)
+                <= MAXIMUM_TIER_ADOPTION_DRIFT,
+                "upgrade_visibility": has_visible_upgrade(item_id),
+            }
+            if all(gates.values()):
+                qualified.append(row)
+            else:
+                rejection_counts.update(
+                    name for name, passed in gates.items() if not passed
+                )
+        selected = sorted(
+            qualified,
+            key=lambda row: (
+                -int(row["training_adopter_matches"]) / fold_eligible_matches["train"],
+                -int(row["training_adopter_matches"]),
+                int(row["item_id"]),
+            ),
+        )[:TIER_ITEM_COUNT]
+        if not selected:
+            raise UnsupportedBuildPathError(
+                f"hero {hero_id} has no supported non-CORE Tier {tier} item"
+            )
+        selected = sorted(
+            selected,
+            key=lambda row: (
+                int(row["item_id"]) not in reliable_window_bounds,
+                (
+                    float(row.get("selection_median_valid_buy_net_worth") or 0.0)
+                    if int(row["item_id"]) in reliable_window_bounds
+                    else float("inf")
+                ),
+                (
+                    float(row.get("selection_median_buy_time_s") or 0.0)
+                    if int(row["item_id"]) in reliable_window_bounds
+                    else float("inf")
+                ),
+                int(row["item_id"]),
+            ),
+        )
+        selected_ids = [int(row["item_id"]) for row in selected]
+        item_ids_by_tier[str(tier)] = selected_ids
+        visible_higher_tier_ids.update(selected_ids)
+    return {
+        "version": TIER_POLICY_VERSION,
+        "item_ids_by_tier": item_ids_by_tier,
+        "selection": {
+            "primary_fold": "train",
+            "validation_fold": "validation",
+            "test_usage": "audit_only",
+            "minimum_fold_support": MINIMUM_CORE_SUPPORT,
+            "minimum_fold_adoption": MINIMUM_TIER_ADOPTION,
+            "maximum_adoption_rate_drift": MAXIMUM_TIER_ADOPTION_DRIFT,
+            "maximum_items_per_tier": TIER_ITEM_COUNT,
+            "rejection_counts": dict(sorted(rejection_counts.items())),
+        },
+    }
 
 
 def _complete_priorities(
@@ -728,7 +936,13 @@ def _core_target_order(
         "method": "window_constrained_pairwise_target_precedence_subset_dp",
         "window_constraint": "nondecreasing_first_ownership_iqr",
         "window_schedule": [
-            {"item_id": item_id, "minimum_feasible_net_worth": checkpoint}
+            {
+                "item_id": item_id,
+                "window_available": item_id in window_bounds,
+                "minimum_feasible_net_worth": (
+                    checkpoint if item_id in window_bounds else None
+                ),
+            }
             for item_id, checkpoint in zip(best_path, best_window_schedule, strict=True)
         ],
         "target_order": list(best),
@@ -741,37 +955,17 @@ def _core_target_order(
     }
 
 
-def _duplicate_free_core_candidates(
-    core_candidates: list[dict[str, Any]],
-    hero_metrics: pl.DataFrame,
-    graph: ItemGraph,
-) -> list[dict[str, Any]]:
-    priorities = _purchase_priorities(hero_metrics)
-    result = []
-    for candidate in core_candidates:
-        try:
-            path = _candidate_path(candidate, graph, priorities)
-        except MechanicsError:
-            continue
-        if _candidate_path_is_legal(candidate, path, graph):
-            result.append(candidate)
-    return result
-
-
 def _expanded_default_path(
-    core_candidates: list[dict[str, Any]],
+    default_item_ids: tuple[int, ...],
     hero_metrics: pl.DataFrame,
     graph: ItemGraph,
-    target_order: tuple[int, ...] | None = None,
 ) -> list[int]:
-    if not core_candidates:
-        raise RuntimeError("hero has no supported duplicate-free eight-item core")
+    if not default_item_ids:
+        raise RuntimeError("hero has no supported state-aware core")
     priorities = _complete_priorities(_purchase_priorities(hero_metrics), graph)
-    if target_order is None:
-        path = _candidate_path(core_candidates[0], graph, priorities)
-    else:
-        path = schedule_component_path(graph, target_order, priorities)
-    if not _candidate_path_is_legal(core_candidates[0], path, graph):
+    path = schedule_component_path(graph, default_item_ids, priorities)
+    candidate = {"item_ids": list(default_item_ids)}
+    if not _candidate_path_is_legal(candidate, path, graph):
         raise RuntimeError("component-expanded default path is not a legal final core")
     return list(path)
 
@@ -876,27 +1070,221 @@ type _QualifiedSituationalBranch = tuple[
 type _SituationalEvidence = tuple[
     pl.DataFrame,
     dict[int, dict[str, Any]],
-    dict[str, dict[str, Any]],
+    dict[Any, dict[str, Any]],
 ]
+
+
+def _situational_cells(
+    con: duckdb.DuckDBPyConnection,
+    hero_id: int,
+    *,
+    selection_only: bool,
+) -> pl.DataFrame:
+    fold_filter = "AND p.fold IN ('train', 'validation')" if selection_only else ""
+    return con.sql(
+        f"""
+        WITH observed AS (
+            SELECT 'whole_enemy_team' AS scope, p.fold, p.hero_id, p.phase,
+                   p.tier, p.item_id, unnest(enemy.hero_ids) AS enemy_hero_id, p.won
+            FROM decision_opportunities p
+            JOIN compositions enemy
+              ON p.match_id = enemy.match_id AND (1 - p.team_id) = enemy.team_id
+            WHERE p.hero_id = {hero_id} {fold_filter}
+            UNION ALL
+            SELECT 'same_lane' AS scope, p.fold, p.hero_id, p.phase,
+                   p.tier, p.item_id, enemy.hero_id AS enemy_hero_id, p.won
+            FROM decision_opportunities p
+            JOIN player_matches enemy
+              ON p.match_id = enemy.match_id
+             AND (1 - p.team_id) = enemy.team_id
+             AND p.assigned_lane = enemy.assigned_lane
+            WHERE p.hero_id = {hero_id} {fold_filter}
+        )
+        SELECT scope, fold, hero_id, phase, tier, item_id, enemy_hero_id,
+               count(*) AS observations, avg(won::INTEGER) AS outcome_rate
+        FROM observed
+        GROUP BY ALL
+        """
+    ).pl()
+
+
+def _situational_state_overlap(
+    con: duckdb.DuckDBPyConnection,
+    hero_id: int,
+) -> pl.DataFrame:
+    return con.sql(
+        f"""
+        WITH decisions AS (
+            SELECT *,
+                   CASE WHEN own_net_worth_at_buy IS NULL THEN -1
+                        ELSE least(12, floor(own_net_worth_at_buy / 5000))::INTEGER
+                   END AS own_nw_band,
+                   CASE WHEN team_net_worth_lead IS NULL THEN -99
+                        ELSE greatest(
+                            -8, least(8, floor(team_net_worth_lead / 5000))
+                        )::INTEGER
+                   END AS lead_band
+            FROM decision_opportunities
+            WHERE hero_id = {hero_id} AND fold IN ('train', 'validation')
+        ), reference_states AS (
+            SELECT hero_id, tier, phase, own_nw_band, lead_band,
+                   count(*) AS reference_observations
+            FROM decisions GROUP BY ALL
+        ), reference_totals AS (
+            SELECT hero_id, tier, sum(reference_observations) AS reference_total
+            FROM reference_states GROUP BY ALL
+        ), item_states AS (
+            SELECT hero_id, tier, item_id, phase, own_nw_band, lead_band,
+                   count(*) AS item_observations
+            FROM decisions GROUP BY ALL
+        ), overlap AS (
+            SELECT i.*, r.reference_observations, t.reference_total,
+                   sum(r.reference_observations) OVER (
+                       PARTITION BY i.hero_id, i.tier, i.item_id
+                   ) AS covered_reference
+            FROM item_states i
+            JOIN reference_states r
+              USING (hero_id, tier, phase, own_nw_band, lead_band)
+            JOIN reference_totals t USING (hero_id, tier)
+        )
+        SELECT hero_id, tier, item_id,
+               sum(item_observations) AS item_observations,
+               any_value(covered_reference) / any_value(reference_total)
+                   AS state_coverage,
+               1.0 / sum(
+                   pow(reference_observations / covered_reference, 2)
+                   / item_observations
+               ) AS effective_support
+        FROM overlap GROUP BY hero_id, tier, item_id
+        """
+    ).pl()
+
+
+def _situational_selection_matchups(
+    cells: pl.DataFrame,
+    comparator_item_ids: frozenset[int] | None = None,
+) -> pl.DataFrame:
+    selected = cells.filter(pl.col("observations") >= 20)
+    output: list[dict[str, Any]] = []
+    keys = ("scope", "hero_id", "enemy_hero_id", "phase", "tier")
+    for _, group in selected.group_by(keys, maintain_order=True):
+        rows = group.sort(
+            ["observations", "item_id"], descending=[True, False]
+        ).to_dicts()
+        for row in rows:
+            comparator = next(
+                (
+                    candidate
+                    for candidate in rows
+                    if int(candidate["item_id"]) != int(row["item_id"])
+                    and (
+                        comparator_item_ids is None
+                        or int(candidate["item_id"]) in comparator_item_ids
+                    )
+                ),
+                None,
+            )
+            if comparator is None:
+                output.append({
+                    **row,
+                    "same_opportunity": False,
+                    "comparator_item_id": None,
+                    "comparison_support": 0,
+                    "comparative_interval_low": None,
+                    "comparative_interval_high": None,
+                })
+                continue
+            target_n = int(row["observations"])
+            comparator_n = int(comparator["observations"])
+            target_rate = float(row["outcome_rate"])
+            comparator_rate = float(comparator["outcome_rate"])
+            estimate = target_rate - comparator_rate
+            standard_error = math.sqrt(
+                target_rate * (1 - target_rate) / target_n
+                + comparator_rate * (1 - comparator_rate) / comparator_n
+            )
+            margin = 1.96 * standard_error
+            output.append({
+                **row,
+                "same_opportunity": True,
+                "comparator_item_id": int(comparator["item_id"]),
+                "comparison_support": comparator_n,
+                "comparative_interval_low": estimate - margin,
+                "comparative_interval_high": estimate + margin,
+            })
+    return pl.DataFrame(output, infer_schema_length=None)
+
+
+def _situational_fold_diagnostics(
+    cells: pl.DataFrame,
+) -> dict[tuple[str, int, int, int, int], dict[str, dict[str, float | int]]]:
+    diagnostics: dict[
+        tuple[str, int, int, int, int], dict[str, dict[str, float | int]]
+    ] = {}
+    for row in cells.iter_rows(named=True):
+        key = (
+            str(row["scope"]),
+            int(row["phase"]),
+            int(row["tier"]),
+            int(row["item_id"]),
+            int(row["enemy_hero_id"]),
+        )
+        diagnostics.setdefault(key, {})[str(row["fold"])] = {
+            "support": int(row["observations"]),
+            "outcome_rate": float(row["outcome_rate"]),
+        }
+    return diagnostics
 
 
 def _load_situational_evidence(
     paths: RunPaths,
     hero_id: int,
+    con: duckdb.DuckDBPyConnection | None = None,
+    comparator_item_ids: frozenset[int] | None = None,
+    preloaded: tuple[pl.DataFrame, pl.DataFrame] | None = None,
 ) -> _SituationalEvidence | None:
     matchup_path = paths.tables / "matchup_interactions.csv"
     overlap_path = paths.tables / "state_overlap_diagnostics.csv"
     stability_path = paths.tables / "matchup_temporal_stability.csv"
-    if not (
-        matchup_path.is_file() and overlap_path.is_file() and stability_path.is_file()
-    ):
+    if con is None and not overlap_path.is_file():
         return None
-    matchups = pl.read_csv(matchup_path).filter(pl.col("hero_id") == hero_id)
-    overlap = pl.read_csv(overlap_path).filter(pl.col("hero_id") == hero_id)
-    stability = pl.read_csv(stability_path).filter(pl.col("hero_id") == hero_id)
+    overlap = (
+        preloaded[0]
+        if preloaded is not None
+        else _situational_state_overlap(con, hero_id)
+        if con is not None
+        else pl.read_csv(overlap_path).filter(pl.col("hero_id") == hero_id)
+    )
     overlap_by_item = {
         int(row["item_id"]): row for row in overlap.iter_rows(named=True)
     }
+    if con is not None:
+        all_cells = (
+            preloaded[1]
+            if preloaded is not None
+            else _situational_cells(con, hero_id, selection_only=False)
+        )
+        selection_cells = (
+            all_cells
+            .filter(pl.col("fold").is_in(["train", "validation"]))
+            .group_by(["scope", "hero_id", "phase", "tier", "item_id", "enemy_hero_id"])
+            .agg(
+                pl.col("observations").sum(),
+                (
+                    (pl.col("outcome_rate") * pl.col("observations")).sum()
+                    / pl.col("observations").sum()
+                ).alias("outcome_rate"),
+            )
+        )
+        return (
+            _situational_selection_matchups(selection_cells, comparator_item_ids),
+            overlap_by_item,
+            _situational_fold_diagnostics(all_cells),
+        )
+    if not matchup_path.is_file() or not stability_path.is_file():
+        return None
+    matchups = pl.read_csv(matchup_path).filter(pl.col("hero_id") == hero_id)
+    stability = pl.read_csv(stability_path).filter(pl.col("hero_id") == hero_id)
     stability_by_scope = {
         str(row["scope"]): row for row in stability.iter_rows(named=True)
     }
@@ -921,11 +1309,82 @@ def _bounded_comparative_interval(
     return float(interval_low), float(interval_high)
 
 
+def _situational_temporal_diagnostic(
+    row: dict[str, Any],
+    fold_cells: dict[Any, dict[str, Any]],
+) -> dict[str, Any]:
+    scope = str(row["scope"])
+    phase = int(row["phase"])
+    tier = int(row["tier"])
+    item_id = int(row["item_id"])
+    comparator_item_id = int(row.get("comparator_item_id") or 0)
+    enemy_id = int(row["enemy_hero_id"])
+    target = fold_cells.get((scope, phase, tier, item_id, enemy_id))
+    comparator = fold_cells.get((scope, phase, tier, comparator_item_id, enemy_id))
+    if isinstance(target, dict) and isinstance(comparator, dict):
+        estimates: dict[str, float] = {}
+        support: dict[str, dict[str, int]] = {}
+        for fold in ("train", "validation", "test"):
+            target_fold = target.get(fold)
+            comparator_fold = comparator.get(fold)
+            if not isinstance(target_fold, dict) or not isinstance(
+                comparator_fold, dict
+            ):
+                continue
+            estimates[fold] = float(target_fold["outcome_rate"]) - float(
+                comparator_fold["outcome_rate"]
+            )
+            support[fold] = {
+                "item": int(target_fold["support"]),
+                "comparator": int(comparator_fold["support"]),
+            }
+        selection_available = all(
+            fold in estimates and fold in support for fold in ("train", "validation")
+        )
+        selection_supported = selection_available and all(
+            min(support[fold].values()) >= 20 for fold in ("train", "validation")
+        )
+        selection_positive = selection_available and all(
+            estimates[fold] > 0 for fold in ("train", "validation")
+        )
+        selection_stable = (
+            selection_available
+            and abs(estimates["train"] - estimates["validation"]) <= 0.05
+        )
+        test_available = "test" in estimates and "test" in support
+        test_supported = test_available and min(support["test"].values()) >= 20
+        test_positive = test_available and estimates["test"] > 0
+        return {
+            "selection_supported": selection_supported,
+            "selection_positive": selection_positive,
+            "selection_stable": selection_stable,
+            "test_supported": test_supported,
+            "test_positive": test_positive,
+            "fold_comparative_estimates": estimates,
+            "fold_support": support,
+        }
+    fallback = fold_cells.get(scope, {})
+    stable = (
+        float(fallback.get("spearman") or 0.0) >= 0.3
+        and float(fallback.get("sign_agreement") or 0.0) >= 0.6
+    )
+    return {
+        "selection_supported": stable,
+        "selection_positive": stable,
+        "selection_stable": stable,
+        "test_supported": False,
+        "test_positive": False,
+        "fold_comparative_estimates": {},
+        "fold_support": {},
+    }
+
+
 def _evaluate_situational_response(
     row: dict[str, Any],
     response: str,
     diagnostic: dict[str, Any],
     temporal: dict[str, Any],
+    enemy_threat_evidence: dict[int, dict[str, tuple[str, ...]]],
 ) -> tuple[dict[str, Any], _QualifiedSituationalBranch | None]:
     item_id = int(row["item_id"])
     effective = float(diagnostic.get("effective_support") or 0.0)
@@ -933,10 +1392,7 @@ def _evaluate_situational_response(
     comparator_item_id = int(row.get("comparator_item_id") or 0)
     comparison_support = int(row.get("comparison_support") or 0)
     comparative_interval = _bounded_comparative_interval(row)
-    stable = (
-        float(temporal.get("spearman") or 0.0) >= 0.3
-        and float(temporal.get("sign_agreement") or 0.0) >= 0.6
-    )
+    stable = bool(temporal.get("selection_stable"))
     gates = {
         "mechanics": True,
         "same_opportunity": bool(row.get("same_opportunity")),
@@ -945,6 +1401,10 @@ def _evaluate_situational_response(
         "comparison_support": comparison_support >= 20,
         "effective_support": effective >= 20,
         "overlap": state_coverage >= 0.5,
+        "fold_support": bool(temporal.get("selection_supported")),
+        "fold_advantage": bool(temporal.get("selection_positive")),
+        "test_support": bool(temporal.get("test_supported")),
+        "test_advantage": bool(temporal.get("test_positive")),
         "chronological_stability": stable,
         "bounded_comparative_uncertainty": comparative_interval is not None,
         "comparative_advantage": (
@@ -954,6 +1414,9 @@ def _evaluate_situational_response(
     passed = all(gates.values())
     threat = MECHANIC_RESPONSE_THREATS[response]
     enemy_id = int(row["enemy_hero_id"])
+    enemy_mechanics_refs = enemy_threat_evidence.get(enemy_id, {}).get(threat, ())
+    gates["enemy_mechanics"] = bool(enemy_mechanics_refs)
+    passed = all(gates.values())
     comparator = (
         f"same-opportunity item {comparator_item_id} or save"
         if comparator_item_id
@@ -964,8 +1427,11 @@ def _evaluate_situational_response(
         "item_id": item_id,
         "comparator_item_id": comparator_item_id or None,
         "enemy_hero_id": enemy_id,
-        "scope": str(row["scope"]),
+        "enemy_scope": str(row["scope"]),
+        "phase": int(row["phase"]),
+        "tier": int(row["tier"]),
         "mechanic_ref": f"item/{item_id}/{response}",
+        "enemy_mechanics_refs": list(enemy_mechanics_refs),
         "comparator": comparator,
         "support": int(row["observations"]),
         "comparison_support": comparison_support,
@@ -976,6 +1442,8 @@ def _evaluate_situational_response(
             row.get("comparative_interval_low"),
             row.get("comparative_interval_high"),
         ],
+        "fold_comparative_estimates": temporal.get("fold_comparative_estimates", {}),
+        "fold_support": temporal.get("fold_support", {}),
         "gates": gates,
         "qualified": passed,
         "admitted": False,
@@ -986,7 +1454,11 @@ def _evaluate_situational_response(
         "threat": threat,
         "item_id": item_id,
         "enemy_hero_id": enemy_id,
+        "enemy_scope": str(row["scope"]),
+        "phase": int(row["phase"]),
+        "tier": int(row["tier"]),
         "mechanic_ref": f"item/{item_id}/{response}",
+        "enemy_mechanics_refs": list(enemy_mechanics_refs),
         "comparator": comparator,
         "comparator_item_id": comparator_item_id,
         "comparison_support": comparison_support,
@@ -996,6 +1468,8 @@ def _evaluate_situational_response(
         "overlap": state_coverage,
         "stable": stable,
         "comparative_interval": list(comparative_interval),
+        "fold_comparative_estimates": temporal.get("fold_comparative_estimates", {}),
+        "fold_support": temporal.get("fold_support", {}),
         "trigger": (
             f"Enemy hero {enemy_id} presents material {threat.replace('_', ' ')}."
         ),
@@ -1027,22 +1501,24 @@ def _collect_situational_candidates(
     assets: list[dict[str, Any]],
     excluded_item_ids: frozenset[int],
     eligible_item_ids: frozenset[int] | None,
+    enemy_threat_evidence: dict[int, dict[str, tuple[str, ...]]],
 ) -> tuple[list[dict[str, Any]], list[_QualifiedSituationalBranch]]:
     matchups, overlap_by_item, stability_by_scope = evidence
     asset_by_id = {
         int(asset["id"]): asset for asset in assets if isinstance(asset.get("id"), int)
     }
+    responses_by_item = {
+        item_id: classify_item_threat_responses(asset)
+        for item_id, asset in asset_by_id.items()
+    }
+    decision_cache: dict[tuple[int, int, str], tuple[str, str, str, str] | None] = {}
     candidates: list[dict[str, Any]] = []
     qualified: list[_QualifiedSituationalBranch] = []
     for row in matchups.iter_rows(named=True):
         item_id = int(row["item_id"])
         comparator_item_id = int(row.get("comparator_item_id") or 0)
         if item_id in excluded_item_ids or (
-            eligible_item_ids is not None
-            and (
-                item_id not in eligible_item_ids
-                or comparator_item_id not in eligible_item_ids
-            )
+            eligible_item_ids is not None and item_id not in eligible_item_ids
         ):
             continue
         asset = asset_by_id.get(item_id)
@@ -1050,20 +1526,27 @@ def _collect_situational_candidates(
             continue
         comparator_asset = asset_by_id.get(comparator_item_id)
         diagnostic = overlap_by_item.get(item_id, {})
-        temporal = stability_by_scope.get(str(row["scope"]), {})
-        for response in sorted(classify_item_threat_responses(asset)):
+        temporal = _situational_temporal_diagnostic(row, stability_by_scope)
+        for response in sorted(responses_by_item[item_id]):
             candidate, branch = _evaluate_situational_response(
-                row, response, diagnostic, temporal
+                row,
+                response,
+                diagnostic,
+                temporal,
+                enemy_threat_evidence,
             )
-            decision = (
-                conditional_item_decision(
-                    asset,
-                    comparator_asset,
-                    response=response,
+            decision_key = (item_id, comparator_item_id, response)
+            if decision_key not in decision_cache:
+                decision_cache[decision_key] = (
+                    conditional_item_decision(
+                        asset,
+                        comparator_asset,
+                        response=response,
+                    )
+                    if comparator_asset is not None
+                    else None
                 )
-                if comparator_asset is not None
-                else None
-            )
+            decision = decision_cache[decision_key]
             candidate["gates"]["decision_copy"] = decision is not None
             candidate["qualified"] = bool(candidate["qualified"] and decision)
             candidates.append(candidate)
@@ -1086,10 +1569,16 @@ def _admit_situational_branches(
     )
     branches: list[dict[str, Any]] = []
     used_items: set[int] = set()
-    used_guards: set[tuple[str, int]] = set()
+    used_guards: set[tuple[str, int, str, int, int]] = set()
     for _, candidate, branch in ordered:
         item_id = int(branch["item_id"])
-        guard = (str(branch["threat"]), int(branch["enemy_hero_id"]))
+        guard = (
+            str(branch["threat"]),
+            int(branch["enemy_hero_id"]),
+            str(branch["enemy_scope"]),
+            int(branch["phase"]),
+            int(branch["tier"]),
+        )
         if item_id in used_items or guard in used_guards:
             continue
         candidate["admitted"] = True
@@ -1126,20 +1615,75 @@ def _situational_policy(
     *,
     excluded_item_ids: frozenset[int] = frozenset(),
     eligible_item_ids: frozenset[int] | None = None,
+    comparator_item_ids: frozenset[int] | None = None,
+    default_item_ids: tuple[int, ...] | None = None,
+    graph: ItemGraph | None = None,
+    priorities: dict[int, tuple[float, float, int]] | None = None,
+    enemy_threat_evidence: dict[int, dict[str, tuple[str, ...]]] | None = None,
+    con: duckdb.DuckDBPyConnection | None = None,
+    preloaded_evidence: tuple[pl.DataFrame, pl.DataFrame] | None = None,
 ) -> dict[str, Any]:
     candidates: list[dict[str, Any]] = []
     qualified: list[_QualifiedSituationalBranch] = []
-    evidence = _load_situational_evidence(paths, hero_id)
+    evidence = _load_situational_evidence(
+        paths,
+        hero_id,
+        con,
+        comparator_item_ids,
+        preloaded_evidence,
+    )
     if evidence is not None:
         candidates, qualified = _collect_situational_candidates(
-            evidence, assets, excluded_item_ids, eligible_item_ids
+            evidence,
+            assets,
+            excluded_item_ids,
+            eligible_item_ids,
+            enemy_threat_evidence or {},
         )
+        if (
+            default_item_ids is not None
+            and graph is not None
+            and priorities is not None
+        ):
+            for candidate in candidates:
+                comparator_item_id = int(candidate.get("comparator_item_id") or 0)
+                replacement_legal = comparator_item_id > 0 and _replacement_is_legal(
+                    default_item_ids,
+                    comparator_item_id,
+                    int(candidate["item_id"]),
+                    graph,
+                    priorities,
+                )
+                candidate["gates"]["replacement_legality"] = replacement_legal
+                candidate["qualified"] = bool(
+                    candidate["qualified"] and replacement_legal
+                )
+            qualified = [
+                row
+                for row in qualified
+                if bool(row[1]["gates"].get("replacement_legality"))
+            ]
     branches = _admit_situational_branches(qualified)
     return {
-        "version": 1,
+        "version": SITUATIONAL_POLICY_VERSION,
         "threat_vocabulary": sorted(THREAT_CLASSES),
         "branches": branches,
-        "candidate_audit": candidates,
+        "candidate_audit": {
+            "evaluated": len(candidates),
+            "qualified": sum(bool(row["qualified"]) for row in candidates),
+            "admitted": len(branches),
+            "rejection_counts": dict(
+                sorted(
+                    Counter(
+                        gate
+                        for row in candidates
+                        for gate, passed in row["gates"].items()
+                        if not passed
+                    ).items()
+                )
+            ),
+            "sample": candidates[:32],
+        },
         "abstentions": _situational_abstentions(len(candidates), len(branches)),
     }
 
@@ -1272,8 +1816,7 @@ def _best_core_alternatives_by_item(
 
 
 def _core_alternatives(
-    con: duckdb.DuckDBPyConnection,
-    hero_id: int,
+    decisions: pl.DataFrame,
     default_item_ids: tuple[int, ...],
     backbone_item_ids: tuple[int, ...],
     hero_metrics: pl.DataFrame,
@@ -1281,7 +1824,6 @@ def _core_alternatives(
     graph: ItemGraph,
     priorities: dict[int, tuple[float, float, int]],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    decisions = _core_decisions(con, hero_id)
     metrics = {int(row["item_id"]): row for row in hero_metrics.iter_rows(named=True)}
     default_set = set(default_item_ids)
     backbone_set = set(backbone_item_ids)
@@ -1346,6 +1888,7 @@ def _core_alternatives(
                 "dr_estimate": contrast.estimate,
                 "comparative_interval": list(contrast.interval),
                 "fold_estimates": contrast.fold_estimates,
+                "fold_diagnostics": contrast.fold_diagnostics,
                 "clipped_sensitivity": contrast.clipped_sensitivity,
                 "stable": contrast.stable,
                 "admitted": contrast.admitted,
@@ -1403,12 +1946,13 @@ def _resolved_path_label(
 def _supported_route_members(
     inventories: dict[tuple[int, int], tuple[int, ...]],
     item_ids: tuple[int, ...],
+    folds_by_match: dict[int, str],
 ) -> set[tuple[int, int]]:
     required = set(item_ids)
     return {
         identity
         for identity, inventory in inventories.items()
-        if required <= set(inventory)
+        if folds_by_match[identity[0]] == "train" and required <= set(inventory)
     }
 
 
@@ -1447,14 +1991,20 @@ def _build_path_payload(
     label_counts: Counter[str],
     inventories: dict[tuple[int, int], tuple[int, ...]],
     context: _HeroExportContext,
+    core_decisions: pl.DataFrame | None = None,
+    situational_evidence: tuple[pl.DataFrame, pl.DataFrame] | None = None,
 ) -> dict[str, Any]:
     path_inventories = {identity: inventories[identity] for identity in path.member_ids}
     path_metrics = _path_item_metrics(con, path.member_ids)
-    eligible_item_ids = frozenset(
-        int(item_id) for item_id in path_metrics["item_id"].to_list()
-    )
     eligible_matches, median_final_net_worth = _path_cohort_summary(
         con, path.member_ids
+    )
+    fold_eligible_matches = {
+        fold: int(path.fold_support.get(fold, 0))
+        for fold in ("train", "validation", "test")
+    }
+    selection_eligible_matches = (
+        fold_eligible_matches["train"] + fold_eligible_matches["validation"]
     )
     priorities = _complete_priorities(
         _purchase_priorities(path_metrics), context.item_graph
@@ -1482,35 +2032,58 @@ def _build_path_payload(
         "item_ids": list(default_item_ids),
         "joint_matches": default_matches,
     }
-    core_candidates = _top_core_candidates(
-        list(path_inventories.values()),
-        context.item_costs,
-        median_final_net_worth,
-        graph=context.item_graph,
-        priorities=priorities,
-    )
-    if not core_candidates:
-        raise UnsupportedBuildPathError(
-            f"hero {hero_id} path {path.path_id} has no supported legal core"
-        )
     target_order, route_diagnostics = _core_target_order(
         con,
         hero_id,
         state_candidate,
-        _supported_route_members(path_inventories, default_item_ids),
+        _supported_route_members(
+            path_inventories, default_item_ids, context.folds_by_match
+        ),
         context.item_graph,
         priorities,
         window_bounds,
     )
     alternatives, alternative_audit = _core_alternatives(
-        con,
-        hero_id,
+        core_decisions if core_decisions is not None else _core_decisions(con, hero_id),
         target_order,
         backbone.item_ids,
         path_metrics,
         context.mechanics_assets_by_id,
         context.item_graph,
         priorities,
+    )
+    expanded_default_path = tuple(
+        _expanded_default_path(target_order, path_metrics, context.item_graph)
+    )
+    tier_policy = _tier_policy(
+        hero_id,
+        path_metrics,
+        expanded_default_path,
+        frozenset(int(row["item_id"]) for row in alternatives),
+        context.item_graph,
+        fold_eligible_matches,
+    )
+    tier_item_ids = frozenset(
+        int(item_id)
+        for item_ids in tier_policy["item_ids_by_tier"].values()
+        for item_id in item_ids
+    )
+    situational_policy = _situational_policy(
+        context.paths,
+        hero_id,
+        context.normal_assets,
+        excluded_item_ids=frozenset(default_item_ids),
+        eligible_item_ids=tier_item_ids,
+        comparator_item_ids=frozenset(target_order),
+        default_item_ids=target_order,
+        graph=context.item_graph,
+        priorities=priorities,
+        enemy_threat_evidence=context.enemy_threat_evidence,
+        con=con,
+        preloaded_evidence=situational_evidence,
+    )
+    selected_completion = next(
+        row for row in completion_audit if bool(row.get("selected"))
     )
     return {
         "path_id": path.path_id,
@@ -1523,15 +2096,17 @@ def _build_path_payload(
         "signature_item_ids": list(path.signature_item_ids),
         "discovery": path.diagnostics,
         "eligible_player_matches": eligible_matches,
+        "selection_eligible_player_matches": selection_eligible_matches,
+        "fold_eligible_player_matches": fold_eligible_matches,
         "median_final_net_worth": median_final_net_worth,
-        "core_candidates": core_candidates,
         "core_policy": {
-            "version": 2,
+            "version": CORE_POLICY_VERSION,
             "backbone_item_ids": list(backbone.item_ids),
             "default_item_ids": list(target_order),
             "backbone_matches": backbone.matches,
             "backbone_fold_matches": backbone.fold_matches,
             "default_matches": default_matches,
+            "default_fold_matches": selected_completion["joint_fold_matches"],
             "alternatives": alternatives,
             "candidate_audit": [
                 *backbone.audit,
@@ -1541,19 +2116,19 @@ def _build_path_payload(
             "evaluation": _core_evaluation_contract(),
         },
         "items": [
-            _item_payload(row, context.mechanics_assets_by_id)
+            _item_payload(
+                row,
+                context.mechanics_assets_by_id,
+                fold_eligible_matches,
+            )
             for row in path_metrics.sort("item_id").iter_rows(named=True)
         ],
+        "tier_policy": tier_policy,
         "sequence_policy": {
             "version": SEQUENCE_POLICY_VERSION,
             "minimum_support": SEQUENCE_MINIMUM_SUPPORT,
             "production_model": "deterministic_backoff",
-            "component_expanded_default_path": _expanded_default_path(
-                [state_candidate],
-                path_metrics,
-                context.item_graph,
-                target_order,
-            ),
+            "component_expanded_default_path": list(expanded_default_path),
             "route_diagnostics": route_diagnostics,
             "transitions": _sequence_rows(con, hero_id, path.member_ids),
             "evaluation": {
@@ -1562,13 +2137,7 @@ def _build_path_payload(
                 "claim": "outcome-agnostic next-action imitation",
             },
         },
-        "situational_policy": _situational_policy(
-            context.paths,
-            hero_id,
-            context.normal_assets,
-            excluded_item_ids=frozenset(default_item_ids),
-            eligible_item_ids=eligible_item_ids,
-        ),
+        "situational_policy": situational_policy,
     }
 
 
@@ -1596,39 +2165,55 @@ def _path_payloads(
     paths: tuple[DiscoveredBuildPath, ...],
     inventories: dict[tuple[int, int], tuple[int, ...]],
     context: _HeroExportContext,
-) -> list[dict[str, Any]]:
+    *,
+    core_decisions: pl.DataFrame | None = None,
+    situational_evidence: tuple[pl.DataFrame, pl.DataFrame] | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
     labels = [_path_label(con, path, context.mechanics_assets_by_id) for path in paths]
     label_counts = Counter(labels)
-    try:
-        return [
+    payloads: list[dict[str, Any]] = []
+    abstentions: list[dict[str, str]] = []
+    for path, label in zip(paths, labels, strict=True):
+        try:
+            payloads.append(
+                _build_path_payload(
+                    con,
+                    hero_id,
+                    hero,
+                    path,
+                    label,
+                    label_counts,
+                    inventories,
+                    context,
+                    core_decisions,
+                    situational_evidence,
+                )
+            )
+        except UnsupportedBuildPathError as error:
+            abstentions.append({
+                "path_id": path.path_id,
+                "reason": str(error),
+            })
+    if payloads:
+        return payloads, abstentions
+    fallback = _fallback_build_path(inventories, context.folds_by_match)
+    return (
+        [
             _build_path_payload(
                 con,
                 hero_id,
                 hero,
-                path,
-                label,
-                label_counts,
+                fallback,
+                DEFAULT_BUILD_PATH_LABEL,
+                Counter({DEFAULT_BUILD_PATH_LABEL: 1}),
                 inventories,
                 context,
+                core_decisions,
+                situational_evidence,
             )
-            for path, label in zip(paths, labels, strict=True)
-        ]
-    except UnsupportedBuildPathError:
-        if len(paths) == 1:
-            raise
-    fallback = _fallback_build_path(inventories, context.folds_by_match)
-    return [
-        _build_path_payload(
-            con,
-            hero_id,
-            hero,
-            fallback,
-            DEFAULT_BUILD_PATH_LABEL,
-            Counter({DEFAULT_BUILD_PATH_LABEL: 1}),
-            inventories,
-            context,
-        )
-    ]
+        ],
+        abstentions,
+    )
 
 
 def _build_hero_payload(
@@ -1652,17 +2237,26 @@ def _build_hero_payload(
             _early_inventories_for_hero(con, hero_id),
             context.folds_by_match,
         )
+        core_decisions = _core_decisions(con, hero_id)
+        situational_evidence = (
+            _situational_state_overlap(con, hero_id),
+            _situational_cells(con, hero_id, selection_only=False),
+        )
+        builds, path_abstentions = _path_payloads(
+            con,
+            hero_id,
+            hero,
+            paths,
+            inventories,
+            context,
+            core_decisions=core_decisions,
+            situational_evidence=situational_evidence,
+        )
         payload = {
             "hero_id": hero_id,
             "hero": name,
-            "builds": _path_payloads(
-                con,
-                hero_id,
-                hero,
-                paths,
-                inventories,
-                context,
-            ),
+            "builds": builds,
+            "path_abstentions": path_abstentions,
         }
         print(
             f"Production evidence {index}/{context.hero_count} completed: {name}",
@@ -1717,6 +2311,7 @@ def export_production_evidence(paths: RunPaths, output: Path) -> dict[str, Any]:
         mechanics_assets_by_id=mechanics_assets_by_id,
         item_costs=item_costs,
         target_core_cost=int(core_economy_reference["target_core_cost"]),
+        enemy_threat_evidence=_enemy_threat_evidence(heroes, normal_assets),
     )
     hero_payloads = _parallel_hero_export(
         list(enumerate(heroes, start=1)),
@@ -1735,13 +2330,17 @@ def export_production_evidence(paths: RunPaths, output: Path) -> dict[str, Any]:
         "producer": "deadlock-build-sync.offline",
         "method": {
             "version": METHOD_VERSION,
-            "core_candidate_item_count": CORE_ITEM_COUNT,
             "minimum_core_item_count": 4,
             "maximum_core_item_count": BASE_INVENTORY_SLOTS,
-            "core_candidate_limit": CORE_CANDIDATE_LIMIT,
             "minimum_core_support": MINIMUM_CORE_SUPPORT,
             "minimum_tier_support": SEQUENCE_MINIMUM_SUPPORT,
+            "minimum_tier_adoption": MINIMUM_TIER_ADOPTION,
+            "maximum_tier_adoption_drift": MAXIMUM_TIER_ADOPTION_DRIFT,
             "tier_item_count": TIER_ITEM_COUNT,
+            "minimum_purchase_window_coverage": (MINIMUM_PURCHASE_WINDOW_COVERAGE),
+            "minimum_purchase_window_observations": (
+                MINIMUM_PURCHASE_WINDOW_OBSERVATIONS
+            ),
             "minimum_imbue_support": MINIMUM_IMBUE_SUPPORT,
             "minimum_imbue_share": MINIMUM_IMBUE_SHARE,
             "core_selection": (
@@ -1750,15 +2349,19 @@ def export_production_evidence(paths: RunPaths, output: Path) -> dict[str, Any]:
                 "within ten percent of the Oracle I+ economy target when available"
             ),
             "tier_membership": (
-                "player-match adoption descending after requiring every available "
-                "higher upgrade tier to expose a supported continuation"
+                "training adoption descending after fold support, five-percent "
+                "adoption, ten-point drift, and upgrade-visibility gates"
             ),
-            "tier_display_order": "median valid pre-purchase net worth, then median buy time and item id",
+            "tier_display_order": (
+                "train-plus-validation median valid pre-purchase net worth, then "
+                "median buy time and item id"
+            ),
             "core_economy_reference": core_economy_reference,
             "outcome_usage": (
-                "cross-fitted doubly robust contrasts may admit optional final-slot "
-                "alternatives after overlap, balance, ESS, uncertainty, and temporal "
-                "stability gates; never represented as proof of causation"
+                "cross-fitted doubly robust contrasts may admit non-backbone CORE "
+                "substitutions only after positive train and validation intervals, "
+                "overlap, balance, ESS, uncertainty, and stability gates; test is "
+                "audit-only and results never prove causation"
             ),
         },
         "cohort": {
