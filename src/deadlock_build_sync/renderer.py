@@ -186,6 +186,7 @@ def _project_guide_item_policy_fields(
             if conditional_annotation is None
             else conditional_annotation
         ),
+        verified_tier_annotation=item.verified_tier_annotation,
         eligible_player_matches=item.eligible_player_matches,
         adopter_matches=item.adopter_matches,
         purchase_adoption=item.purchase_adoption,

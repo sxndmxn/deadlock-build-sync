@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
+
+from .build_evidence import reliable_purchase_window
+from .mechanics import optional_item_decision
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -40,6 +43,7 @@ CATEGORY_LAYOUTS = {
 }
 DEFAULT_CATEGORY_LAYOUT = (760.0, 8)
 CONDITIONAL_ANNOTATION_LABELS = ("VS", "WHY", "SWAP", "WHEN", "SKIP")
+TIER_ANNOTATION_LABELS = ("USE", "WHY", "SKIP", "DATA")
 _GENERIC_CONDITIONAL_PHRASES = (
     "documented mechanic",
     "fits the current fight",
@@ -96,6 +100,7 @@ class GuideItem:
     imbue_target_ability_id: int | None = None
     tactical_annotation: str = ""
     conditional_annotation: str = ""
+    verified_tier_annotation: str = ""
     eligible_player_matches: int = 0
     adopter_matches: int = 0
     purchase_adoption: float = 0.0
@@ -114,6 +119,8 @@ class GuideItem:
     def annotation(self) -> str:
         if self.conditional_annotation:
             return self.conditional_annotation
+        if self.verified_tier_annotation:
+            return self.verified_tier_annotation
         if self.eligible_player_matches:
             return item_stat_context(self)
         timing = (
@@ -374,7 +381,62 @@ def conditional_item_annotation(
     return annotation
 
 
+def tier_item_annotation(
+    *,
+    use: str,
+    why: str,
+    skip: str,
+    item: GuideItem,
+) -> str:
+    """Create one deterministic tactical card for a normal tier item.
+
+    Returns:
+        Four bounded lines without raw win-rate data.
+
+    Raises:
+        ValueError: If the copy is incomplete or exceeds the Steam byte limit.
+
+    """
+    window = _format_observed_purchase_window(
+        item.buy_net_worth_q25,
+        item.buy_net_worth_q75,
+    )
+    data = (
+        f"{window} • PICK {item.purchase_adoption * 100:.1f}% "
+        f"• BUYERS {item.adopter_matches:,}"
+    )
+    cleaned = tuple(value.strip() for value in (use, why, skip, data))
+    if any(not value or "\n" in value or "\r" in value for value in cleaned):
+        raise ValueError("tier annotation fields must be single-line text")
+    annotation = "\n".join(
+        f"{label}: {value}"
+        for label, value in zip(TIER_ANNOTATION_LABELS, cleaned, strict=True)
+    )
+    validate_tier_annotation(annotation)
+    return annotation
+
+
+def validate_tier_annotation(annotation: str) -> None:
+    """Validate the fixed normal-tier annotation contract.
+
+    Raises:
+        ValueError: If the annotation does not match the bounded four-line format.
+
+    """
+    lines = annotation.splitlines()
+    if len(lines) != len(TIER_ANNOTATION_LABELS) or any(
+        not line.startswith(f"{label}: ") or not line.removeprefix(f"{label}: ").strip()
+        for label, line in zip(TIER_ANNOTATION_LABELS, lines, strict=True)
+    ):
+        raise ValueError("tier annotation must contain USE, WHY, SKIP, and DATA")
+    if len(annotation.encode("utf-8")) > MAX_ITEM_ANNOTATION_BYTES:
+        raise ValueError(
+            f"item annotation exceeds {MAX_ITEM_ANNOTATION_BYTES} UTF-8 bytes"
+        )
+
+
 def guide_item_from_evidence(item: ItemEvidence) -> GuideItem:
+    window = reliable_purchase_window(item)
     return GuideItem(
         item_id=item.item_id,
         name=item.item,
@@ -382,17 +444,17 @@ def guide_item_from_evidence(item: ItemEvidence) -> GuideItem:
         purchase_event_observations=item.purchase_events,
         observed_outcome_rate=item.observed_outcome_rate,
         observed_outcome_lower_bound=0.0,
-        relative_purchase_event_volume=item.adoption,
+        relative_purchase_event_volume=item.selection_adoption,
         windows=(),
-        eligible_player_matches=item.eligible_player_matches,
-        adopter_matches=item.adopter_matches,
-        purchase_adoption=item.adoption,
+        eligible_player_matches=item.selection_eligible_player_matches,
+        adopter_matches=item.selection_adopter_matches,
+        purchase_adoption=item.selection_adoption,
         purchase_events=item.purchase_events,
-        median_buy_time_s=item.median_buy_time_s,
-        median_valid_buy_net_worth=item.median_valid_buy_net_worth,
-        buy_net_worth_q25=item.buy_net_worth_q25,
-        buy_net_worth_q75=item.buy_net_worth_q75,
-        valid_buy_net_worth_share=item.valid_buy_net_worth_share,
+        median_buy_time_s=item.selection_median_buy_time_s,
+        median_valid_buy_net_worth=item.selection_median_valid_buy_net_worth,
+        buy_net_worth_q25=window[0] if window is not None else None,
+        buy_net_worth_q75=window[1] if window is not None else None,
+        valid_buy_net_worth_share=item.selection_valid_buy_net_worth_share,
         imbue_target_ability_id=item.imbue_target_ability_id,
         imbue_target_ability=item.imbue_target_ability,
         imbue_target_matches=item.imbue_target_matches,
@@ -406,6 +468,8 @@ def build_purchase_guide_from_evidence(
     selected: SelectedHeroBuild,
     *,
     ability_path: AbilityPath | None = None,
+    assets: list[dict[str, Any]] | None = None,
+    hero_mechanics: dict[str, Any] | None = None,
 ) -> PurchaseGuide:
     """Project validated player-match evidence into the analytic guide model.
 
@@ -424,14 +488,46 @@ def build_purchase_guide_from_evidence(
         by_id.setdefault(item.item_id, guide_item_from_evidence(item))
     for item in selected.optional_core:
         by_id.setdefault(item.item_id, guide_item_from_evidence(item))
+    tiers = {
+        tier: tuple(by_id[item.item_id] for item in items)
+        for tier, items in selected.tiers.items()
+    }
+    if assets is not None:
+        assets_by_id = {
+            int(asset["id"]): asset
+            for asset in assets
+            if isinstance(asset.get("id"), int)
+        }
+        annotated_tiers: dict[int, tuple[GuideItem, ...]] = {}
+        for tier, items in tiers.items():
+            annotated: list[GuideItem] = []
+            for item in items:
+                asset = assets_by_id.get(item.item_id)
+                decision = (
+                    optional_item_decision(asset, hero_mechanics=hero_mechanics)
+                    if asset is not None
+                    else None
+                )
+                if decision is None:
+                    continue
+                use, why, skip = decision
+                try:
+                    annotation = tier_item_annotation(
+                        use=use,
+                        why=why,
+                        skip=skip,
+                        item=item,
+                    )
+                except ValueError:
+                    continue
+                annotated.append(replace(item, verified_tier_annotation=annotation))
+            annotated_tiers[tier] = tuple(annotated)
+        tiers = annotated_tiers
     return PurchaseGuide(
         hero_id=int(hero["id"]),
         hero_name=str(hero.get("name") or f"Hero {hero['id']}"),
         hero_class_name=str(hero.get("class_name") or ""),
-        tiers={
-            tier: tuple(by_id[item.item_id] for item in items)
-            for tier, items in selected.tiers.items()
-        },
+        tiers=tiers,
         path_id=selected.path_id,
         path_label=selected.path_label,
         signature_item_ids=selected.signature_item_ids,

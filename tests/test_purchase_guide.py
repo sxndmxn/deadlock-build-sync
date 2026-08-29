@@ -12,6 +12,8 @@ from deadlock_build_sync.purchase_guide import (
     conditional_item_annotation,
     format_purchase_window,
     tactical_item_annotation,
+    tier_item_annotation,
+    validate_tier_annotation,
     wilson_score_interval,
 )
 
@@ -63,6 +65,38 @@ def test_item_annotation_uses_stats_and_observed_imbue_target_only() -> None:
 
     assert "AI prose" not in item.annotation
     assert item.annotation.endswith("IMBUE: Frozen Shelter (75.0%, n=100)")
+
+
+def test_verified_tier_annotation_replaces_raw_win_rate_stats() -> None:
+    item = evidence_item()
+    annotation = tier_item_annotation(
+        use="Spirit pressure is your next priority",
+        why="Spirit Power",
+        skip="Defense or weapon pressure matters more",
+        item=item,
+    )
+    item = replace(item, verified_tier_annotation=annotation)
+
+    assert item.annotation == (
+        "USE: Spirit pressure is your next priority\n"
+        "WHY: Spirit Power\n"
+        "SKIP: Defense or weapon pressure matters more\n"
+        "DATA: 4k–14k souls • PICK 80.6% • BUYERS 12,611"
+    )
+    assert "WIN RATE" not in item.annotation
+    validate_tier_annotation(item.annotation)
+
+
+def test_tier_annotation_rejects_unstructured_or_oversized_copy() -> None:
+    with pytest.raises(ValueError, match="USE, WHY, SKIP, and DATA"):
+        validate_tier_annotation("AI prose")
+    with pytest.raises(ValueError, match="240"):
+        tier_item_annotation(
+            use="x" * 241,
+            why="Spirit Power",
+            skip="Defense matters more",
+            item=evidence_item(),
+        )
 
 
 def test_collapsed_and_missing_purchase_windows_remain_readable() -> None:

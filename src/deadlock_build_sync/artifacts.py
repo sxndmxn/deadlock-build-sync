@@ -16,7 +16,7 @@ class ArtifactError(ValueError):
     """Raised when a reusable artifact is incomplete, stale, or incompatible."""
 
 
-POLICY_ARTIFACT_SCHEMA_VERSION = 3
+POLICY_ARTIFACT_SCHEMA_VERSION = 4
 
 
 @dataclass(frozen=True)

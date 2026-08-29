@@ -28,7 +28,7 @@ from .policy import (
 if TYPE_CHECKING:
     from pathlib import Path
 
-DECISION_STATE_SCHEMA_VERSION = 1
+DECISION_STATE_SCHEMA_VERSION = 2
 _DECISION_STATE_FIELDS = frozenset({
     "schema_version",
     "build_evidence_id",
@@ -44,6 +44,7 @@ _DECISION_STATE_FIELDS = frozenset({
     "inventory",
     "learned_abilities",
     "enemy_hero_ids",
+    "lane_enemy_hero_ids",
     "enemy_item_ids",
     "allied_hero_ids",
     "objectives",
@@ -88,6 +89,7 @@ class DecisionState:
     active_bindings: int
     learned_abilities: tuple[int, ...]
     enemy_hero_ids: tuple[int, ...] = ()
+    lane_enemy_hero_ids: tuple[int, ...] = ()
     enemy_item_ids: tuple[int, ...] = ()
     allied_hero_ids: tuple[int, ...] = ()
     objectives: tuple[str, ...] = ()
@@ -129,7 +131,9 @@ class DecisionState:
                 "decision state inventory contains unsupported fields: "
                 + ", ".join(sorted(str(field) for field in unknown_inventory))
             )
-        return cls(
+        if "lane_enemy_hero_ids" not in value:
+            raise RecommendationError("decision state lacks lane enemy heroes")
+        state = cls(
             build_evidence_id=_text(
                 value.get("build_evidence_id"), "build evidence id"
             ),
@@ -163,6 +167,9 @@ class DecisionState:
             enemy_hero_ids=_unique_integers(
                 value.get("enemy_hero_ids", []), "enemy heroes"
             ),
+            lane_enemy_hero_ids=_unique_integers(
+                value.get("lane_enemy_hero_ids", []), "lane enemy heroes"
+            ),
             enemy_item_ids=_unique_integers(
                 value.get("enemy_item_ids", []), "enemy items"
             ),
@@ -172,6 +179,9 @@ class DecisionState:
             objectives=_unique_strings(value.get("objectives", []), "objectives"),
             threats=_unique_strings(value.get("threats", []), "threats"),
         )
+        if not set(state.lane_enemy_hero_ids) <= set(state.enemy_hero_ids):
+            raise RecommendationError("lane enemy heroes are not on the enemy team")
+        return state
 
 
 @dataclass(frozen=True)
@@ -351,6 +361,7 @@ def _evaluation_state(
 ) -> EvaluationState:
     observable = {
         "enemy.heroes": state.enemy_hero_ids,
+        "enemy.lane_heroes": state.lane_enemy_hero_ids,
         "enemy.threats": tuple(sorted(threats)),
         "enemy.items": state.enemy_item_ids,
         "ally.heroes": state.allied_hero_ids,

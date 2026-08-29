@@ -318,7 +318,6 @@ def _situational_annotation(
     branch: SituationalBranch,
     *,
     assets_by_id: dict[int, dict[str, Any]],
-    hero_names: dict[int, str],
 ) -> str:
     item_asset = assets_by_id[branch.item_id]
     comparator_asset = assets_by_id[branch.comparator_item_id]
@@ -336,12 +335,6 @@ def _situational_annotation(
             f"situational item {branch.item_id} has no concrete decision copy"
         )
     vs, why, when, skip = decision
-    if branch.enemy_hero_id is not None:
-        enemy = hero_names.get(
-            branch.enemy_hero_id,
-            f"Enemy {branch.enemy_hero_id}",
-        )
-        vs = f"{enemy}: {vs}"
     try:
         return conditional_item_annotation(
             vs=vs,
@@ -404,7 +397,6 @@ class _SituationalPolicyContext:
     hero_name: str
     core_item_ids: set[int]
     assets_by_id: dict[int, dict[str, Any]]
-    hero_names: dict[int, str]
     manifest: SnapshotManifest
 
 
@@ -447,15 +439,28 @@ def _situational_policy_entry(
     if branch.enemy_hero_id is not None:
         guards.append(
             Guard(
-                "enemy.heroes",
+                (
+                    "enemy.lane_heroes"
+                    if branch.enemy_scope == "same_lane"
+                    else "enemy.heroes"
+                ),
                 GuardOperator.CONTAINS,
                 branch.enemy_hero_id,
             )
         )
+    phase_bounds = {
+        0: (0, 539),
+        1: (540, 1_199),
+        2: (1_200, 1_799),
+        3: (1_800, None),
+    }
+    earliest_time_s, latest_time_s = phase_bounds[branch.phase]
+    guards.append(Guard("clock_s", GuardOperator.AT_LEAST, earliest_time_s))
+    if latest_time_s is not None:
+        guards.append(Guard("clock_s", GuardOperator.AT_MOST, latest_time_s))
     annotation = _situational_annotation(
         branch,
         assets_by_id=context.assets_by_id,
-        hero_names=context.hero_names,
     )
     policy_branch = Branch(
         purchase_id,
@@ -483,6 +488,10 @@ def _situational_policy_entry(
         failure_condition=branch.failure_condition,
         evidence_ref=claim.claim_id,
         enemy_hero_id=branch.enemy_hero_id,
+        enemy_scope=branch.enemy_scope,
+        phase=branch.phase,
+        tier=branch.tier,
+        enemy_mechanics_refs=branch.enemy_mechanics_refs,
     )
     return policy_branch, purchase, counter_card, claim
 
@@ -499,7 +508,6 @@ class _SituationalPolicyProjection:
 def _project_situational_policy(
     inputs: _HeroInputs,
     assets_by_id: dict[int, dict[str, Any]],
-    hero_names: dict[int, str],
     manifest: SnapshotManifest,
 ) -> _SituationalPolicyProjection:
     source_branches = (
@@ -512,7 +520,6 @@ def _project_situational_policy(
         inputs.analytic_guide.hero_name,
         {item.item_id for item in inputs.analytic_guide.core_items},
         assets_by_id,
-        hero_names,
         manifest,
     )
     entries = tuple(
@@ -662,7 +669,6 @@ def _policy_abstentions(
 def _build_policy(
     inputs: _HeroInputs,
     assets: list[dict[str, Any]],
-    hero_names: dict[int, str],
     manifest: SnapshotManifest,
 ) -> tuple[BuildPolicy, ValidationContext]:
     guide = inputs.analytic_guide
@@ -683,9 +689,7 @@ def _build_policy(
     assets_by_id = {
         int(asset["id"]): asset for asset in assets if isinstance(asset.get("id"), int)
     }
-    situational = _project_situational_policy(
-        inputs, assets_by_id, hero_names, manifest
-    )
+    situational = _project_situational_policy(inputs, assets_by_id, manifest)
     evidence.update((claim.claim_id, claim) for claim in situational.claims)
     core_alternatives, alternative_claims = _core_alternative_cards(guide, manifest)
     evidence.update((claim.claim_id, claim) for claim in alternative_claims)
@@ -697,9 +701,9 @@ def _build_policy(
     entry, runtime_nodes = _runtime_purchase_graph(purchase_nodes, situational)
     nodes = (*runtime_nodes, PolicyNode("end", NodeKind.END))
     policy = BuildPolicy(
-        schema_version=4,
+        schema_version=5,
         hero_id=guide.hero_id,
-        variant="state-aware-multi-path-v4",
+        variant="state-aware-multi-path-v5",
         invariant_kit_id=str(inputs.kit["mechanics_sha256"]),
         strategic_role=role,
         snapshot_id=manifest.snapshot_id,
@@ -854,7 +858,11 @@ def _prepare_hero_inputs(
             use_item_filter=len(hero_builds) > 1,
         )
         analytic_guide = build_purchase_guide_from_evidence(
-            hero, selected_build, ability_path=ability_path
+            hero,
+            selected_build,
+            ability_path=ability_path,
+            assets=evidence.assets,
+            hero_mechanics=kit,
         )
         if not analytic_guide.has_complete_item_coverage:
             return (
@@ -921,7 +929,6 @@ def _collect_hero_inputs(
 @dataclass(frozen=True)
 class _ProjectionEnvironment:
     assets: list[dict[str, Any]]
-    hero_names: dict[int, str]
     manifest: SnapshotManifest
     rank_identity: str
     build_tag_catalog: BuildTagCatalog
@@ -937,7 +944,6 @@ def _project_hero_guide(
     policy, validation = _build_policy(
         inputs,
         environment.assets,
-        environment.hero_names,
         environment.manifest,
     )
     identity = ProjectionIdentity(
@@ -1119,12 +1125,8 @@ def generate_guides(
         build_tags_sha256=build_tag_catalog.sha256,
     )
     rank_identity = _rank_identity(rank_catalog, api.rank_range)
-    hero_names = {
-        int(hero["id"]): str(hero.get("name") or hero["id"]) for hero in heroes
-    }
     projection_environment = _ProjectionEnvironment(
         assets,
-        hero_names,
         manifest,
         rank_identity,
         build_tag_catalog,

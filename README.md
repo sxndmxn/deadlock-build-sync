@@ -28,7 +28,7 @@ The rich output is a typed, snapshot-bound policy graph:
   a deterministic four-to-nine-item default. The selector targets the Oracle I+
   median ending inventory economy after reserving three situational item equivalents,
   requires joint support across time splits, and never optimizes exact-eight frequency.
-- Cross-fitted doubly robust final-slot contrasts admitted only after support,
+- Cross-fitted doubly robust non-backbone CORE substitutions admitted only after support,
   effective-sample-size, overlap, balance, uncertainty, and temporal-stability gates.
 - Four compact price-tier reference menus selected by true player-match adoption and
   ordered left to right by observed first-ownership net worth. They exclude CORE,
@@ -44,7 +44,7 @@ The rich output is a typed, snapshot-bound policy graph:
 
 Steam receives `CORE ITEMS`, an `OPTIONAL CORE` row when a like-state alternative
 passes every evidence gate, then `TIER 1` through `TIER 4`. Only the complete
-economy-bounded default enters Queue. `OPTIONAL CORE` holds final-slot swaps with
+economy-bounded default enters Queue. `OPTIONAL CORE` holds non-backbone substitutions with
 explicit decisions; an admitted item is removed from its tier row. Each conditional
 hover uses five fixed lines: `VS`, `WHY`, `SWAP`, `WHEN`, and `SKIP`. The item and
 the normal item must both have pinned mechanics that support the decision. Each tier
@@ -234,7 +234,7 @@ deidentified state document matching
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "build_evidence_id": "<64-character artifact id>",
   "client_version": 6677,
   "patch_identity": "<patch identity>",
@@ -254,6 +254,7 @@ deidentified state document matching
   },
   "learned_abilities": [1, 2],
   "enemy_hero_ids": [],
+  "lane_enemy_hero_ids": [],
   "enemy_item_ids": [],
   "allied_hero_ids": [],
   "objectives": [],
