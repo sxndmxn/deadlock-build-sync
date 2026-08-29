@@ -300,11 +300,11 @@ def test_encodes_the_viscous_layout_with_eleven_core_cards() -> None:
         if field.number == 1 and isinstance(field.value, bytes)
     ]
     expected = {
-        "CORE ITEMS": (11, 567.0, 307.5),
-        "TIER 1": (10, 465.75, 318.75),
-        "TIER 2": (10, 562.5, 315.75),
+        "CORE ITEMS": (11, 567.0, 319.5),
+        "TIER 1": (10, 465.75, 319.5),
+        "TIER 2": (10, 562.5, 319.5),
         "TIER 3": (10, 465.75, 319.5),
-        "TIER 4": (10, 1039.5, 152.25),
+        "TIER 4": (10, 1039.5, 164.0),
     }
 
     actual: dict[str, tuple[int, float, float]] = {}

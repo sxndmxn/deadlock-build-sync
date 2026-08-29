@@ -10,16 +10,17 @@ if TYPE_CHECKING:
     from .api import Patch
     from .purchase_guide import PurchaseGuide
 
-NARRATIVE_SCHEMA_VERSION = 8
-NARRATIVE_PROMPT_VERSION = 25
-DEFAULT_SYNTHESIS_MODEL = "gpt-5.6-luna"
+NARRATIVE_SCHEMA_VERSION = 9
+NARRATIVE_GENERATOR_VERSION = 1
+MINIMUM_BUILD_DESCRIPTION_CHARACTERS = 80
+MAXIMUM_BUILD_DESCRIPTION_CHARACTERS = 700
 NARRATIVE_FIELD_SURFACES = {
     "build_description": ("player.description",),
 }
 
 
 class NarrativeError(RuntimeError):
-    """Raised when an AI-authored explanation artifact is invalid or stale."""
+    """Raised when a deterministic description artifact is invalid or stale."""
 
 
 @dataclass(frozen=True)
@@ -74,8 +75,8 @@ def _read_narrative_document(path: Path) -> dict[str, Any]:
         raise NarrativeError(
             f"{path} is not a supported narrative artifact; regenerate it"
         )
-    if data.get("prompt_version") != NARRATIVE_PROMPT_VERSION:
-        raise NarrativeError(f"{path} was generated with an outdated tactical prompt")
+    if data.get("generator_version") != NARRATIVE_GENERATOR_VERSION:
+        raise NarrativeError(f"{path} uses an outdated description generator")
     return data
 
 
@@ -159,9 +160,9 @@ def _catalog_heroes(
             or not entry["path_id"].strip()
         ):
             raise NarrativeError(f"{path} contains an invalid hero narrative")
-        if entry.get("prompt_version") != NARRATIVE_PROMPT_VERSION:
+        if entry.get("generator_version") != NARRATIVE_GENERATOR_VERSION:
             raise NarrativeError(
-                f"{path} contains a hero generated with an outdated tactical prompt"
+                f"{path} contains a hero from an outdated description generator"
             )
         _require_identity(path, entry, snapshot_id)
         build_key = int(entry["hero_id"]), str(entry["path_id"])
@@ -279,3 +280,88 @@ def apply_narrative(
     if not isinstance(description, str) or not description.strip():
         raise NarrativeError(f"narrative for {guide.hero_name} is incomplete")
     return replace(guide, summary=description.strip(), tactical_profile=None)
+
+
+def _sentence(value: object) -> str:
+    if not isinstance(value, str):
+        return ""
+    text = " ".join(value.split()).strip()
+    if not text:
+        return ""
+    return text if text[-1] in ".!?" else text + "."
+
+
+def _first_maxed_ability(context: dict[str, Any]) -> str:
+    policy = context.get("ability_policy")
+    steps = policy.get("steps") if isinstance(policy, dict) else None
+    if not isinstance(steps, list):
+        return ""
+    for step in steps:
+        if (
+            isinstance(step, dict)
+            and step.get("action") == "UPGRADE_3"
+            and isinstance(step.get("ability"), str)
+        ):
+            return str(step["ability"]).strip()
+    return ""
+
+
+def deterministic_build_description(context: dict[str, Any]) -> str:
+    """Build one stable player-facing description from pinned context fields.
+
+    Returns:
+        A complete description with no generated or inferred mechanics.
+
+    Raises:
+        NarrativeError: If the context cannot produce bounded useful text.
+
+    """
+    hero = str(context.get("hero") or "").strip()
+    mechanics = context.get("hero_mechanics")
+    descriptions = mechanics.get("description") if isinstance(mechanics, dict) else None
+    policy = context.get("policy")
+    role = (descriptions.get("role") if isinstance(descriptions, dict) else None) or (
+        policy.get("strategic_role") if isinstance(policy, dict) else None
+    )
+    playstyle = (
+        descriptions.get("playstyle") if isinstance(descriptions, dict) else None
+    )
+    projection = context.get("projection")
+    build = projection.get("build") if isinstance(projection, dict) else None
+    archetype = build.get("archetype") if isinstance(build, dict) else None
+    first_maxed = _first_maxed_ability(context)
+    if not hero or not isinstance(role, str) or not role.strip():
+        raise NarrativeError("description context has no hero role")
+
+    role_sentence = _sentence(f"{hero}: {role}")
+    plan = (
+        f"Follow the shown {str(archetype).strip()} CORE order"
+        if archetype
+        else ("Follow the shown CORE order")
+    )
+    if first_maxed:
+        plan += f" and max {first_maxed} first"
+    plan_sentence = _sentence(plan)
+    queue_sentence = (
+        "Use conditional cards only when their VS line applies; all optional rows "
+        "stay outside Queue."
+    )
+    fixed = [role_sentence, plan_sentence, queue_sentence]
+    with_playstyle = [
+        role_sentence,
+        _sentence(playstyle),
+        plan_sentence,
+        queue_sentence,
+    ]
+    description = " ".join(sentence for sentence in with_playstyle if sentence)
+    if len(description) > MAXIMUM_BUILD_DESCRIPTION_CHARACTERS:
+        description = " ".join(fixed)
+    if (
+        not MINIMUM_BUILD_DESCRIPTION_CHARACTERS
+        <= len(description)
+        <= MAXIMUM_BUILD_DESCRIPTION_CHARACTERS
+    ):
+        raise NarrativeError(
+            "deterministic build description is outside its size limit"
+        )
+    return description

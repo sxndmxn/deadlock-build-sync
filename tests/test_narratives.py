@@ -6,10 +6,11 @@ import pytest
 
 from deadlock_build_sync.api import Patch
 from deadlock_build_sync.narratives import (
-    NARRATIVE_PROMPT_VERSION,
+    NARRATIVE_GENERATOR_VERSION,
     NARRATIVE_SCHEMA_VERSION,
     NarrativeError,
     apply_narrative,
+    deterministic_build_description,
     load_narrative_catalog,
 )
 from deadlock_build_sync.purchase_guide import GuideCategory, GuideItem, PurchaseGuide
@@ -49,7 +50,7 @@ def write_catalog(path: Path, **overrides: object) -> None:
     entry = {
         "hero_id": 12,
         "path_id": "default",
-        "prompt_version": NARRATIVE_PROMPT_VERSION,
+        "generator_version": NARRATIVE_GENERATOR_VERSION,
         "snapshot_id": SNAPSHOT_ID,
         "policy_id": POLICY_ID,
         "context_sha256": CONTEXT_ID,
@@ -58,7 +59,7 @@ def write_catalog(path: Path, **overrides: object) -> None:
     }
     document = {
         "schema_version": NARRATIVE_SCHEMA_VERSION,
-        "prompt_version": NARRATIVE_PROMPT_VERSION,
+        "generator_version": NARRATIVE_GENERATOR_VERSION,
         "source_context_sha256": SOURCE_ID,
         "snapshot_id": SNAPSHOT_ID,
         "patch": PATCH.as_dict(),
@@ -173,9 +174,58 @@ def test_accepts_structured_exclusion_coverage(tmp_path: Path) -> None:
     assert load_narrative_catalog(path).exclusions == {13: "incomplete mechanics"}
 
 
-def test_rejects_outdated_tactical_prompt(tmp_path: Path) -> None:
+def test_rejects_outdated_description_generator(tmp_path: Path) -> None:
     path = tmp_path / "narratives.json"
-    write_catalog(path, prompt_version=1)
+    write_catalog(path, generator_version=0)
 
-    with pytest.raises(NarrativeError, match="outdated tactical prompt"):
+    with pytest.raises(NarrativeError, match="outdated description generator"):
         load_narrative_catalog(path)
+
+
+def test_build_description_is_deterministic_and_grounded() -> None:
+    context = {
+        "hero": "Kelvin",
+        "hero_mechanics": {
+            "description": {
+                "role": "Protect allies",
+                "playstyle": "Controls space with ice.",
+            }
+        },
+        "policy": {"strategic_role": "Control support"},
+        "ability_policy": {
+            "steps": [
+                {"action": "UPGRADE_3", "ability": "Frozen Shelter"},
+            ]
+        },
+        "projection": {"build": {"archetype": "Spirit Damage"}},
+    }
+
+    assert deterministic_build_description(context) == (
+        "Kelvin: Protect allies. Controls space with ice. Follow the shown Spirit "
+        "Damage CORE order and max Frozen Shelter first. Use conditional cards only "
+        "when their VS line applies; all optional rows stay outside Queue."
+    )
+
+
+@pytest.mark.parametrize(
+    "archetype",
+    ["Weapon", "Spirit", "Vitality", "Hybrid", "Support"],
+)
+def test_build_description_preserves_the_selected_archetype(archetype: str) -> None:
+    context = {
+        "hero": "Test Hero",
+        "hero_mechanics": {
+            "description": {
+                "role": "Control the fight",
+                "playstyle": "Protect the team.",
+            }
+        },
+        "ability_policy": {
+            "steps": [{"action": "UPGRADE_3", "ability": "Test Ability"}]
+        },
+        "projection": {"build": {"archetype": archetype}},
+    }
+
+    description = deterministic_build_description(context)
+
+    assert f"shown {archetype} CORE order" in description

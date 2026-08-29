@@ -10,11 +10,10 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 
 - Use the selected or resolved Steam persona as the installed build-title prefix.
+- Size each Steam category from its item count so extra item rows are not cut off.
 
 ### Added
 
-- Bounded concurrent hero narrative pipelines with atomic progress checkpoints and
-  rate-limit-aware backpressure.
 - Read-only artifact freshness, evidence refresh, and state-aware recommendation
   commands.
 - Pinned build tags, archetype titles, tactical hover projection, and typed
@@ -24,10 +23,14 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Show mechanics-grounded `VS`, `WHY`, `SWAP`, `WHEN`, and `SKIP` lines on
+  conditional item hovers. Keep general item statistics on normal tier references.
+- Require a concrete threat response and normal-item purpose before an item can move
+  into `OPTIONAL CORE`; keep unsupported choices in their tier reference row.
 - Keep CORE as the only automatic path while making all four tier menus sparse,
   disjoint, mechanics-labeled optional references.
-- Limit Luna generation to one validated build-level description per path; item
-  hovers and category text are deterministic.
+- Generate build descriptions from pinned role, playstyle, archetype, and ability
+  order without a model or network request.
 - Show purchase window, win rate, pick rate, buyer matches, and purchase events in
   item hovers. Encode a supported majority imbue target when it is a current hero
   ability.
@@ -35,7 +38,7 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   cannot misname a weapon-, spirit-, or vitality-heavy build.
 - Show the first-maxed ability, highest-win-rate Tier 3 CORE item (Tier 4 fallback),
   and dominant build function as the three ordered build icons.
-- Version the description-only narrative schema and prompt as 8 / 25.
+- Version the deterministic description artifact and generator as 9 / 1.
 
 ## [0.1.0] - 2026-08-01
 

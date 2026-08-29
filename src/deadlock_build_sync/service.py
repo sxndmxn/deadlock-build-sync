@@ -22,6 +22,7 @@ from .mechanics import (
     ability_definitions_from_kit,
     build_hero_mechanics,
     classify_item_threat_responses,
+    conditional_item_decision,
     schedule_ability_path,
     validate_ability_timeline,
 )
@@ -46,9 +47,9 @@ from .power_curve import (
     summarize_ending_duration_profile,
 )
 from .purchase_guide import (
-    MAX_TACTICAL_INSTRUCTION_BYTES,
     PurchaseGuide,
     build_purchase_guide_from_evidence,
+    conditional_item_annotation,
 )
 from .renderer import ProjectionIdentity, project_policy_to_guide
 from .snapshot import EvidenceUnit
@@ -246,7 +247,10 @@ def _core_alternative_claim(
         cohort=_cohort(manifest),
         unit=EvidenceUnit.PURCHASE_EVENT,
         support=alternative.support + alternative.comparison_support,
-        mechanics_refs=alternative.mechanics_refs,
+        mechanics_refs=(
+            *alternative.mechanics_refs,
+            *alternative.comparator_mechanics_refs,
+        ),
         language_ceiling=frozenset({"estimated", "conditional", "expected"}),
         estimate=alternative.dr_estimate,
         interval=alternative.comparative_interval,
@@ -267,10 +271,13 @@ def _core_alternative_cards(
             item_id=alternative.item_id,
             comparator_item_id=alternative.comparator_item_id,
             stage=alternative.stage,
-            trigger=alternative.trigger,
-            execution=alternative.execution,
-            failure_condition=alternative.failure_condition,
+            vs=alternative.vs,
+            why=alternative.why,
+            swap=alternative.swap,
+            when=alternative.when,
+            skip=alternative.skip,
             mechanics_refs=alternative.mechanics_refs,
+            comparator_mechanics_refs=alternative.comparator_mechanics_refs,
             evidence_ref=claim.claim_id,
             support=alternative.support + alternative.comparison_support,
             effective_support=alternative.effective_support,
@@ -313,29 +320,40 @@ def _situational_annotation(
     assets_by_id: dict[int, dict[str, Any]],
     hero_names: dict[int, str],
 ) -> str:
-    item = str(
-        assets_by_id.get(branch.item_id, {}).get("name") or f"item {branch.item_id}"
-    )
+    item_asset = assets_by_id[branch.item_id]
+    comparator_asset = assets_by_id[branch.comparator_item_id]
     comparator = str(
-        assets_by_id.get(branch.comparator_item_id, {}).get("name")
-        or f"item {branch.comparator_item_id}"
+        comparator_asset.get("name") or f"item {branch.comparator_item_id}"
     )
-    threat = branch.threat.replace("_", " ")
-    enemy = (
-        hero_names.get(branch.enemy_hero_id, f"enemy {branch.enemy_hero_id}")
-        if branch.enemy_hero_id is not None
-        else "the enemy"
+    response = branch.mechanic_ref.rsplit("/", 1)[-1]
+    decision = conditional_item_decision(
+        item_asset,
+        comparator_asset,
+        response=response,
     )
-    annotation = (
-        f"If {enemy}'s {threat} is material, choose {item} over {comparator}; "
-        "use its verified response while observed; skip if threat or timing changes."
-    )
-    if len(annotation.encode("utf-8")) > MAX_TACTICAL_INSTRUCTION_BYTES:
+    if decision is None:
         raise GuideError(
-            f"situational annotation for item {branch.item_id} exceeds "
-            f"{MAX_TACTICAL_INSTRUCTION_BYTES} UTF-8 bytes"
+            f"situational item {branch.item_id} has no concrete decision copy"
         )
-    return annotation
+    vs, why, when, skip = decision
+    if branch.enemy_hero_id is not None:
+        enemy = hero_names.get(
+            branch.enemy_hero_id,
+            f"Enemy {branch.enemy_hero_id}",
+        )
+        vs = f"{enemy}: {vs}"
+    try:
+        return conditional_item_annotation(
+            vs=vs,
+            why=why,
+            swap=f"Replaces {comparator}",
+            when=when,
+            skip=skip,
+        )
+    except ValueError as error:
+        raise GuideError(
+            f"situational annotation for item {branch.item_id} is invalid"
+        ) from error
 
 
 def _policy_evidence(
@@ -679,9 +697,9 @@ def _build_policy(
     entry, runtime_nodes = _runtime_purchase_graph(purchase_nodes, situational)
     nodes = (*runtime_nodes, PolicyNode("end", NodeKind.END))
     policy = BuildPolicy(
-        schema_version=3,
+        schema_version=4,
         hero_id=guide.hero_id,
-        variant="state-aware-multi-path-v3",
+        variant="state-aware-multi-path-v4",
         invariant_kit_id=str(inputs.kit["mechanics_sha256"]),
         strategic_role=role,
         snapshot_id=manifest.snapshot_id,

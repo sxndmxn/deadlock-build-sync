@@ -18,9 +18,9 @@ if TYPE_CHECKING:
     from .purchase_guide import PurchaseGuide
     from .snapshot import SnapshotManifest
 
-CONTEXT_SCHEMA_VERSION = 11
+CONTEXT_SCHEMA_VERSION = 12
 KIT_BASIS_SCHEMA_VERSION = 3
-NARRATIVE_BASIS_SCHEMA_VERSION = 9
+NARRATIVE_BASIS_SCHEMA_VERSION = 10
 TIER_LABELS = {1: "I", 2: "II", 3: "III", 4: "IV"}
 
 
@@ -615,6 +615,8 @@ def build_hero_strategy_context(
             {
                 "name": category.name,
                 "optional": category.optional,
+                "width": category.width,
+                "height": category.height,
                 "items": [
                     {
                         "item_id": item.item_id,
@@ -694,6 +696,7 @@ def build_hero_strategy_context(
             "Only mechanics-backed, state-observable policy branches may be explained.",
             "CORE ITEMS is the component-expanded automatic Queue path; OPTIONAL CORE contains gated final-slot swaps, and all optional rows remain outside Queue.",
             "Cross-fitted doubly robust contrasts are assumption-dependent like-state estimates, not proof that an item causes wins.",
+            "Conditional item cards must use VS, WHY, SWAP, WHEN, and SKIP lines grounded in both item mechanics; they must not state an outcome effect.",
             "Do not invent mechanics, numeric effects, threats, combos, or matchups absent from this packet.",
         ],
     }

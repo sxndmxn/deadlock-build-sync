@@ -92,7 +92,11 @@ class FakeApi(DeadlockApi):
                 **(
                     {"description": {"desc": "Applies healing reduction."}}
                     if tier == 1 and index == 3
-                    else {}
+                    else (
+                        {"description": {"desc": "Increases weapon damage."}}
+                        if tier == 1 and index in {0, 1}
+                        else {}
+                    )
                 ),
             }
             for tier in range(1, 5)
@@ -380,15 +384,13 @@ def build_evidence(
                     stable=True,
                     dr_estimate=0.0,
                     comparative_interval=(-0.02, 0.02),
-                    trigger=(
-                        "Choose Tier 1 Item 3 over Tier 1 Item 1 when its "
-                        "documented mechanic fits."
-                    ),
-                    execution="Replace Tier 1 Item 1 at stage 2.",
-                    failure_condition=(
-                        "Keep Tier 1 Item 1 when the observable need is absent."
-                    ),
+                    vs="Heavy enemy healing",
+                    why="Healing Reduction",
+                    swap="Replaces Tier 1 Item 1",
+                    when="Before the next fight with heavy enemy healing",
+                    skip="Keep default when weapon pressure matters more",
                     mechanics_refs=("asset:item:103:description",),
+                    comparator_mechanics_refs=("asset:item:101:description",),
                     fold_estimates={
                         "train": 0.0,
                         "validation": 0.01,
@@ -681,8 +683,14 @@ def test_admitted_situational_branch_reaches_policy_sidecar_and_tier_card() -> N
     assert situational.next_id == "core-2"
     assert choice.branches[-1].next_id == "core-1"
     tier_item = next(item for item in guide.tiers[1] if item.item_id == 103)
-    assert tier_item.tactical_annotation.startswith("If enemy 7's healing")
-    assert "over Tier 1 Item 0" in tier_item.tactical_annotation
+    assert tier_item.annotation == (
+        "VS: Enemy 7: Heavy enemy healing\n"
+        "WHY: Healing Reduction\n"
+        "SWAP: Replaces Tier 1 Item 0\n"
+        "WHEN: Before the next fight with heavy enemy healing\n"
+        "SKIP: Keep default when weapon pressure matters more"
+    )
+    assert "WIN RATE" not in tier_item.annotation
     assert [category.name for category in guide.categories] == [
         "CORE ITEMS",
         "TIER 1",
@@ -717,7 +725,7 @@ def test_admitted_core_alternative_is_a_non_queue_policy_card() -> None:
 
     guide = generated.guides[0]
     policy = generated.policies[0]
-    assert policy.schema_version == 3
+    assert policy.schema_version == 4
     assert [card.item_id for card in policy.core_alternatives] == [103]
     assert [category.name for category in guide.categories] == [
         "CORE ITEMS",
@@ -728,18 +736,14 @@ def test_admitted_core_alternative_is_a_non_queue_policy_card() -> None:
         "TIER 4",
     ]
     assert [item.item_id for item in guide.categories[1].items] == [103]
-    assert (
-        guide
-        .categories[1]
-        .items[0]
-        .annotation.endswith(
-            "PURCHASE WINDOW: about 1k souls\n"
-            "WIN RATE: 57.5%\n"
-            "PICK RATE: 87.0%\n"
-            "BUYER MATCHES: 87\n"
-            "PURCHASE EVENTS: 100"
-        )
+    assert guide.categories[1].items[0].annotation == (
+        "VS: Heavy enemy healing\n"
+        "WHY: Healing Reduction\n"
+        "SWAP: Replaces Tier 1 Item 1\n"
+        "WHEN: Before the next fight with heavy enemy healing\n"
+        "SKIP: Keep default when weapon pressure matters more"
     )
+    assert "WIN RATE" not in guide.categories[1].items[0].annotation
     assert 103 not in {item.item_id for item in guide.tiers[1]}
     assert all(node.item_id != 103 for node in policy.nodes)
     assert BuildPolicy.from_dict(policy.as_dict()) == policy

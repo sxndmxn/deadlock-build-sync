@@ -37,6 +37,7 @@ from deadlock_build_sync.mechanics import (
     ItemGraph,
     MechanicsError,
     classify_item_threat_responses,
+    conditional_item_decision,
     purchase_item,
     schedule_component_path,
 )
@@ -55,13 +56,13 @@ from .core_policy import (
 )
 from .late_game import _asset_maps, reconstruct_final_inventory
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 CORE_ITEM_COUNT = 8
 CORE_CANDIDATE_LIMIT = 64
 TIER_ITEM_COUNT = 10
 MINIMUM_CORE_SUPPORT = 20
 HERO_EXPORT_WORKERS = 8
-METHOD_VERSION = "state-aware-multi-path-v4"
+METHOD_VERSION = "state-aware-multi-path-v5"
 SEQUENCE_MINIMUM_SUPPORT = 20
 CORE_ECONOMY_REFERENCE_MINIMUM_BADGE = 81
 DEFAULT_BUILD_PATH_LABEL = "Evidence Default"
@@ -1047,14 +1048,26 @@ def _collect_situational_candidates(
         asset = asset_by_id.get(item_id)
         if asset is None:
             continue
+        comparator_asset = asset_by_id.get(comparator_item_id)
         diagnostic = overlap_by_item.get(item_id, {})
         temporal = stability_by_scope.get(str(row["scope"]), {})
         for response in sorted(classify_item_threat_responses(asset)):
             candidate, branch = _evaluate_situational_response(
                 row, response, diagnostic, temporal
             )
+            decision = (
+                conditional_item_decision(
+                    asset,
+                    comparator_asset,
+                    response=response,
+                )
+                if comparator_asset is not None
+                else None
+            )
+            candidate["gates"]["decision_copy"] = decision is not None
+            candidate["qualified"] = bool(candidate["qualified"] and decision)
             candidates.append(candidate)
-            if branch is not None:
+            if branch is not None and decision is not None:
                 qualified.append(branch)
     return candidates, qualified
 
@@ -1097,8 +1110,8 @@ def _situational_abstentions(
         return [
             (
                 f"{rejected} mechanics-backed candidate(s) failed at least one "
-                "same-opportunity, comparator, support, overlap, bounded-uncertainty, "
-                "or chronological-stability gate."
+                "decision-copy, same-opportunity, comparator, support, overlap, "
+                "bounded-uncertainty, or chronological-stability gate."
             )
         ]
     if not branch_count:
@@ -1289,6 +1302,23 @@ def _core_alternatives(
         )
         for candidate in candidates:
             item_id = int(candidate["item_id"])
+            decision = conditional_item_decision(
+                item_assets[item_id],
+                item_assets[comparator_id],
+            )
+            if decision is None:
+                audit.append({
+                    "item_id": item_id,
+                    "comparator_item_id": comparator_id,
+                    "stage": stage,
+                    "admitted": False,
+                    "failed_gates": ["mechanics_grounding"],
+                    "reason": (
+                        "item and comparator do not support a concrete "
+                        "conditional decision"
+                    ),
+                })
+                continue
             try:
                 contrast = cross_fitted_dr_contrast(decisions, item_id, comparator_id)
             except (RuntimeError, ValueError) as error:
@@ -1324,24 +1354,19 @@ def _core_alternatives(
             audit.append(record)
             if not contrast.admitted:
                 continue
-            item_name = str(candidate["item_name"])
             comparator_name = str(comparator["item_name"])
             refs = asset_mechanics_refs(item_assets[item_id])
+            comparator_refs = asset_mechanics_refs(item_assets[comparator_id])
+            vs, why, when, skip = decision
             alternatives.append({
                 **record,
-                "trigger": (
-                    f"Choose {item_name} over {comparator_name} only when its "
-                    "documented mechanic fits the current fight."
-                ),
-                "execution": (
-                    f"Replace {comparator_name} at default stage {stage}; keep the "
-                    "remaining automatic path unchanged."
-                ),
-                "failure_condition": (
-                    f"Stay on {comparator_name} when that observable need is absent "
-                    "or the replacement would delay the next supported purchase."
-                ),
+                "vs": vs,
+                "why": why,
+                "swap": f"Replaces {comparator_name}",
+                "when": when,
+                "skip": skip,
                 "mechanics_refs": list(refs),
+                "comparator_mechanics_refs": list(comparator_refs),
             })
     admitted = _best_core_alternatives_by_item(alternatives)
     return admitted[:10], audit
@@ -1501,7 +1526,7 @@ def _build_path_payload(
         "median_final_net_worth": median_final_net_worth,
         "core_candidates": core_candidates,
         "core_policy": {
-            "version": 1,
+            "version": 2,
             "backbone_item_ids": list(backbone.item_ids),
             "default_item_ids": list(target_order),
             "backbone_matches": backbone.matches,

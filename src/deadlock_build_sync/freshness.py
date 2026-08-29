@@ -10,7 +10,7 @@ from .artifacts import ArtifactError, validate_policy_artifact
 from .build_evidence import load_build_evidence
 from .cache import CacheError, read_cache
 from .narratives import NarrativeError, load_narrative_catalog
-from .protobuf import hero_build_metadata
+from .protobuf import hero_build_metadata, is_managed_build, managed_build_path
 from .strategy_context import validate_strategy_context_document
 
 if TYPE_CHECKING:
@@ -281,10 +281,11 @@ def _installed_stage(
             "strategy context has no hero list",
         )
     expected = {
-        int(hero["hero_id"]): str(hero["policy_id"])
+        (int(hero["hero_id"]), str(hero["path_id"])): str(hero["policy_id"])
         for hero in heroes
         if isinstance(hero, dict)
         and isinstance(hero.get("hero_id"), int)
+        and isinstance(hero.get("path_id"), str)
         and isinstance(hero.get("policy_id"), str)
     }
     try:
@@ -299,16 +300,18 @@ def _installed_stage(
     else:
         mismatched = next(
             (
-                hero_id
-                for hero_id, policy_id in expected.items()
-                if f"Snapshot: {snapshot_id}." not in installed[hero_id]
-                or f"Policy: {policy_id}." not in installed[hero_id]
+                build_key
+                for build_key, policy_id in expected.items()
+                if f"Snapshot: {snapshot_id}." not in installed[build_key]
+                or f"Policy: {policy_id}." not in installed[build_key]
             ),
             None,
         )
         if mismatched is not None:
             state = FreshnessState.STALE
-            detail = f"hero {mismatched} uses another snapshot or policy"
+            detail = (
+                f"hero {mismatched[0]}/{mismatched[1]} uses another snapshot or policy"
+            )
     return FreshnessStage("installed_cache", state, detail)
 
 
@@ -337,23 +340,34 @@ def _bundle_stage(artifact_directory: Path) -> FreshnessStage:
     )
 
 
-def _installed_descriptions(cache_path: Path, account_id: int) -> dict[int, str]:
+def _installed_descriptions(
+    cache_path: Path,
+    account_id: int,
+) -> dict[tuple[int, str], str]:
     root = read_cache(cache_path)
     unpublished = root.get("Unpublished")
     if not isinstance(unpublished, list):
         raise CacheError("cache has no Unpublished list")
-    installed: dict[int, str] = {}
+    installed: dict[tuple[int, str], str] = {}
     for blob in unpublished:
         if not isinstance(blob, bytes):
             continue
         metadata = hero_build_metadata(blob)
         description = metadata.description or ""
+        hero_id = metadata.hero_id
+        path_id = managed_build_path(metadata)
         if (
-            metadata.author_account_id == account_id
-            and "[deadlock-build-sync:v1]" in description
-            and metadata.hero_id is not None
+            hero_id is None
+            or path_id is None
+            or not is_managed_build(metadata, hero_id=hero_id, account_id=account_id)
         ):
-            installed[metadata.hero_id] = description
+            continue
+        build_key = hero_id, path_id
+        if build_key in installed:
+            raise CacheError(
+                f"cache contains duplicate managed build {hero_id}/{path_id}"
+            )
+        installed[build_key] = description
     return installed
 
 

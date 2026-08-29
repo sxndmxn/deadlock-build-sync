@@ -28,6 +28,23 @@ TIER_CATEGORY_DESCRIPTION = "Excluded from Queue • Choose deliberately."
 MAX_ITEM_ANNOTATION_BYTES = 240
 MAX_CATEGORY_DESCRIPTION_BYTES = 240
 MAX_TACTICAL_INSTRUCTION_BYTES = 165
+CATEGORY_BASE_HEIGHT = 164.0
+CATEGORY_ROW_HEIGHT = 155.5
+CATEGORY_LAYOUTS = {
+    "CORE ITEMS": (567.0, 6),
+    "OPTIONAL CORE": (465.75, 5),
+    "TIER 1": (465.75, 5),
+    "TIER 2": (562.5, 5),
+    "TIER 3": (465.75, 5),
+    "TIER 4": (1039.5, 10),
+}
+DEFAULT_CATEGORY_LAYOUT = (760.0, 8)
+CONDITIONAL_ANNOTATION_LABELS = ("VS", "WHY", "SWAP", "WHEN", "SKIP")
+_GENERIC_CONDITIONAL_PHRASES = (
+    "documented mechanic",
+    "fits the current fight",
+    "observable need",
+)
 
 
 @dataclass(frozen=True)
@@ -78,6 +95,7 @@ class GuideItem:
     sell_priority: int | None = None
     imbue_target_ability_id: int | None = None
     tactical_annotation: str = ""
+    conditional_annotation: str = ""
     eligible_player_matches: int = 0
     adopter_matches: int = 0
     purchase_adoption: float = 0.0
@@ -94,6 +112,8 @@ class GuideItem:
 
     @property
     def annotation(self) -> str:
+        if self.conditional_annotation:
+            return self.conditional_annotation
         if self.eligible_player_matches:
             return item_stat_context(self)
         timing = (
@@ -114,6 +134,19 @@ class GuideCategory:
     items: tuple[GuideItem, ...]
     description: str = ""
     optional: bool = False
+    width: float = field(init=False)
+    height: float = field(init=False)
+
+    def __post_init__(self) -> None:
+        """Resolve the Steam tile area from the item count."""
+        width, columns = CATEGORY_LAYOUTS.get(self.name, DEFAULT_CATEGORY_LAYOUT)
+        rows = max(1, math.ceil(len(self.items) / columns))
+        object.__setattr__(self, "width", width)
+        object.__setattr__(
+            self,
+            "height",
+            CATEGORY_BASE_HEIGHT + CATEGORY_ROW_HEIGHT * (rows - 1),
+        )
 
 
 @dataclass(frozen=True)
@@ -299,6 +332,41 @@ def tactical_item_annotation(instruction: str, item: GuideItem) -> str:
         if len(combined.encode("utf-8")) <= MAX_ITEM_ANNOTATION_BYTES
         else context
     )
+    if len(annotation.encode("utf-8")) > MAX_ITEM_ANNOTATION_BYTES:
+        raise ValueError(
+            f"item annotation exceeds {MAX_ITEM_ANNOTATION_BYTES} UTF-8 bytes"
+        )
+    return annotation
+
+
+def conditional_item_annotation(
+    *,
+    vs: str,
+    why: str,
+    swap: str,
+    when: str,
+    skip: str,
+) -> str:
+    """Create one complete conditional purchase card.
+
+    Returns:
+        Five short lines in the fixed player-facing order.
+
+    Raises:
+        ValueError: If any field is empty, generic, multiline, or too long.
+
+    """
+    values = (vs, why, swap, when, skip)
+    cleaned = tuple(value.strip() for value in values)
+    if any(not value or "\n" in value or "\r" in value for value in cleaned):
+        raise ValueError("conditional annotation fields must be single-line text")
+    annotation = "\n".join(
+        f"{label}: {value}"
+        for label, value in zip(CONDITIONAL_ANNOTATION_LABELS, cleaned, strict=True)
+    )
+    normalized = annotation.casefold()
+    if any(phrase in normalized for phrase in _GENERIC_CONDITIONAL_PHRASES):
+        raise ValueError("conditional annotation uses a generic trigger")
     if len(annotation.encode("utf-8")) > MAX_ITEM_ANNOTATION_BYTES:
         raise ValueError(
             f"item annotation exceeds {MAX_ITEM_ANNOTATION_BYTES} UTF-8 bytes"

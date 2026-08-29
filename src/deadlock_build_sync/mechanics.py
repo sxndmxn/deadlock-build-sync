@@ -197,6 +197,7 @@ def build_hero_mechanics(
 _THREAT_RESPONSE_PHRASES = {
     "hard_control": (
         "debuff immunity",
+        "debuff resist",
         "remove all negative",
         "unstoppable",
         "control immunity",
@@ -208,7 +209,13 @@ _THREAT_RESPONSE_PHRASES = {
         "weapon damage resistance",
     ),
     "spirit_burst": ("spirit resist", "spirit shield"),
-    "mobility_denial": ("slow immunity", "movement slow resistance"),
+    "mobility_denial": (
+        "slow immunity",
+        "movement slow resistance",
+        "ground",
+        "movement slow",
+        "applies slow",
+    ),
 }
 
 
@@ -225,11 +232,136 @@ def classify_item_threat_responses(asset: dict[str, Any]) -> frozenset[str]:
         for threat, phrases in _THREAT_RESPONSE_PHRASES.items()
         if any(phrase in normalized for phrase in phrases)
     }
-    if "ally" in normalized and any(
+    if any(target in normalized for target in ("ally", "friendly target")) and any(
         phrase in normalized for phrase in ("shield", "heal", "resist")
     ):
         responses.add("ally_protection")
     return frozenset(responses)
+
+
+_CONDITIONAL_RESPONSE_COPY = {
+    "spirit_burst": (
+        "Heavy Spirit damage",
+        "Before the next Spirit-heavy fight",
+    ),
+    "bullet_pressure": (
+        "Heavy bullet damage",
+        "Before the next bullet-heavy fight",
+    ),
+    "healing": (
+        "Heavy enemy healing",
+        "Before the next fight with heavy enemy healing",
+    ),
+    "hard_control": (
+        "Hard control or debuffs",
+        "Before entering the next control-heavy fight",
+    ),
+    "mobility_denial": (
+        "Slows or movement denial",
+        "Before the next fight with heavy slows",
+    ),
+    "ally_protection": (
+        "A focused ally needs protection",
+        "Before the ally commits to the next fight",
+    ),
+}
+_CONDITIONAL_RESPONSE_PRIORITY = (
+    "spirit_burst",
+    "bullet_pressure",
+    "healing",
+    "hard_control",
+    "mobility_denial",
+    "ally_protection",
+)
+_RESPONSE_MECHANIC_COPY = (
+    ("spirit resist", "Spirit Resist"),
+    ("spirit shield", "Spirit Shield"),
+    ("debuff resist", "Debuff Resist"),
+    ("debuff immunity", "Debuff Immunity"),
+    ("control immunity", "Control Immunity"),
+    ("unstoppable", "Unstoppable"),
+    ("bullet resist", "Bullet Resist"),
+    ("bullet shield", "Bullet Shield"),
+    ("healing reduction", "Healing Reduction"),
+    ("reduce healing", "Healing Reduction"),
+    ("slow immunity", "Slow Immunity"),
+    ("movement slow resistance", "Movement Slow Resist"),
+    ("ground", "Ground"),
+    ("disarm", "Disarm"),
+    ("movement slow", "Movement Slow"),
+)
+_COMPARATOR_PURPOSES = (
+    (("teleport", "pull", "ground", "disarm"), "catch"),
+    (("bullet resist", "spirit resist", "shield"), "survival"),
+    (("cooldown", "recharge"), "ability uptime"),
+    (("weapon damage", "bullet damage", "fire rate"), "weapon pressure"),
+    (("spirit damage", "spirit power"), "Spirit pressure"),
+    (("heal", "lifesteal", "life steal"), "sustain"),
+    (("melee",), "melee pressure"),
+    (("range",), "range"),
+    (("slow", "stun", "silence", "root"), "control"),
+)
+
+
+def conditional_item_decision(
+    asset: dict[str, Any],
+    comparator: dict[str, Any],
+    *,
+    response: str | None = None,
+) -> tuple[str, str, str, str] | None:
+    """Build grounded VS, WHY, WHEN, and SKIP fields from pinned mechanics.
+
+    Returns:
+        The four fields, or ``None`` when either item purpose is not explicit.
+
+    """
+    responses = classify_item_threat_responses(asset)
+    selected = response or next(
+        (
+            candidate
+            for candidate in _CONDITIONAL_RESPONSE_PRIORITY
+            if candidate in responses
+        ),
+        None,
+    )
+    if (
+        selected is None
+        or selected not in responses
+        or selected not in _CONDITIONAL_RESPONSE_COPY
+    ):
+        return None
+    item_text = canonical_mechanics_text(_observed_item_mechanics(asset))
+    mechanics: list[str] = []
+    for phrase, label in _RESPONSE_MECHANIC_COPY:
+        if phrase in item_text and label not in mechanics:
+            mechanics.append(label)
+    if not mechanics:
+        return None
+    friendly = "ally" in item_text or "friendly target" in item_text
+    self_cast = "self cast" in item_text or "self-cast" in item_text
+    target = (
+        " for self/ally" if friendly and self_cast else " for ally" if friendly else ""
+    )
+    why = " and ".join(mechanics[:3]) + target
+
+    comparator_text = canonical_mechanics_text(_observed_item_mechanics(comparator))
+    purpose = next(
+        (
+            label
+            for phrases, label in _COMPARATOR_PURPOSES
+            if any(phrase in comparator_text for phrase in phrases)
+        ),
+        None,
+    )
+    if purpose is None:
+        return None
+    vs, when = _CONDITIONAL_RESPONSE_COPY[selected]
+    if selected == "mobility_denial" and any(
+        phrase in item_text for phrase in ("ground", "disarm", "applies slow")
+    ):
+        vs = "Enemy escape or mobility"
+        when = "Before fighting an evasive target"
+    return vs, why, when, f"Keep default when {purpose} matters more"
 
 
 _OBSERVED_ITEM_THREAT_PHRASES = {

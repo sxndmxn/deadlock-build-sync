@@ -115,10 +115,10 @@ def _document(
         "evaluation": {"chronological_fold": "test"},
     }
     payload = {
-        "schema_version": 5,
+        "schema_version": 6,
         "producer": "deadlock-build-sync.offline",
         "method": {
-            "version": "state-aware-multi-path-v4",
+            "version": "state-aware-multi-path-v5",
             "core_candidate_item_count": 8,
             "minimum_core_item_count": 4,
             "maximum_core_item_count": 9,
@@ -172,7 +172,7 @@ def _document(
                             }
                         ],
                         "core_policy": {
-                            "version": 1,
+                            "version": 2,
                             "backbone_item_ids": [101, 102, 201, 202],
                             "default_item_ids": default_item_ids
                             or [101, 102, 201, 202, 301, 302, 401, 402],
@@ -373,13 +373,20 @@ def test_admitted_core_alternative_moves_out_of_its_tier_row(
         "effective_support": 30.0,
         "overlap": 0.8,
         "stable": True,
-        "dr_estimate": 0.0,
-        "comparative_interval": [-0.02, 0.02],
-        "trigger": "Choose Tier 3 Item 3 when its documented mechanic fits.",
-        "execution": "Replace Tier 3 Item 2 at stage 6.",
-        "failure_condition": "Keep Tier 3 Item 2 when that need is absent.",
+        "dr_estimate": -0.02,
+        "comparative_interval": [-0.04, -0.01],
+        "vs": "Heavy Spirit damage",
+        "why": "Spirit Resist",
+        "swap": "Replaces Tier 3 Item 2",
+        "when": "Before the next Spirit-heavy fight",
+        "skip": "Keep default when control matters more",
         "mechanics_refs": ["asset:item:303:description"],
-        "fold_estimates": {"train": 0.0, "validation": 0.01, "test": -0.01},
+        "comparator_mechanics_refs": ["asset:item:302:description"],
+        "fold_estimates": {
+            "train": -0.01,
+            "validation": -0.02,
+            "test": -0.03,
+        },
     }
     _write(path, _document(core_alternatives=[alternative]))
 

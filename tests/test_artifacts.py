@@ -31,8 +31,7 @@ def compatibility(**changes: object) -> ArtifactCompatibility:
         mechanics_sha256="mechanics",
         analytics_sha256="analytics",
         policy_basis_sha256="policy",
-        prompt_version=15,
-        model="model",
+        description_generator_version=1,
     )
     return replace(base, **changes)
 
@@ -72,12 +71,18 @@ def test_fingerprint_layers_invalidate_only_their_downstream_dependencies() -> N
     )
 
 
-def test_exact_artifact_compatibility_rejects_mode_and_prompt_changes() -> None:
+def test_exact_artifact_compatibility_rejects_mode_and_generator_changes() -> None:
     actual = compatibility()
     actual.assert_reusable_with(compatibility())
-    incompatible = compatibility(match_mode="unranked", prompt_version=16)
+    incompatible = compatibility(
+        match_mode="unranked",
+        description_generator_version=2,
+    )
 
-    with pytest.raises(ArtifactError, match="match_mode, prompt_version"):
+    with pytest.raises(
+        ArtifactError,
+        match="description_generator_version, match_mode",
+    ):
         actual.assert_reusable_with(incompatible)
 
 

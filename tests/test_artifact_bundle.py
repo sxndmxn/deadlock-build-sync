@@ -10,7 +10,7 @@ from deadlock_build_sync.api import Patch
 from deadlock_build_sync.artifact_bundle import load_artifact_guide_bundle
 from deadlock_build_sync.artifacts import build_policy_artifact
 from deadlock_build_sync.narratives import (
-    NARRATIVE_PROMPT_VERSION,
+    NARRATIVE_GENERATOR_VERSION,
     NARRATIVE_SCHEMA_VERSION,
 )
 from deadlock_build_sync.policy import BuildPolicy, NodeKind, PolicyNode
@@ -130,9 +130,19 @@ def _projection() -> dict[str, Any]:
         ("TIER 4", 10),
     )):
         start = 1001 if row_index == 0 else 2000 + row_index * 100
+        columns = 6 if name == "CORE ITEMS" else 10 if name == "TIER 4" else 5
+        width = {
+            "CORE ITEMS": 567.0,
+            "TIER 1": 465.75,
+            "TIER 2": 562.5,
+            "TIER 3": 465.75,
+            "TIER 4": 1039.5,
+        }[name]
         rows.append({
             "name": name,
             "optional": row_index > 0,
+            "width": width,
+            "height": 164.0 + 155.5 * ((count - 1) // columns),
             "items": [
                 {
                     "item_id": start + offset,
@@ -197,10 +207,10 @@ def _build_evidence() -> dict[str, Any]:
             })
     boundary = EpochBoundary(PATCH.identity, 100)
     payload = {
-        "schema_version": 5,
+        "schema_version": 6,
         "producer": "fixture",
         "method": {
-            "version": "state-aware-multi-path-v4",
+            "version": "state-aware-multi-path-v5",
             "core_candidate_item_count": 8,
             "minimum_core_item_count": 4,
             "maximum_core_item_count": 9,
@@ -238,7 +248,7 @@ def _build_evidence() -> dict[str, Any]:
                     }
                 ],
                 "core_policy": {
-                    "version": 1,
+                    "version": 2,
                     "backbone_item_ids": list(range(1001, 1005)),
                     "default_item_ids": list(range(1001, 1009)),
                     "backbone_matches": 60,
@@ -381,7 +391,7 @@ def _write_bundle(root: Path) -> tuple[Path, Path, Path, Path]:
     )
     narratives = {
         "schema_version": NARRATIVE_SCHEMA_VERSION,
-        "prompt_version": NARRATIVE_PROMPT_VERSION,
+        "generator_version": NARRATIVE_GENERATOR_VERSION,
         "source_context_sha256": context["source_context_sha256"],
         "snapshot_id": manifest.snapshot_id,
         "patch": PATCH.as_dict(),
@@ -396,7 +406,7 @@ def _write_bundle(root: Path) -> tuple[Path, Path, Path, Path]:
             {
                 "hero_id": 12,
                 "path_id": "default",
-                "prompt_version": NARRATIVE_PROMPT_VERSION,
+                "generator_version": NARRATIVE_GENERATOR_VERSION,
                 "snapshot_id": manifest.snapshot_id,
                 "policy_id": policy.policy_id,
                 "context_sha256": hero["context_sha256"],
@@ -477,6 +487,31 @@ def test_rejects_edited_projection_even_when_other_artifacts_are_unchanged(
     context_path.write_text(json.dumps(context), encoding="utf-8")
 
     with pytest.raises(ValueError, match="edited"):
+        load_artifact_guide_bundle(
+            context_path,
+            policy_path,
+            narrative_path,
+            evidence_path,
+        )
+
+
+def test_rejects_projection_with_stale_category_dimensions(tmp_path: Path) -> None:
+    context_path, policy_path, narrative_path, evidence_path = _write_bundle(tmp_path)
+    context = json.loads(context_path.read_text(encoding="utf-8"))
+    hero = context["heroes"][0]
+    hero["projection"]["categories"][0]["height"] = 164.0
+    hero["narrative_basis_sha256"] = calculate_narrative_basis_sha256(hero)
+    hero["context_sha256"] = calculate_context_sha256(hero)
+    context["source_context_sha256"] = calculate_source_context_sha256(context)
+    context_path.write_text(json.dumps(context), encoding="utf-8")
+
+    narratives = json.loads(narrative_path.read_text(encoding="utf-8"))
+    narratives["source_context_sha256"] = context["source_context_sha256"]
+    narratives["heroes"][0]["context_sha256"] = hero["context_sha256"]
+    narratives["heroes"][0]["narrative_basis_sha256"] = hero["narrative_basis_sha256"]
+    narrative_path.write_text(json.dumps(narratives), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="invalid dimensions"):
         load_artifact_guide_bundle(
             context_path,
             policy_path,
