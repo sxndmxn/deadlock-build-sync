@@ -109,7 +109,7 @@ def policy(annotation: str | None = None) -> BuildPolicy:
                 imbue_target_ability_id=None,
                 annotation=(
                     annotation
-                    or "If hard control appears, choose this over core; activate before engaging; skip if control is absent."
+                    or "VS: Hard control\nWHY: Debuff Immunity\nSWAP: Replaces core\nWHEN: Before engaging\nSKIP: Keep default when control is absent"
                 ),
             ),
             PolicyNode(
@@ -250,6 +250,8 @@ def test_description_identifies_snapshot_policy_client_mode_rank_and_claim_limit
         "Choose this item.",
         "If control appears, choose this over core and activate before engaging.",
         "If control appears, choose this over core; skip if absent.",
+        "WHY: Debuff Immunity\nVS: Hard control\nSWAP: Replaces core\nWHEN: Before engaging\nSKIP: Keep default when absent",
+        "VS: Its documented mechanic fits the current fight\nWHY: Debuff Immunity\nSWAP: Replaces core\nWHEN: Before engaging\nSKIP: Keep default when absent",
         "x" * 241,
     ],
 )

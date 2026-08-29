@@ -13,19 +13,6 @@ if TYPE_CHECKING:
     from .purchase_guide import GuideCategory, GuideItem, PurchaseGuide
 CATEGORY_LABELS = {1: "I", 2: "II", 3: "III", 4: "IV"}
 _BUILD_PATH_PATTERN = re.compile(r"(?m)^Build path: ([a-z0-9-]+)\.$")
-DEFAULT_CATEGORY_SIZE = (760.0, 164.0)
-STANDARD_CATEGORY_SIZES = {
-    # Captured from a user-tuned Viscous build at 2560x1440. Source 2 flows
-    # categories in encoded order, so these dimensions produce a two-column
-    # CORE/TIER 1 row, a two-column TIER 2/TIER 3 row, and a full-width TIER 4.
-    # The CORE block has room for eleven item cards across two lines.
-    "CORE ITEMS": (567.0, 307.5),
-    "OPTIONAL CORE": (465.75, 318.75),
-    "TIER 1": (465.75, 318.75),
-    "TIER 2": (562.5, 315.75),
-    "TIER 3": (465.75, 319.5),
-    "TIER 4": (1039.5, 152.25),
-}
 
 
 @dataclass(frozen=True)
@@ -213,14 +200,13 @@ def _encode_mod(item: GuideItem) -> bytes:
 def _encode_category(
     category: GuideCategory,
 ) -> bytes:
-    width, height = STANDARD_CATEGORY_SIZES.get(category.name, DEFAULT_CATEGORY_SIZE)
     output = bytearray()
     for item in category.items:
         output += message_field(1, _encode_mod(item))
     output += string_field(2, category.name)
     output += string_field(3, category.description)
-    output += float_field(4, width)
-    output += float_field(5, height)
+    output += float_field(4, category.width)
+    output += float_field(5, category.height)
     output += bool_field(6, value=category.optional)
     return bytes(output)
 
@@ -396,6 +382,8 @@ def describe_guide(
                 "name": category.name,
                 "description": category.description,
                 "optional": category.optional,
+                "width": category.width,
+                "height": category.height,
                 "items": [
                     {
                         "item_id": item.item_id,

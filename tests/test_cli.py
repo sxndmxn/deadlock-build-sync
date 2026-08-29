@@ -11,10 +11,7 @@ from deadlock_build_sync.api import Patch
 from deadlock_build_sync.cache import CacheError, CacheLocation
 from deadlock_build_sync.cli import DEFAULT_NARRATIVE_PATH, build_parser
 from deadlock_build_sync.freshness import FreshnessError
-from deadlock_build_sync.narratives import (
-    DEFAULT_SYNTHESIS_MODEL,
-    NarrativeCatalog,
-)
+from deadlock_build_sync.narratives import NarrativeCatalog
 from deadlock_build_sync.purchase_guide import PurchaseGuide
 from deadlock_build_sync.ranks import DEFAULT_RANK_RANGE, RankCatalog
 from deadlock_build_sync.service import GeneratedGuides
@@ -27,17 +24,16 @@ from deadlock_build_sync.snapshot import (
     OutcomePolicy,
     SnapshotManifest,
 )
-from scripts.generate_narratives import DEFAULT_GENERATION_CONCURRENCY
 
 
-def test_sync_defaults_to_every_eligible_hero_and_description_model() -> None:
+def test_sync_defaults_to_every_eligible_hero_without_model_options() -> None:
     args = build_parser().parse_args(["sync"])
 
     assert args.hero is None
     assert not args.all
-    assert args.model == DEFAULT_SYNTHESIS_MODEL
-    assert args.max_attempts == 3
-    assert args.concurrency == DEFAULT_GENERATION_CONCURRENCY
+    assert not hasattr(args, "model")
+    assert not hasattr(args, "max_attempts")
+    assert not hasattr(args, "concurrency")
 
 
 def test_status_is_read_only_and_supports_json() -> None:
@@ -368,12 +364,12 @@ def test_sync_generates_artifacts_and_installs_without_extra_flags(
     assert (tmp_path / "artifacts/strategy-context.json").is_file()
     assert (tmp_path / "artifacts/policies.json").is_file()
     generation_args = calls["generation_args"]
-    assert isinstance(generation_args, list)
-    assert "--kit-model" not in generation_args
-    assert "--model" in generation_args
-    assert DEFAULT_SYNTHESIS_MODEL in generation_args
-    assert "--concurrency" in generation_args
-    assert str(DEFAULT_GENERATION_CONCURRENCY) in generation_args
+    assert generation_args == [
+        "--input",
+        str(tmp_path / "artifacts/strategy-context.json"),
+        "--output",
+        str(tmp_path / "artifacts/narratives.json"),
+    ]
 
 
 @pytest.mark.parametrize("command", ["preview", "install"])

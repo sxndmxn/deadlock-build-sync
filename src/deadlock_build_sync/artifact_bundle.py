@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from collections import Counter
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, cast
@@ -27,6 +28,7 @@ from .purchase_guide import (
     standard_category_description,
 )
 from .ranks import Rank, RankDivision, RankRange, RankTier
+from .renderer import validate_optional_annotation
 from .snapshot import sha256_json
 from .strategy_context import validate_strategy_context_document
 
@@ -222,7 +224,7 @@ def _guide_item(
         raise ArtifactBundleError(
             f"hero {evidence.hero_id} projection item {item_id} has the wrong tier"
         )
-    return replace(
+    projected = replace(
         guide_item_from_evidence(item_evidence),
         required_flex_slots=_optional_int(
             value.get("required_flex_slots"), "flex-slot requirement"
@@ -232,6 +234,18 @@ def _guide_item(
             value.get("imbue_target_ability_id"), "imbue target"
         ),
     )
+    annotation = value.get("annotation")
+    if not isinstance(annotation, str):
+        raise ArtifactBundleError("artifact projection has no item annotation")
+    if annotation.startswith("VS: "):
+        try:
+            validate_optional_annotation(annotation)
+        except ValueError as error:
+            raise ArtifactBundleError(
+                "artifact projection has an invalid conditional annotation"
+            ) from error
+        return replace(projected, conditional_annotation=annotation)
+    return projected
 
 
 type _CategorySpec = tuple[str, bool, int, int, int | None]
@@ -279,12 +293,30 @@ def _projected_category(
         raise ArtifactBundleError(
             f"hero {evidence.hero_id} artifact row {name} contains duplicates"
         )
-    return GuideCategory(
+    category = GuideCategory(
         name,
         items,
         description=standard_category_description(name) or "",
         optional=optional,
-    ), items
+    )
+    raw_width = raw.get("width")
+    raw_height = raw.get("height")
+    valid_width = isinstance(raw_width, (int, float)) and not isinstance(
+        raw_width, bool
+    )
+    valid_height = isinstance(raw_height, (int, float)) and not isinstance(
+        raw_height, bool
+    )
+    if not (
+        valid_width
+        and valid_height
+        and math.isclose(float(raw_width), category.width)
+        and math.isclose(float(raw_height), category.height)
+    ):
+        raise ArtifactBundleError(
+            f"hero {evidence.hero_id} artifact row {name} has invalid dimensions"
+        )
+    return category, items
 
 
 def _final_core_items(

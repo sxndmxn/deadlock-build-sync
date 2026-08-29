@@ -503,7 +503,7 @@ class BuildPolicy:
             PolicyError: If identity fields or node/claim IDs are invalid.
 
         """
-        if self.schema_version not in {1, 2, 3}:
+        if self.schema_version not in {1, 2, 3, 4}:
             raise PolicyError(f"unsupported policy schema {self.schema_version}")
         if self.hero_id <= 0:
             raise PolicyError("policy hero id must be positive")
@@ -1000,10 +1000,13 @@ class CoreAlternativeCard:
     item_id: int
     comparator_item_id: int
     stage: int
-    trigger: str
-    execution: str
-    failure_condition: str
+    vs: str
+    why: str
+    swap: str
+    when: str
+    skip: str
     mechanics_refs: tuple[str, ...]
+    comparator_mechanics_refs: tuple[str, ...]
     evidence_ref: str
     support: int
     effective_support: float
@@ -1018,7 +1021,14 @@ class CoreAlternativeCard:
             PolicyError: If the card fails its identity or evidence contract.
 
         """
-        text = (self.trigger, self.execution, self.failure_condition, self.evidence_ref)
+        text = (
+            self.vs,
+            self.why,
+            self.swap,
+            self.when,
+            self.skip,
+            self.evidence_ref,
+        )
         identity_invalid = (
             self.item_id <= 0
             or self.comparator_item_id <= 0
@@ -1034,8 +1044,10 @@ class CoreAlternativeCard:
             self.interval[0] > self.interval[1]
             or self.interval[1] - self.interval[0] > 0.10
         )
-        content_invalid = not all(value.strip() for value in text) or not (
-            self.mechanics_refs
+        content_invalid = (
+            not all(value.strip() for value in text)
+            or not self.mechanics_refs
+            or not self.comparator_mechanics_refs
         )
         folds_invalid = set(self.fold_estimates) != {"train", "validation", "test"}
         if any((

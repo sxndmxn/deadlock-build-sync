@@ -13,6 +13,7 @@ from deadlock_build_sync.mechanics import (
     build_hero_mechanics,
     classify_item_threat_responses,
     classify_observed_item_threats,
+    conditional_item_decision,
     purchase_item,
     schedule_component_path,
     sell_item,
@@ -293,6 +294,45 @@ def test_threat_classes_require_explicit_item_mechanics(
     asset["description"] = {"desc": description}
 
     assert expected in classify_item_threat_responses(asset)
+
+
+def test_scourge_decision_uses_both_item_mechanics() -> None:
+    scourge = item(1, "scourge")
+    scourge["description"] = {
+        "desc": (
+            "Apply Spirit Resist, Debuff Resist and an aura on a friendly target. "
+            "Can be self cast."
+        )
+    }
+    phantom = item(2, "phantom_strike")
+    phantom["description"] = {
+        "desc": "Teleport to an enemy, then ground, slow, and disarm them."
+    }
+
+    assert conditional_item_decision(scourge, phantom) == (
+        "Heavy Spirit damage",
+        "Spirit Resist and Debuff Resist for self/ally",
+        "Before the next Spirit-heavy fight",
+        "Keep default when catch matters more",
+    )
+
+
+def test_reverse_decision_keeps_scourge_when_survival_matters_more() -> None:
+    phantom = item(2, "phantom_strike")
+    phantom["description"] = {
+        "desc": "Teleport to an enemy, then ground, slow, and disarm them."
+    }
+    scourge = item(1, "scourge")
+    scourge["description"] = {
+        "desc": "Apply Spirit Resist and Debuff Resist to a friendly target."
+    }
+
+    assert conditional_item_decision(phantom, scourge) == (
+        "Enemy escape or mobility",
+        "Ground and Disarm",
+        "Before fighting an evasive target",
+        "Keep default when survival matters more",
+    )
 
 
 @pytest.mark.parametrize(

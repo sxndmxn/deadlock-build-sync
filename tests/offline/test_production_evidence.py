@@ -663,7 +663,7 @@ def test_situational_branch_is_emitted_only_when_every_gate_is_present(
     ]).write_csv(paths.tables / "matchup_temporal_stability.csv")
     assets = [
         {"id": 3, "description": {"desc": "Applies healing reduction."}},
-        {"id": 4, "description": {"desc": "Plain damage."}},
+        {"id": 4, "description": {"desc": "Gain Weapon Damage."}},
     ]
 
     policy = _situational_policy(paths, 12, assets)

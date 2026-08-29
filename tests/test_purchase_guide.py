@@ -3,11 +3,13 @@ from dataclasses import replace
 import pytest
 
 from deadlock_build_sync.purchase_guide import (
+    GuideCategory,
     GuideItem,
     PurchaseBucketRow,
     analyze_purchase_windows,
     build_purchase_guide,
     choose_adaptive_bucket_increment,
+    conditional_item_annotation,
     format_purchase_window,
     tactical_item_annotation,
     wilson_score_interval,
@@ -76,6 +78,74 @@ def test_tactical_copy_keeps_the_complete_stats_block() -> None:
     assert evidence_item(q25=None, q75=None).annotation.startswith(
         "PURCHASE WINDOW: unavailable\n"
     )
+
+
+def test_conditional_annotation_replaces_stats_with_fixed_decision_lines() -> None:
+    annotation = conditional_item_annotation(
+        vs="Heavy Spirit damage",
+        why="Spirit Resist and Debuff Resist for self/ally",
+        swap="Replaces Phantom Strike",
+        when="Before the next Spirit-heavy fight",
+        skip="Keep default when catch matters more",
+    )
+    item = replace(evidence_item(), conditional_annotation=annotation)
+
+    assert item.annotation == (
+        "VS: Heavy Spirit damage\n"
+        "WHY: Spirit Resist and Debuff Resist for self/ally\n"
+        "SWAP: Replaces Phantom Strike\n"
+        "WHEN: Before the next Spirit-heavy fight\n"
+        "SKIP: Keep default when catch matters more"
+    )
+    assert len(item.annotation.encode("utf-8")) <= 240
+    assert "WIN RATE" not in item.annotation
+    assert "WIN RATE" in evidence_item().annotation
+
+
+def test_conditional_annotation_rejects_generic_or_oversized_copy() -> None:
+    with pytest.raises(ValueError, match="generic trigger"):
+        conditional_item_annotation(
+            vs="When its documented mechanic fits the current fight",
+            why="Spirit Resist",
+            swap="Replaces Phantom Strike",
+            when="Before the next fight",
+            skip="Keep default when catch matters more",
+        )
+    with pytest.raises(ValueError, match="240"):
+        conditional_item_annotation(
+            vs="x" * 241,
+            why="Spirit Resist",
+            swap="Replaces Phantom Strike",
+            when="Before the next fight",
+            skip="Keep default when catch matters more",
+        )
+
+
+@pytest.mark.parametrize(
+    ("name", "count", "expected_width", "expected_height"),
+    [
+        ("CORE ITEMS", 1, 567.0, 164.0),
+        ("CORE ITEMS", 6, 567.0, 164.0),
+        ("CORE ITEMS", 12, 567.0, 319.5),
+        ("CORE ITEMS", 13, 567.0, 475.0),
+        ("OPTIONAL CORE", 5, 465.75, 164.0),
+        ("OPTIONAL CORE", 6, 465.75, 319.5),
+        ("TIER 1", 10, 465.75, 319.5),
+        ("CORE ITEMS", 16, 567.0, 475.0),
+        ("TIER 4", 10, 1039.5, 164.0),
+        ("TIER 4", 17, 1039.5, 319.5),
+    ],
+)
+def test_category_dimensions_follow_item_count(
+    name: str,
+    count: int,
+    expected_width: float,
+    expected_height: float,
+) -> None:
+    category = GuideCategory(name, tuple(evidence_item() for _ in range(count)))
+
+    assert category.width == expected_width
+    assert category.height == expected_height
 
 
 def test_wilson_interval_matches_known_value() -> None:

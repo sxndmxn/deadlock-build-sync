@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 
     from .ranks import RankCatalog, RankRange
 
-BUILD_EVIDENCE_SCHEMA_VERSION = 5
+BUILD_EVIDENCE_SCHEMA_VERSION = 6
 
 type _SequencePolicyDocument = dict[str, Any]
 type _SituationalBranchDocument = dict[str, Any]
@@ -36,10 +36,10 @@ CORE_CANDIDATE_LIMIT = 64
 TIER_ITEM_COUNT = 10
 MINIMUM_TIER_SUPPORT = 20
 MINIMUM_CORE_SUPPORT = 20
-METHOD_VERSION = "state-aware-multi-path-v4"
+METHOD_VERSION = "state-aware-multi-path-v5"
 SEQUENCE_POLICY_VERSION = 3
 SITUATIONAL_POLICY_VERSION = 1
-CORE_POLICY_VERSION = 1
+CORE_POLICY_VERSION = 2
 MINIMUM_BACKBONE_ITEM_COUNT = 4
 MAXIMUM_BACKBONE_ITEM_COUNT = 6
 MINIMUM_IMBUE_SUPPORT = 20
@@ -116,10 +116,13 @@ class CoreAlternativeEvidence:
     stable: bool
     dr_estimate: float
     comparative_interval: tuple[float, float]
-    trigger: str
-    execution: str
-    failure_condition: str
+    vs: str
+    why: str
+    swap: str
+    when: str
+    skip: str
     mechanics_refs: tuple[str, ...]
+    comparator_mechanics_refs: tuple[str, ...]
     fold_estimates: dict[str, float]
 
 
@@ -751,17 +754,21 @@ def _core_alternative(
         or comparator_id not in default_item_ids
     ):
         raise ArtifactError(f"hero {hero_id} has an invalid core alternative pair")
-    text_fields = ("trigger", "execution", "failure_condition")
+    text_fields = ("vs", "why", "swap", "when", "skip")
     if any(
         not isinstance(document.get(field), str) or not str(document[field]).strip()
         for field in text_fields
     ):
         raise ArtifactError(f"hero {hero_id} has an incomplete core alternative")
     raw_refs = document.get("mechanics_refs")
+    raw_comparator_refs = document.get("comparator_mechanics_refs")
     if (
         not isinstance(raw_refs, list)
         or not raw_refs
         or not all(isinstance(ref, str) and ref.strip() for ref in raw_refs)
+        or not isinstance(raw_comparator_refs, list)
+        or not raw_comparator_refs
+        or not all(isinstance(ref, str) and ref.strip() for ref in raw_comparator_refs)
     ):
         raise ArtifactError(f"hero {hero_id} core alternative lacks mechanics refs")
     lower, upper, estimate = _core_alternative_interval(document, hero_id)
@@ -810,10 +817,15 @@ def _core_alternative(
         stable=stable,
         dr_estimate=estimate,
         comparative_interval=(lower, upper),
-        trigger=str(document["trigger"]).strip(),
-        execution=str(document["execution"]).strip(),
-        failure_condition=str(document["failure_condition"]).strip(),
+        vs=str(document["vs"]).strip(),
+        why=str(document["why"]).strip(),
+        swap=str(document["swap"]).strip(),
+        when=str(document["when"]).strip(),
+        skip=str(document["skip"]).strip(),
         mechanics_refs=tuple(str(ref).strip() for ref in raw_refs),
+        comparator_mechanics_refs=tuple(
+            str(ref).strip() for ref in raw_comparator_refs
+        ),
         fold_estimates=parsed_folds,
     )
 

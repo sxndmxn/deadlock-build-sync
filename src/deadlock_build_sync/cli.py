@@ -8,11 +8,6 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from scripts.generate_narratives import (
-    DEFAULT_GENERATION_ATTEMPTS,
-    DEFAULT_GENERATION_CONCURRENCY,
-    positive_int,
-)
 from scripts.generate_narratives import main as generate_narratives_main
 
 from .api import DEFAULT_API_BASE_URL, ApiError, DeadlockApi
@@ -33,7 +28,6 @@ from .freshness import (
     require_current_build_evidence,
 )
 from .narratives import (
-    DEFAULT_SYNTHESIS_MODEL,
     NarrativeCatalog,
     NarrativeError,
     apply_narrative,
@@ -66,6 +60,13 @@ _POLICY_FILENAME = "policies.json"
 _ARTIFACT_WRITE_STAGE = "artifact.write"
 _STEAM_INSTALL_STAGE = "steam.install"
 _POLICIES_PREFIX = "Policies: "
+
+
+def positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("must be at least 1")
+    return parsed
 
 
 def _trace_mode(value: str) -> TraceMode:
@@ -118,7 +119,7 @@ def _narrative_argument(parser: argparse.ArgumentParser) -> None:
         "--narratives",
         type=Path,
         help=(
-            "reviewed Codex narrative artifact generated from export-context "
+            "reviewed deterministic description artifact from export-context "
             f"(default: {DEFAULT_NARRATIVE_PATH})"
         ),
     )
@@ -209,7 +210,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     sync = subparsers.add_parser(
         "sync",
-        help="generate narratives and install every reliable hero into Steam",
+        help="generate deterministic builds and install every reliable hero",
     )
     _common_location_arguments(sync)
     sync_selection = sync.add_mutually_exclusive_group()
@@ -227,7 +228,7 @@ def build_parser() -> argparse.ArgumentParser:
     sync.add_argument(
         "--artifacts",
         type=Path,
-        help="directory for reusable context, kit, and narrative artifacts",
+        help="directory for reusable evidence and build artifacts",
     )
 
     status = subparsers.add_parser(
@@ -265,37 +266,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="typed policy sidecar (default: policies.json beside build evidence)",
     )
     recommendation.add_argument("--artifacts", type=Path)
-    sync.add_argument(
-        "--model",
-        default=DEFAULT_SYNTHESIS_MODEL,
-        help=f"final narrative model (default: {DEFAULT_SYNTHESIS_MODEL})",
-    )
-    sync.add_argument(
-        "--force-narratives",
-        action="store_true",
-        help="regenerate build descriptions even when reusable",
-    )
-    sync.add_argument(
-        "--max-attempts",
-        type=positive_int,
-        default=DEFAULT_GENERATION_ATTEMPTS,
-        metavar="N",
-        help=(
-            "generation/validation attempts per build description "
-            f"(default: {DEFAULT_GENERATION_ATTEMPTS})"
-        ),
-    )
-    sync.add_argument(
-        "--concurrency",
-        type=positive_int,
-        default=DEFAULT_GENERATION_CONCURRENCY,
-        metavar="N",
-        help=(
-            "maximum concurrent build descriptions "
-            f"(default: {DEFAULT_GENERATION_CONCURRENCY})"
-        ),
-    )
-
     preview = subparsers.add_parser(
         "preview", help="generate and print guides without changing Steam data"
     )
@@ -334,7 +304,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     export_context = subparsers.add_parser(
         "export-context",
-        help="export structured item and ability context for the Codex sidecar",
+        help="export structured item and ability context for reviewed artifacts",
     )
     _common_location_arguments(export_context)
     _hero_arguments(export_context)
@@ -570,17 +540,9 @@ def _run_sync(args: argparse.Namespace) -> int:
         str(context_path),
         "--output",
         str(narrative_path),
-        "--model",
-        args.model,
-        "--max-attempts",
-        str(args.max_attempts),
-        "--concurrency",
-        str(args.concurrency),
     ]
-    if args.force_narratives:
-        generation_args.append("--force")
     if generate_narratives_main(generation_args) != 0:
-        raise NarrativeError("Codex narrative generation failed")
+        raise NarrativeError("deterministic description generation failed")
     record_stage_facts(_ARTIFACT_WRITE_STAGE, path=narrative_path)
 
     catalog = load_narrative_catalog(narrative_path)

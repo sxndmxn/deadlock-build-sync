@@ -14,49 +14,48 @@ from .policy import (
     validate_policy,
 )
 from .purchase_guide import (
+    CONDITIONAL_ANNOTATION_LABELS,
     CORE_CATEGORY_DESCRIPTION,
     OPTIONAL_CORE_CATEGORY_DESCRIPTION,
     TIER_CATEGORY_DESCRIPTION,
     GuideCategory,
     GuideItem,
     PurchaseGuide,
-    tactical_item_annotation,
+    conditional_item_annotation,
 )
 from .snapshot import sha256_json
 
 MAX_ANNOTATION_BYTES = 240
-_TRIGGER_TERMS = ("if ", "when ")
-_CHOICE_TERMS = ("choose", "instead", "replace", " over ")
-_EXECUTION_TERMS = ("use ", "activate", "before", "after", "hold ")
-_FAILURE_TERMS = ("skip", "avoid", "unless", "fails", "do not")
 
 
 def validate_optional_annotation(annotation: str) -> None:
-    """Enforce bounded trigger/choice/execution/failure instructions.
+    """Enforce the fixed five-line conditional decision contract.
 
     Raises:
         PolicyError: If a conditional tile cannot be executed from its annotation.
 
     """
-    encoded = annotation.encode("utf-8")
-    if not annotation.strip() or len(encoded) > MAX_ANNOTATION_BYTES:
-        raise PolicyError(
-            f"optional annotation must be 1–{MAX_ANNOTATION_BYTES} UTF-8 bytes"
+    lines = annotation.splitlines()
+    if len(lines) != len(CONDITIONAL_ANNOTATION_LABELS):
+        raise PolicyError("optional annotation must contain five decision lines")
+    values: dict[str, str] = {}
+    for expected, line in zip(CONDITIONAL_ANNOTATION_LABELS, lines, strict=True):
+        prefix = f"{expected}: "
+        if not line.startswith(prefix):
+            raise PolicyError("optional annotation labels are missing or out of order")
+        values[expected] = line.removeprefix(prefix)
+    try:
+        rebuilt = conditional_item_annotation(
+            vs=values["VS"],
+            why=values["WHY"],
+            swap=values["SWAP"],
+            when=values["WHEN"],
+            skip=values["SKIP"],
         )
-    normalized = annotation.casefold()
-    requirements = (
-        (_TRIGGER_TERMS, "trigger"),
-        (_CHOICE_TERMS, "choice or replacement"),
-        (_EXECUTION_TERMS, "execution"),
-        (_FAILURE_TERMS, "failure condition"),
-    )
-    missing = [
-        label
-        for terms, label in requirements
-        if not any(term in normalized for term in terms)
-    ]
-    if missing:
-        raise PolicyError("optional annotation is missing: " + ", ".join(missing))
+    except ValueError as error:
+        raise PolicyError(f"optional annotation is invalid: {error}") from error
+    if rebuilt != annotation or len(annotation.encode("utf-8")) > MAX_ANNOTATION_BYTES:
+        raise PolicyError("optional annotation is not in canonical form")
 
 
 def _default_branch(node: PolicyNode) -> Branch:
@@ -138,6 +137,7 @@ def _guide_item(
         sell_priority=node.sell_priority,
         imbue_target_ability_id=node.imbue_target_ability_id,
         tactical_annotation=annotation,
+        conditional_annotation=annotation if optional else "",
     )
 
 
@@ -155,7 +155,6 @@ def _apply_sell_priorities(
             required_flex_slots=item.required_flex_slots,
             sell_priority=priorities.get(item.item_id, item.sell_priority),
             imbue_target_ability_id=item.imbue_target_ability_id,
-            tactical_annotation=item.tactical_annotation,
         )
         for item in items
     )
@@ -167,7 +166,7 @@ def _project_guide_item_policy_fields(
     required_flex_slots: int | None,
     sell_priority: int | None,
     imbue_target_ability_id: int | None,
-    tactical_annotation: str,
+    conditional_annotation: str | None = None,
 ) -> GuideItem:
     return GuideItem(
         item_id=item.item_id,
@@ -181,7 +180,12 @@ def _project_guide_item_policy_fields(
         required_flex_slots=required_flex_slots,
         sell_priority=sell_priority,
         imbue_target_ability_id=imbue_target_ability_id,
-        tactical_annotation=tactical_annotation,
+        tactical_annotation=item.tactical_annotation,
+        conditional_annotation=(
+            item.conditional_annotation
+            if conditional_annotation is None
+            else conditional_annotation
+        ),
         eligible_player_matches=item.eligible_player_matches,
         adopter_matches=item.adopter_matches,
         purchase_adoption=item.purchase_adoption,
@@ -273,7 +277,7 @@ def _project_evidence_layout(
             return item
         return _project_guide_item_policy_fields(
             item,
-            tactical_annotation=node.annotation,
+            conditional_annotation=node.annotation,
             required_flex_slots=node.required_flex_slots or None,
             sell_priority=node.sell_priority,
             imbue_target_ability_id=(
@@ -288,9 +292,12 @@ def _project_evidence_layout(
     optional_core_items = tuple(
         _project_guide_item_policy_fields(
             item,
-            tactical_annotation=tactical_item_annotation(
-                card_by_item[item.item_id].trigger,
-                item,
+            conditional_annotation=conditional_item_annotation(
+                vs=card_by_item[item.item_id].vs,
+                why=card_by_item[item.item_id].why,
+                swap=card_by_item[item.item_id].swap,
+                when=card_by_item[item.item_id].when,
+                skip=card_by_item[item.item_id].skip,
             ),
             required_flex_slots=None,
             sell_priority=None,
@@ -483,6 +490,8 @@ def projection_fingerprint(guide: PurchaseGuide) -> str:
                 "name": category.name,
                 "optional": category.optional,
                 "description": category.description,
+                "width": category.width,
+                "height": category.height,
                 "items": [
                     {
                         "item_id": item.item_id,

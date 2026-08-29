@@ -44,32 +44,34 @@ The rich output is a typed, snapshot-bound policy graph:
 
 Steam receives `CORE ITEMS`, an `OPTIONAL CORE` row when a like-state alternative
 passes every evidence gate, then `TIER 1` through `TIER 4`. Only the complete
-economy-bounded default enters Queue. `OPTIONAL CORE` holds final-slot swaps with explicit
-triggers; an admitted item is removed from its tier row. Each tier row remains an
+economy-bounded default enters Queue. `OPTIONAL CORE` holds final-slot swaps with
+explicit decisions; an admitted item is removed from its tier row. Each conditional
+hover uses five fixed lines: `VS`, `WHY`, `SWAP`, `WHEN`, and `SKIP`. The item and
+the normal item must both have pinned mechanics that support the decision. Each tier
+row remains an
 optional, non-CORE reference menu of up to ten supported items, not a claim that
 every item should be bought or that popularity proves a situational counter. Item
-hovers contain deterministic purchase-window, win-rate, pick-rate, buyer-match, and
-purchase-event statistics. When purchase telemetry has a supported majority imbue
-target, the hover names that ability and the Steam build encodes its current ability ID.
+hovers in the normal tier menus contain deterministic purchase-window, win-rate,
+pick-rate, buyer-match, and purchase-event statistics. Category height grows with
+the number of item rows so item cards are not cut off. When purchase telemetry has a
+supported majority imbue target, the hover names that ability and the Steam build
+encodes its current ability ID.
 Each build's three header icons are deterministic: the ability maxed first, the
 highest-win-rate Tier 3 CORE item (or Tier 4 when CORE has no Tier 3 item), and the
 dominant functional build tag. The item win rate is descriptive buyer telemetry.
-No model-written item advice is installed. Deterministic code validates the
+No model-written advice is installed. Deterministic code validates the
 core against components, slots, active bindings, flex unlocks, ability currency, and
 current item/ability qualifiers before serialization.
 
-Codex writes only the short build-level description after those decisions are closed.
-The narrative artifact must copy the exact snapshot, policy, context, and narrative
-basis identities. It cannot add purchases, rewrite item hovers, change guards,
-strengthen a claim, or redefine Queue behavior.
+Pinned hero role, playstyle, build archetype, and ability order produce the short
+build-level description. The description artifact must copy the exact snapshot,
+policy, context, and narrative basis identities.
 
 ## Requirements
 
 - Linux with Steam and Deadlock installed
 - Python 3.12+
 - [`uv`](https://docs.astral.sh/uv/)
-- An authenticated [`codex`](https://developers.openai.com/codex/cli/) CLI for
-  the separate narrative-generation stage
 
 Deadlock must be closed before installing or restoring a cache.
 
@@ -172,23 +174,10 @@ uv run deadlock-build-sync trace-summary \
   ~/.local/state/deadlock-build-sync/traces/<timestamp>
 ```
 
-## Prompt evaluation
+## Description verification
 
-DeepEval exercises the exact production build-description stage against representative
-heroes from the latest exported context. It reports the response contract,
-evidence-language ceiling, projection utilization, and repeated-generation identity
-stability separately:
-
-```bash
-uv run deepeval test run tests/evals/test_narrative_prompt.py
-uv run deepeval test run tests/evals/test_narrative_reliability.py
-```
-
-Both commands require an authenticated `codex` CLI and a current
-`generated/strategy-context.json` from `export-context`. Set
-`DEADLOCK_BUILD_SYNC_EVAL_CONTEXT` to evaluate another exported context, such
-as the artifact produced by `sync`. Every call has a two-minute timeout.
-Evaluation results remain local unless the user explicitly configures Confident AI.
+Build descriptions use pinned context fields and have no network or model step.
+Unit tests verify exact output, identity reuse, size bounds, and fail-closed behavior.
 
 The deterministic evaluation layer additionally implements patch-forward,
 player/match-group-safe splits; popularity baselines; Brier/log-loss/calibration
@@ -229,7 +218,7 @@ uv run deadlock-build-sync sync
 ```
 
 `sync` discovers the local Steam account, generates every eligible hero from one
-coherent snapshot, asks `gpt-5.6-luna` for one build-level description per path,
+coherent snapshot, writes one deterministic build-level description per path,
 validates every artifact, backs up the cache, and installs the private builds. Item
 statistics, imbue targets, categories, tags, and titles stay deterministic. Titles
 come from the CORE item mix, so an ability-path label cannot misname a weapon-heavy
@@ -237,14 +226,7 @@ build. An all-hero run refuses installation if any pinned
 eligible hero lacks a complete policy. Reusable artifacts live under
 `$XDG_STATE_HOME/deadlock-build-sync/artifacts` (or
 `~/.local/state/deadlock-build-sync/artifacts`). Use `--hero NAME` for one hero,
-`--artifacts DIR` to select another artifact directory, or
-`--force-narratives` to regenerate descriptions. A failed model or
-semantic-validation attempt is retried up to three times; change that bound with
-`--max-attempts N`. Independent build descriptions run concurrently with eight
-workers by default. Use `--concurrency N` to lower the request pressure or raise it when the
-Codex service limits for your account allow more parallel work. Rate-limit
-responses temporarily halve shared request pressure, honor `Retry-After`, and
-recover concurrency gradually after successful calls.
+or `--artifacts DIR` to select another artifact directory.
 
 For a read-only next-purchase decision after an in-match deviation, supply a
 deidentified state document matching
@@ -294,9 +276,8 @@ and unknown items or conflicting situational branches fail closed.
 `sync` consumes four reviewable artifacts: the deterministic build evidence, exact
 strategy context, rich typed policy sidecar, and final build descriptions.
 Every artifact carries the source manifest or snapshot identity. A narrative is reusable only when its
-snapshot, policy, context, narrative basis, prompt, and model contract are exactly
-compatible. Changed or malformed entries regenerate; `--force-narratives` bypasses
-model-output reuse.
+snapshot, policy, context, narrative basis, and deterministic generator version are
+exactly compatible. Changed or malformed entries regenerate.
 
 This artifact cache is separate from Steam's
 `cached_hero_builds.kv3`, which is user-owned game data. The Steam file is never
@@ -314,17 +295,15 @@ boundary.
 The individual commands remain available for review and debugging:
 
 ```bash
-# 1. Export the exact evidence context and rich policies Codex may explain
+# 1. Export the exact evidence context and rich policies
 uv run deadlock-build-sync export-context --all \
   --build-evidence ~/.local/state/deadlock-build-sync/artifacts/build-evidence.json \
   --output generated/strategy-context.json
 
-# 2. Generate a reviewable, schema-constrained narrative artifact.
-#    This invokes `codex exec` separately; the sync/install process never does.
+# 2. Generate a reviewable deterministic description artifact.
 uv run python scripts/generate_narratives.py \
   --input generated/strategy-context.json \
-  --output generated/narratives.json \
-  --concurrency 8
+  --output generated/narratives.json
 
 # 3. Review strategy-context.json, policies.json, and narratives.json, then preview.
 #    strategy-context.json is compact; pipe it through `jaq .` for formatted review.
@@ -386,11 +365,9 @@ estimate or explicit duration abstention, and policy validation. Every omission
 receives a structured exclusion; all-hero installation fails on any exclusion rather
 than silently shipping a partial roster.
 
-The Codex response is constrained by
-[`schemas/narrative-response.schema.json`](schemas/narrative-response.schema.json).
 Installation rejects an artifact when patch identity, snapshot, client version,
-match mode, rank labels, policy, context, narrative basis, prompt, hero coverage,
-or projection categories differ. Advancing raw evidence creates a new context; it
+match mode, rank labels, policy, context, narrative basis, generator version, hero
+coverage, or projection categories differ. Advancing raw evidence creates a new context; it
 does not silently reuse prose merely because a patch title stayed the same.
 
 The CLI discovers the Deadlock Steam Cloud cache automatically when there is a

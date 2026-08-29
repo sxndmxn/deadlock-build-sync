@@ -33,6 +33,14 @@ def test_identifies_midgame_peak() -> None:
     assert summary["shape"] == "MIDGAME_PEAK"
 
 
+def test_identifies_early_closer() -> None:
+    summary = summarize_duration_curve(curve(56, 54, 51, 50, 49, 47, 46))
+
+    assert summary is not None
+    assert summary["shape"] == "EARLY_CLOSER"
+    assert summary["strongest_phase"] == "EARLY (<30m)"
+
+
 def test_rejects_incomplete_curve() -> None:
     assert summarize_duration_curve(curve(50, 51, 52, 53, 54, 55, 56)[:4]) is None
 

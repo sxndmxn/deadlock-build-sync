@@ -16,7 +16,7 @@ class ArtifactError(ValueError):
     """Raised when a reusable artifact is incomplete, stale, or incompatible."""
 
 
-POLICY_ARTIFACT_SCHEMA_VERSION = 2
+POLICY_ARTIFACT_SCHEMA_VERSION = 3
 
 
 @dataclass(frozen=True)
@@ -90,8 +90,7 @@ class ArtifactCompatibility:
     mechanics_sha256: str
     analytics_sha256: str
     policy_basis_sha256: str
-    prompt_version: int | None = None
-    model: str | None = None
+    description_generator_version: int | None = None
     path_id: str = "default"
 
     def as_dict(self) -> dict[str, Any]:
@@ -105,8 +104,7 @@ class ArtifactCompatibility:
             "mechanics_sha256": self.mechanics_sha256,
             "analytics_sha256": self.analytics_sha256,
             "policy_basis_sha256": self.policy_basis_sha256,
-            "prompt_version": self.prompt_version,
-            "model": self.model,
+            "description_generator_version": self.description_generator_version,
             "path_id": self.path_id,
         }
 
@@ -114,7 +112,7 @@ class ArtifactCompatibility:
         """Require exact claim-bearing compatibility.
 
         Raises:
-            ArtifactError: If any schema, cohort, source, evidence, or model field differs.
+            ArtifactError: If any schema, cohort, source, or evidence field differs.
 
         """
         actual_payload = self.as_dict()

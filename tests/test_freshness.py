@@ -77,3 +77,37 @@ def test_report_exit_code_two_means_regeneration_only() -> None:
 
     assert report.exit_code == 2
     assert report.as_dict()["status"] == "regeneration_required"
+
+
+def test_installed_descriptions_accept_current_marker_and_keep_each_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    descriptions = {
+        b"first": (
+            "[deadlock-build-sync:v2]\nBuild path: weapon-core.\n"
+            "Snapshot: snapshot.\nPolicy: weapon-policy."
+        ),
+        b"second": (
+            "[deadlock-build-sync:v2]\nBuild path: spirit-core.\n"
+            "Snapshot: snapshot.\nPolicy: spirit-policy."
+        ),
+    }
+    monkeypatch.setattr(
+        freshness_module,
+        "read_cache",
+        lambda _path: {"Unpublished": list(descriptions)},
+    )
+    monkeypatch.setattr(
+        freshness_module,
+        "hero_build_metadata",
+        lambda blob: SimpleNamespace(
+            hero_id=12,
+            author_account_id=34,
+            description=descriptions[blob],
+        ),
+    )
+
+    installed = freshness_module._installed_descriptions(tmp_path / "cache", 34)
+
+    assert set(installed) == {(12, "weapon-core"), (12, "spirit-core")}
