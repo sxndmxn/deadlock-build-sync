@@ -20,7 +20,7 @@ CORE_CATEGORY_DESCRIPTION = "AUTO QUEUE • Default path, buy left→right."
 OPTIONAL_CORE_CATEGORY_DESCRIPTION = (
     "Excluded from Queue • Swap only when the card trigger applies."
 )
-TIER_CATEGORY_DESCRIPTION = "Excluded from Queue • Choose deliberately."
+TIER_CATEGORY_DESCRIPTION = ""
 MAX_ITEM_ANNOTATION_BYTES = 240
 MAX_CATEGORY_DESCRIPTION_BYTES = 240
 MAX_TACTICAL_INSTRUCTION_BYTES = 165

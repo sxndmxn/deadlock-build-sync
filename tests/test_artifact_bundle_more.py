@@ -53,7 +53,7 @@ def test_loads_exact_reviewed_bundle_without_analytics_refetch(
 
     normalized = json.loads(json.dumps(asdict(bundle), default=_json_default))
     assert sha256_json(normalized) == (
-        "0dce9d2ee9aa6d9ddabd7bdf1d9fdb0c693f5df8fd71529d8b1fcffac34a04d9"
+        "cf0bbf5e163579bbec7b38f9290d8a94adbc3f3f73bc44f59a1d2d5b31a3ceb6"
     )
     assert len(bundle.guides) == 1
     guide = bundle.guides[0]
@@ -73,9 +73,7 @@ def test_loads_exact_reviewed_bundle_without_analytics_refetch(
     assert guide.rendered_categories[0].description == (
         "AUTO QUEUE • Default path, buy left→right."
     )
-    assert guide.rendered_categories[1].description == (
-        "Excluded from Queue • Choose deliberately."
-    )
+    assert not guide.rendered_categories[1].description
     assert guide.rendered_categories[0].items[0].annotation == (
         "PURCHASE WINDOW: 4k–14k souls\n"
         "WIN RATE: 50.0%\n"
