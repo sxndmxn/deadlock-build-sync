@@ -3,7 +3,8 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from functools import cache
-from typing import Any
+
+from .value_validation import integer
 
 COMPLETE_ABILITY_PATH_LENGTH = 16
 LOW_ABILITY_DECISION_SUPPORT = 20
@@ -85,13 +86,13 @@ type _DecisionCounts = dict[
 ]
 
 
-def _valid_observations(rows: list[dict[str, Any]]) -> list[_AbilityObservation]:
+def _valid_observations(rows: list[dict[str, object]]) -> list[_AbilityObservation]:
     valid: list[_AbilityObservation] = []
     for row in rows:
         path = _valid_path(row.get("abilities"))
-        matches = int(row.get("matches") or 0)
-        wins = int(row.get("wins") or 0)
-        losses = int(row.get("losses") or 0)
+        matches = integer(row.get("matches"), default=0)
+        wins = integer(row.get("wins"), default=0)
+        losses = integer(row.get("losses"), default=0)
         if (
             path is not None
             and matches > 0
@@ -159,7 +160,7 @@ def _compose_default_path(
 
 
 def select_ability_path(
-    rows: list[dict[str, Any]],
+    rows: list[dict[str, object]],
     *,
     filter_item_ids: tuple[int, ...] = (),
 ) -> AbilityPath | None:

@@ -6,10 +6,11 @@ import os
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 from .policy import BuildPolicy, PolicyError
-from .snapshot import canonical_json, sha256_json
+from .snapshot import sha256_json
+from .value_validation import object_dict
 
 
 class ArtifactError(ValueError):
@@ -31,11 +32,11 @@ class FingerprintLayers:
     def calculate(
         cls,
         *,
-        mechanics: Any,
-        analytics: Any,
-        policy_basis: Any,
-        narrative: Any,
-        projection: Any,
+        mechanics: object,
+        analytics: object,
+        policy_basis: object,
+        narrative: object,
+        projection: object,
     ) -> FingerprintLayers:
         """Calculate dependency-aware hashes for every artifact layer.
 
@@ -93,7 +94,7 @@ class ArtifactCompatibility:
     description_generator_version: int | None = None
     path_id: str = "default"
 
-    def as_dict(self) -> dict[str, Any]:
+    def as_dict(self) -> dict[str, object]:
         return {
             "schema_version": self.schema_version,
             "hero_id": self.hero_id,
@@ -179,7 +180,7 @@ def _validate_hero_coverage(
 
 
 def validate_hero_document(
-    document: dict[str, Any],
+    document: dict[str, object],
     *,
     requested_hero_ids: set[int],
     allowed_exclusions: dict[int, str] | None = None,
@@ -204,10 +205,10 @@ def validate_hero_document(
 def build_policy_artifact(
     policies: list[BuildPolicy],
     *,
-    snapshot_manifest: dict[str, Any],
+    snapshot_manifest: dict[str, object],
     requested_hero_ids: set[int],
     exclusions: tuple[tuple[int, str], ...] = (),
-) -> dict[str, Any]:
+) -> dict[str, object]:
     """Build and validate a complete rich-policy sidecar document.
 
     Returns:
@@ -229,8 +230,8 @@ def build_policy_artifact(
 
 
 def _policy_artifact_header(
-    document: dict[str, Any],
-) -> tuple[dict[str, Any], list[int], list[Any], list[Any]]:
+    document: dict[str, object],
+) -> tuple[dict[str, object], list[int], list[object], list[object]]:
     manifest = document.get("snapshot_manifest")
     requested = document.get("requested_hero_ids")
     exclusions = document.get("exclusions")
@@ -245,37 +246,42 @@ def _policy_artifact_header(
     if not all(header_checks):
         raise ArtifactError("policy artifact is missing manifest or coverage data")
     return (
-        cast("dict[str, Any]", manifest),
+        cast("dict[str, object]", manifest),
         cast("list[int]", requested),
-        cast("list[Any]", exclusions),
-        cast("list[Any]", raw_policies),
+        cast("list[object]", exclusions),
+        cast("list[object]", raw_policies),
     )
 
 
-def _decode_policy_exclusions(exclusion_rows: list[Any]) -> dict[int, str]:
+def _decode_policy_exclusions(exclusion_rows: list[object]) -> dict[int, str]:
     excluded: dict[int, str] = {}
     for exclusion in exclusion_rows:
+        row = object_dict(exclusion)
+        if row is None:
+            raise ArtifactError("policy artifact contains an invalid exclusion")
+        hero_id = row.get("hero_id")
+        reason = row.get("reason")
         if (
-            not isinstance(exclusion, dict)
-            or not isinstance(exclusion.get("hero_id"), int)
-            or not isinstance(exclusion.get("reason"), str)
-            or not exclusion["reason"].strip()
+            not isinstance(hero_id, int)
+            or not isinstance(reason, str)
+            or not reason.strip()
         ):
             raise ArtifactError("policy artifact contains an invalid exclusion")
-        excluded[int(exclusion["hero_id"])] = str(exclusion["reason"])
+        excluded[hero_id] = reason
     return excluded
 
 
 def _decode_policies(
-    policy_rows: list[Any],
-    snapshot_id: Any,
+    policy_rows: list[object],
+    snapshot_id: object,
 ) -> list[BuildPolicy]:
     decoded: list[BuildPolicy] = []
     for raw_policy in policy_rows:
-        if not isinstance(raw_policy, dict):
+        row = object_dict(raw_policy)
+        if row is None:
             raise ArtifactError("policy artifact contains a malformed policy")
         try:
-            policy = BuildPolicy.from_dict(raw_policy)
+            policy = BuildPolicy.from_dict(row)
         except PolicyError as error:
             raise ArtifactError(
                 f"policy artifact contains an invalid policy: {error}"
@@ -301,7 +307,7 @@ def _validate_policy_coverage(
         raise ArtifactError("policy artifact does not cover requested heroes")
 
 
-def validate_policy_artifact(document: dict[str, Any]) -> None:
+def validate_policy_artifact(document: dict[str, object]) -> None:
     """Validate policy round trips, snapshot compatibility, and roster coverage.
 
     Raises:
@@ -320,7 +326,7 @@ def validate_policy_artifact(document: dict[str, Any]) -> None:
 
 def load_policy_artifact(
     path: Path,
-) -> tuple[dict[str, Any], dict[tuple[int, str], BuildPolicy]]:
+) -> tuple[dict[str, object], dict[tuple[int, str], BuildPolicy]]:
     """Load a validated policy sidecar and index policies by hero.
 
     Returns:
@@ -377,7 +383,7 @@ def atomic_write_bytes(path: Path, content: bytes) -> None:
 
 def atomic_write_json(
     path: Path,
-    document: dict[str, Any],
+    document: dict[str, object],
     *,
     compact: bool = False,
 ) -> None:
@@ -394,7 +400,7 @@ def atomic_write_json(
     atomic_write_bytes(path, content)
 
 
-def load_fingerprinted_json(path: Path, *, expected_sha256: str) -> dict[str, Any]:
+def load_fingerprinted_json(path: Path, *, expected_sha256: str) -> dict[str, object]:
     """Read a JSON artifact and verify its exact bytes before admission.
 
     Returns:
@@ -418,13 +424,3 @@ def load_fingerprinted_json(path: Path, *, expected_sha256: str) -> dict[str, An
     if not isinstance(decoded, dict):
         raise ArtifactError(f"artifact root is not an object: {path}")
     return decoded
-
-
-def canonical_artifact_digest(document: dict[str, Any]) -> str:
-    """Return the digest used for semantic artifact comparisons.
-
-    Returns:
-        SHA-256 of canonical JSON.
-
-    """
-    return hashlib.sha256(canonical_json(document)).hexdigest()

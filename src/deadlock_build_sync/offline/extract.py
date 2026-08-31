@@ -3,8 +3,8 @@ from __future__ import annotations
 import json
 import shutil
 import time
+from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 import duckdb
 
@@ -18,7 +18,7 @@ _RETRYABLE_REMOTE_ERRORS = (
 )
 
 
-def _sql_timestamp(value: Any) -> str:
+def _sql_timestamp(value: datetime) -> str:
     return value.isoformat().replace("+00:00", "+00")
 
 
@@ -131,12 +131,13 @@ def _execute_remote_query(
     query: str,
 ) -> duckdb.DuckDBPyConnection:
     """Retry when DuckLake publishes metadata just before a shard is readable."""
-    for attempt in range(1, _REMOTE_QUERY_ATTEMPTS + 1):
+    attempt = 1
+    while True:
         try:
             return con.execute(query)
         except duckdb.Error as error:
             retryable = any(marker in str(error) for marker in _RETRYABLE_REMOTE_ERRORS)
-            if not retryable or attempt == _REMOTE_QUERY_ATTEMPTS:
+            if not retryable or attempt >= _REMOTE_QUERY_ATTEMPTS:
                 raise
             delay_s = 2 ** (attempt - 1)
             print(
@@ -145,10 +146,10 @@ def _execute_remote_query(
                 flush=True,
             )
             time.sleep(delay_s)
-    raise AssertionError("remote query retry loop exhausted")
+            attempt += 1
 
 
-def extract_cohort(paths: RunPaths, cohort: Cohort) -> dict[str, Any]:
+def extract_cohort(paths: RunPaths, cohort: Cohort) -> dict[str, object]:
     cohort.validate()
     con = _connect(paths)
     try:
@@ -408,7 +409,7 @@ def extract_cohort(paths: RunPaths, cohort: Cohort) -> dict[str, Any]:
         ):
             _export(con, table, paths.data / f"{table}.parquet")
 
-        counts = {
+        counts: dict[str, object] = {
             table: _count(con, f"SELECT count(*) FROM {table}")
             for table in (
                 "player_matches",

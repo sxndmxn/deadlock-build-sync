@@ -18,6 +18,10 @@ from deadlock_build_sync.artifacts import (
     validate_policy_artifact,
 )
 from deadlock_build_sync.policy import BuildPolicy, NodeKind, PolicyNode
+from deadlock_build_sync.value_validation import (
+    require_object_dict,
+    require_object_rows,
+)
 
 
 def compatibility(**changes: object) -> ArtifactCompatibility:
@@ -88,7 +92,10 @@ def test_exact_artifact_compatibility_rejects_mode_and_generator_changes() -> No
 
 def test_compact_json_round_trips_without_indentation(tmp_path: Path) -> None:
     target = tmp_path / "strategy-context.json"
-    document = {"heroes": [{"hero_id": 12}], "label": "Kelvin"}
+    document: dict[str, object] = {
+        "heroes": [{"hero_id": 12}],
+        "label": "Kelvin",
+    }
 
     atomic_write_json(target, document, compact=True)
 
@@ -96,7 +103,7 @@ def test_compact_json_round_trips_without_indentation(tmp_path: Path) -> None:
 
 
 def test_document_completeness_rejects_missing_duplicates_and_dangling_refs() -> None:
-    valid = {
+    valid: dict[str, object] = {
         "heroes": [
             {
                 "hero_id": 12,
@@ -153,10 +160,12 @@ def test_policy_sidecar_binds_snapshot_and_complete_roster() -> None:
     )
 
     validate_policy_artifact(document)
-    assert document["policies"][0]["policy_id"] == policy.policy_id
+    policies = require_object_rows(document["policies"])
+    snapshot_manifest = require_object_dict(document["snapshot_manifest"])
+    assert policies[0]["policy_id"] == policy.policy_id
     assert document["exclusions"] == [{"hero_id": 13, "reason": "incomplete mechanics"}]
 
-    document["snapshot_manifest"]["snapshot_id"] = "changed"
+    snapshot_manifest["snapshot_id"] = "changed"
     with pytest.raises(ArtifactError, match="another snapshot"):
         validate_policy_artifact(document)
 

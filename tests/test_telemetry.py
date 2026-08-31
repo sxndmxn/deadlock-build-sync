@@ -1,5 +1,3 @@
-from typing import Any
-
 import pytest
 
 from deadlock_build_sync.mechanics import ItemGraph
@@ -34,7 +32,7 @@ from deadlock_build_sync.telemetry import (
 )
 
 
-def graph_assets() -> list[dict[str, Any]]:
+def graph_assets() -> list[dict[str, object]]:
     return [
         {
             "id": 1,

@@ -1,9 +1,17 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import TypedDict, cast
 
 import polars as pl
+
+from deadlock_build_sync.value_validation import (
+    integer,
+    number,
+    object_dict,
+    object_list,
+    object_rows,
+)
 
 from .api import read_json, write_json
 from .config import RunPaths
@@ -11,6 +19,34 @@ from .config import RunPaths
 CORE_ITEM_COUNT = 8
 TIER_ITEM_COUNT = 10
 MINIMUM_TIER_SUPPORT = 20
+
+
+class _LayoutItem(TypedDict):
+    item_id: int
+    item: str
+    tier: int
+    core: bool
+    purchase_adoption: float
+    observed_outcome_rate: float
+    buyer_matches: int
+    median_buy_time_s: float
+    median_buy_net_worth: float | None
+    buy_nw_q25: float | None
+    buy_nw_q75: float | None
+    valid_buy_nw_share: float
+
+
+class _LayoutRow(TypedDict):
+    name: str
+    sort: str
+    items: list[_LayoutItem]
+
+
+class _LayoutCohort(TypedDict):
+    player_matches: int
+    median_final_net_worth: float
+    median_duration_s: float
+    outcome_rate: float
 
 
 def _seconds_label(value: float | None) -> str:
@@ -27,69 +63,73 @@ def _souls_range(lower: float | None, upper: float | None) -> str:
     return f"{float(lower) / 1000:.1f}k–{float(upper) / 1000:.1f}k"
 
 
-def _item(row: dict[str, Any], *, core: bool) -> dict[str, Any]:
+def _item(row: dict[str, object], *, core: bool) -> dict[str, object]:
     return {
-        "item_id": int(row["item_id"]),
+        "item_id": integer(row["item_id"]),
         "item": str(row["item_name"]),
-        "tier": int(row["tier"]),
+        "tier": integer(row["tier"]),
         "core": core,
-        "purchase_adoption": float(row["purchase_adoption"]),
-        "final_inventory_adoption": float(row["final_inventory_adoption"]),
-        "observed_outcome_rate": float(row["outcome_rate"]),
-        "buyer_matches": int(row["buyer_matches"]),
-        "median_buy_time_s": float(row["median_buy_time_s"]),
+        "purchase_adoption": number(row["purchase_adoption"]),
+        "final_inventory_adoption": number(row["final_inventory_adoption"]),
+        "observed_outcome_rate": number(row["outcome_rate"]),
+        "buyer_matches": integer(row["buyer_matches"]),
+        "median_buy_time_s": number(row["median_buy_time_s"]),
         "median_buy_net_worth": (
-            float(row["median_buy_net_worth"])
+            number(row["median_buy_net_worth"])
             if row.get("median_buy_net_worth") is not None
             else None
         ),
         "buy_nw_q25": (
-            float(row["buy_nw_q25"]) if row.get("buy_nw_q25") is not None else None
+            number(row["buy_nw_q25"]) if row.get("buy_nw_q25") is not None else None
         ),
         "buy_nw_q75": (
-            float(row["buy_nw_q75"]) if row.get("buy_nw_q75") is not None else None
+            number(row["buy_nw_q75"]) if row.get("buy_nw_q75") is not None else None
         ),
-        "valid_buy_nw_share": float(row.get("valid_buy_nw_share") or 0.0),
+        "valid_buy_nw_share": number(row.get("valid_buy_nw_share") or 0.0),
     }
 
 
-def _net_worth_order(item: dict[str, Any]) -> tuple[bool, float, float, int]:
+def _net_worth_order(item: dict[str, object]) -> tuple[bool, float, float, int]:
     median = item["median_buy_net_worth"]
     return (
         median is None,
-        float(median) if median is not None else float("inf"),
-        float(item["median_buy_time_s"]),
-        int(item["item_id"]),
+        number(median) if median is not None else float("inf"),
+        number(item["median_buy_time_s"]),
+        integer(item["item_id"]),
     )
 
 
 def create_build_layout(
-    late_game: dict[str, Any],
+    late_game: dict[str, object],
     items: pl.DataFrame,
     *,
     hero_name: str,
     tier_item_count: int = TIER_ITEM_COUNT,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     """Create the legacy five-row late-game diagnostic, not production policy."""
     if tier_item_count <= 0:
         raise ValueError("tier item count must be positive")
-    core = late_game.get("most_common_eight_item_core")
-    if not isinstance(core, dict) or not isinstance(core.get("item_ids"), list):
+    core = object_dict(late_game.get("most_common_eight_item_core"))
+    core_values = object_list(core.get("item_ids")) if core is not None else None
+    if core is None or core_values is None:
         raise ValueError("late-game result has no coherent eight-item core")
-    core_ids = [int(item_id) for item_id in core["item_ids"]]
+    core_ids = [integer(item_id) for item_id in core_values]
     if len(core_ids) != CORE_ITEM_COUNT or len(set(core_ids)) != CORE_ITEM_COUNT:
         raise ValueError("core must contain exactly eight distinct items")
 
-    rows_by_id = {int(row["item_id"]): row for row in items.iter_rows(named=True)}
+    rows_by_id = {integer(row["item_id"]): row for row in items.iter_rows(named=True)}
     missing_core = [item_id for item_id in core_ids if item_id not in rows_by_id]
     if missing_core:
         raise ValueError(f"core item metrics are missing: {missing_core}")
 
     core_items = sorted(
         (_item(rows_by_id[item_id], core=True) for item_id in core_ids),
-        key=lambda row: (float(row["median_buy_time_s"]), int(row["item_id"])),
+        key=lambda row: (
+            number(row["median_buy_time_s"]),
+            integer(row["item_id"]),
+        ),
     )
-    rows: list[dict[str, Any]] = [
+    rows: list[dict[str, object]] = [
         {
             "name": "CORE ITEMS",
             "optional": False,
@@ -127,17 +167,17 @@ def create_build_layout(
             "items": tier_items,
         })
 
-    cohort = late_game.get("cohort")
-    if not isinstance(cohort, dict):
+    cohort = object_dict(late_game.get("cohort"))
+    if cohort is None:
         raise ValueError("late-game result has no cohort summary")
     return {
         "schema_version": 1,
-        "hero_id": int(late_game["hero_id"]),
+        "hero_id": integer(late_game["hero_id"]),
         "hero": hero_name,
-        "minimum_final_net_worth": int(late_game["minimum_final_net_worth"]),
+        "minimum_final_net_worth": integer(late_game["minimum_final_net_worth"]),
         "cohort": cohort,
-        "core_joint_matches": int(core["matches"]),
-        "core_joint_share": float(core["share"]),
+        "core_joint_matches": integer(core["matches"]),
+        "core_joint_share": number(core["share"]),
         "rows": rows,
         "interpretation": {
             "adoption": "unique hero-player-matches purchasing the item divided by eligible hero-player-matches",
@@ -149,10 +189,15 @@ def create_build_layout(
     }
 
 
-def render_build_layout_markdown(layout: dict[str, Any]) -> str:
+def render_build_layout_markdown(layout: dict[str, object]) -> str:
     """Render the legacy late-game diagnostic used for historical comparison."""
-    cohort = layout["cohort"]
-    minimum_net_worth = int(layout["minimum_final_net_worth"])
+    cohort_data = object_dict(layout.get("cohort"))
+    row_data = object_rows(layout.get("rows"))
+    if cohort_data is None or row_data is None:
+        raise ValueError("build layout has invalid rows or cohort")
+    cohort = cast("_LayoutCohort", cohort_data)
+    layout_rows = cast("list[_LayoutRow]", row_data)
+    minimum_net_worth = integer(layout["minimum_final_net_worth"])
     if minimum_net_worth:
         title_scope = f"{minimum_net_worth // 1000}k+"
         cohort_filter = f"At least {minimum_net_worth:,} final souls"
@@ -169,7 +214,7 @@ def render_build_layout_markdown(layout: dict[str, Any]) -> str:
             "> associations rather than item effects."
         )
     shop_rows = []
-    for row in layout["rows"]:
+    for row in layout_rows:
         item_names = " → ".join(
             f"**{item['item']}**" if item["core"] else str(item["item"])
             for item in row["items"]
@@ -177,7 +222,7 @@ def render_build_layout_markdown(layout: dict[str, Any]) -> str:
         shop_rows.append(f"| **{row['name']}** | {item_names} |")
 
     evidence_sections: list[str] = []
-    for row in layout["rows"]:
+    for row in layout_rows:
         evidence_rows = []
         for position, item in enumerate(row["items"], start=1):
             evidence_rows.append(
@@ -239,7 +284,7 @@ reference menus; unsupported choices are omitted instead of added as filler.
 - **Median final net worth:** {float(cohort["median_final_net_worth"]):,.0f} souls
 - **Median duration:** {_seconds_label(cohort["median_duration_s"])}
 - **Observed cohort outcome:** {float(cohort["outcome_rate"]):.1%}
-- **Eight-item core joint support:** {int(layout["core_joint_matches"]):,} matches ({float(layout["core_joint_share"]):.1%})
+- **Eight-item core joint support:** {integer(layout["core_joint_matches"]):,} matches ({number(layout["core_joint_share"]):.1%})
 
 > [!CAUTION]
 > {cohort_caution}
@@ -271,7 +316,9 @@ def write_build_layout(
     minimum_net_worth: int,
 ) -> tuple[Path, Path]:
     stem = f"late_game_hero_{hero_id}_{minimum_net_worth}"
-    late_game = read_json(paths.tables / f"{stem}.json")
+    late_game = object_dict(read_json(paths.tables / f"{stem}.json"))
+    if late_game is None:
+        raise ValueError("late-game artifact is not an object")
     items = pl.read_csv(paths.tables / f"{stem}_items.csv")
     layout = create_build_layout(late_game, items, hero_name=hero_name)
     output_dir = paths.run / "builds"

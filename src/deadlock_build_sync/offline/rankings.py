@@ -1,14 +1,31 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass
-from typing import Any
+from typing import NotRequired, TypedDict
 
 import duckdb
 import polars as pl
 
+from deadlock_build_sync.value_validation import (
+    integer,
+    number,
+    object_rows,
+)
+
 from .api import read_json, write_json
 from .config import RunPaths
+from .ranking_assets import (
+    Asset,
+)
+from .ranking_assets import (
+    assets as _assets,
+)
+from .ranking_assets import (
+    longest_common_subsequence as _longest_common_subsequence,
+)
+from .ranking_assets import (
+    rows_frame as _rows_frame,
+)
 
 RANKING_METHODS = {
     "event_volume": "purchase_events",
@@ -27,75 +44,35 @@ BASE_SLOTS = 9
 MAX_ACTIVES = 4
 
 
-def _rows_frame(rows: list[dict[str, Any]]) -> pl.DataFrame:
-    return pl.DataFrame(rows, infer_schema_length=None)
+class _PathDocument(TypedDict):
+    method: str
+    score_column: str
+    legal: bool
+    actions: int
+    cumulative_cost: int
+    final_owned_items: list[int]
+    steps: list[dict[str, object]]
+    hero_id: NotRequired[int]
+    hero_name: NotRequired[str]
 
 
-def _longest_common_subsequence(first: list[int], second: list[int]) -> int:
-    lengths = [[0] * (len(second) + 1) for _ in range(len(first) + 1)]
-    for first_index, first_item in enumerate(first, start=1):
-        for second_index, second_item in enumerate(second, start=1):
-            if first_item == second_item:
-                lengths[first_index][second_index] = (
-                    lengths[first_index - 1][second_index - 1] + 1
-                )
-            else:
-                lengths[first_index][second_index] = max(
-                    lengths[first_index - 1][second_index],
-                    lengths[first_index][second_index - 1],
-                )
-    return lengths[-1][-1]
-
-
-@dataclass(frozen=True)
-class Asset:
-    item_id: int
-    name: str
-    class_name: str
-    tier: int
-    cost: int
-    active: bool
-    components: tuple[str, ...]
-
-
-def _assets(paths: RunPaths) -> tuple[dict[int, Asset], dict[str, int]]:
-    assets: dict[int, Asset] = {}
-    by_class: dict[str, int] = {}
-    for row in read_json(paths.raw / "items.json"):
-        asset = Asset(
-            item_id=int(row["id"]),
-            name=str(row.get("name") or f"Item {row['id']}"),
-            class_name=str(row.get("class_name") or ""),
-            tier=int(row["item_tier"]),
-            cost=int(row.get("cost") or 0),
-            active=bool(row.get("is_active_item")),
-            components=tuple(
-                str(value) for value in (row.get("component_items") or [])
-            ),
-        )
-        assets[asset.item_id] = asset
-        if asset.class_name:
-            by_class[asset.class_name] = asset.item_id
-    return assets, by_class
-
-
-def _percentile_by_tier(rows: list[dict[str, Any]], column: str) -> dict[int, float]:
+def _percentile_by_tier(rows: list[dict[str, object]], column: str) -> dict[int, float]:
     result: dict[int, float] = {}
-    by_tier: dict[int, list[dict[str, Any]]] = defaultdict(list)
+    by_tier: dict[int, list[dict[str, object]]] = defaultdict(list)
     for row in rows:
-        by_tier[int(row["tier"])].append(row)
+        by_tier[integer(row["tier"])].append(row)
     for group in by_tier.values():
         ordered = sorted(
             group,
             key=lambda row: (
-                float(row.get(column) or float("-inf")),
-                int(row["adopter_matches"]),
-                -int(row["item_id"]),
+                number(row.get(column) or float("-inf")),
+                integer(row["adopter_matches"]),
+                -integer(row["item_id"]),
             ),
         )
         denominator = max(1, len(ordered) - 1)
         for index, row in enumerate(ordered):
-            result[int(row["item_id"])] = index / denominator
+            result[integer(row["item_id"])] = index / denominator
     return result
 
 
@@ -120,8 +97,6 @@ def _post_purchase_inventory(
                 assets[value].cost,
             ),
         )
-        if not sale_candidates:
-            return None
         sold_item = sale_candidates[0]
         post_owned.remove(sold_item)
     post_owned.append(asset.item_id)
@@ -129,44 +104,44 @@ def _post_purchase_inventory(
 
 
 def _build_path(
-    hero_rows: list[dict[str, Any]],
+    hero_rows: list[dict[str, object]],
     method: str,
     column: str,
     assets: dict[int, Asset],
     by_class: dict[str, int],
-) -> dict[str, Any]:
+) -> _PathDocument:
     percentile = _percentile_by_tier(hero_rows, column)
     supported = [row for row in hero_rows if row.get(column) is not None]
     candidates = sorted(
         supported,
         key=lambda row: (
-            -percentile[int(row["item_id"])],
-            -float(row["adoption_rate"]),
-            int(row["item_id"]),
+            -percentile[integer(row["item_id"])],
+            -number(row["adoption_rate"]),
+            integer(row["item_id"]),
         ),
     )
-    shortlist: list[dict[str, Any]] = []
+    shortlist: list[dict[str, object]] = []
     tier_counts: dict[int, int] = defaultdict(int)
     for row in candidates:
-        tier = int(row["tier"])
+        tier = integer(row["tier"])
         if tier_counts[tier] < 4:
             shortlist.append(row)
             tier_counts[tier] += 1
     shortlist.sort(
         key=lambda row: (
-            float(row.get("median_buy_time_s") or 99999),
-            -percentile[int(row["item_id"])],
-            int(row["item_id"]),
+            number(row.get("median_buy_time_s") or 99999),
+            -percentile[integer(row["item_id"])],
+            integer(row["item_id"]),
         )
     )
 
     owned: list[int] = []
-    steps: list[dict[str, Any]] = []
+    steps: list[dict[str, object]] = []
     cash_cost = 0
     for row in shortlist:
         if len(steps) >= CORE_TARGET_ACTIONS:
             break
-        item_id = int(row["item_id"])
+        item_id = integer(row["item_id"])
         asset = assets[item_id]
         component_ids = tuple(
             by_class[name] for name in asset.components if name in by_class
@@ -231,12 +206,15 @@ def _poisson_binomial_tail(probabilities: list[float], minimum: int) -> float:
 
 
 def _path_coherence(
-    con: duckdb.DuckDBPyConnection, paths_json: list[dict[str, Any]]
+    con: duckdb.DuckDBPyConnection, paths_json: list[_PathDocument]
 ) -> tuple[pl.DataFrame, pl.DataFrame]:
     adoption_paths = [path for path in paths_json if path["method"] == "adoption"]
     path_items = pl.DataFrame(
         [
-            {"hero_id": int(path["hero_id"]), "item_id": int(step["item_id"])}
+            {
+                "hero_id": path["hero_id"],
+                "item_id": integer(step["item_id"]),
+            }
             for path in adoption_paths
             for step in path["steps"]
         ],
@@ -244,19 +222,19 @@ def _path_coherence(
     )
     path_summary = pl.DataFrame([
         {
-            "hero_id": int(path["hero_id"]),
+            "hero_id": path["hero_id"],
             "hero_name": str(path["hero_name"]),
             "path_actions": int(path["actions"]),
             "path_cost": int(path["cumulative_cost"]),
             "independent_share_with_six": _poisson_binomial_tail(
-                [float(step["adoption_rate"]) for step in path["steps"]], 6
+                [number(step["adoption_rate"]) for step in path["steps"]], 6
             ),
             "independent_share_with_eight": _poisson_binomial_tail(
-                [float(step["adoption_rate"]) for step in path["steps"]], 8
+                [number(step["adoption_rate"]) for step in path["steps"]], 8
             ),
             "independent_share_complete": _poisson_binomial_tail(
-                [float(step["adoption_rate"]) for step in path["steps"]],
-                int(path["actions"]),
+                [number(step["adoption_rate"]) for step in path["steps"]],
+                path["actions"],
             ),
         }
         for path in adoption_paths
@@ -344,8 +322,8 @@ def _path_coherence(
 def _top_ranking_rows(
     metrics: pl.DataFrame,
     heroes: dict[int, str],
-) -> list[dict[str, Any]]:
-    ranking_rows: list[dict[str, Any]] = []
+) -> list[dict[str, object]]:
+    ranking_rows: list[dict[str, object]] = []
     for method, column in RANKING_METHODS.items():
         if column not in metrics.columns:
             continue
@@ -373,9 +351,9 @@ def _experimental_path_rows(
     heroes: dict[int, str],
     assets: dict[int, Asset],
     by_class: dict[str, int],
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    path_rows: list[dict[str, Any]] = []
-    paths_json: list[dict[str, Any]] = []
+) -> tuple[list[dict[str, object]], list[_PathDocument]]:
+    path_rows: list[dict[str, object]] = []
+    paths_json: list[_PathDocument] = []
     for hero_id, group in metrics.group_by("hero_id"):
         resolved_hero_id = int(hero_id[0])
         hero_name = heroes.get(resolved_hero_id, f"Hero {resolved_hero_id}")
@@ -387,8 +365,8 @@ def _experimental_path_rows(
             path["hero_id"] = resolved_hero_id
             path["hero_name"] = hero_name
             paths_json.append(path)
-            for step in path["steps"]:
-                path_rows.append({
+            path_rows.extend(
+                {
                     "hero_id": resolved_hero_id,
                     "hero_name": hero_name,
                     "method": method,
@@ -397,18 +375,20 @@ def _experimental_path_rows(
                     "final_inventory_items": len(path["final_owned_items"]),
                     "path_cost": path["cumulative_cost"],
                     **step,
-                })
+                }
+                for step in path["steps"]
+            )
     return path_rows, paths_json
 
 
 def _compare_core_paths(
     hero_id: int,
     hero_name: str,
-    train_path: dict[str, Any],
-    test_path: dict[str, Any],
-) -> dict[str, Any]:
-    train_items = [int(step["item_id"]) for step in train_path["steps"]]
-    test_items = [int(step["item_id"]) for step in test_path["steps"]]
+    train_path: _PathDocument,
+    test_path: _PathDocument,
+) -> dict[str, object]:
+    train_items = [integer(step["item_id"]) for step in train_path["steps"]]
+    test_items = [integer(step["item_id"]) for step in test_path["steps"]]
     union = set(train_items) | set(test_items)
     longest_path = max(len(train_items), len(test_items))
     prefix_matches = sum(
@@ -439,11 +419,11 @@ def _core_path_stability_rows(
     heroes: dict[int, str],
     assets: dict[int, Asset],
     by_class: dict[str, int],
-) -> list[dict[str, Any]]:
+) -> list[dict[str, object]]:
     test_by_hero = {
         int(key[0]): group for key, group in test_metrics.group_by("hero_id")
     }
-    stability_rows: list[dict[str, Any]] = []
+    stability_rows: list[dict[str, object]] = []
     for key, train_group in train_metrics.group_by("hero_id"):
         hero_id = int(key[0])
         test_group = test_by_hero.get(hero_id)
@@ -466,11 +446,14 @@ def _core_path_stability_rows(
     return stability_rows
 
 
-def generate_rankings(paths: RunPaths) -> dict[str, Any]:
+def generate_rankings(paths: RunPaths) -> dict[str, object]:
     metrics = pl.read_csv(paths.tables / "item_metrics.csv")
+    hero_rows = object_rows(read_json(paths.raw / "heroes.json"))
+    if hero_rows is None:
+        raise TypeError("hero assets are not an array of objects")
     heroes = {
-        int(row["id"]): str(row.get("name") or f"Hero {row['id']}")
-        for row in read_json(paths.raw / "heroes.json")
+        integer(row["id"]): str(row.get("name") or f"Hero {row['id']}")
+        for row in hero_rows
     }
     rankings = _rows_frame(_top_ranking_rows(metrics, heroes))
     rankings.write_csv(paths.tables / "top10_rankings.csv")

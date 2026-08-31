@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from .api import HERO_DURATION_BUCKETS
 
@@ -68,7 +68,7 @@ def summarize_duration_distribution(
 def summarize_ending_duration_profile(
     points: tuple[HeroDurationStat, ...],
     distribution: dict[str, dict[str, float | int]] | None = None,
-) -> dict[str, Any] | None:
+) -> dict[str, object] | None:
     ordered_points = _ordered_duration_points(points)
     if ordered_points is None:
         return None
@@ -166,7 +166,7 @@ def summarize_ending_duration_profile(
 def summarize_duration_curve(
     points: tuple[HeroDurationStat, ...],
     distribution: dict[str, dict[str, float | int]] | None = None,
-) -> dict[str, Any] | None:
+) -> dict[str, object] | None:
     """Compatibility alias for the correctly named ending-duration estimand.
 
     Returns:

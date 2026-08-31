@@ -1,6 +1,5 @@
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
 
 import pytest
 
@@ -28,7 +27,7 @@ class FakeApi:
         return self.patch
 
 
-def evidence(api: FakeApi) -> Any:
+def evidence(api: FakeApi) -> SimpleNamespace:
     return SimpleNamespace(
         client_version=api.client_version,
         patch={"identity": api.patch.identity},
@@ -46,7 +45,9 @@ def test_current_evidence_is_returned_and_stale_evidence_fails_closed(
 
     assert require_current_build_evidence(tmp_path / "evidence.json", api) is current
 
-    current.client_version = 122
+    stale = evidence(api)
+    stale.client_version = 122
+    monkeypatch.setattr(freshness_module, "load_build_evidence", lambda _path: stale)
     with pytest.raises(FreshnessError, match="STALE — regeneration required"):
         require_current_build_evidence(tmp_path / "evidence.json", api)
 

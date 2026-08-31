@@ -1,5 +1,4 @@
 from dataclasses import replace
-from typing import Any
 
 import pytest
 
@@ -30,7 +29,7 @@ from deadlock_build_sync.snapshot import EvidenceUnit
 SNAPSHOT = "b" * 64
 
 
-def assets() -> list[dict[str, Any]]:
+def assets() -> list[dict[str, object]]:
     return [
         {
             "id": item_id,

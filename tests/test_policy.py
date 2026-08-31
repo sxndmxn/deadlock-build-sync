@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -29,6 +29,7 @@ from deadlock_build_sync.policy import (
     validate_policy,
 )
 from deadlock_build_sync.snapshot import EvidenceUnit
+from deadlock_build_sync.value_validation import require_object_rows
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -59,7 +60,7 @@ def test_core_alternative_accepts_the_ninth_universal_slot() -> None:
     assert card.stage == 9
 
 
-def assets(count: int = 10, *, active: bool = False) -> list[dict[str, Any]]:
+def assets(count: int = 10, *, active: bool = False) -> list[dict[str, object]]:
     return [
         {
             "id": item_id,
@@ -104,7 +105,7 @@ def claim(
     )
 
 
-def context(item_assets: list[dict[str, Any]] | None = None) -> ValidationContext:
+def context(item_assets: list[dict[str, object]] | None = None) -> ValidationContext:
     return ValidationContext(
         ItemGraph.from_assets(item_assets or assets()),
         {10: AbilityDefinition(10, unlock_level=1)},
@@ -242,7 +243,8 @@ def test_policy_validates_ability_plan_separately_from_runtime_graph() -> None:
 
 def test_policy_rejects_unknown_kind_and_edited_fingerprint() -> None:
     payload = branching_policy().as_dict()
-    payload["nodes"][0]["kind"] = "teleport"
+    nodes = require_object_rows(payload["nodes"])
+    nodes[0]["kind"] = "teleport"
     with pytest.raises(PolicyError, match="malformed policy node"):
         BuildPolicy.from_dict(payload)
 
@@ -268,7 +270,7 @@ def test_policy_rejects_unknown_kind_and_edited_fingerprint() -> None:
     ],
 )
 def test_policy_codec_rejects_extra_fields_and_primitive_coercion(
-    mutation: Callable[[dict[str, Any]], None],
+    mutation: Callable[[dict[str, object]], None],
     error: str,
 ) -> None:
     payload = branching_policy().as_dict()

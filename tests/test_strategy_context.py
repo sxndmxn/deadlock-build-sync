@@ -1,6 +1,5 @@
 from copy import deepcopy
 from datetime import UTC, datetime
-from typing import Any
 
 import pytest
 
@@ -29,6 +28,10 @@ from deadlock_build_sync.strategy_context import (
     calculate_narrative_basis_sha256,
     calculate_source_context_sha256,
     validate_strategy_context_document,
+)
+from deadlock_build_sync.value_validation import (
+    require_object_dict,
+    require_object_rows,
 )
 
 SNAPSHOT = "1" * 64
@@ -65,7 +68,7 @@ def manifest() -> SnapshotManifest:
     )
 
 
-def kit() -> dict[str, Any]:
+def kit() -> dict[str, object]:
     return {
         "hero_id": 12,
         "description": {
@@ -92,7 +95,7 @@ def kit() -> dict[str, Any]:
     }
 
 
-def assets() -> list[dict[str, Any]]:
+def assets() -> list[dict[str, object]]:
     return [
         {
             "id": ability_id,
@@ -180,22 +183,32 @@ def test_exports_structured_mechanics_and_real_ability_timeline() -> None:
         ability_timeline=timeline(),
     )
 
-    assert context["hero_mechanics"]["description"]["role"] == "Protect allies."
-    assert context["hero_mechanics"]["abilities"][0]["name"] == "Grenade"
-    assert context["item_mechanics_ids"] == [101]
-    assert "mechanics" not in context["tiers"]["I"][0]
-    assert context["tiers"]["I"][0]["slot"] == "SPIRIT"
-    assert context["tiers"]["I"][0]["unit"] == "purchase_event"
-    assert (
-        context["tiers"]["I"][0]["observed_purchase_event_net_worth_ranges"][0]["label"]
-        == "5–10k"
+    hero_mechanics = require_object_dict(context["hero_mechanics"])
+    description = require_object_dict(hero_mechanics["description"])
+    abilities = require_object_rows(hero_mechanics["abilities"])
+    tiers = require_object_dict(context["tiers"])
+    tier_one = require_object_rows(tiers["I"])
+    purchase_ranges = require_object_rows(
+        tier_one[0]["observed_purchase_event_net_worth_ranges"]
     )
-    first_step = context["ability_policy"]["steps"][0]
+    ability_policy = require_object_dict(context["ability_policy"])
+    ability_steps = require_object_rows(ability_policy["steps"])
+    projection = require_object_dict(context["projection"])
+    categories = require_object_rows(projection["categories"])
+    projected_items = require_object_rows(categories[0]["items"])
+    assert description["role"] == "Protect allies."
+    assert abilities[0]["name"] == "Grenade"
+    assert context["item_mechanics_ids"] == [101]
+    assert "mechanics" not in tier_one[0]
+    assert tier_one[0]["slot"] == "SPIRIT"
+    assert tier_one[0]["unit"] == "purchase_event"
+    assert purchase_ranges[0]["label"] == "5–10k"
+    first_step = ability_steps[0]
     assert first_step["earliest_legal_level"] == 1
     assert first_step["decision_reached_support"] == 250
     assert "quarter" not in first_step
-    assert context["projection"]["categories"][0]["items"][0]["item_id"] == 101
-    assert set(context["fingerprints"]) == {
+    assert projected_items[0]["item_id"] == 101
+    assert set(require_object_dict(context["fingerprints"])) == {
         "mechanics",
         "analytics",
         "policy_basis",
@@ -232,9 +245,12 @@ def test_document_binds_snapshot_coverage_and_fingerprints() -> None:
     )
 
     assert document["schema_version"] == CONTEXT_SCHEMA_VERSION
-    assert list(document["item_mechanics"]) == ["101"]
-    assert "mechanics" not in document["heroes"][0]["tiers"]["I"][0]
-    assert document["filters"]["match_mode"] == "ranked"
+    heroes = require_object_rows(document["heroes"])
+    filters = require_object_dict(document["filters"])
+    assert list(require_object_dict(document["item_mechanics"])) == ["101"]
+    hero_tiers = require_object_dict(heroes[0]["tiers"])
+    assert "mechanics" not in require_object_rows(hero_tiers["I"])[0]
+    assert filters["match_mode"] == "ranked"
     assert document["exclusions"] == [{"hero_id": 13, "reason": "incomplete mechanics"}]
     assert document["source_context_sha256"] == calculate_source_context_sha256(
         document
@@ -242,19 +258,25 @@ def test_document_binds_snapshot_coverage_and_fingerprints() -> None:
     validate_strategy_context_document(document)
 
     edited = deepcopy(document)
-    edited["heroes"][0]["hero_mechanics"]["description"]["role"] = "Edited"
+    edited_heroes = require_object_rows(edited["heroes"])
+    edited_mechanics = require_object_dict(edited_heroes[0]["hero_mechanics"])
+    edited_description = require_object_dict(edited_mechanics["description"])
+    edited_description["role"] = "Edited"
     with pytest.raises(StrategyContextError, match="kit basis was edited"):
         validate_strategy_context_document(edited)
 
     mechanics_edited = deepcopy(document)
-    mechanics_edited["item_mechanics"]["101"]["tampered"] = True
+    edited_catalog = require_object_dict(mechanics_edited["item_mechanics"])
+    edited_item = require_object_dict(edited_catalog["101"])
+    edited_item["tampered"] = True
     with pytest.raises(StrategyContextError, match="item mechanics were edited"):
         validate_strategy_context_document(mechanics_edited)
 
     duplicated = deepcopy(document)
-    duplicated["heroes"][0]["abilities"] = []
-    duplicated["heroes"][0]["context_sha256"] = calculate_context_sha256(
-        duplicated["heroes"][0]
+    duplicated_heroes = require_object_rows(duplicated["heroes"])
+    duplicated_heroes[0]["abilities"] = []
+    duplicated_heroes[0]["context_sha256"] = calculate_context_sha256(
+        duplicated_heroes[0]
     )
     duplicated["source_context_sha256"] = calculate_source_context_sha256(duplicated)
     with pytest.raises(StrategyContextError, match="duplicate hero mechanics"):

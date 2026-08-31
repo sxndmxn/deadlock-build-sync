@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 import struct
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from .presentation import LEGACY_MANAGED_MARKER, MANAGED_MARKER, BuildPresentation
 
@@ -11,7 +11,6 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
     from .purchase_guide import GuideCategory, GuideItem, PurchaseGuide
-CATEGORY_LABELS = {1: "I", 2: "II", 3: "III", 4: "IV"}
 _BUILD_PATH_PATTERN = re.compile(r"(?m)^Build path: ([a-z0-9-]+)\.$")
 
 
@@ -325,7 +324,7 @@ def describe_guide(
     guide: PurchaseGuide,
     *,
     presentation: BuildPresentation | None = None,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     ability_path = guide.ability_path
     return {
         "hero_id": guide.hero_id,

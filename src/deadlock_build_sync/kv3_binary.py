@@ -3,7 +3,7 @@ from __future__ import annotations
 import struct
 import uuid
 from dataclasses import dataclass, field
-from typing import Any
+from typing import cast
 
 # Binary KV3 v4 serializer, ported from the MIT-licensed ValveResourceFormat
 # BinaryKV3.Serialization implementation. The cache currently uses v5, but
@@ -65,12 +65,12 @@ def _write_type(context: _Context, node_type: int) -> None:
     context.types.append(node_type)
 
 
-def _write_property(context: _Context, name: str, value: Any) -> None:
+def _write_property(context: _Context, name: str, value: object) -> None:
     _pack_into(context.bytes4, "<i", context.string_id(name))
     _write_value(context, value)
 
 
-def _write_object(context: _Context, value: dict[str, Any]) -> None:
+def _write_object(context: _Context, value: dict[str, object]) -> None:
     _write_type(context, OBJECT)
     _pack_into(context.bytes4, "<i", len(value))
     for name, child in value.items():
@@ -112,14 +112,14 @@ def _write_blob(context: _Context, value: bytes | bytearray | memoryview) -> Non
     context.binary_blobs.extend(blob)
 
 
-def _write_array(context: _Context, value: list[Any] | tuple[Any, ...]) -> None:
+def _write_array(context: _Context, value: list[object] | tuple[object, ...]) -> None:
     _write_type(context, ARRAY)
     _pack_into(context.bytes4, "<i", len(value))
     for child in value:
         _write_value(context, child)
 
 
-def _write_value(context: _Context, value: Any) -> None:
+def _write_value(context: _Context, value: object) -> None:
     if value is None:
         _write_type(context, NULL)
     elif isinstance(value, bool):
@@ -133,8 +133,11 @@ def _write_value(context: _Context, value: Any) -> None:
     elif isinstance(value, (bytes, bytearray, memoryview)):
         _write_blob(context, value)
     elif isinstance(value, dict):
-        _write_object(context, value)
-    elif isinstance(value, (list, tuple)):
+        mapping = cast("dict[object, object]", value)
+        _write_object(context, {str(name): child for name, child in mapping.items()})
+    elif isinstance(value, list):
+        _write_array(context, cast("list[object]", value))
+    elif isinstance(value, tuple):
         _write_array(context, value)
     else:
         raise TypeError(f"unsupported KV3 value: {type(value).__name__}")
@@ -146,7 +149,7 @@ def _align(buffer: bytearray, alignment: int) -> None:
         buffer.extend(b"\0" * padding)
 
 
-def encode_binary_v4(root: dict[str, Any]) -> bytes:
+def encode_binary_v4(root: dict[str, object]) -> bytes:
     if not isinstance(root, dict):
         raise TypeError("KV3 root must be an object")
     context = _Context()

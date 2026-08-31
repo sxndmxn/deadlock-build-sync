@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from .artifact_bundle import load_artifact_guide_bundle
 from .artifacts import ArtifactError, validate_policy_artifact
@@ -12,6 +12,7 @@ from .cache import CacheError, read_cache
 from .narratives import NarrativeError, load_narrative_catalog
 from .protobuf import hero_build_metadata, is_managed_build, managed_build_path
 from .strategy_context import validate_strategy_context_document
+from .value_validation import object_dict, object_rows
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -65,7 +66,7 @@ class FreshnessReport:
             return 1
         return 2
 
-    def as_dict(self) -> dict[str, Any]:
+    def as_dict(self) -> dict[str, object]:
         status = {
             0: "current",
             1: "invalid_or_unavailable",
@@ -79,7 +80,7 @@ class FreshnessReport:
         }
 
 
-def _read_json(path: Path) -> dict[str, Any]:
+def _read_json(path: Path) -> dict[str, object]:
     value = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(value, dict):
         raise TypeError("root must be an object")
@@ -161,7 +162,7 @@ def _evidence_stage(
 def _context_stage(
     path: Path,
     evidence: BuildEvidenceCatalog | None,
-) -> tuple[FreshnessStage, dict[str, Any] | None]:
+) -> tuple[FreshnessStage, dict[str, object] | None]:
     if not path.is_file():
         return FreshnessStage(
             "strategy_context", FreshnessState.MISSING, str(path)
@@ -178,8 +179,8 @@ def _context_stage(
             FreshnessStage("strategy_context", FreshnessState.MALFORMED, str(error)),
             None,
         )
-    manifest = document.get("snapshot_manifest")
-    if not isinstance(manifest, dict):
+    manifest = object_dict(document.get("snapshot_manifest"))
+    if manifest is None:
         return (
             FreshnessStage(
                 "strategy_context",
@@ -188,10 +189,10 @@ def _context_stage(
             ),
             None,
         )
+    patch = object_dict(manifest.get("patch")) or {}
     if evidence is not None and (
         manifest.get("client_version") != evidence.client_version
-        or (manifest.get("patch") or {}).get("identity")
-        != evidence.patch.get("identity")
+        or patch.get("identity") != evidence.patch.get("identity")
         or manifest.get("as_of_timestamp") != evidence.as_of_timestamp
     ):
         return (
@@ -212,7 +213,7 @@ def _context_stage(
     )
 
 
-def _policy_stage(path: Path, context: dict[str, Any] | None) -> FreshnessStage:
+def _policy_stage(path: Path, context: dict[str, object] | None) -> FreshnessStage:
     if not path.is_file():
         return FreshnessStage("policies", FreshnessState.MISSING, str(path))
     try:
@@ -235,7 +236,7 @@ def _policy_stage(path: Path, context: dict[str, Any] | None) -> FreshnessStage:
     return FreshnessStage("policies", FreshnessState.CURRENT, "validated")
 
 
-def _narrative_stage(path: Path, context: dict[str, Any] | None) -> FreshnessStage:
+def _narrative_stage(path: Path, context: dict[str, object] | None) -> FreshnessStage:
     if not path.is_file():
         return FreshnessStage("narratives", FreshnessState.MISSING, str(path))
     try:
@@ -257,7 +258,7 @@ def _narrative_stage(path: Path, context: dict[str, Any] | None) -> FreshnessSta
 def _installed_stage(
     cache_path: Path | None,
     account_id: int | None,
-    context: dict[str, Any] | None,
+    context: dict[str, object] | None,
 ) -> FreshnessStage:
     if cache_path is None or account_id is None:
         return FreshnessStage(
@@ -273,21 +274,24 @@ def _installed_stage(
         )
     manifest = context.get("snapshot_manifest")
     snapshot_id = manifest.get("snapshot_id") if isinstance(manifest, dict) else None
-    heroes = context.get("heroes")
-    if not isinstance(heroes, list):
+    heroes = object_rows(context.get("heroes"))
+    if heroes is None:
         return FreshnessStage(
             "installed_cache",
             FreshnessState.MALFORMED,
             "strategy context has no hero list",
         )
-    expected = {
-        (int(hero["hero_id"]), str(hero["path_id"])): str(hero["policy_id"])
-        for hero in heroes
-        if isinstance(hero, dict)
-        and isinstance(hero.get("hero_id"), int)
-        and isinstance(hero.get("path_id"), str)
-        and isinstance(hero.get("policy_id"), str)
-    }
+    expected: dict[tuple[int, str], str] = {}
+    for hero in heroes:
+        hero_id = hero.get("hero_id")
+        path_id = hero.get("path_id")
+        policy_id = hero.get("policy_id")
+        if (
+            isinstance(hero_id, int)
+            and isinstance(path_id, str)
+            and isinstance(policy_id, str)
+        ):
+            expected[hero_id, path_id] = policy_id
     try:
         installed = _installed_descriptions(cache_path, account_id)
     except (CacheError, OSError, ValueError) as error:

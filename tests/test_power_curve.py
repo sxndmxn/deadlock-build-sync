@@ -5,6 +5,7 @@ from deadlock_build_sync.power_curve import (
     summarize_duration_curve,
     summarize_duration_distribution,
 )
+from deadlock_build_sync.value_validation import require_object_dict
 
 
 def curve(*wins: int) -> tuple[HeroDurationStat, ...]:
@@ -22,8 +23,9 @@ def test_identifies_late_scaling_curve() -> None:
     assert summary["shape"] == "LATE_SCALING"
     assert summary["strongest_phase"] == "LATE (45m+)"
     assert summary["early_to_late_delta_percentage_points"] == 8.5
-    assert summary["overall"]["matches"] == 700
-    assert summary["overall"]["raw_win_rate"] == pytest.approx(0.504286)
+    overall = require_object_dict(summary["overall"])
+    assert overall["matches"] == 700
+    assert overall["raw_win_rate"] == pytest.approx(0.504286)
 
 
 def test_identifies_midgame_peak() -> None:

@@ -20,6 +20,18 @@ from deadlock_build_sync.protobuf import (
 from deadlock_build_sync.purchase_guide import GuideItem, PurchaseGuide, PurchaseWindow
 
 
+def _byte_fields(payload: bytes, number: int) -> list[bytes]:
+    return [
+        field.value
+        for field in parse_fields(payload)
+        if field.number == number and isinstance(field.value, bytes)
+    ]
+
+
+def _byte_field(payload: bytes, number: int) -> bytes:
+    return _byte_fields(payload, number)[0]
+
+
 def sample_guide() -> PurchaseGuide:
     window = PurchaseWindow(5000, 10000, 100, 60, 0.6, 0.5)
     item = GuideItem(123, "Test Item", 1, 200, 0.55, 0.48, 1.0, (window,))
@@ -238,34 +250,13 @@ def test_encodes_native_ability_order_and_descriptions() -> None:
     metadata = hero_build_metadata(build)
     assert "Core profile: ability damage and uptime." in (metadata.description or "")
 
-    details = next(
-        field.value
-        for field in parse_fields(build)
-        if field.number == 10 and isinstance(field.value, bytes)
-    )
-    details_fields = list(parse_fields(details))
-    first_category = next(
-        field.value
-        for field in details_fields
-        if field.number == 1 and isinstance(field.value, bytes)
-    )
-    category_description = next(
-        field.value.decode()
-        for field in parse_fields(first_category)
-        if field.number == 3 and isinstance(field.value, bytes)
-    )
+    details = _byte_field(build, 10)
+    first_category = _byte_field(details, 1)
+    category_description = _byte_field(first_category, 3).decode()
     assert category_description == "Leading options: Test Item."
 
-    ability_order = next(
-        field.value
-        for field in details_fields
-        if field.number == 2 and isinstance(field.value, bytes)
-    )
-    changes = [
-        field.value
-        for field in parse_fields(ability_order)
-        if field.number == 1 and isinstance(field.value, bytes)
-    ]
+    ability_order = _byte_field(details, 2)
+    changes = _byte_fields(ability_order, 1)
     assert len(changes) == 16
 
     first = {field.number: field.value for field in parse_fields(changes[0])}

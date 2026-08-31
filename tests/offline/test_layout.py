@@ -5,6 +5,7 @@ from deadlock_build_sync.offline.layout import (
     create_build_layout,
     render_build_layout_markdown,
 )
+from deadlock_build_sync.value_validation import require_object_rows
 
 
 def _items() -> pl.DataFrame:
@@ -49,19 +50,20 @@ def _late_game() -> dict[str, object]:
 
 def test_layout_selects_by_adoption_then_sorts_tiers_by_net_worth() -> None:
     layout = create_build_layout(_late_game(), _items(), hero_name="Haze")
+    rows = require_object_rows(layout["rows"])
+    tier_items = require_object_rows(rows[1]["items"])
+    core_items = require_object_rows(rows[0]["items"])
 
-    assert [row["name"] for row in layout["rows"]] == [
+    assert [row["name"] for row in rows] == [
         "CORE ITEMS",
         "TIER 1",
         "TIER 2",
         "TIER 3",
         "TIER 4",
     ]
-    assert [len(row["items"]) for row in layout["rows"]] == [8, 8, 8, 8, 8]
-    assert [item["item_id"] for item in layout["rows"][1]["items"]] == list(
-        range(110, 102, -1)
-    )
-    assert [item["item_id"] for item in layout["rows"][0]["items"]] == [
+    assert [len(require_object_rows(row["items"])) for row in rows] == [8] * 5
+    assert [item["item_id"] for item in tier_items] == list(range(110, 102, -1))
+    assert [item["item_id"] for item in core_items] == [
         102,
         101,
         202,
@@ -71,9 +73,13 @@ def test_layout_selects_by_adoption_then_sorts_tiers_by_net_worth() -> None:
         402,
         401,
     ]
-    assert all(not item["core"] for row in layout["rows"][1:] for item in row["items"])
-    assert layout["rows"][0]["optional"] is False
-    assert all(row["optional"] for row in layout["rows"][1:])
+    assert all(
+        not item["core"]
+        for row in rows[1:]
+        for item in require_object_rows(row["items"])
+    )
+    assert rows[0]["optional"] is False
+    assert all(row["optional"] for row in rows[1:])
 
     markdown = render_build_layout_markdown(layout)
     assert "| **CORE ITEMS** |" in markdown

@@ -5,7 +5,6 @@ import json
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any
 
 
 class MatchMode(StrEnum):
@@ -117,7 +116,7 @@ class OutcomePolicy:
         }
 
 
-def canonical_json(value: Any) -> bytes:
+def canonical_json(value: object) -> bytes:
     """Encode a value for stable evidence fingerprints.
 
     Returns:
@@ -132,7 +131,7 @@ def canonical_json(value: Any) -> bytes:
     ).encode()
 
 
-def sha256_json(value: Any) -> str:
+def sha256_json(value: object) -> str:
     return hashlib.sha256(canonical_json(value)).hexdigest()
 
 
@@ -141,7 +140,7 @@ class EvidenceRecord:
     """One immutable API response and its declared analytic semantics."""
 
     path: str
-    parameters: dict[str, Any]
+    parameters: dict[str, object]
     fetched_at: str
     sha256: str
     byte_count: int
@@ -150,7 +149,7 @@ class EvidenceRecord:
     fallback_behavior: str
     warnings: tuple[str, ...] = ()
 
-    def as_dict(self) -> dict[str, Any]:
+    def as_dict(self) -> dict[str, object]:
         return {
             "path": self.path,
             "parameters": self.parameters,
@@ -163,7 +162,7 @@ class EvidenceRecord:
             "warnings": list(self.warnings),
         }
 
-    def identity_dict(self) -> dict[str, Any]:
+    def identity_dict(self) -> dict[str, object]:
         """Return stable source identity without wall-clock fetch metadata.
 
         Returns:
@@ -208,7 +207,7 @@ class EvidenceRecorder:
     def record(
         self,
         path: str,
-        parameters: dict[str, Any],
+        parameters: dict[str, object],
         raw: bytes,
         *,
         fetched_at: datetime | None = None,
@@ -242,7 +241,7 @@ class SnapshotManifest:
     game_mode: str
     rank_range: dict[str, object]
     rank_labels_sha256: str
-    patch: dict[str, Any]
+    patch: dict[str, object]
     epochs: EpochSet
     outcome_policy: OutcomePolicy
     outcome_policy_enforced: bool
@@ -268,7 +267,7 @@ class SnapshotManifest:
         if len(self.build_tags_sha256) != 64:
             raise ValueError("snapshot manifest has no valid build-tag fingerprint")
 
-    def _payload(self, *, identity: bool = False) -> dict[str, Any]:
+    def _payload(self, *, identity: bool = False) -> dict[str, object]:
         return {
             "schema_version": 1,
             "client_version": self.client_version,
@@ -295,7 +294,7 @@ class SnapshotManifest:
     def snapshot_id(self) -> str:
         return sha256_json(self._payload(identity=True))
 
-    def as_dict(self) -> dict[str, Any]:
+    def as_dict(self) -> dict[str, object]:
         payload = self._payload()
         payload["snapshot_id"] = self.snapshot_id
         return payload

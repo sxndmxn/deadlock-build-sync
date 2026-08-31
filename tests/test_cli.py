@@ -1,7 +1,6 @@
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
 
 import pytest
 
@@ -263,7 +262,7 @@ def test_sync_generates_artifacts_and_installs_without_extra_flags(
         "hero_kelvin",
         {1: (), 2: (), 3: (), 4: ()},
     )
-    context = {
+    context: dict[str, object] = {
         "hero_id": 12,
         "hero": "Kelvin",
         "kit_basis_sha256": "a" * 64,
@@ -285,7 +284,7 @@ def test_sync_generates_artifacts_and_installs_without_extra_flags(
         patch=Patch("Patch", 123, "2026-01-01T00:00:00Z"),
         manifest=snapshot(),
     )
-    calls: dict[str, Any] = {}
+    calls: dict[str, object] = {}
 
     monkeypatch.setattr(cli_module, "_location", lambda _args: location)
     monkeypatch.setattr(cli_module, "deadlock_is_running", lambda: False)

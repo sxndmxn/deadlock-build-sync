@@ -8,7 +8,7 @@ from deadlock_build_sync.kv3_binary import encode_binary_v4
 
 
 def test_binary_v4_round_trip(tmp_path: Path) -> None:
-    root = {
+    root: dict[str, object] = {
         "LastUsedBuilds": {"hero_kelvin": 33},
         "Favorites": [b"\x01\x02"],
         "Unpublished": [b"\x03\x04\x05"],

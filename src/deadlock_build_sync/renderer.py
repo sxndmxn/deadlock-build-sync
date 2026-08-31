@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
 from .build_evidence import MAXIMUM_CORE_ITEM_COUNT, MINIMUM_BACKBONE_ITEM_COUNT
 from .policy import (
@@ -14,7 +13,6 @@ from .policy import (
     validate_policy,
 )
 from .purchase_guide import (
-    CONDITIONAL_ANNOTATION_LABELS,
     CORE_CATEGORY_DESCRIPTION,
     OPTIONAL_CORE_CATEGORY_DESCRIPTION,
     TIER_CATEGORY_DESCRIPTION,
@@ -23,39 +21,15 @@ from .purchase_guide import (
     PurchaseGuide,
     conditional_item_annotation,
 )
+from .renderer_items import apply_sell_priorities as _apply_sell_priorities
+from .renderer_items import branch_label as _branch_label
+from .renderer_items import guide_item as _guide_item
+from .renderer_items import (
+    project_guide_item_policy_fields as _project_guide_item_policy_fields,
+)
+from .renderer_validation import validate_optional_annotation
 from .snapshot import sha256_json
-
-MAX_ANNOTATION_BYTES = 240
-
-
-def validate_optional_annotation(annotation: str) -> None:
-    """Enforce the fixed five-line conditional decision contract.
-
-    Raises:
-        PolicyError: If a conditional tile cannot be executed from its annotation.
-
-    """
-    lines = annotation.splitlines()
-    if len(lines) != len(CONDITIONAL_ANNOTATION_LABELS):
-        raise PolicyError("optional annotation must contain five decision lines")
-    values: dict[str, str] = {}
-    for expected, line in zip(CONDITIONAL_ANNOTATION_LABELS, lines, strict=True):
-        prefix = f"{expected}: "
-        if not line.startswith(prefix):
-            raise PolicyError("optional annotation labels are missing or out of order")
-        values[expected] = line.removeprefix(prefix)
-    try:
-        rebuilt = conditional_item_annotation(
-            vs=values["VS"],
-            why=values["WHY"],
-            swap=values["SWAP"],
-            when=values["WHEN"],
-            skip=values["SKIP"],
-        )
-    except ValueError as error:
-        raise PolicyError(f"optional annotation is invalid: {error}") from error
-    if rebuilt != annotation or len(annotation.encode("utf-8")) > MAX_ANNOTATION_BYTES:
-        raise PolicyError("optional annotation is not in canonical form")
+from .value_validation import integer
 
 
 def _default_branch(node: PolicyNode) -> Branch:
@@ -87,122 +61,6 @@ def _linear_projection(
     return tuple(result)
 
 
-def _branch_label(branch: Branch) -> str:
-    if not branch.guards:
-        return "DEFAULT"
-    values = [
-        str(guard.value).replace("_", " ").upper()
-        for guard in branch.guards
-        if guard.value is not None
-    ]
-    label = "IF " + " + ".join(values or [branch.guards[0].field.upper()])
-    return label[:48]
-
-
-def _guide_item(
-    node: PolicyNode,
-    assets: dict[int, dict[str, Any]],
-    policy: BuildPolicy,
-    *,
-    optional: bool,
-) -> GuideItem:
-    if node.item_id is None:
-        raise PolicyError(f"purchase node {node.node_id} has no item")
-    asset = assets.get(node.item_id)
-    if asset is None:
-        raise PolicyError(f"purchase node {node.node_id} references missing asset")
-    claim = next(
-        (claim for claim in policy.evidence if claim.claim_id == node.evidence_ref),
-        None,
-    )
-    if claim is None:
-        raise PolicyError(f"purchase node {node.node_id} has no current evidence")
-    annotation = node.annotation.strip()
-    if optional:
-        validate_optional_annotation(annotation)
-    elif not annotation:
-        annotation = "Default core purchase; use the policy sidecar for timing and deviation rules."
-    estimate = claim.estimate or 0.0
-    interval_lower = claim.interval[0] if claim.interval is not None else 0.0
-    return GuideItem(
-        item_id=node.item_id,
-        name=str(asset.get("name") or f"Item {node.item_id}"),
-        tier=int(asset.get("item_tier") or 0),
-        purchase_event_observations=claim.support,
-        observed_outcome_rate=estimate,
-        observed_outcome_lower_bound=interval_lower,
-        relative_purchase_event_volume=0.0,
-        windows=(),
-        required_flex_slots=node.required_flex_slots or None,
-        sell_priority=node.sell_priority,
-        imbue_target_ability_id=node.imbue_target_ability_id,
-        tactical_annotation=annotation,
-        conditional_annotation=annotation if optional else "",
-    )
-
-
-def _apply_sell_priorities(
-    items: tuple[GuideItem, ...],
-    path: tuple[PolicyNode, ...],
-) -> tuple[GuideItem, ...]:
-    priorities: dict[int, int] = {}
-    for node in path:
-        if node.kind == NodeKind.SELL and node.item_id is not None:
-            priorities.setdefault(node.item_id, len(priorities) + 1)
-    return tuple(
-        _project_guide_item_policy_fields(
-            item,
-            required_flex_slots=item.required_flex_slots,
-            sell_priority=priorities.get(item.item_id, item.sell_priority),
-            imbue_target_ability_id=item.imbue_target_ability_id,
-        )
-        for item in items
-    )
-
-
-def _project_guide_item_policy_fields(
-    item: GuideItem,
-    *,
-    required_flex_slots: int | None,
-    sell_priority: int | None,
-    imbue_target_ability_id: int | None,
-    conditional_annotation: str | None = None,
-) -> GuideItem:
-    return GuideItem(
-        item_id=item.item_id,
-        name=item.name,
-        tier=item.tier,
-        purchase_event_observations=item.purchase_event_observations,
-        observed_outcome_rate=item.observed_outcome_rate,
-        observed_outcome_lower_bound=item.observed_outcome_lower_bound,
-        relative_purchase_event_volume=item.relative_purchase_event_volume,
-        windows=item.windows,
-        required_flex_slots=required_flex_slots,
-        sell_priority=sell_priority,
-        imbue_target_ability_id=imbue_target_ability_id,
-        tactical_annotation=item.tactical_annotation,
-        conditional_annotation=(
-            item.conditional_annotation
-            if conditional_annotation is None
-            else conditional_annotation
-        ),
-        verified_tier_annotation=item.verified_tier_annotation,
-        eligible_player_matches=item.eligible_player_matches,
-        adopter_matches=item.adopter_matches,
-        purchase_adoption=item.purchase_adoption,
-        purchase_events=item.purchase_events,
-        median_buy_time_s=item.median_buy_time_s,
-        median_valid_buy_net_worth=item.median_valid_buy_net_worth,
-        buy_net_worth_q25=item.buy_net_worth_q25,
-        buy_net_worth_q75=item.buy_net_worth_q75,
-        valid_buy_net_worth_share=item.valid_buy_net_worth_share,
-        imbue_target_ability=item.imbue_target_ability,
-        imbue_target_matches=item.imbue_target_matches,
-        imbue_observations=item.imbue_observations,
-        imbue_target_share=item.imbue_target_share,
-    )
-
-
 @dataclass(frozen=True)
 class ProjectionIdentity:
     hero_name: str
@@ -228,29 +86,50 @@ def _conditional_nodes(policy: BuildPolicy) -> dict[int, PolicyNode]:
     return result
 
 
-def _project_evidence_layout(
-    policy: BuildPolicy,
-    identity: ProjectionIdentity,
+def _evidence_core_items(
     layout: PurchaseGuide,
     default_path: tuple[PolicyNode, ...],
-) -> PurchaseGuide:
+) -> tuple[tuple[GuideItem, ...], set[int]]:
     source_core_ids = tuple(item.item_id for item in layout.core_items)
     core_purchase_items = layout.core_purchase_items or layout.core_items
-    core_purchase_ids = {item.item_id for item in core_purchase_items}
     policy_core_ids = tuple(
         node.item_id
         for node in default_path
         if node.kind == NodeKind.PURCHASE and node.item_id is not None
     )
-    if (
-        not MINIMUM_BACKBONE_ITEM_COUNT
-        <= len(source_core_ids)
-        <= MAXIMUM_CORE_ITEM_COUNT
-        or policy_core_ids != source_core_ids
-    ):
+    valid = (
+        MINIMUM_BACKBONE_ITEM_COUNT <= len(source_core_ids) <= MAXIMUM_CORE_ITEM_COUNT
+        and policy_core_ids == source_core_ids
+    )
+    if not valid:
         raise PolicyError(
             "policy default path does not match the supported evidence core"
         )
+    return core_purchase_items, {item.item_id for item in core_purchase_items}
+
+
+def _project_conditional_item(
+    item: GuideItem, conditional: dict[int, PolicyNode]
+) -> GuideItem:
+    node = conditional.get(item.item_id)
+    if node is None:
+        return item
+    return _project_guide_item_policy_fields(
+        item,
+        conditional_annotation=node.annotation,
+        required_flex_slots=node.required_flex_slots or None,
+        sell_priority=node.sell_priority,
+        imbue_target_ability_id=(
+            node.imbue_target_ability_id or item.imbue_target_ability_id
+        ),
+    )
+
+
+def _evidence_tiers(
+    policy: BuildPolicy,
+    layout: PurchaseGuide,
+    core_purchase_ids: set[int],
+) -> tuple[dict[int, tuple[GuideItem, ...]], set[int]]:
     if any(not 1 <= len(layout.tiers.get(tier, ())) <= 10 for tier in range(1, 5)):
         raise PolicyError("evidence projection requires 1–10 items in every tier")
     tier_item_ids = {item.item_id for items in layout.tiers.values() for item in items}
@@ -263,6 +142,19 @@ def _project_evidence_layout(
             "conditional policy items are missing from tier menus: "
             + ", ".join(str(item_id) for item_id in sorted(missing_conditional))
         )
+    tiers = {
+        tier: tuple(_project_conditional_item(item, conditional) for item in items)
+        for tier, items in layout.tiers.items()
+    }
+    return tiers, tier_item_ids
+
+
+def _evidence_optional_core(
+    policy: BuildPolicy,
+    layout: PurchaseGuide,
+    core_purchase_ids: set[int],
+    tier_item_ids: set[int],
+) -> tuple[GuideItem, ...]:
     card_by_item = {card.item_id: card for card in policy.core_alternatives}
     optional_core_ids = {item.item_id for item in layout.optional_core_items}
     if optional_core_ids != set(card_by_item):
@@ -271,26 +163,7 @@ def _project_evidence_layout(
         )
     if optional_core_ids & (core_purchase_ids | tier_item_ids):
         raise PolicyError("OPTIONAL CORE items must be disjoint from CORE and tiers")
-
-    def project_item(item: GuideItem) -> GuideItem:
-        node = conditional.get(item.item_id)
-        if node is None:
-            return item
-        return _project_guide_item_policy_fields(
-            item,
-            conditional_annotation=node.annotation,
-            required_flex_slots=node.required_flex_slots or None,
-            sell_priority=node.sell_priority,
-            imbue_target_ability_id=(
-                node.imbue_target_ability_id or item.imbue_target_ability_id
-            ),
-        )
-
-    tiers = {
-        tier: tuple(project_item(item) for item in items)
-        for tier, items in layout.tiers.items()
-    }
-    optional_core_items = tuple(
+    return tuple(
         _project_guide_item_policy_fields(
             item,
             conditional_annotation=conditional_item_annotation(
@@ -306,14 +179,15 @@ def _project_evidence_layout(
         )
         for item in layout.optional_core_items
     )
-    core_items = _apply_sell_priorities(layout.core_items, policy.nodes)
-    core_purchase_items = _apply_sell_priorities(core_purchase_items, policy.nodes)
+
+
+def _evidence_categories(
+    core_purchase_items: tuple[GuideItem, ...],
+    optional_core_items: tuple[GuideItem, ...],
+    tiers: dict[int, tuple[GuideItem, ...]],
+) -> tuple[GuideCategory, ...]:
     categories = [
-        GuideCategory(
-            "CORE ITEMS",
-            core_purchase_items,
-            CORE_CATEGORY_DESCRIPTION,
-        )
+        GuideCategory("CORE ITEMS", core_purchase_items, CORE_CATEGORY_DESCRIPTION)
     ]
     if optional_core_items:
         categories.append(
@@ -333,6 +207,23 @@ def _project_evidence_layout(
         )
         for tier in range(1, 5)
     )
+    return tuple(categories)
+
+
+def _project_evidence_layout(
+    policy: BuildPolicy,
+    identity: ProjectionIdentity,
+    layout: PurchaseGuide,
+    default_path: tuple[PolicyNode, ...],
+) -> PurchaseGuide:
+    core_purchase_items, core_purchase_ids = _evidence_core_items(layout, default_path)
+    tiers, tier_item_ids = _evidence_tiers(policy, layout, core_purchase_ids)
+    optional_core_items = _evidence_optional_core(
+        policy, layout, core_purchase_ids, tier_item_ids
+    )
+    core_items = _apply_sell_priorities(layout.core_items, policy.nodes)
+    core_purchase_items = _apply_sell_priorities(core_purchase_items, policy.nodes)
+    categories = _evidence_categories(core_purchase_items, optional_core_items, tiers)
     return PurchaseGuide(
         hero_id=policy.hero_id,
         hero_name=identity.hero_name,
@@ -347,7 +238,7 @@ def _project_evidence_layout(
             f"({layout.backbone_share * 100:.2f}%). OPTIONAL CORE and tier rows "
             "never enter the automatic Queue."
         ),
-        categories=tuple(categories),
+        categories=categories,
         snapshot_id=policy.snapshot_id,
         policy_id=policy.policy_id,
         client_version=identity.client_version,
@@ -367,39 +258,87 @@ def _project_evidence_layout(
     )
 
 
-def project_policy_to_guide(
+def _default_core_items(
     policy: BuildPolicy,
-    context: ValidationContext,
-    *,
-    assets: list[dict[str, Any]],
-    identity: ProjectionIdentity,
-    layout_source: PurchaseGuide | None = None,
-) -> PurchaseGuide:
-    """Validate a rich policy and create its compact executable Steam projection.
-
-    Returns:
-        A guide whose Queue contains only the default path and whose alternatives are optional.
-
-    Raises:
-        PolicyError: If any graph path or projected annotation is invalid.
-
-    """
-    validate_policy(policy, context)
-    nodes = {node.node_id: node for node in policy.nodes}
-    assets_by_id = {
-        int(asset["id"]): asset for asset in assets if isinstance(asset.get("id"), int)
-    }
-    default_path = _linear_projection(nodes, policy.entry)
-    if layout_source is not None:
-        return _project_evidence_layout(policy, identity, layout_source, default_path)
-    core_items = tuple(
+    default_path: tuple[PolicyNode, ...],
+    assets_by_id: dict[int, dict[str, object]],
+) -> tuple[GuideItem, ...]:
+    items = tuple(
         _guide_item(node, assets_by_id, policy, optional=False)
         for node in default_path
         if node.kind == NodeKind.PURCHASE
     )
-    core_items = _apply_sell_priorities(core_items, policy.nodes)
-    if not core_items:
+    items = _apply_sell_priorities(items, policy.nodes)
+    if not items:
         raise PolicyError("default policy path contains no purchase")
+    return items
+
+
+def _branch_category(
+    branch: Branch,
+    *,
+    policy: BuildPolicy,
+    nodes: dict[str, PolicyNode],
+    assets_by_id: dict[int, dict[str, object]],
+    default_item_ids: set[int],
+) -> GuideCategory | None:
+    if branch.is_default:
+        return None
+    path = _linear_projection(nodes, branch.next_id)
+    items = tuple(
+        _guide_item(node, assets_by_id, policy, optional=True)
+        for node in path
+        if node.kind == NodeKind.PURCHASE and node.item_id not in default_item_ids
+    )
+    items = _apply_sell_priorities(items, policy.nodes)
+    if not items:
+        return None
+    return GuideCategory(
+        _branch_label(branch),
+        items,
+        "Conditional branch; excluded from the default Queue.",
+        optional=True,
+    )
+
+
+def _conditional_categories(
+    policy: BuildPolicy,
+    nodes: dict[str, PolicyNode],
+    assets_by_id: dict[int, dict[str, object]],
+    default_item_ids: set[int],
+) -> list[GuideCategory]:
+    categories: list[GuideCategory] = []
+    seen: set[tuple[int, ...]] = set()
+    for choice in policy.nodes:
+        if choice.kind not in {NodeKind.CHOICE, NodeKind.OBJECTIVE_GATE}:
+            continue
+        for branch in choice.branches:
+            category = _branch_category(
+                branch,
+                policy=policy,
+                nodes=nodes,
+                assets_by_id=assets_by_id,
+                default_item_ids=default_item_ids,
+            )
+            item_ids = (
+                tuple(item.item_id for item in category.items)
+                if category is not None
+                else ()
+            )
+            if category is not None and item_ids not in seen:
+                seen.add(item_ids)
+                categories.append(category)
+    return categories
+
+
+def _project_without_layout(
+    policy: BuildPolicy,
+    identity: ProjectionIdentity,
+    nodes: dict[str, PolicyNode],
+    default_path: tuple[PolicyNode, ...],
+    assets_by_id: dict[int, dict[str, object]],
+) -> PurchaseGuide:
+    core_items = _default_core_items(policy, default_path, assets_by_id)
     categories: list[GuideCategory] = [
         GuideCategory(
             "CORE — DEFAULT QUEUE",
@@ -407,35 +346,15 @@ def project_policy_to_guide(
             "Minimal coherent default path. Recalculate when a conditional trigger applies.",
         )
     ]
-    default_item_ids = {item.item_id for item in core_items}
-    seen_optional: set[tuple[int, ...]] = set()
-    for choice in policy.nodes:
-        if choice.kind not in {NodeKind.CHOICE, NodeKind.OBJECTIVE_GATE}:
-            continue
-        for branch in choice.branches:
-            if branch.is_default:
-                continue
-            path = _linear_projection(nodes, branch.next_id)
-            items = tuple(
-                _guide_item(node, assets_by_id, policy, optional=True)
-                for node in path
-                if node.kind == NodeKind.PURCHASE
-                and node.item_id not in default_item_ids
-            )
-            items = _apply_sell_priorities(items, policy.nodes)
-            item_identity = tuple(item.item_id for item in items)
-            if not items or item_identity in seen_optional:
-                continue
-            seen_optional.add(item_identity)
-            categories.append(
-                GuideCategory(
-                    _branch_label(branch),
-                    items,
-                    "Conditional branch; excluded from the default Queue.",
-                    optional=True,
-                )
-            )
-    tiers: dict[int, tuple[GuideItem, ...]] = {
+    categories.extend(
+        _conditional_categories(
+            policy,
+            nodes,
+            assets_by_id,
+            {item.item_id for item in core_items},
+        )
+    )
+    tiers = {
         tier: tuple(
             item
             for category in categories
@@ -462,6 +381,33 @@ def project_policy_to_guide(
         match_mode=identity.match_mode,
         rank_identity=identity.rank_identity,
     )
+
+
+def project_policy_to_guide(
+    policy: BuildPolicy,
+    context: ValidationContext,
+    *,
+    assets: list[dict[str, object]],
+    identity: ProjectionIdentity,
+    layout_source: PurchaseGuide | None = None,
+) -> PurchaseGuide:
+    """Validate a rich policy and create its compact executable Steam projection.
+
+    Returns:
+        A guide whose Queue contains only the default path and whose alternatives are optional.
+
+    """
+    validate_policy(policy, context)
+    nodes = {node.node_id: node for node in policy.nodes}
+    assets_by_id = {
+        integer(asset.get("id")): asset
+        for asset in assets
+        if isinstance(asset.get("id"), int)
+    }
+    default_path = _linear_projection(nodes, policy.entry)
+    if layout_source is not None:
+        return _project_evidence_layout(policy, identity, layout_source, default_path)
+    return _project_without_layout(policy, identity, nodes, default_path, assets_by_id)
 
 
 def projection_fingerprint(guide: PurchaseGuide) -> str:

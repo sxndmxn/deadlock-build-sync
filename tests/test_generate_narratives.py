@@ -1,13 +1,13 @@
 import copy
-from typing import Any
 
 import pytest
 
 from deadlock_build_sync.narratives import NARRATIVE_GENERATOR_VERSION
+from deadlock_build_sync.value_validation import require_object_rows
 from scripts import generate_narratives
 
 
-def packet() -> dict[str, Any]:
+def packet() -> dict[str, object]:
     return {
         "hero_id": 12,
         "path_id": "default",
@@ -33,7 +33,7 @@ def packet() -> dict[str, Any]:
     }
 
 
-def source() -> dict[str, Any]:
+def source() -> dict[str, object]:
     return {
         "snapshot_manifest": {
             "snapshot_id": "1" * 64,
@@ -119,11 +119,12 @@ def test_document_is_sorted_complete_and_has_no_model_metadata() -> None:
     assert "model" not in document
     assert "prompt_version" not in document
     assert document["requested_hero_ids"] == [11, 12, 13]
-    assert [entry["hero_id"] for entry in document["heroes"]] == [11, 12]
+    heroes = require_object_rows(document["heroes"])
+    assert [entry["hero_id"] for entry in heroes] == [11, 12]
 
 
 def test_selector_rejects_unknown_hero() -> None:
-    document = {"heroes": [packet()]}
+    document: dict[str, object] = {"heroes": [packet()]}
 
     assert (
         generate_narratives._selected_heroes(document, ["Kelvin"])[0]["hero_id"] == 12
