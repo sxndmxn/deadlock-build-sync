@@ -17,7 +17,7 @@ def steam_roots(*, home: Path | None = None) -> tuple[Path, ...]:
     identities: set[Path] = set()
     for relative_path in STEAM_ROOT_RELATIVE_PATHS:
         candidate = base / relative_path
-        identity = candidate.resolve(strict=False)
+        identity = candidate.resolve()
         if identity in identities:
             continue
         identities.add(identity)
@@ -75,7 +75,7 @@ def _discover_cache_locations(
         userdata = steam_directory.expanduser() / "userdata"
         for account in _steam_accounts(userdata, account_id):
             candidate = account / DEADLOCK_APP_ID / CACHE_RELATIVE_PATH
-            resolved = candidate.resolve(strict=False)
+            resolved = candidate.resolve()
             if candidate.is_file() and resolved not in discovered_paths:
                 discovered_paths.add(resolved)
                 candidates.append(
@@ -129,12 +129,7 @@ def deadlock_is_running() -> bool:
         if not entry.name.isdigit():
             continue
         try:
-            command = (
-                (entry / "cmdline")
-                .read_bytes()
-                .replace(b"\0", b" ")
-                .decode("utf-8", errors="ignore")
-            )
+            command = (entry / "cmdline").read_bytes().decode(errors="ignore")
         except (FileNotFoundError, PermissionError, ProcessLookupError):
             continue
         lowered = command.casefold()

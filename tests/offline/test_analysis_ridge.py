@@ -84,6 +84,7 @@ def test_ridge_models_score_items_and_holdout_data() -> None:
     assert scores.height == 4
     assert set(evaluation["model"]) == {"ridge_state_model", "state_only_model"}
     assert stability["shared_items"].item() == 4
+    assert stability["spearman"].item() is None
     assert set(baseline["model"]) == {
         "raw_outcome_rate",
         "wilson_lower",

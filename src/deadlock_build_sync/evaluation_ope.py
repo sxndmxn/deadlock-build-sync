@@ -89,7 +89,8 @@ def _ope_estimates(
             target_model + weight * (row.outcome - row.outcome_predictions[row.action])
         )
     dr = sum(dr_terms) / len(dr_terms)
-    ess = total_weight**2 / sum(weight**2 for weight in weights) if weights else 0.0
+    squared_weight_sum = sum(weight**2 for weight in weights)
+    ess = total_weight**2 / squared_weight_sum if squared_weight_sum else 0.0
     return ips, snips, dr, ess, max(weights, default=0.0)
 
 

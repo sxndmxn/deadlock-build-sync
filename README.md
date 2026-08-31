@@ -119,8 +119,8 @@ real cache remains, select it with `--account-id` or `--cache-path`.
 
 ## Development
 
-The default uv development group includes Pytest, Ruff, and ty. Validate a
-checkout with:
+The default uv development group includes the test, type, coverage, complexity,
+dead-code, duplicate-code, and mutation tools. Validate a checkout with:
 
 ```bash
 uv lock --check
@@ -128,10 +128,20 @@ uv sync --frozen
 uv run ruff format --check .
 uv run ruff check .
 uv run ty check
-uv run pytest
+uv run complexipy
+uv run coverage erase
+uv run coverage run -m pytest -W error
+uv run coverage json
+uv run tools/quality_gate.py
+uv run vulture
+uv run pylint --disable=all --enable=duplicate-code src scripts
 uv pip check
 uv build
 ```
+
+Run the commands in [Quality gates](docs/quality-gates.md) for the slower
+mutation gate. See that document for all limits, mutation-run details, and
+the standalone SonarLint setup.
 
 ## Execution tracing
 

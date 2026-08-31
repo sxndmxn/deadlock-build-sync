@@ -6,6 +6,18 @@ import polars as pl
 CASE_STUDIES = ("Abrams", "Haze", "Kelvin", "Dynamo", "Infernus")
 
 
+def _most_popular_items(metrics: pl.DataFrame) -> pl.DataFrame:
+    return (
+        metrics
+        .sort(
+            ["hero_id", "tier", "adoption_rate"],
+            descending=[False, False, True],
+        )
+        .group_by(["hero_id", "tier"], maintain_order=True)
+        .head(1)
+    )
+
+
 def _format_scope_median(frame: pl.DataFrame, scope: str) -> str:
     """Format one optional matchup-stability statistic for prose."""
     scoped = frame.filter(pl.col("scope") == scope)

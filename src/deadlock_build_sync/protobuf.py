@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 
     from .purchase_guide import GuideCategory, GuideItem, PurchaseGuide
 _BUILD_PATH_PATTERN = re.compile(r"(?m)^Build path: ([a-z0-9-]+)\.$")
+_UTF8 = "utf-8"
 
 
 @dataclass(frozen=True)
@@ -34,7 +35,7 @@ class HeroBuildMetadata:
 
 
 def encode_varint(value: int) -> bytes:
-    if value < 0:
+    if value < 0:  # pragma: no mutate
         value &= (1 << 64) - 1
     output = bytearray()
     while value >= 0x80:
@@ -73,7 +74,7 @@ def bytes_field(field: int, value: bytes) -> bytes:
 def string_field(field: int, value: str | None) -> bytes:
     if value is None:
         return b""
-    return bytes_field(field, value.encode("utf-8"))
+    return bytes_field(field, value.encode(_UTF8))
 
 
 def message_field(field: int, value: bytes) -> bytes:
@@ -94,7 +95,7 @@ def read_varint(buffer: bytes, index: int) -> tuple[int, int]:
         if byte < 0x80:
             return value, index
         shift += 7
-        if shift > 70:
+        if shift >= 70:
             raise ValueError("protobuf varint is too long")
 
 
@@ -155,7 +156,7 @@ def _record_metadata_field(
         and field.number in {5, 6}
         and isinstance(field.value, bytes)
     ):
-        values[field.number] = field.value.decode("utf-8", errors="replace")
+        values[field.number] = field.value.decode(errors="replace")
 
 
 def _metadata_int(values: dict[int, int | str], number: int) -> int | None:
@@ -184,6 +185,15 @@ def hero_build_metadata(result_blob: bytes) -> HeroBuildMetadata:
         publish_timestamp=_metadata_int(values, 13),
         tag_ids=tuple(tag_ids),
     )
+
+
+def try_hero_build_metadata(value: object) -> HeroBuildMetadata | None:
+    if not isinstance(value, bytes | bytearray):
+        return None
+    try:
+        return hero_build_metadata(bytes(value))
+    except ValueError:
+        return None
 
 
 def _encode_mod(item: GuideItem) -> bytes:
@@ -267,8 +277,7 @@ def encode_hero_build(
         details += message_field(1, _encode_category(category))
     details += message_field(2, _encode_ability_order(presentation))
 
-    output = bytearray()
-    output += varint_field(1, build_id)
+    output = bytearray(varint_field(1, build_id))
     output += varint_field(2, presentation.hero_id)
     output += varint_field(3, account_id)
     output += varint_field(4, timestamp)
@@ -294,7 +303,9 @@ def wrap_hero_build(hero_build: bytes) -> bytes:
 
 
 def managed_build_path(metadata: HeroBuildMetadata) -> str | None:
-    description = metadata.description or ""
+    description = metadata.description
+    if description is None:
+        return None
     if MANAGED_MARKER not in description:
         return None
     match = _BUILD_PATH_PATTERN.search(description)
@@ -308,7 +319,9 @@ def is_managed_build(
     account_id: int,
     path_id: str | None = None,
 ) -> bool:
-    description = metadata.description or ""
+    description = metadata.description
+    if description is None:
+        return False
     marker_present = (
         MANAGED_MARKER in description or LEGACY_MANAGED_MARKER in description
     )

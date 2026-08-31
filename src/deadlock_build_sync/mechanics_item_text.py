@@ -245,7 +245,9 @@ def _has_offensive_response_phrase(text: str, phrase: str) -> bool:
             prefix,
         )
         defensive_suffix = (
-            re.match(r"\s+resistance\b", suffix) if phrase == "movement slow" else None
+            re.match(r"\s+(?:immunity|resistance)\b", suffix)
+            if phrase == "movement slow"
+            else None
         )
         if defensive_prefix is None and defensive_suffix is None:
             return True

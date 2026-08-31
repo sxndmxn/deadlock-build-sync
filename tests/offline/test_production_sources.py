@@ -9,7 +9,7 @@ import pytest
 
 from deadlock_build_sync.offline import production_sources as sources
 from deadlock_build_sync.offline.api import write_json
-from deadlock_build_sync.offline.config import RunPaths
+from deadlock_build_sync.offline.config import RunPaths, sha256_json
 from tests.mechanics_fixtures import item
 
 if TYPE_CHECKING:
@@ -64,6 +64,9 @@ def test_patch_helpers_normalize_guids_content_and_cutoff(tmp_path: Path) -> Non
     assert patch["title"] == "Old"
     assert patch["guid"] == '{"id":1}'
     assert len(str(patch["identity"])) == 64
+    assert sha256_json(patch) == (
+        "6e746befc32de3d8dac343b1735daeef000215306c074aa8588634442e839d64"
+    )
     assert sources._patch_guid(" value ") == "value"
     assert sources._patch_guid(1) == "unknown"
     first = sources._patch_content_sha256(

@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, cast
 import pytest
 
 from deadlock_build_sync import tracing_core, tracing_session, tracing_summary
+from deadlock_build_sync.snapshot import sha256_json
 from deadlock_build_sync.tracing import (
     TRACE_FILE_NAME,
     TraceError,
@@ -285,6 +286,17 @@ def test_trace_call_recording_and_stage_exception_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(tracing_session, "_project_module", _project_fixture)
+    monkeypatch.setattr(
+        tracing_session,
+        "_module_file",
+        lambda *_args: "deadlock_build_sync/fixture.py",
+    )
+    timestamps = iter((100, 150, 200, 260))
+    monkeypatch.setattr(
+        tracing_session.time,
+        "perf_counter_ns",
+        lambda: next(timestamps),
+    )
     frame = _frame()
     calls = TraceSession(TraceMode.CALLS, "calls", root=tmp_path)
     calls.path = tmp_path / "calls.jsonl"
@@ -293,7 +305,7 @@ def test_trace_call_recording_and_stage_exception_paths(
     assert calls._trace_exceptions(frame, "call", None) is not None
     calls._profile(frame, "return", None)
     calls._writer.close()
-    assert any(event.get("event") == "call" for event in _events(calls.path))
+    call_events = _events(calls.path)
 
     stages = TraceSession(TraceMode.STAGES, "stages", root=tmp_path)
     stages.path = tmp_path / "stages.jsonl"
@@ -305,9 +317,10 @@ def test_trace_call_recording_and_stage_exception_paths(
     assert stages._trace_exceptions(frame, "exception", ()) is not None
     stages._record_return(frame)
     stages._writer.close()
-    events = _events(stages.path)
-    assert any(event.get("event") == "stage_exception" for event in events)
-    assert any(event.get("status") == "failure" for event in events)
+    stage_events = _events(stages.path)
+    assert sha256_json({"calls": call_events, "stages": stage_events}) == (
+        "656c0bbb7552f1fe4af6145bd74184959402988fc54f3e02b0d222ebb195e66e"
+    )
 
 
 def test_trace_directory_collision_and_prune_errors(
@@ -372,9 +385,6 @@ def test_trace_summary_handles_stage_limits_legacy_calls_and_durations(
         ],
     )
     summary = render_trace_summary(stage_path, max_nodes=1)
-    assert "Stage tree:" in summary
-    assert "1 additional span(s) omitted" in summary
-    assert "reached its size limit" in summary
 
     legacy = tmp_path / "legacy.jsonl"
     _write_events(
@@ -390,7 +400,14 @@ def test_trace_summary_handles_stage_limits_legacy_calls_and_durations(
             {"event": "return", "call_id": 1, "elapsed_ns": 1_000_000},
         ],
     )
-    assert "deadlock_build_sync.old.run" in render_trace_summary(legacy)
+    legacy_summary = render_trace_summary(legacy)
+    assert (
+        sha256_json({
+            "stage": summary.replace(str(stage_path), "<trace>"),
+            "legacy": legacy_summary.replace(str(legacy), "<trace>"),
+        })
+        == "ef3c83a3fcb788df04966f46304f0d4dde4a7b3b5495703cb0e733c80accd9a5"
+    )
     assert tracing_summary._format_duration(None) == "incomplete"
     assert tracing_summary._format_duration(999) == "999ns"
     assert tracing_summary._format_duration(1_000) == "1.000us"

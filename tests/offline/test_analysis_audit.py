@@ -17,7 +17,7 @@ from deadlock_build_sync.offline.analysis_audit import (
     _mechanics_audit,
 )
 from deadlock_build_sync.offline.api import write_json
-from deadlock_build_sync.offline.config import RunPaths
+from deadlock_build_sync.offline.config import RunPaths, sha256_json
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -228,6 +228,14 @@ def test_mechanics_audit_resolves_scaling_channels(tmp_path: Path) -> None:
     assert row["has_range_or_radius_scaling"]
     assert row["has_cooldown_or_recharge_scaling"]
     assert row["spirit_damage_coefficients"] == "0.5"
+    assert (
+        sha256_json({
+            "items": items.to_dicts(),
+            "heroes": heroes.to_dicts(),
+            "abilities": abilities.to_dicts(),
+        })
+        == "23b7251c045b8b3e2c419493709d6c87ef0e6990ca1ff12e1b3e3f98226089ca"
+    )
 
 
 def test_mechanics_helpers_reject_invalid_scaling_and_assets(tmp_path: Path) -> None:

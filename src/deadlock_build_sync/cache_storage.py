@@ -7,14 +7,13 @@ import shutil
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
-from .presentation import MANAGED_MARKER
 from .protobuf import (
     HeroBuildMetadata,
-    hero_build_metadata,
     is_managed_build,
     managed_build_path,
+    try_hero_build_metadata,
 )
 from .value_validation import object_list
 
@@ -32,6 +31,12 @@ from .cache_types import (
     _GuideInstallationIdentity,
     _ReplacementValidation,
 )
+
+_CACHE_JSON_ENCODER = json.JSONEncoder(
+    ensure_ascii=False,
+    separators=(",", ":"),
+)
+_O_DIRECTORY = getattr(os, "O_DIRECTORY", 0)
 
 
 def _state_root() -> Path:
@@ -65,7 +70,7 @@ def _create_backup(location: CacheLocation, *, root: Path | None = None) -> Path
 
 
 def _fsync_directory(path: Path) -> None:
-    descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    descriptor = os.open(path, os.O_RDONLY | _O_DIRECTORY)
     try:
         os.fsync(descriptor)
     finally:
@@ -91,17 +96,18 @@ def _is_target_managed_blob(
     account_id: int,
     target_hero_ids: set[int],
 ) -> bool:
-    if not isinstance(value, (bytes, bytearray)):
-        return False
-    try:
-        metadata = hero_build_metadata(bytes(value))
-    except ValueError:
+    metadata = try_hero_build_metadata(value)
+    if metadata is None:
         return False
     hero_id = metadata.hero_id
-    return hero_id in target_hero_ids and is_managed_build(
-        metadata,
-        hero_id=cast("int", hero_id),
-        account_id=account_id,
+    return (
+        hero_id is not None
+        and hero_id in target_hero_ids
+        and is_managed_build(
+            metadata,
+            hero_id=hero_id,
+            account_id=account_id,
+        )
     )
 
 
@@ -128,12 +134,7 @@ def _out_of_scope_fingerprint(
         for key, nested in root.items()
     }
     normalized = _stable_cache_value(projection)
-    encoded = json.dumps(
-        normalized,
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
-    ).encode()
+    encoded = _CACHE_JSON_ENCODER.encode(normalized).encode()
     return hashlib.sha256(encoded).hexdigest()
 
 
@@ -142,31 +143,23 @@ def _target_managed_metadata(
     expected: dict[BuildKey, int],
     account_id: int,
 ) -> tuple[BuildKey, HeroBuildMetadata] | None:
-    if not isinstance(blob, (bytes, bytearray)):
+    metadata = try_hero_build_metadata(blob)
+    if metadata is None:
         return None
-    try:
-        metadata = hero_build_metadata(bytes(blob))
-    except ValueError:
+    if metadata.author_account_id != account_id:
         return None
-    hero_id = metadata.hero_id
-    path_id = managed_build_path(metadata)
-    key = (cast("int", hero_id), path_id) if path_id is not None else None
-    if (
-        metadata.author_account_id != account_id
-        or hero_id is None
-        or key not in expected
-        or not metadata.description
-        or MANAGED_MARKER not in metadata.description
-    ):
-        return None
-    return cast("BuildKey", key), metadata
+    candidate = metadata.hero_id, managed_build_path(metadata)
+    return next(
+        ((key, metadata) for key in expected if key == candidate),
+        None,
+    )
 
 
 def _validate_managed_identity(
     key: BuildKey,
     metadata: HeroBuildMetadata,
     identities: dict[BuildKey, tuple[str, str]],
-) -> None:
+) -> int:
     hero_id, path_id = key
     if metadata.build_id is None:
         raise CacheError(
@@ -174,9 +167,13 @@ def _validate_managed_identity(
         )
     expected_identity = identities.get(key)
     if expected_identity is None:
-        return
+        return metadata.build_id
     snapshot_id, policy_id = expected_identity
-    description = metadata.description or ""
+    description = metadata.description
+    if description is None:
+        raise CacheError(
+            f"replacement cache managed build {hero_id}/{path_id} has stale identity"
+        )
     if (
         f"Snapshot: {snapshot_id}." not in description
         or f"Policy: {policy_id}." not in description
@@ -184,6 +181,7 @@ def _validate_managed_identity(
         raise CacheError(
             f"replacement cache managed build {hero_id}/{path_id} has stale identity"
         )
+    return metadata.build_id
 
 
 def _validate_managed_entries(
@@ -206,8 +204,7 @@ def _validate_managed_entries(
             raise CacheError(
                 f"replacement cache contains duplicate managed build {key[0]}/{key[1]}"
             )
-        _validate_managed_identity(key, metadata, identities or {})
-        found[key] = cast("int", metadata.build_id)
+        found[key] = _validate_managed_identity(key, metadata, identities or {})
     if found != expected:
         raise CacheError(
             f"replacement cache validation failed: expected {expected}, found {found}"

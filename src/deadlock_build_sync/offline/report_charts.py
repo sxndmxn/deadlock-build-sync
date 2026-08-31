@@ -5,7 +5,7 @@ import numpy as np
 import polars as pl
 
 from .config import RunPaths
-from .report_helpers import _weighted_evaluation
+from .report_helpers import _most_popular_items, _weighted_evaluation
 
 mpl.use("Agg")
 import matplotlib.pyplot as plt
@@ -45,15 +45,7 @@ def _charts(paths: RunPaths) -> None:
     plt.close(fig)
 
     metrics = pl.read_csv(paths.tables / "item_metrics.csv")
-    most_popular = (
-        metrics
-        .sort(
-            ["hero_id", "tier", "adoption_rate"],
-            descending=[False, False, True],
-        )
-        .group_by(["hero_id", "tier"], maintain_order=True)
-        .head(1)
-    )
+    most_popular = _most_popular_items(metrics)
     fig, axis = plt.subplots(figsize=(8, 4.8))
     for tier in sorted(most_popular["tier"].unique().to_list()):
         values = most_popular.filter(pl.col("tier") == tier)["adoption_rate"].to_numpy()

@@ -352,10 +352,10 @@ def _build_policy(
         ability_definitions=definitions,
         level_info=inputs.kit.get("level_info"),
     )
+    core_item_count = len(guide.core_items)
     if (
-        not MINIMUM_BACKBONE_ITEM_COUNT
-        <= len(guide.core_items)
-        <= MAXIMUM_CORE_ITEM_COUNT
+        core_item_count < MINIMUM_BACKBONE_ITEM_COUNT
+        or core_item_count > MAXIMUM_CORE_ITEM_COUNT
     ):
         raise GuideError(f"{guide.hero_name} does not have a supported core size")
     evidence, core_claim = _policy_evidence(guide, definitions, manifest)

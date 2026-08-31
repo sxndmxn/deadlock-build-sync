@@ -2,23 +2,18 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from .artifacts import atomic_write_json
 from .cache import (
     restore_latest,
 )
 from .cli_support import (
     _ARTIFACT_WRITE_STAGE,
     _POLICY_FILENAME,
-    _api,
     _build_evidence,
+    _generate,
     _location,
-    _record_generated_facts,
-    _report_skipped,
-    _requested_hero_ids,
     _write_policy_artifact,
+    _write_strategy_context,
 )
-from .service import generate_guides
-from .strategy_context import build_strategy_context_document
 from .tracing import record_stage_facts, render_trace_summary
 
 if TYPE_CHECKING:
@@ -28,24 +23,8 @@ if TYPE_CHECKING:
 def _run_export_context(args: argparse.Namespace) -> int:
     location = _location(args)
     evidence_path, evidence = _build_evidence(args)
-    generated = generate_guides(
-        _api(args, evidence),
-        build_evidence=evidence,
-        account_id=location.account_id,
-        hero_query=args.hero,
-        all_heroes=args.all,
-    )
-    _record_generated_facts(generated)
-    _report_skipped(generated)
-    document = build_strategy_context_document(
-        generated.patch,
-        generated.contexts,
-        manifest=generated.manifest,
-        item_mechanics=generated.item_mechanics,
-        requested_hero_ids=_requested_hero_ids(generated),
-        exclusions=generated.exclusions,
-    )
-    atomic_write_json(args.output, document, compact=True)
+    generated = _generate(args, evidence, location.account_id)
+    _write_strategy_context(args.output, generated)
     record_stage_facts(_ARTIFACT_WRITE_STAGE, path=args.output)
     policy_output = args.policy_output or args.output.with_name(_POLICY_FILENAME)
     _write_policy_artifact(policy_output, generated)

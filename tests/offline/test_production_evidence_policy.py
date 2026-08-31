@@ -5,6 +5,8 @@ import polars as pl
 import pytest
 
 from deadlock_build_sync.mechanics import ItemGraph
+from deadlock_build_sync.offline.build_paths import DiscoveredBuildPath
+from deadlock_build_sync.offline.config import sha256_json
 from deadlock_build_sync.offline.core_policy import (
     cross_fitted_dr_contrast,
 )
@@ -17,6 +19,7 @@ from deadlock_build_sync.offline.production_evidence import (
     _sequence_rows,
     _tier_policy,
 )
+from deadlock_build_sync.offline.production_policy import _path_label
 from deadlock_build_sync.value_validation import (
     integer,
     require_object_dict,
@@ -137,6 +140,9 @@ def test_tier_policy_uses_train_and_validation_only() -> None:
         "3": [3],
         "4": [4],
     }
+    assert sha256_json(selected) == (
+        "91973ccfc612da8c0a77c630f7bd8707e8158aad1ff44698d64d468c1121df80"
+    )
 
     weak_validation = pl.DataFrame([
         {**row, "validation_adopter_matches": 1} if row["tier"] == 1 else row
@@ -283,6 +289,49 @@ def test_component_expanded_default_path_buys_missing_components_first() -> None
     )
 
     assert path == list(range(1, 10))
+
+
+def test_path_label_prefers_imbue_then_slot_item_and_default() -> None:
+    con = duckdb.connect()
+    con.execute(
+        "CREATE TABLE purchases ("
+        "match_id BIGINT, player_slot INTEGER, imbued_ability_id INTEGER)"
+    )
+    con.execute("CREATE TABLE match_folds (match_id BIGINT, fold VARCHAR)")
+    con.executemany(
+        "INSERT INTO match_folds VALUES (?, ?)",
+        [(1, "train"), (2, "train")],
+    )
+    con.executemany(
+        "INSERT INTO purchases VALUES (?, ?, ?)",
+        [(1, 0, 99), (2, 0, 99)],
+    )
+    members = frozenset({(1, 0), (2, 0)})
+    ability_path = DiscoveredBuildPath("ability", members, (10,), {}, {})
+
+    assert _path_label(con, ability_path, {99: {"name": " Mini Turret "}}) == (
+        "Mini Turret"
+    )
+
+    con.execute("DELETE FROM purchases")
+    slot_path = DiscoveredBuildPath("slot", members, (10, 11), {}, {})
+    assert (
+        _path_label(
+            con,
+            slot_path,
+            {
+                10: {"item_slot_type": "weapon"},
+                11: {"item_slot_type": "weapon"},
+            },
+        )
+        == "Weapon Core"
+    )
+
+    item_path = DiscoveredBuildPath("item", members, (12,), {}, {})
+    assert _path_label(con, item_path, {12: {"name": "Named Item"}}) == "Named Item"
+
+    default_path = DiscoveredBuildPath("default", members, (), {}, {})
+    assert _path_label(con, default_path, {}) == "Evidence Default"
 
 
 def test_sequence_policy_uses_train_rows_and_emits_supported_backoffs() -> None:

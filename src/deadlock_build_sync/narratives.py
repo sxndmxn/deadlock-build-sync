@@ -362,10 +362,10 @@ def deterministic_build_description(context: dict[str, object]) -> str:
     description = " ".join(sentence for sentence in with_playstyle if sentence)
     if len(description) > MAXIMUM_BUILD_DESCRIPTION_CHARACTERS:
         description = " ".join(fixed)
+    description_length = len(description)
     if (
-        not MINIMUM_BUILD_DESCRIPTION_CHARACTERS
-        <= len(description)
-        <= MAXIMUM_BUILD_DESCRIPTION_CHARACTERS
+        description_length < MINIMUM_BUILD_DESCRIPTION_CHARACTERS
+        or description_length > MAXIMUM_BUILD_DESCRIPTION_CHARACTERS
     ):
         raise NarrativeError(
             "deterministic build description is outside its size limit"

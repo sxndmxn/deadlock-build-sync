@@ -77,7 +77,7 @@ def _core_decisions(con: duckdb.DuckDBPyConnection, hero_id: int) -> pl.DataFram
         WHERE hero_id = ?
         """,
         [hero_id],
-    ).fetch_arrow_table()
+    ).to_arrow_table()
     frame = pl.from_arrow(arrow)
     if not isinstance(frame, pl.DataFrame):
         raise RuntimeError("decision query did not return a table")

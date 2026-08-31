@@ -1,8 +1,11 @@
 import json
+from dataclasses import asdict
+from datetime import UTC, datetime, tzinfo
 from pathlib import Path
 
 import pytest
 
+import tests.artifact_bundle_fixtures as bundle_fixtures
 from deadlock_build_sync.artifact_bundle import load_artifact_guide_bundle
 from deadlock_build_sync.snapshot import (
     sha256_json,
@@ -17,7 +20,28 @@ from tests.artifact_bundle_fixtures import (
 )
 
 
-def test_loads_exact_reviewed_bundle_without_analytics_refetch(tmp_path: Path) -> None:
+def _json_default(value: object) -> object:
+    if isinstance(value, (set, frozenset)):
+        return sorted(value, key=repr)
+    raise TypeError(f"cannot normalize {type(value).__name__}")
+
+
+def test_loads_exact_reviewed_bundle_without_analytics_refetch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created_at = datetime(2026, 1, 2, tzinfo=UTC)
+
+    class FixedDatetime:
+        @staticmethod
+        def now(_timezone: object) -> datetime:
+            return created_at
+
+        @staticmethod
+        def fromtimestamp(timestamp: float, timezone: tzinfo) -> datetime:
+            return datetime.fromtimestamp(timestamp, timezone)
+
+    monkeypatch.setattr(bundle_fixtures, "datetime", FixedDatetime)
     context_path, policy_path, narrative_path, evidence_path = _write_bundle(tmp_path)
 
     bundle = load_artifact_guide_bundle(
@@ -27,6 +51,10 @@ def test_loads_exact_reviewed_bundle_without_analytics_refetch(tmp_path: Path) -
         evidence_path,
     )
 
+    normalized = json.loads(json.dumps(asdict(bundle), default=_json_default))
+    assert sha256_json(normalized) == (
+        "0dce9d2ee9aa6d9ddabd7bdf1d9fdb0c693f5df8fd71529d8b1fcffac34a04d9"
+    )
     assert len(bundle.guides) == 1
     guide = bundle.guides[0]
     assert guide.hero_name == "Kelvin"

@@ -6,6 +6,7 @@ import pytest
 
 import deadlock_build_sync.cli as cli_module
 import deadlock_build_sync.offline.cli as offline_cli_module
+from deadlock_build_sync import cli_support
 from deadlock_build_sync.api import Patch
 from deadlock_build_sync.cache import CacheError, CacheLocation
 from deadlock_build_sync.cli import DEFAULT_NARRATIVE_PATH, build_parser
@@ -185,7 +186,24 @@ def test_install_artifacts_loads_frozen_build_evidence_from_the_bundle(
 
     monkeypatch.setattr(cli_module, "load_artifact_guide_bundle", load_bundle)
 
-    def install_guides(*_args: object, **kwargs: object) -> SimpleNamespace:
+    def install_guides(*args: object, **kwargs: object) -> SimpleNamespace:
+        assert args == (location, [])
+        timestamp = kwargs.pop("timestamp")
+        assert isinstance(timestamp, int)
+        assert kwargs == {
+            "persona": expected_persona,
+            "patch_title": "Patch",
+            "patch_published_at": "2026-01-01T00:00:00Z",
+            "rank_range": DEFAULT_RANK_RANGE,
+            "snapshot_manifest": {
+                "snapshot_id": "s" * 64,
+                "match_mode": "ranked",
+                "client_version": 123,
+                "as_of_timestamp": 999,
+            },
+            "expected_hero_ids": set(),
+            "allow_subset": False,
+        }
         seen["persona"] = kwargs["persona"]
         return SimpleNamespace(
             build_ids={},
@@ -198,7 +216,7 @@ def test_install_artifacts_loads_frozen_build_evidence_from_the_bundle(
             policy_ids={},
         )
 
-    monkeypatch.setattr(cli_module, "install_guides", install_guides)
+    monkeypatch.setattr(cli_support, "install_guides", install_guides)
 
     assert (
         cli_module._run_install_artifacts(
@@ -285,21 +303,31 @@ def test_sync_generates_artifacts_and_installs_without_extra_flags(
         manifest=snapshot(),
     )
     calls: dict[str, object] = {}
+    evidence = SimpleNamespace(artifact_id="e" * 64, heroes={})
+    api = object()
 
     monkeypatch.setattr(cli_module, "_location", lambda _args: location)
     monkeypatch.setattr(cli_module, "deadlock_is_running", lambda: False)
     monkeypatch.setattr(
         cli_module,
         "require_current_build_evidence",
-        lambda *_args: SimpleNamespace(artifact_id="e" * 64),
+        lambda *_args: evidence,
     )
-    monkeypatch.setattr(cli_module, "_api", lambda *_args: object())
+    monkeypatch.setattr(cli_support, "_api", lambda *_args: api)
 
-    def fake_generate(*_args: object, **kwargs: object) -> GeneratedGuides:
-        calls["all_heroes"] = kwargs["all_heroes"]
+    def fake_generate(*args: object, **kwargs: object) -> GeneratedGuides:
+        assert args == (api,)
+        assert kwargs == {
+            "build_evidence": evidence,
+            "account_id": 123,
+            "hero_query": None,
+            "all_heroes": True,
+            "narrative_catalog": None,
+        }
+        calls["all_heroes"] = True
         return generated
 
-    monkeypatch.setattr(cli_module, "generate_guides", fake_generate)
+    monkeypatch.setattr(cli_support, "generate_guides", fake_generate)
 
     def fake_write_context(path: Path, _generated: GeneratedGuides) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -338,10 +366,21 @@ def test_sync_generates_artifacts_and_installs_without_extra_flags(
         "apply_narrative",
         lambda live_guide, *_args: live_guide,
     )
-    monkeypatch.setattr(
-        cli_module,
-        "install_guides",
-        lambda *_args, **_kwargs: SimpleNamespace(
+
+    def fake_install(*args: object, **kwargs: object) -> SimpleNamespace:
+        assert args == (location, [guide])
+        timestamp = kwargs.pop("timestamp")
+        assert isinstance(timestamp, int)
+        assert kwargs == {
+            "persona": "Player",
+            "patch_title": "Patch",
+            "patch_published_at": "2026-01-01T00:00:00Z",
+            "rank_range": DEFAULT_RANK_RANGE,
+            "snapshot_manifest": generated.manifest.as_dict(),
+            "expected_hero_ids": {12},
+            "allow_subset": False,
+        }
+        return SimpleNamespace(
             build_ids={(12, "default"): 2},
             created=1,
             updated=0,
@@ -350,8 +389,9 @@ def test_sync_generates_artifacts_and_installs_without_extra_flags(
             backup_directory=tmp_path / "backup",
             snapshot_id=generated.manifest.snapshot_id,
             policy_ids={(12, "default"): "policy"},
-        ),
-    )
+        )
+
+    monkeypatch.setattr(cli_support, "install_guides", fake_install)
 
     args = build_parser().parse_args([
         "sync",

@@ -193,7 +193,11 @@ def _ridge_split_stability(
         return None
     train_values = _ridge_item_values(train_model, reference, shared_items)
     test_values = _ridge_item_values(test_model, reference, shared_items)
-    correlation = spearmanr(train_values, test_values).statistic
+    correlation = (
+        spearmanr(train_values, test_values).statistic
+        if len(set(train_values)) > 1 and len(set(test_values)) > 1
+        else None
+    )
     train_top = {
         item_id
         for _, item_id in sorted(
@@ -212,7 +216,11 @@ def _ridge_split_stability(
         "tier": tier,
         "method": "ridge_adjusted_rate",
         "shared_items": len(shared_items),
-        "spearman": float(correlation) if math.isfinite(correlation) else None,
+        "spearman": (
+            float(correlation)
+            if correlation is not None and math.isfinite(correlation)
+            else None
+        ),
         "top10_jaccard": len(train_top & test_top) / len(union),
     }
 

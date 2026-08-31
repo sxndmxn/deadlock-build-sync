@@ -4,7 +4,11 @@ import polars as pl
 
 from deadlock_build_sync.value_validation import integer, object_dict
 
-from .report_helpers import _event_inflation_bounds, _format_scope_median
+from .report_helpers import (
+    _event_inflation_bounds,
+    _format_scope_median,
+    _most_popular_items,
+)
 from .report_types import CoreReportContext, ReportTables
 
 
@@ -41,15 +45,7 @@ def build_core_report_context(tables: ReportTables) -> CoreReportContext:
     event_inflation_min, event_inflation_max, event_counts_are_unique = (
         _event_inflation_bounds(metrics)
     )
-    most_popular = (
-        metrics
-        .sort(
-            ["hero_id", "tier", "adoption_rate"],
-            descending=[False, False, True],
-        )
-        .group_by(["hero_id", "tier"], maintain_order=True)
-        .head(1)
-    )
+    most_popular = _most_popular_items(metrics)
     top_adoption_summary = (
         most_popular
         .group_by("tier")

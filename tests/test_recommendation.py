@@ -3,6 +3,7 @@ from dataclasses import replace
 from deadlock_build_sync.build_evidence import (
     SequenceTransition,
 )
+from deadlock_build_sync.offline.config import sha256_json
 from deadlock_build_sync.recommendation import (
     RecommendationAction,
     recommend,
@@ -22,6 +23,9 @@ def test_recommendation_expands_components_then_saves_for_parent() -> None:
     assert first.item_id == 1
     assert first.target_item_id == 2
     assert first.incremental_cost == 500
+    assert sha256_json(first.as_dict()) == (
+        "f670e055da915d49d270f73870722b32a34da1ad883eb98936c6f1c6218fb5d3"
+    )
 
     second = recommend(
         catalog(),

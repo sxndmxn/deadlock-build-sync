@@ -8,7 +8,7 @@ import pytest
 from deadlock_build_sync.http_client import JsonHttpError, JsonHttpResponse
 from deadlock_build_sync.offline import api as api_module
 from deadlock_build_sync.offline.api import ApiClient, ApiError
-from deadlock_build_sync.offline.config import Cohort, RunPaths
+from deadlock_build_sync.offline.config import Cohort, RunPaths, sha256_json
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -130,6 +130,9 @@ def test_source_capture_filters_and_writes_assets(
     assert result["client_version"] == 123
     assert result["active_heroes"] == 1
     assert result["shop_items"] == 1
+    assert sha256_json(result) == (
+        "15b89bde15a59ac4b7dc833eb552d26a2c9236d870b21126db03391072bae6ec"
+    )
     assert _SourceClient.instances[0].closed
     assert api_module.read_json(paths.raw / "heroes.json") == [
         {
@@ -176,6 +179,9 @@ def test_api_audit_records_failures_and_duration_calls(
     failures = result["failures"]
     assert isinstance(failures, list)
     assert len(failures) == 1
+    assert sha256_json(result) == (
+        "02fedb476626f9a1ab4ddfe67a433420c2224f72d6b4ebfe13ddd5eacaa0ff6c"
+    )
     assert _AuditClient.instances[0].closed
     assert "API audit: 10/10 heroes" in capsys.readouterr().out
     assert (paths.api / "hero-duration-50m-plus.json").exists()

@@ -1,9 +1,15 @@
+import hashlib
+import json
+from pathlib import Path
+
 import polars as pl
 import pytest
 
+from deadlock_build_sync.offline.config import RunPaths, sha256_json
 from deadlock_build_sync.offline.layout import (
     create_build_layout,
     render_build_layout_markdown,
+    write_build_layout,
 )
 from deadlock_build_sync.value_validation import require_object_rows
 
@@ -99,3 +105,29 @@ def test_layout_rejects_a_four_item_core() -> None:
 
     with pytest.raises(ValueError, match="exactly eight"):
         create_build_layout(late_game, items, hero_name="Haze")
+
+
+def test_write_build_layout_writes_complete_json_and_markdown(tmp_path: Path) -> None:
+    paths = RunPaths.create(tmp_path, "run")
+    stem = "late_game_hero_13_45000"
+    (paths.tables / f"{stem}.json").write_text(
+        json.dumps(_late_game()),
+        encoding="utf-8",
+    )
+    _items().write_csv(paths.tables / f"{stem}_items.csv")
+
+    json_path, markdown_path = write_build_layout(
+        paths,
+        hero_id=13,
+        hero_name="Lady Geist",
+        minimum_net_worth=45_000,
+    )
+
+    assert json_path == paths.run / "builds/lady-geist-45000-plus.json"
+    assert markdown_path == paths.run / "builds/lady-geist-45000-plus.md"
+    assert sha256_json(json.loads(json_path.read_text(encoding="utf-8"))) == (
+        "9d0509d149d1f874791b77e0c1ea105e04b96be4a7b0c68883036716d1a46851"
+    )
+    assert hashlib.sha256(markdown_path.read_bytes()).hexdigest() == (
+        "4cba3fdbf902bd862081ae5650254e36ec450d7a4e6ff63dcbe50e7b7d025215"
+    )

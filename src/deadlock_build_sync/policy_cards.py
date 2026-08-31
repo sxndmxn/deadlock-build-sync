@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .core_alternative_types import CoreAlternativeDescription
 from .mechanics import (
     BASE_INVENTORY_SLOTS,
 )
@@ -90,17 +91,10 @@ class CounterCard:
 
 
 @dataclass(frozen=True)
-class CoreAlternativeCard:
+class CoreAlternativeCard(CoreAlternativeDescription):
     item_id: int
     comparator_item_id: int
     stage: int
-    vs: str
-    why: str
-    swap: str
-    when: str
-    skip: str
-    mechanics_refs: tuple[str, ...]
-    comparator_mechanics_refs: tuple[str, ...]
     evidence_ref: str
     support: int
     effective_support: float

@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from deadlock_build_sync.offline import cli
-from deadlock_build_sync.offline.config import Cohort, RunPaths
+from deadlock_build_sync.offline.config import Cohort, RunPaths, sha256_json
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -40,8 +40,10 @@ def test_repo_identity_reads_git_status_and_index(
     monkeypatch.setattr(cli, "PRODUCTION_REPO", tmp_path)
     monkeypatch.setattr(cli, "PACKAGE_ROOT", tmp_path / "package")
     monkeypatch.setattr(cli.shutil, "which", lambda _name: "/usr/bin/git")
+    calls: list[tuple[list[str], dict[str, object]]] = []
 
-    def run(command: list[str], **_kwargs: object) -> SimpleNamespace:
+    def run(command: list[str], **kwargs: object) -> SimpleNamespace:
+        calls.append((command, kwargs))
         output: str | bytes = "## main\n" if "status" in command else b"index"
         return SimpleNamespace(stdout=output)
 
@@ -49,8 +51,25 @@ def test_repo_identity_reads_git_status_and_index(
 
     identity = cli._repo_identity()
 
-    assert identity["status"] == "## main"
-    assert len(identity["tracked_index_sha256"]) == 64
+    assert identity == {
+        "status": "## main",
+        "tracked_index_sha256": (
+            "1bc04b5291c26a46d918139138b992d2de976d6851d0893b0476b85bfbdfc6e6"
+        ),
+    }
+    common_options = {
+        "cwd": tmp_path,
+        "check": True,
+        "capture_output": True,
+        "shell": False,
+    }
+    assert calls == [
+        (
+            ["/usr/bin/git", "status", "--short", "--branch"],
+            {**common_options, "text": True},
+        ),
+        (["/usr/bin/git", "ls-files", "-s"], common_options),
+    ]
 
 
 def test_repo_identity_requires_git(
@@ -70,10 +89,25 @@ def test_manifest_creates_new_document_and_rejects_non_object(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     paths = _paths(tmp_path)
+    generated_at = datetime(2026, 1, 2, tzinfo=UTC)
+
+    class FixedDatetime:
+        @staticmethod
+        def now(**_kwargs: object) -> datetime:
+            return generated_at
+
+    monkeypatch.setattr(cli, "datetime", FixedDatetime)
+    monkeypatch.setattr(cli, "PRODUCTION_REPO", tmp_path / "repo")
     manifest = cli._manifest(paths, _cohort())
 
-    assert manifest["schema_version"] == 1
-    assert manifest["run_id"] == "run"
+    stable = {
+        **manifest,
+        "project_root": "<root>",
+        "producer_source": "<repo>",
+    }
+    assert sha256_json(stable) == (
+        "0f9a36acf3c03c54b850d99362891d8ddfee4948e3535eb04d4afc7e217b7637"
+    )
 
     (paths.run / "manifest.json").write_text("[]", encoding="utf-8")
     monkeypatch.setattr(cli, "read_json", lambda _path: [])
@@ -309,14 +343,28 @@ def test_main_runs_new_and_existing_manifests(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    completed_at = datetime(2026, 8, 31, tzinfo=UTC)
+
+    class FixedDatetime:
+        @staticmethod
+        def now(**_kwargs: object) -> datetime:
+            return completed_at
+
     monkeypatch.setattr(cli, "PROJECT_ROOT", tmp_path)
+    monkeypatch.setattr(cli, "PRODUCTION_REPO", tmp_path / "repo")
+    monkeypatch.setattr(cli, "datetime", FixedDatetime)
     identity = {"status": "clean", "tracked_index_sha256": "a" * 64}
     monkeypatch.setattr(cli, "_repo_identity", lambda: identity)
     monkeypatch.setattr(cli, "_execute_offline_command", lambda *_args: None)
 
     assert cli.main(["report", "--run-id", "new"]) == 0
     output = json.loads(capsys.readouterr().out)
-    assert output["manifest"]["producer_source_unchanged"] is True
+    output["run"] = "<run>"
+    output["manifest"]["project_root"] = "<root>"
+    output["manifest"]["producer_source"] = "<repo>"
+    assert sha256_json(output) == (
+        "b0456db46d82cf79f5efe8648086a075388eec03d464a784e6d04b15f6275752"
+    )
 
     paths = RunPaths.create(tmp_path, "existing")
     cli.write_json(

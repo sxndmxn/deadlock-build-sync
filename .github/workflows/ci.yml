@@ -37,8 +37,23 @@ jobs:
       - name: Type-check
         run: uv run ty check
 
-      - name: Test
-        run: uv run pytest
+      - name: Check cognitive complexity
+        run: uv run complexipy
+
+      - name: Test with branch coverage
+        run: uv run coverage run -m pytest -W error
+
+      - name: Write coverage report
+        run: uv run coverage json
+
+      - name: Enforce numeric quality limits
+        run: uv run tools/quality_gate.py
+
+      - name: Find dead code
+        run: uv run vulture
+
+      - name: Find repeated code
+        run: uv run pylint --disable=all --enable=duplicate-code src scripts
 
       - name: Verify dependencies
         run: uv pip check

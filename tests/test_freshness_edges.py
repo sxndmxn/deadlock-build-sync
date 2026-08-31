@@ -110,7 +110,9 @@ def test_evidence_stage_reports_current_and_all_stale_differences(
     current, loaded = freshness_module._evidence_stage(
         path, 123, _Api().current_patch()
     )
-    assert current.state is FreshnessState.CURRENT
+    assert current == FreshnessStage(
+        "build_evidence", FreshnessState.CURRENT, "artifact"
+    )
     assert loaded is not None
 
     monkeypatch.setattr(
@@ -119,9 +121,11 @@ def test_evidence_stage_reports_current_and_all_stale_differences(
         lambda _path: _evidence(client_version=1, patch_identity="Old@1"),
     )
     stale, loaded = freshness_module._evidence_stage(path, 123, _Api().current_patch())
-    assert stale.state is FreshnessState.STALE
-    assert "client 1" in stale.detail
-    assert "patch identity" in stale.detail
+    assert stale == FreshnessStage(
+        "build_evidence",
+        FreshnessState.STALE,
+        "client 1 != 123; patch identity differs",
+    )
     assert loaded is not None
 
 
@@ -137,12 +141,18 @@ def test_context_stage_validates_shape_identity_and_manifest(
     )
     _write(path, _context())
     current, document = freshness_module._context_stage(path, _evidence())
-    assert current.state is FreshnessState.CURRENT
+    assert current == FreshnessStage(
+        "strategy_context", FreshnessState.CURRENT, "snapshot"
+    )
     assert document is not None
 
     _write(path, {})
     malformed, document = freshness_module._context_stage(path, _evidence())
-    assert malformed.state is FreshnessState.MALFORMED
+    assert malformed == FreshnessStage(
+        "strategy_context",
+        FreshnessState.MALFORMED,
+        "missing snapshot manifest",
+    )
     assert document is None
 
     stale_document = _context()
@@ -151,12 +161,18 @@ def test_context_stage_validates_shape_identity_and_manifest(
     manifest["client_version"] = 1
     _write(path, stale_document)
     stale, document = freshness_module._context_stage(path, _evidence())
-    assert stale.state is FreshnessState.STALE
+    assert stale == FreshnessStage(
+        "strategy_context",
+        FreshnessState.STALE,
+        "snapshot differs from build evidence",
+    )
     assert document is not None
 
     _write(path, [])
     malformed, _ = freshness_module._context_stage(path, _evidence())
-    assert malformed.state is FreshnessState.MALFORMED
+    assert malformed == FreshnessStage(
+        "strategy_context", FreshnessState.MALFORMED, "root must be an object"
+    )
 
 
 def test_policy_and_narrative_stages_cover_current_stale_and_malformed(
@@ -174,41 +190,40 @@ def test_policy_and_narrative_stages_cover_current_stale_and_malformed(
         "load_narrative_catalog",
         lambda _path: SimpleNamespace(snapshot_id="snapshot"),
     )
-    assert (
-        freshness_module._policy_stage(policy_path, context).state
-        is FreshnessState.CURRENT
+    assert freshness_module._policy_stage(policy_path, context) == FreshnessStage(
+        "policies", FreshnessState.CURRENT, "validated"
     )
-    assert (
-        freshness_module._narrative_stage(narrative_path, context).state
-        is FreshnessState.CURRENT
+    assert freshness_module._narrative_stage(narrative_path, context) == FreshnessStage(
+        "narratives", FreshnessState.CURRENT, "validated"
     )
 
     other = _context(snapshot_id="other")
-    assert (
-        freshness_module._policy_stage(policy_path, other).state is FreshnessState.STALE
+    assert freshness_module._policy_stage(policy_path, other) == FreshnessStage(
+        "policies",
+        FreshnessState.STALE,
+        "snapshot differs from strategy context",
     )
-    assert (
-        freshness_module._narrative_stage(narrative_path, other).state
-        is FreshnessState.STALE
+    assert freshness_module._narrative_stage(narrative_path, other) == FreshnessStage(
+        "narratives",
+        FreshnessState.STALE,
+        "snapshot differs from strategy context",
     )
 
     monkeypatch.setattr(freshness_module, "validate_policy_artifact", _raise_value)
     monkeypatch.setattr(freshness_module, "load_narrative_catalog", _raise_os_error)
-    assert (
-        freshness_module._policy_stage(policy_path, None).state
-        is FreshnessState.MALFORMED
+    assert freshness_module._policy_stage(policy_path, None) == FreshnessStage(
+        "policies", FreshnessState.MALFORMED, "bad document"
     )
-    assert (
-        freshness_module._narrative_stage(narrative_path, None).state
-        is FreshnessState.MALFORMED
+    assert freshness_module._narrative_stage(narrative_path, None) == FreshnessStage(
+        "narratives", FreshnessState.MALFORMED, "unavailable"
     )
-    assert (
-        freshness_module._policy_stage(tmp_path / "missing-policy", None).state
-        is FreshnessState.MISSING
+    missing_policy = tmp_path / "missing-policy"
+    assert freshness_module._policy_stage(missing_policy, None) == FreshnessStage(
+        "policies", FreshnessState.MISSING, str(missing_policy)
     )
-    assert (
-        freshness_module._narrative_stage(tmp_path / "missing-narrative", None).state
-        is FreshnessState.MISSING
+    missing_narrative = tmp_path / "missing-narrative"
+    assert freshness_module._narrative_stage(missing_narrative, None) == FreshnessStage(
+        "narratives", FreshnessState.MISSING, str(missing_narrative)
     )
 
 
@@ -222,32 +237,37 @@ def test_installed_stage_covers_validation_states(
 ) -> None:
     cache_path = tmp_path / "cache"
     context = _context()
-    assert (
-        freshness_module._installed_stage(None, None, context).state
-        is FreshnessState.UNAVAILABLE
+    assert freshness_module._installed_stage(None, None, context) == FreshnessStage(
+        "installed_cache",
+        FreshnessState.UNAVAILABLE,
+        "Steam cache location was not supplied",
     )
-    assert (
-        freshness_module._installed_stage(cache_path, 34, None).state
-        is FreshnessState.STALE
+    assert freshness_module._installed_stage(cache_path, 34, None) == FreshnessStage(
+        "installed_cache",
+        FreshnessState.STALE,
+        "strategy context is unavailable",
     )
-    assert (
-        freshness_module._installed_stage(cache_path, 34, {"heroes": "bad"}).state
-        is FreshnessState.MALFORMED
+    assert freshness_module._installed_stage(
+        cache_path, 34, {"heroes": "bad"}
+    ) == FreshnessStage(
+        "installed_cache",
+        FreshnessState.MALFORMED,
+        "strategy context has no hero list",
     )
 
     monkeypatch.setattr(freshness_module, "_installed_descriptions", _raise_cache)
-    assert (
-        freshness_module._installed_stage(cache_path, 34, context).state
-        is FreshnessState.MALFORMED
+    assert freshness_module._installed_stage(cache_path, 34, context) == FreshnessStage(
+        "installed_cache", FreshnessState.MALFORMED, "bad cache"
     )
     monkeypatch.setattr(
         freshness_module,
         "_installed_descriptions",
         lambda _path, _account: {},
     )
-    assert (
-        freshness_module._installed_stage(cache_path, 34, context).state
-        is FreshnessState.STALE
+    assert freshness_module._installed_stage(cache_path, 34, context) == FreshnessStage(
+        "installed_cache",
+        FreshnessState.STALE,
+        "managed hero coverage differs from strategy context",
     )
     monkeypatch.setattr(
         freshness_module,
@@ -255,8 +275,11 @@ def test_installed_stage_covers_validation_states(
         lambda _path, _account: {(12, "default"): "Snapshot: wrong. Policy: wrong."},
     )
     mismatch = freshness_module._installed_stage(cache_path, 34, context)
-    assert mismatch.state is FreshnessState.STALE
-    assert "12/default" in mismatch.detail
+    assert mismatch == FreshnessStage(
+        "installed_cache",
+        FreshnessState.STALE,
+        "hero 12/default uses another snapshot or policy",
+    )
     monkeypatch.setattr(
         freshness_module,
         "_installed_descriptions",
@@ -264,9 +287,8 @@ def test_installed_stage_covers_validation_states(
             (12, "default"): "Snapshot: snapshot. Policy: policy."
         },
     )
-    assert (
-        freshness_module._installed_stage(cache_path, 34, context).state
-        is FreshnessState.CURRENT
+    assert freshness_module._installed_stage(cache_path, 34, context) == FreshnessStage(
+        "installed_cache", FreshnessState.CURRENT, "validated"
     )
 
 
@@ -306,25 +328,35 @@ def test_bundle_stage_and_current_report(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     missing = freshness_module._bundle_stage(tmp_path)
-    assert missing.state is FreshnessState.MISSING
-    for name in (
+    names = (
         "strategy-context.json",
         "policies.json",
         "narratives.json",
         "build-evidence.json",
-    ):
+    )
+    assert missing == FreshnessStage(
+        "artifact_bundle",
+        FreshnessState.MISSING,
+        "missing: " + ", ".join(str(tmp_path / name) for name in names),
+    )
+    for name in names:
         (tmp_path / name).touch()
 
     monkeypatch.setattr(freshness_module, "load_artifact_guide_bundle", _raise_bundle)
-    assert freshness_module._bundle_stage(tmp_path).state is FreshnessState.MALFORMED
+    assert freshness_module._bundle_stage(tmp_path) == FreshnessStage(
+        "artifact_bundle", FreshnessState.MALFORMED, "bad bundle"
+    )
     monkeypatch.setattr(
         freshness_module,
         "load_artifact_guide_bundle",
         lambda *_paths: SimpleNamespace(guides=(1, 2)),
     )
     current = freshness_module._bundle_stage(tmp_path)
-    assert current.state is FreshnessState.CURRENT
-    assert "2 reviewed" in current.detail
+    assert current == FreshnessStage(
+        "artifact_bundle",
+        FreshnessState.CURRENT,
+        "2 reviewed guide(s) validated as one bundle",
+    )
 
     report = FreshnessReport(
         (FreshnessStage("all", FreshnessState.CURRENT, "valid"),),
@@ -332,7 +364,25 @@ def test_bundle_stage_and_current_report(
         _Api().current_patch(),
     )
     assert report.exit_code == 0
-    assert report.as_dict()["status"] == "current"
+    assert report.as_dict() == {
+        "status": "current",
+        "latest_client_version": 123,
+        "latest_patch": {
+            "identity": (
+                "d147fb9752a35abed94fcb64a5510713f4fa6bae5f0b7b29d09d08d220f00322"
+            ),
+            "title": "Patch",
+            "start_timestamp": 100,
+            "published_at": "2026-01-01T00:00:00Z",
+            "source": "unknown",
+            "guid": "unknown",
+            "link": "",
+            "content_sha256": "",
+        },
+        "stages": [
+            {"stage": "all", "state": "current", "detail": "valid"},
+        ],
+    }
 
 
 def _raise_bundle(*_paths: Path) -> object:

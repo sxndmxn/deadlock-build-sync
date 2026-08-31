@@ -14,6 +14,8 @@ from deadlock_build_sync.value_validation import (
 
 from .config import RunPaths
 from .models import BetaPrior, beta_posterior, fit_beta_prior, wilson_interval
+from .sql_fragments import ITEM_OUTCOME_AGGREGATES_SQL
+from .state_overlap import state_overlap_diagnostics
 
 MIN_ITEM_SUPPORT = 20
 MIN_MATCHUP_SUPPORT = 100
@@ -64,15 +66,7 @@ def _item_aggregates(con: duckdb.DuckDBPyConnection, fold: str | None) -> pl.Dat
                 any_value(p.tier) AS tier, any_value(p.cost) AS cost,
                 any_value(p.slot) AS slot, any_value(p.active) AS active,
                 count(*) AS adopter_matches,
-                sum(p.won::INTEGER) AS wins,
-                avg(p.won::INTEGER) AS raw_outcome_rate,
-                median(p.buy_time) AS median_buy_time_s,
-                quantile_cont(p.buy_time, 0.25) AS buy_time_q25_s,
-                quantile_cont(p.buy_time, 0.75) AS buy_time_q75_s,
-                median(p.own_net_worth_at_buy) AS median_valid_buy_net_worth,
-                quantile_cont(p.own_net_worth_at_buy, 0.25) AS buy_nw_q25,
-                quantile_cont(p.own_net_worth_at_buy, 0.75) AS buy_nw_q75,
-                count(p.own_net_worth_at_buy) / count(*) AS valid_buy_nw_share,
+                {ITEM_OUTCOME_AGGREGATES_SQL},
                 avg((p.sold_time > 0)::INTEGER) AS sell_event_share,
                 median(p.sold_time) FILTER (WHERE p.sold_time > 0) AS median_sell_time_s
             FROM first_purchases p
@@ -211,55 +205,7 @@ def _state_adjusted(con: duckdb.DuckDBPyConnection) -> pl.DataFrame:
 
 
 def _state_overlap_diagnostics(con: duckdb.DuckDBPyConnection) -> pl.DataFrame:
-    return con.sql(
-        """
-        WITH decisions AS (
-            SELECT *,
-                   CASE WHEN own_net_worth_at_buy IS NULL THEN -1
-                        ELSE least(12, floor(own_net_worth_at_buy / 5000))::INTEGER
-                   END AS own_nw_band,
-                   CASE WHEN team_net_worth_lead IS NULL THEN -99
-                        ELSE greatest(
-                            -8, least(8, floor(team_net_worth_lead / 5000))
-                        )::INTEGER
-                   END AS lead_band
-            FROM decision_opportunities
-        ), reference_states AS (
-            SELECT hero_id, tier, phase, own_nw_band, lead_band,
-                   count(*) AS reference_observations
-            FROM decisions GROUP BY ALL
-        ), reference_totals AS (
-            SELECT hero_id, tier, sum(reference_observations) AS reference_total
-            FROM reference_states GROUP BY ALL
-        ), item_states AS (
-            SELECT hero_id, tier, item_id, phase, own_nw_band, lead_band,
-                   count(*) AS item_observations
-            FROM decisions GROUP BY ALL
-        ), overlap AS (
-            SELECT i.*, r.reference_observations, t.reference_total,
-                   sum(r.reference_observations) OVER (
-                       PARTITION BY i.hero_id, i.tier, i.item_id
-                   ) AS covered_reference
-            FROM item_states i
-            JOIN reference_states r
-              USING (hero_id, tier, phase, own_nw_band, lead_band)
-            JOIN reference_totals t USING (hero_id, tier)
-        )
-        SELECT hero_id, tier, item_id,
-               sum(item_observations) AS item_observations,
-               any_value(covered_reference) / any_value(reference_total)
-                   AS state_coverage,
-               1.0 / sum(
-                   pow(reference_observations / covered_reference, 2)
-                   / item_observations
-               ) AS effective_support,
-               effective_support / sum(item_observations) AS effective_support_share,
-               max(
-                   (reference_observations / covered_reference) / item_observations
-               ) AS maximum_individual_weight
-        FROM overlap GROUP BY hero_id, tier, item_id
-        """
-    ).pl()
+    return state_overlap_diagnostics(con)
 
 
 def _confounding_correlations_for_group(

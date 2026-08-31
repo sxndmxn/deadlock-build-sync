@@ -1,4 +1,4 @@
-from dataclasses import replace
+from dataclasses import asdict, replace
 
 import pytest
 
@@ -17,14 +17,15 @@ from deadlock_build_sync.policy import (
 )
 from deadlock_build_sync.presentation import build_presentation
 from deadlock_build_sync.protobuf import ProtoField, encode_hero_build, parse_fields
-from deadlock_build_sync.purchase_guide import PurchaseGuide
+from deadlock_build_sync.purchase_guide import GuideItem, PurchaseGuide
 from deadlock_build_sync.renderer import (
     ProjectionIdentity,
     project_policy_to_guide,
     projection_fingerprint,
     validate_optional_annotation,
 )
-from deadlock_build_sync.snapshot import EvidenceUnit
+from deadlock_build_sync.renderer_items import guide_item
+from deadlock_build_sync.snapshot import EvidenceUnit, sha256_json
 
 SNAPSHOT = "b" * 64
 
@@ -140,6 +141,32 @@ def projected_guide(annotation: str | None = None) -> PurchaseGuide:
     )
 
 
+def test_policy_item_projection_keeps_all_claim_and_node_fields() -> None:
+    build_policy = policy()
+    node = next(node for node in build_policy.nodes if node.node_id == "counter")
+
+    result = guide_item(
+        node,
+        dict(zip((1, 2), assets(), strict=True)),
+        build_policy,
+        optional=True,
+    )
+
+    assert result == GuideItem(
+        item_id=2,
+        name="Item 2",
+        tier=2,
+        purchase_event_observations=100,
+        observed_outcome_rate=0.6,
+        observed_outcome_lower_bound=0.5,
+        relative_purchase_event_volume=0.0,
+        windows=(),
+        required_flex_slots=1,
+        tactical_annotation=node.annotation,
+        conditional_annotation=node.annotation,
+    )
+
+
 def _build_details(guide: PurchaseGuide) -> list[ProtoField]:
     build = encode_hero_build(
         build_presentation(
@@ -168,6 +195,9 @@ def _build_details(guide: PurchaseGuide) -> list[ProtoField]:
 def test_projection_separates_default_queue_from_optional_branch() -> None:
     guide = projected_guide()
 
+    assert sha256_json(asdict(guide)) == (
+        "ca7d7d0fe60c7c842aec96c6127c8da21e1e455f42fefb5fcc9708c2a9d9e927"
+    )
     assert [category.optional for category in guide.categories] == [False, True]
     assert [item.item_id for item in guide.categories[0].items] == [1]
     assert [item.item_id for item in guide.categories[1].items] == [2]
@@ -175,7 +205,9 @@ def test_projection_separates_default_queue_from_optional_branch() -> None:
     assert guide.categories[1].items[0].required_flex_slots == 1
     assert guide.snapshot_id == SNAPSHOT
     assert guide.policy_id == policy().policy_id
-    assert len(projection_fingerprint(guide)) == 64
+    assert projection_fingerprint(guide) == (
+        "f8bd86d0ea67e94339f1d47b686d7d883035edd1a74e873ea30b416d692e00fd"
+    )
 
 
 def test_protobuf_preserves_optional_sell_flex_and_omission_semantics() -> None:

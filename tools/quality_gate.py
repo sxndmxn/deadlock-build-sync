@@ -138,21 +138,24 @@ def _forbidden_type_issues(path: str, tree: ast.AST) -> list[QualityIssue]:
     seen: set[tuple[int, str]] = set()
     for annotation in _annotation_roots(tree):
         for node in ast.walk(annotation):
-            name: str | None = None
             if isinstance(node, ast.Name):
                 name = node.id
+                line = node.lineno
             elif isinstance(node, ast.Attribute):
                 name = node.attr
+                line = node.lineno
+            else:
+                continue
             if name not in FORBIDDEN_TYPE_NAMES:
                 continue
-            identity = (node.lineno, name)
+            identity = (line, name)
             if identity in seen:
                 continue
             seen.add(identity)
             issues.append(
                 QualityIssue(
                     path=path,
-                    line=node.lineno,
+                    line=line,
                     metric="dynamic-type",
                     symbol=name,
                     actual="present",
@@ -207,15 +210,11 @@ def _function_metrics(source: str, tree: ast.AST) -> tuple[FunctionMetric, ...]:
         block = radon_functions.get((node.lineno, node.name))
         if block is None:
             continue
-        coverage_line = min(
-            (decorator.lineno for decorator in node.decorator_list),
-            default=node.lineno,
-        )
         metrics.append(
             FunctionMetric(
                 name=block.fullname,
                 line=node.lineno,
-                coverage_line=coverage_line,
+                coverage_line=node.lineno,
                 complexity=block.complexity,
                 halstead_difficulty=_halstead_difficulty(source, node),
             )

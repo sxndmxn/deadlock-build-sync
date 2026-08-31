@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import sys
-import time
 from typing import TYPE_CHECKING
 
 from scripts.generate_narratives import main as generate_narratives_main
@@ -12,7 +11,6 @@ from .build_evidence import load_build_evidence
 from .cache import (
     CacheError,
     deadlock_is_running,
-    install_guides,
 )
 from .cli_export import _run_export_context, _run_restore, _run_trace_summary
 from .cli_install import _run_install
@@ -22,14 +20,16 @@ from .cli_status import _run_status
 from .cli_support import (
     _ARTIFACT_WRITE_STAGE,
     _BUILD_EVIDENCE_FILENAME,
-    _POLICIES_PREFIX,
     _POLICY_FILENAME,
-    _STEAM_INSTALL_STAGE,
-    _api,
     _build_evidence_path,
+    _generate,
+    _install_and_record,
+    _install_generated_guides,
+    _InstallSpec,
     _location,
-    _record_generated_facts,
-    _report_skipped,
+    _print_cohort,
+    _print_install_result,
+    _record_fresh_evidence,
     _sync_artifact_directory,
     _write_policy_artifact,
     _write_strategy_context,
@@ -44,7 +44,7 @@ from .narratives import (
     load_narrative_catalog,
 )
 from .recommendation import RecommendationError
-from .service import GuideError, generate_guides
+from .service import GuideError
 from .steam_identity import local_steam_persona
 from .tracing import (
     TraceSession,
@@ -64,25 +64,17 @@ def _run_sync(args: argparse.Namespace) -> int:
         evidence_path,
         DeadlockApi(args.api_base_url),
     )
-    record_stage_facts(
-        "evidence.freshness",
-        path=evidence_path,
-        artifact_id=evidence.artifact_id,
-        hero_count=len(getattr(evidence, "heroes", {})),
-    )
+    _record_fresh_evidence(evidence_path, evidence)
     location = _location(args)
     if deadlock_is_running():
         raise CacheError("Deadlock is running; close it before syncing private builds")
 
-    generated = generate_guides(
-        _api(args, evidence),
-        build_evidence=evidence,
-        account_id=location.account_id,
-        hero_query=args.hero,
+    generated = _generate(
+        args,
+        evidence,
+        location.account_id,
         all_heroes=args.all or args.hero is None,
     )
-    _record_generated_facts(generated)
-    _report_skipped(generated)
     if not generated.guides:
         raise GuideError("no heroes had complete reliable analytics")
     if not generated.subset_selected and generated.exclusions:
@@ -114,26 +106,7 @@ def _run_sync(args: argparse.Namespace) -> int:
         apply_narrative(guide, context, generated.patch, catalog)
         for guide, context in zip(generated.guides, generated.contexts, strict=True)
     ]
-    result = install_guides(
-        location,
-        guides,
-        persona=generated.persona,
-        timestamp=int(time.time()),
-        patch_title=generated.patch.title,
-        patch_published_at=generated.patch.published_at,
-        rank_range=generated.rank_range,
-        snapshot_manifest=generated.manifest.as_dict(),
-        expected_hero_ids=set(generated.eligible_hero_ids),
-        allow_subset=generated.subset_selected,
-    )
-    record_stage_facts(
-        _STEAM_INSTALL_STAGE,
-        guide_count=len(result.build_ids),
-        created=result.created,
-        updated=result.updated,
-        removed=result.removed,
-        snapshot_id=result.snapshot_id,
-    )
+    result = _install_generated_guides(location, guides, generated)
     print(
         f"Synced {len(result.build_ids)} private guide(s): "
         f"{result.created} created, {result.updated} updated, "
@@ -141,19 +114,11 @@ def _run_sync(args: argparse.Namespace) -> int:
     )
     print(f"Artifacts: {artifact_directory}")
     print(f"Build evidence: {evidence_path} ({evidence.artifact_id})")
-    print(f"Cache: {result.cache_path}")
-    print(f"Backup: {result.backup_directory}")
-    print(f"Snapshot: {result.snapshot_id}")
-    print(
-        _POLICIES_PREFIX
-        + ", ".join(
-            f"{hero_id}/{path_id}={policy_id}"
-            for (hero_id, path_id), policy_id in sorted(result.policy_ids.items())
-        )
-    )
-    print(
-        f"Cohort: {generated.manifest.match_mode.value}, client "
-        f"{generated.manifest.client_version}, as-of {generated.manifest.as_of_timestamp}"
+    _print_install_result(result)
+    _print_cohort(
+        generated.manifest.match_mode.value,
+        generated.manifest.client_version,
+        generated.manifest.as_of_timestamp,
     )
     print("Launch Deadlock, open a hero's build browser, and check My Builds.")
     return 0
@@ -228,25 +193,18 @@ def _run_install_artifacts(args: argparse.Namespace) -> int:
         raise CacheError(
             "could not resolve the local Steam persona; pass --persona explicitly"
         )
-    result = install_guides(
+    result = _install_and_record(
         location,
         bundle.guides,
-        persona=persona,
-        timestamp=int(time.time()),
-        patch_title=bundle.patch.title,
-        patch_published_at=bundle.patch.published_at,
-        rank_range=bundle.rank_range,
-        snapshot_manifest=bundle.snapshot_manifest,
-        expected_hero_ids=set(bundle.expected_hero_ids),
-        allow_subset=False,
-    )
-    record_stage_facts(
-        _STEAM_INSTALL_STAGE,
-        guide_count=len(result.build_ids),
-        created=result.created,
-        updated=result.updated,
-        removed=result.removed,
-        snapshot_id=result.snapshot_id,
+        _InstallSpec(
+            persona=persona,
+            patch_title=bundle.patch.title,
+            patch_published_at=bundle.patch.published_at,
+            rank_range=bundle.rank_range,
+            snapshot_manifest=bundle.snapshot_manifest,
+            expected_hero_ids=set(bundle.expected_hero_ids),
+            allow_subset=False,
+        ),
     )
     print(
         f"Installed {len(result.build_ids)} reviewed private guide(s): "
@@ -258,20 +216,11 @@ def _run_install_artifacts(args: argparse.Namespace) -> int:
     print(f"Strategy context: {context_path}")
     print(f"Policies: {policy_path}")
     print(f"Narratives: {narrative_path}")
-    print(f"Cache: {result.cache_path}")
-    print(f"Backup: {result.backup_directory}")
-    print(f"Snapshot: {result.snapshot_id}")
-    print(
-        _POLICIES_PREFIX
-        + ", ".join(
-            f"{hero_id}/{path_id}={policy_id}"
-            for (hero_id, path_id), policy_id in sorted(result.policy_ids.items())
-        )
-    )
-    print(
-        f"Cohort: {bundle.snapshot_manifest['match_mode']}, client "
-        f"{bundle.snapshot_manifest['client_version']}, as-of "
-        f"{bundle.snapshot_manifest['as_of_timestamp']}"
+    _print_install_result(result)
+    _print_cohort(
+        bundle.snapshot_manifest["match_mode"],
+        bundle.snapshot_manifest["client_version"],
+        bundle.snapshot_manifest["as_of_timestamp"],
     )
     print("Launch Deadlock, open a hero's build browser, and check My Builds.")
     return 0

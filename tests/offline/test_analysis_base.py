@@ -20,6 +20,47 @@ from deadlock_build_sync.offline.config import RunPaths
 if TYPE_CHECKING:
     from pathlib import Path
 
+type _Row = dict[str, object]
+
+
+def _analysis_record(
+    match_id: int,
+    fold: str,
+    item_id: int,
+    offset: int,
+) -> tuple[_Row, _Row, _Row, _Row, _Row]:
+    won = (offset + item_id) % 3 != 0
+    own_net_worth = None if offset == 0 else 8_000 + offset * 100
+    return (
+        {"match_id": match_id, "hero_id": 1},
+        {"match_id": match_id, "fold": fold},
+        {
+            "match_id": match_id,
+            "hero_id": 1,
+            "item_id": item_id,
+            "item_name": f"Item {item_id}",
+            "tier": 2,
+            "cost": item_id * 100,
+            "slot": "weapon",
+            "active": False,
+            "won": won,
+            "buy_time": 600 + offset,
+            "own_net_worth_at_buy": own_net_worth,
+            "sold_time": 1_200 if offset == 19 else 0,
+            "fold": fold,
+        },
+        {"match_id": match_id, "hero_id": 1, "item_id": item_id},
+        {
+            "hero_id": 1,
+            "tier": 2,
+            "item_id": item_id,
+            "phase": offset % 2,
+            "own_net_worth_at_buy": own_net_worth,
+            "team_net_worth_lead": None if offset == 1 else offset * 50,
+            "won": won,
+        },
+    )
+
 
 def _analysis_connection() -> duckdb.DuckDBPyConnection:
     first_purchases: list[dict[str, object]] = []
@@ -31,45 +72,14 @@ def _analysis_connection() -> duckdb.DuckDBPyConnection:
     for fold in ("train", "test"):
         for item_id in (10, 11, 12, 13):
             for offset in range(20):
-                won = (offset + item_id) % 3 != 0
-                players.append({
-                    "match_id": match_id,
-                    "hero_id": 1,
-                })
-                folds.append({"match_id": match_id, "fold": fold})
-                first_purchases.append({
-                    "match_id": match_id,
-                    "hero_id": 1,
-                    "item_id": item_id,
-                    "item_name": f"Item {item_id}",
-                    "tier": 2,
-                    "cost": item_id * 100,
-                    "slot": "weapon",
-                    "active": False,
-                    "won": won,
-                    "buy_time": 600 + offset,
-                    "own_net_worth_at_buy": (
-                        None if offset == 0 else 8_000 + offset * 100
-                    ),
-                    "sold_time": 1_200 if offset == 19 else 0,
-                    "fold": fold,
-                })
-                purchases.append({
-                    "match_id": match_id,
-                    "hero_id": 1,
-                    "item_id": item_id,
-                })
-                decisions.append({
-                    "hero_id": 1,
-                    "tier": 2,
-                    "item_id": item_id,
-                    "phase": offset % 2,
-                    "own_net_worth_at_buy": (
-                        None if offset == 0 else 8_000 + offset * 100
-                    ),
-                    "team_net_worth_lead": None if offset == 1 else offset * 50,
-                    "won": won,
-                })
+                player, match_fold, first_purchase, purchase, decision = (
+                    _analysis_record(match_id, fold, item_id, offset)
+                )
+                players.append(player)
+                folds.append(match_fold)
+                first_purchases.append(first_purchase)
+                purchases.append(purchase)
+                decisions.append(decision)
                 match_id += 1
     con = duckdb.connect()
     for source, rows, query in (

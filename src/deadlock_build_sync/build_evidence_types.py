@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from .artifacts import ArtifactError
+from .core_alternative_types import CoreAlternativeDescription
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -142,7 +143,7 @@ class CoreCandidate:
 
 
 @dataclass(frozen=True)
-class CoreAlternativeEvidence:
+class CoreAlternativeEvidence(CoreAlternativeDescription):
     item_id: int
     comparator_item_id: int
     stage: int
@@ -153,13 +154,6 @@ class CoreAlternativeEvidence:
     stable: bool
     dr_estimate: float
     comparative_interval: tuple[float, float]
-    vs: str
-    why: str
-    swap: str
-    when: str
-    skip: str
-    mechanics_refs: tuple[str, ...]
-    comparator_mechanics_refs: tuple[str, ...]
     fold_estimates: dict[str, float]
     fold_diagnostics: dict[str, dict[str, object]] = field(default_factory=dict)
 

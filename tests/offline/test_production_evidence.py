@@ -9,6 +9,7 @@ import polars as pl
 
 from deadlock_build_sync.mechanics import ItemGraph
 from deadlock_build_sync.offline.build_paths import DiscoveredBuildPath
+from deadlock_build_sync.offline.config import sha256_json
 from deadlock_build_sync.offline.core_policy import (
     BackboneSelection,
     _bundle_support_by_size_and_fold,
@@ -25,6 +26,7 @@ from deadlock_build_sync.offline.production_evidence import (
     _path_payloads,
     _situational_selection_matchups,
 )
+from deadlock_build_sync.offline.production_policy import _purchase_window_bounds
 from tests.offline.production_evidence_fixtures import (
     _item_metric_row,
 )
@@ -75,8 +77,37 @@ def test_item_payload_admits_only_supported_majority_imbue_target() -> None:
     assert supported["imbue_target_ability"] == "Frozen Shelter"
     assert supported["imbue_target_matches"] == 75
     assert supported["imbue_target_share"] == 0.75
+    assert sha256_json(supported) == (
+        "51e300997477414bd41771eb506aaf5dfb8b652ae8137ab9d8a6c304eba76aa1"
+    )
     assert weak["imbue_target_ability_id"] is None
     assert weak["imbue_observations"] == 0
+
+
+def test_purchase_windows_require_complete_stable_fold_evidence() -> None:
+    base = _item_metric_row()
+    changes: tuple[dict[str, object], ...] = (
+        {"selection_valid_buy_nw_observations": 0},
+        {"training_valid_buy_nw_observations": 0},
+        {"validation_valid_buy_nw_observations": 0},
+        {"training_buy_nw_q25": None},
+        {"training_buy_nw_q75": None},
+        {"validation_buy_nw_q25": None},
+        {"validation_buy_nw_q75": None},
+        {"training_buy_nw_q25": 15_000.0},
+        {"selection_buy_nw_q25": None},
+        {"selection_buy_nw_q75": None},
+    )
+    rows = [
+        base,
+        *(
+            {**base, "item_id": 200 + index, **change}
+            for index, change in enumerate(changes)
+        ),
+    ]
+
+    result = _purchase_window_bounds(pl.DataFrame(rows, strict=False))
+    assert result == {101: (10_000.0, 14_000.0)}
 
 
 def test_hero_export_runs_eight_workers_and_preserves_order() -> None:
@@ -120,7 +151,6 @@ def test_batched_backbone_counts_match_per_inventory_counting() -> None:
         folds,
         frozenset({6}),
     )
-
     for size in (4, 5, 6):
         expected = {fold: Counter() for fold in ("train", "validation", "test")}
         for (match_id, _), inventory in inventories.items():
@@ -152,10 +182,27 @@ def test_path_export_retains_valid_sibling_when_one_path_abstains() -> None:
             folds_by_match={1: "train", 2: "train"},
         ),
     )
+    inventories: dict[tuple[int, int], tuple[int, ...]] = {
+        (1, 0): (101,),
+        (2, 0): (102,),
+    }
+
+    def path_label(
+        connection: duckdb.DuckDBPyConnection,
+        path: DiscoveredBuildPath,
+        mechanics_assets: dict[int, dict[str, object]],
+    ) -> str:
+        assert connection is con
+        assert mechanics_assets is context.mechanics_assets_by_id
+        return {"bad": "Bad", "good": "Good"}[path.path_id]
 
     def build_payload(*args: object, **kwargs: object) -> dict[str, str]:
-        del kwargs
         path = cast("DiscoveredBuildPath", args[3])
+        assert args[:3] == (con, 12, {"id": 12})
+        assert args[4] in {"Bad", "Good"}
+        assert args[5] == Counter({"Bad": 1, "Good": 1})
+        assert args[6:] == (inventories, context, None, None)
+        assert kwargs == {}
         if path.path_id == "bad":
             raise UnsupportedBuildPathError("unsupported tier")
         return {"path_id": path.path_id}
@@ -165,7 +212,7 @@ def test_path_export_retains_valid_sibling_when_one_path_abstains() -> None:
         with (
             patch(
                 "deadlock_build_sync.offline.production_evidence._path_label",
-                side_effect=["Bad", "Good"],
+                side_effect=path_label,
             ),
             patch(
                 "deadlock_build_sync.offline.production_evidence._build_path_payload",
@@ -177,7 +224,7 @@ def test_path_export_retains_valid_sibling_when_one_path_abstains() -> None:
                 12,
                 {"id": 12},
                 (bad, good),
-                {(1, 0): (101,), (2, 0): (102,)},
+                inventories,
                 context,
             )
     finally:
@@ -244,10 +291,9 @@ def test_core_budget_summaries_ignore_test_rows() -> None:
         con.close()
 
     assert cohort == (3, 15_000)
-    assert reference["matches"] == 2
-    assert reference["player_matches"] == 2
-    assert reference["median_final_net_worth"] == 15_000
-    assert reference["median_final_inventory_cost"] == 4_000
+    assert sha256_json(reference) == (
+        "7032de3aecc9f84c34ee90cc59b832babe5dad8c1594abf046f0f3bdd72f2672"
+    )
 
 
 def test_supported_backbone_uses_support_before_mechanic_affinity() -> None:

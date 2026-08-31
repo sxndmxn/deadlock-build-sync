@@ -58,10 +58,39 @@ def test_missing_and_malformed_artifact_chains_have_distinct_exit_codes(
     api = FakeApi()
 
     missing = build_freshness_report(tmp_path, api)
+    artifact_paths = (
+        tmp_path / "strategy-context.json",
+        tmp_path / "policies.json",
+        tmp_path / "narratives.json",
+        tmp_path / "build-evidence.json",
+    )
+    assert missing == FreshnessReport(
+        (
+            FreshnessStage(
+                "build_evidence", FreshnessState.MISSING, str(artifact_paths[3])
+            ),
+            FreshnessStage(
+                "strategy_context", FreshnessState.MISSING, str(artifact_paths[0])
+            ),
+            FreshnessStage("policies", FreshnessState.MISSING, str(artifact_paths[1])),
+            FreshnessStage(
+                "narratives", FreshnessState.MISSING, str(artifact_paths[2])
+            ),
+            FreshnessStage(
+                "artifact_bundle",
+                FreshnessState.MISSING,
+                "missing: " + ", ".join(str(path) for path in artifact_paths),
+            ),
+            FreshnessStage(
+                "installed_cache",
+                FreshnessState.UNAVAILABLE,
+                "Steam cache location was not supplied",
+            ),
+        ),
+        123,
+        api.patch,
+    )
     assert missing.exit_code == 1
-    assert missing.as_dict()["status"] == "invalid_or_unavailable"
-    assert missing.stages[0].state is FreshnessState.MISSING
-    assert missing.stages[-1].state is FreshnessState.UNAVAILABLE
 
     (tmp_path / "build-evidence.json").write_text("not-json", encoding="utf-8")
     malformed = build_freshness_report(tmp_path, api)
@@ -111,4 +140,7 @@ def test_installed_descriptions_accept_current_marker_and_keep_each_path(
 
     installed = freshness_module._installed_descriptions(tmp_path / "cache", 34)
 
-    assert set(installed) == {(12, "weapon-core"), (12, "spirit-core")}
+    assert installed == {
+        (12, "weapon-core"): descriptions[b"first"],
+        (12, "spirit-core"): descriptions[b"second"],
+    }

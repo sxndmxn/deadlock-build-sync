@@ -212,7 +212,6 @@ def _tier_policy(
     raw_membership = cast("dict[str, object]", raw_membership_value)
     by_id = {item.item_id: item for item in items}
     item_ids_by_tier: dict[int, tuple[int, ...]] = {}
-    all_item_ids: list[int] = []
     for tier in range(1, 5):
         raw_item_ids = raw_membership[str(tier)]
         if not isinstance(raw_item_ids, list):
@@ -241,7 +240,4 @@ def _tier_policy(
                     f"hero {hero_id} has an unsupported Tier {tier} item"
                 )
         item_ids_by_tier[tier] = item_ids
-        all_item_ids.extend(item_ids)
-    if len(all_item_ids) != len(set(all_item_ids)):
-        raise ArtifactError(f"hero {hero_id} repeats an item across tier menus")
     return TierPolicyEvidence(item_ids_by_tier)

@@ -9,6 +9,7 @@ import pytest
 
 from deadlock_build_sync.offline import core_policy_dr
 from deadlock_build_sync.offline import production_storage as storage
+from deadlock_build_sync.offline.config import sha256_json
 from deadlock_build_sync.value_validation import integer
 from tests.mechanics_fixtures import item
 from tests.offline.production_evidence_fixtures import _item_graph
@@ -199,6 +200,9 @@ def test_core_alternatives_audit_mechanics_estimability_and_admission(
     assert len(audit) == 2
     assert audit[0]["failed_gates"] == ["mechanics_grounding"]
     assert admitted[0]["swap"] == "Replaces Item 2"
+    assert sha256_json({"admitted": admitted, "audit": audit}) == (
+        "41ce216c1c81f5e8c9039db54bca362b43390ec816fb019f8d529bee91e3dc16"
+    )
 
     monkeypatch.setattr(storage, "cross_fitted_dr_contrast", _raise_contrast)
     _, failed_audit = storage._core_alternatives(

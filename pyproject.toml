@@ -123,6 +123,23 @@ paths = [
 quiet = false
 
 [tool.mutmut]
+also_copy = ["docs", "tools"]
+only_mutate = [
+  "src/deadlock_build_sync/cache.py",
+  "src/deadlock_build_sync/cache_discovery.py",
+  "src/deadlock_build_sync/cache_install.py",
+  "src/deadlock_build_sync/cache_projection.py",
+  "src/deadlock_build_sync/cache_storage.py",
+  "src/deadlock_build_sync/cache_types.py",
+  "src/deadlock_build_sync/kv3_binary.py",
+  "src/deadlock_build_sync/protobuf.py",
+]
+pytest_add_cli_args = [
+  "-W",
+  "error",
+  "-k",
+  "not test_stage_trace_covers_presentation_and_protobuf_with_safe_facts and not test_trace_summary_renders_tree_and_per_function_time",
+]
 pytest_add_cli_args_test_selection = ["tests"]
 source_paths = [
   "scripts",

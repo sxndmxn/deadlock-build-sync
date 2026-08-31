@@ -11,6 +11,47 @@ from deadlock_build_sync.offline.analysis_cohort import (
     _sequence_model_evaluation,
 )
 
+type _Row = dict[str, object]
+
+
+def _cohort_rows(
+    match_id: int,
+    calibration: str,
+    badge: int,
+    offset: int,
+) -> tuple[_Row, list[_Row]]:
+    fold = "train" if offset < 10 else "test"
+    player: _Row = {
+        "match_id": match_id,
+        "hero_id": 1,
+        "calibration": calibration,
+        "won": offset % 2 == 0,
+        "final_net_worth": 20_000 + offset * 100,
+        "start_time": f"2026-08-{offset % 5 + 1:02d} 00:00:00+00",
+        "average_badge": badge,
+    }
+    purchases: list[_Row] = [
+        {
+            "match_id": match_id,
+            "player_slot": 0,
+            "hero_id": 1,
+            "tier": 1,
+            "item_id": item_id,
+            "calibration": calibration,
+            "average_badge": badge,
+            "phase": index,
+            "fold": fold,
+            "buy_time": 100 + index * 100,
+            "prior_purchase_count": index,
+            "own_net_worth_at_buy": None if index == 0 else 5_000 + index * 1_000,
+            "team_net_worth_lead": None if index == 0 else 100,
+            "own_team_observed_players": 6 if index == 2 else 5,
+            "enemy_team_observed_players": 6 if index == 2 else 5,
+        }
+        for index, item_id in enumerate((10, 11, 12))
+    ]
+    return player, purchases
+
 
 def _cohort_connection() -> duckdb.DuckDBPyConnection:
     players: list[dict[str, object]] = []
@@ -18,38 +59,14 @@ def _cohort_connection() -> duckdb.DuckDBPyConnection:
     match_id = 1
     for calibration, badge in (("calibrated", 75), ("provisional", 85)):
         for offset in range(20):
-            fold = "train" if offset < 10 else "test"
-            players.append({
-                "match_id": match_id,
-                "hero_id": 1,
-                "calibration": calibration,
-                "won": offset % 2 == 0,
-                "final_net_worth": 20_000 + offset * 100,
-                "start_time": f"2026-08-{offset % 5 + 1:02d} 00:00:00+00",
-                "average_badge": badge,
-            })
-            purchases.extend([
-                {
-                    "match_id": match_id,
-                    "player_slot": 0,
-                    "hero_id": 1,
-                    "tier": 1,
-                    "item_id": item_id,
-                    "calibration": calibration,
-                    "average_badge": badge,
-                    "phase": index,
-                    "fold": fold,
-                    "buy_time": 100 + index * 100,
-                    "prior_purchase_count": index,
-                    "own_net_worth_at_buy": (
-                        None if index == 0 else 5_000 + index * 1_000
-                    ),
-                    "team_net_worth_lead": None if index == 0 else 100,
-                    "own_team_observed_players": 6 if index == 2 else 5,
-                    "enemy_team_observed_players": 6 if index == 2 else 5,
-                }
-                for index, item_id in enumerate((10, 11, 12))
-            ])
+            player, purchase_rows = _cohort_rows(
+                match_id,
+                calibration,
+                badge,
+                offset,
+            )
+            players.append(player)
+            purchases.extend(purchase_rows)
             match_id += 1
     assets = pl.DataFrame({
         "item_id": [10, 11, 12],

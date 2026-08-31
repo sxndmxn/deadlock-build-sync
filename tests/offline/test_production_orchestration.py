@@ -11,7 +11,7 @@ from deadlock_build_sync.mechanics import ItemGraph
 from deadlock_build_sync.offline import production_evidence, production_paths
 from deadlock_build_sync.offline.api import write_json
 from deadlock_build_sync.offline.build_paths import DiscoveredBuildPath
-from deadlock_build_sync.offline.config import RunPaths
+from deadlock_build_sync.offline.config import RunPaths, sha256_json
 from deadlock_build_sync.offline.core_policy import BackboneSelection
 from deadlock_build_sync.offline.production_sources import (
     UnsupportedBuildPathError,
@@ -271,8 +271,12 @@ def test_build_hero_payload_opens_queries_and_closes_database(
         context=context,
     )
 
-    assert result["hero_id"] == 7
-    assert result["builds"] == [{"path_id": "path"}]
+    assert result == {
+        "hero_id": 7,
+        "hero": "Hero",
+        "builds": [{"path_id": "path"}],
+        "path_abstentions": [],
+    }
     assert fake.closed
     assert fake.queries == ["SET threads = 1"]
 
@@ -339,6 +343,9 @@ def test_export_production_evidence_writes_closed_document(
     assert target.exists()
     assert document["requested_hero_ids"] == [7]
     assert len(str(document["artifact_id"])) == 64
+    assert sha256_json(document) == (
+        "5cfa7595e55ed1c738e5ce5e0ab445bae284e0dc93d6ce9c678832cf9e70f309"
+    )
     assert fake.closed
 
 

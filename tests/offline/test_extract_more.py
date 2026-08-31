@@ -107,7 +107,17 @@ def test_extract_cohort_runs_all_stages_exports_and_cleanup(
 
     counts = extract_module.extract_cohort(paths, _cohort())
 
-    assert all(value == 7 for value in counts.values())
+    assert counts == {
+        "player_matches": 7,
+        "match_folds": 7,
+        "purchases": 7,
+        "first_purchases": 7,
+        "decision_opportunities": 7,
+        "heroes": 7,
+        "hero_account_rows": 7,
+        "valid_purchase_net_worth": 7,
+        "valid_team_lead": 7,
+    }
     assert fake.closed
     assert not temporary.exists()
     assert len(fake.inserted) == 1
@@ -129,8 +139,9 @@ def test_extract_helpers_load_export_count_and_format(
     extract_module._load_item_assets(connection, paths.raw / "items.json")
     extract_module._export(connection, "table_name", paths.data / "table.parquet")
 
-    assert len(fake.inserted) == 1
-    assert fake.inserted[0][1] == "Item 10"
+    assert list(fake.inserted) == [
+        (10, "Item 10", "", 1, 0, "unknown", False, True, "[]")
+    ]
     assert extract_module._count(connection, "SELECT 7") == 7
     assert extract_module._sql_timestamp(_cohort().since).endswith("+00")
     assert "average_badge BETWEEN 71 AND 115" in extract_module._cohort_where(_cohort())

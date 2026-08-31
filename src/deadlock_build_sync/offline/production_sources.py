@@ -29,6 +29,7 @@ from deadlock_build_sync.value_validation import (
 from .api import read_json
 from .config import RunPaths, sha256_json
 from .late_game import reconstruct_final_inventory
+from .sql_fragments import ITEM_OUTCOME_AGGREGATES_SQL
 
 if TYPE_CHECKING:
     import duckdb
@@ -301,15 +302,7 @@ def _path_item_metrics(
                     count(*) FILTER (
                         WHERE p.fold = 'test'
                     ) AS test_adopter_matches,
-                    sum(p.won::INTEGER) AS wins,
-                    avg(p.won::INTEGER) AS raw_outcome_rate,
-                    median(p.buy_time) AS median_buy_time_s,
-                    quantile_cont(p.buy_time, 0.25) AS buy_time_q25_s,
-                    quantile_cont(p.buy_time, 0.75) AS buy_time_q75_s,
-                    median(p.own_net_worth_at_buy) AS median_valid_buy_net_worth,
-                    quantile_cont(p.own_net_worth_at_buy, 0.25) AS buy_nw_q25,
-                    quantile_cont(p.own_net_worth_at_buy, 0.75) AS buy_nw_q75,
-                    count(p.own_net_worth_at_buy) / count(*) AS valid_buy_nw_share,
+                    {ITEM_OUTCOME_AGGREGATES_SQL},
                     median(p.buy_time) FILTER (
                         WHERE p.fold IN ('train', 'validation')
                     ) AS selection_median_buy_time_s,

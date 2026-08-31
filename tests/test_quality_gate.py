@@ -46,6 +46,15 @@ def test_static_metric_boundaries() -> None:
     ]
 
 
+def test_decorated_function_uses_definition_line_for_coverage() -> None:
+    source = "@staticmethod\ndef sample(value: int) -> bool:\n    return value > 0\n"
+
+    metrics = quality_gate._function_metrics(source, ast.parse(source))
+
+    assert len(metrics) == 1
+    assert metrics[0].coverage_line == 2
+
+
 @pytest.mark.parametrize(
     ("annotation", "expected"),
     [

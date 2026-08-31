@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import replace
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import pytest
 
 import deadlock_build_sync.cache_discovery as cache_discovery_module
+import deadlock_build_sync.cache_install as cache_install_module
+import deadlock_build_sync.cache_storage as cache_storage_module
 from deadlock_build_sync.cache import (
     CacheError,
     CacheLocation,
@@ -20,6 +25,7 @@ from deadlock_build_sync.kv3_binary import encode_binary_v4
 from deadlock_build_sync.protobuf import (
     hero_build_metadata,
 )
+from deadlock_build_sync.snapshot import sha256_json
 from tests.cache_fixtures import (
     SNAPSHOT_ID,
     complete_guide,
@@ -213,6 +219,15 @@ def test_install_creates_backup_and_restore_recovers_original(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    created_at = datetime(2026, 1, 2, tzinfo=UTC)
+
+    class FixedDatetime:
+        @staticmethod
+        def now(_timezone: object) -> datetime:
+            return created_at
+
+    monkeypatch.setattr(cache_install_module, "datetime", FixedDatetime)
+    monkeypatch.setattr(cache_storage_module, "datetime", FixedDatetime)
     app_directory = tmp_path / "userdata/146293212/1422450"
     cache_path = app_directory / "remote/cfg/cached_hero_builds.kv3"
     cache_path.parent.mkdir(parents=True)
@@ -241,6 +256,16 @@ def test_install_creates_backup_and_restore_recovers_original(
         backup_root=state_root,
         snapshot_manifest=snapshot_manifest(),
         expected_hero_ids={12},
+    )
+    assert hashlib.sha256(cache_path.read_bytes()).hexdigest() == (
+        "693a43b4e26dfff60d0e9620e7ec3e185c33844bed0396386efab9e87328f4f2"
+    )
+    manifest = json.loads(
+        (result.backup_directory / "manifest.json").read_text(encoding="utf-8")
+    )
+    manifest["cache_path"] = "<cache>"
+    assert sha256_json(manifest) == (
+        "baa594f846f97195d5b3f0faad9095fd868bbe2ea32f16fe66e69df8a1963d72"
     )
     assert result.created == 1
     assert (result.backup_directory / "cached_hero_builds.kv3").is_file()

@@ -4,6 +4,7 @@ from dataclasses import replace
 import pytest
 
 from deadlock_build_sync.ability_order import AbilityPath
+from deadlock_build_sync.offline.config import sha256_json
 from deadlock_build_sync.presentation import (
     MAX_BUILD_NAME_CHARACTERS,
     BuildPresentation,
@@ -11,6 +12,7 @@ from deadlock_build_sync.presentation import (
 )
 from deadlock_build_sync.protobuf import (
     MANAGED_MARKER,
+    describe_guide,
     encode_hero_build,
     extract_hero_build,
     hero_build_metadata,
@@ -125,6 +127,23 @@ def test_build_wrapper_and_metadata_round_trip() -> None:
     assert "Emissary I–Eternus V" in (metadata.description or "")
     assert "Ranked" in (metadata.description or "")
     assert metadata.publish_timestamp is None
+
+
+def test_describe_guide_includes_presentation_and_ability_data() -> None:
+    guide = ability_guide()
+    details = describe_guide(guide, presentation=presentation(guide))
+
+    assert details["hero_id"] == 12
+    assert details["presentation"] == {
+        "name": "XMLJDX | Spirit Damage | Test Patch / 0101–0101",
+        "tag_ids": [1, 2, 3],
+        "description": presentation(guide).description,
+    }
+    assert details["ability_path"] is not None
+    assert sha256_json(details) == (
+        "2867dbf9abc88cb3fb421426435707aa1cca4c5f885c8493511defc9e309019d"
+    )
+    assert describe_guide(sample_guide())["ability_path"] is None
 
 
 def test_build_name_truncates_a_long_deadlock_patch_title() -> None:

@@ -1,17 +1,29 @@
-from dataclasses import replace
+import json
+from dataclasses import asdict, replace
+from datetime import UTC, datetime
 
 import pytest
 
+import deadlock_build_sync.api as api_module
+import deadlock_build_sync.snapshot as snapshot_module
+import tests.service_fake_api as fake_api_module
 from deadlock_build_sync.build_evidence import (
     TierPolicyEvidence,
 )
 from deadlock_build_sync.service import GeneratedGuides, GuideError, generate_guides
+from deadlock_build_sync.snapshot import sha256_json
 from deadlock_build_sync.value_validation import (
     require_object_dict,
     require_object_rows,
 )
 from tests.service_evidence_fixtures import build_evidence
 from tests.service_fake_api import FakeApi, ability_rows, duration_points
+
+
+def _json_default(value: object) -> object:
+    if isinstance(value, (set, frozenset)):
+        return sorted(value, key=repr)
+    raise TypeError(f"cannot normalize {type(value).__name__}")
 
 
 def _assert_matchup_context(generated: GeneratedGuides) -> None:
@@ -137,7 +149,19 @@ def test_incomplete_duration_curve_abstains_without_discarding_policy() -> None:
     )
 
 
-def test_generated_guide_is_snapshot_bound_policy_projection() -> None:
+def test_generated_guide_is_snapshot_bound_policy_projection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    generated_at = datetime(2026, 1, 2, tzinfo=UTC)
+
+    class FixedDatetime:
+        @staticmethod
+        def now(_timezone: object) -> datetime:
+            return generated_at
+
+    monkeypatch.setattr(api_module, "datetime", FixedDatetime)
+    monkeypatch.setattr(snapshot_module, "datetime", FixedDatetime)
+    monkeypatch.setattr(fake_api_module, "datetime", FixedDatetime)
     api = FakeApi(ability_rows=ability_rows(), duration_points=duration_points())
     generated = generate_guides(
         api,
@@ -147,6 +171,10 @@ def test_generated_guide_is_snapshot_bound_policy_projection() -> None:
         all_heroes=False,
     )
 
+    normalized = json.loads(json.dumps(asdict(generated), default=_json_default))
+    assert sha256_json(normalized) == (
+        "2cdca3be198d55bce351a306b96a4d943ad21fd6d375d5106dc331807a7a4dd0"
+    )
     assert len(generated.guides) == len(generated.policies) == 1
     assert api.counter_stat_calls == [True, False]
     _assert_matchup_context(generated)

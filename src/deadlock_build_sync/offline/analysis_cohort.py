@@ -62,10 +62,15 @@ def _paired_adoption_stability(
             for key, group in joined.group_by(["hero_id", "tier"]):
                 if group.height < 3:
                     continue
-                correlation = spearmanr(
-                    group["adoption_rate"].to_numpy(),
-                    group["adoption_rate_comparison"].to_numpy(),
-                ).statistic
+                correlation = (
+                    spearmanr(
+                        group["adoption_rate"].to_numpy(),
+                        group["adoption_rate_comparison"].to_numpy(),
+                    ).statistic
+                    if group["adoption_rate"].n_unique() > 1
+                    and group["adoption_rate_comparison"].n_unique() > 1
+                    else None
+                )
                 first_top = set(
                     group
                     .sort("adoption_rate", descending=True)
@@ -85,9 +90,11 @@ def _paired_adoption_stability(
                     "stratum_a": str(stratum_a),
                     "stratum_b": str(stratum_b),
                     "shared_items": group.height,
-                    "spearman": float(correlation)
-                    if math.isfinite(correlation)
-                    else None,
+                    "spearman": (
+                        float(correlation)
+                        if correlation is not None and math.isfinite(correlation)
+                        else None
+                    ),
                     "top10_jaccard": len(first_top & second_top) / len(union),
                 })
     return pl.DataFrame(rows)

@@ -8,20 +8,18 @@ from .artifacts import load_policy_artifact
 from .cli_support import (
     _BUILD_EVIDENCE_FILENAME,
     _POLICY_FILENAME,
-    _api,
     _build_evidence,
     _catalog,
     _describe_preview_guide,
+    _generate,
     _location,
-    _record_generated_facts,
-    _report_skipped,
+    _record_fresh_evidence,
     _sync_artifact_directory,
 )
 from .freshness import (
     require_current_build_evidence,
 )
 from .recommendation import DecisionState, RecommendationError, recommend
-from .service import generate_guides
 from .tracing import record_stage_facts
 
 if TYPE_CHECKING:
@@ -38,12 +36,7 @@ def _run_recommend(args: argparse.Namespace) -> int:
         evidence_path,
         DeadlockApi(args.api_base_url),
     )
-    record_stage_facts(
-        "evidence.freshness",
-        path=evidence_path,
-        artifact_id=evidence.artifact_id,
-        hero_count=len(getattr(evidence, "heroes", {})),
-    )
+    _record_fresh_evidence(evidence_path, evidence)
     state = DecisionState.from_file(args.state.expanduser().resolve())
     policy_path = (
         args.policies.expanduser().resolve()
@@ -98,16 +91,12 @@ def _run_recommend(args: argparse.Namespace) -> int:
 def _run_preview(args: argparse.Namespace) -> int:
     location = _location(args)
     evidence_path, evidence = _build_evidence(args)
-    generated = generate_guides(
-        _api(args, evidence),
-        build_evidence=evidence,
-        account_id=location.account_id,
-        hero_query=args.hero,
-        all_heroes=args.all,
+    generated = _generate(
+        args,
+        evidence,
+        location.account_id,
         narrative_catalog=_catalog(args),
     )
-    _record_generated_facts(generated)
-    _report_skipped(generated)
     payload = {
         "account_id": location.account_id,
         "persona": generated.persona,
