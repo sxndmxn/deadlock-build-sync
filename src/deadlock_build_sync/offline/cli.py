@@ -8,7 +8,8 @@ import shutil
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+
+from deadlock_build_sync.value_validation import integer, object_dict, object_list
 
 from .analysis import analyze
 from .api import capture_api_audit, capture_sources, read_json, write_json
@@ -68,10 +69,13 @@ def _repo_identity() -> dict[str, str]:
     }
 
 
-def _manifest(paths: RunPaths, cohort: Cohort) -> dict[str, Any]:
+def _manifest(paths: RunPaths, cohort: Cohort) -> dict[str, object]:
     target = paths.run / _MANIFEST_FILENAME
     if target.exists():
-        return read_json(target)
+        manifest = object_dict(read_json(target))
+        if manifest is None:
+            raise SystemExit("existing run manifest is not an object")
+        return manifest
     return {
         "schema_version": 1,
         "generated_at": datetime.now(tz=UTC).isoformat(),
@@ -82,17 +86,17 @@ def _manifest(paths: RunPaths, cohort: Cohort) -> dict[str, Any]:
     }
 
 
-def _cohort_from_manifest(manifest: dict[str, Any]) -> Cohort:
-    value = manifest.get("cohort")
-    if not isinstance(value, dict):
+def _cohort_from_manifest(manifest: dict[str, object]) -> Cohort:
+    value = object_dict(manifest.get("cohort"))
+    if value is None:
         raise SystemExit("existing run manifest has no valid frozen cohort")
     since = parse_timestamp(str(value["since"]))
     as_of = parse_timestamp(str(value["as_of"]))
     if since is None or as_of is None:
         raise SystemExit("existing run manifest has incomplete cohort timestamps")
     cohort = Cohort(
-        minimum_badge=int(value["minimum_badge"]),
-        maximum_badge=int(value["maximum_badge"]),
+        minimum_badge=integer(value["minimum_badge"]),
+        maximum_badge=integer(value["maximum_badge"]),
         since=since,
         as_of=as_of,
         match_mode=str(value.get("match_mode") or "Ranked"),
@@ -121,7 +125,7 @@ def _check_explicit_cohort_args(args: argparse.Namespace, frozen: Cohort) -> Non
         )
 
 
-def _save_manifest(paths: RunPaths, manifest: dict[str, Any]) -> None:
+def _save_manifest(paths: RunPaths, manifest: dict[str, object]) -> None:
     write_json(paths.run / _MANIFEST_FILENAME, manifest)
 
 
@@ -152,20 +156,20 @@ def _require(paths: RunPaths, *relative: str) -> None:
         )
 
 
-def run_extract(paths: RunPaths, cohort: Cohort, manifest: dict[str, Any]) -> None:
+def run_extract(paths: RunPaths, cohort: Cohort, manifest: dict[str, object]) -> None:
     manifest["sources"] = capture_sources(paths)
     manifest["extraction"] = extract_cohort(paths, cohort)
     manifest["cache_bytes"] = _cache_size(paths)
     _save_manifest(paths, manifest)
 
 
-def run_audit(paths: RunPaths, cohort: Cohort, manifest: dict[str, Any]) -> None:
+def run_audit(paths: RunPaths, cohort: Cohort, manifest: dict[str, object]) -> None:
     _require(paths, _HEROES_SOURCE)
     manifest["api_audit"] = capture_api_audit(paths, cohort)
     _save_manifest(paths, manifest)
 
 
-def run_analysis(paths: RunPaths, manifest: dict[str, Any]) -> None:
+def run_analysis(paths: RunPaths, manifest: dict[str, object]) -> None:
     _require(paths, _ANALYSIS_DATABASE, "raw/api")
     manifest["analysis"] = analyze(paths)
     manifest["rankings"] = generate_rankings(paths)
@@ -177,7 +181,7 @@ def run_analysis(paths: RunPaths, manifest: dict[str, Any]) -> None:
     _save_manifest(paths, manifest)
 
 
-def run_report(paths: RunPaths, manifest: dict[str, Any]) -> None:
+def run_report(paths: RunPaths, manifest: dict[str, object]) -> None:
     _require(paths, "tables/item_metrics.csv", "tables/top10_rankings.csv")
     manifest["frozen_data_sha256"] = _frozen_data_hashes(paths)
     _save_manifest(paths, manifest)
@@ -187,7 +191,7 @@ def run_report(paths: RunPaths, manifest: dict[str, Any]) -> None:
 
 def run_layout(
     paths: RunPaths,
-    manifest: dict[str, Any],
+    manifest: dict[str, object],
     *,
     hero_id: int,
     hero_name: str,
@@ -224,8 +228,11 @@ def run_export_evidence(paths: RunPaths, output: Path) -> None:
         "tables/item_metrics.csv",
     )
     document = export_production_evidence(paths, output)
+    heroes = object_list(document.get("heroes"))
+    if heroes is None:
+        raise RuntimeError("production evidence has no hero array")
     print(
-        f"Exported {len(document['heroes'])} heroes of production evidence: {output}",
+        f"Exported {len(heroes)} heroes of production evidence: {output}",
         flush=True,
     )
 
@@ -286,7 +293,7 @@ def _requested_cohort(args: argparse.Namespace) -> Cohort:
 def _run_layout_request(
     args: argparse.Namespace,
     paths: RunPaths,
-    manifest: dict[str, Any],
+    manifest: dict[str, object],
 ) -> None:
     if args.hero_id is None or not args.hero_name:
         raise SystemExit("layout requires --hero-id and --hero-name")
@@ -309,7 +316,7 @@ def _execute_offline_command(
     args: argparse.Namespace,
     paths: RunPaths,
     cohort: Cohort,
-    manifest: dict[str, Any],
+    manifest: dict[str, object],
 ) -> None:
     if args.command in {"extract", "all"}:
         run_extract(paths, cohort, manifest)

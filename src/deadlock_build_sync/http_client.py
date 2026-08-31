@@ -3,12 +3,17 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Self
+from typing import TYPE_CHECKING, Self
 
 import httpx
 
+from .value_validation import object_list
+
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
+
+type _QueryScalar = str | int | float | None
+type _QueryValue = _QueryScalar | list[_QueryScalar]
 
 
 class JsonHttpError(RuntimeError):
@@ -19,7 +24,7 @@ class JsonHttpError(RuntimeError):
 class JsonHttpResponse:
     """A decoded JSON response with the original evidence bytes."""
 
-    data: Any
+    data: object
     content: bytes
     url: str
 
@@ -82,10 +87,34 @@ class JsonHttpClient:
                 return min(30.0, max(0.0, retry_after))
         return float(2**attempt)
 
+    @staticmethod
+    def _query_params(
+        params: Mapping[str, object] | None,
+    ) -> dict[str, _QueryValue] | None:
+        normalized: dict[str, _QueryValue] = {}
+        for key, value in (params or {}).items():
+            if isinstance(value, bool):
+                normalized[key] = str(value).lower()
+            elif value is None or isinstance(value, str | int | float):
+                normalized[key] = value
+            elif (values := object_list(value)) is not None:
+                items: list[_QueryScalar] = []
+                for item in values:
+                    if isinstance(item, bool):
+                        items.append(str(item).lower())
+                    elif item is None or isinstance(item, str | int | float):
+                        items.append(item)
+                    else:
+                        raise JsonHttpError(f"invalid query value for {key}")
+                normalized[key] = items
+            else:
+                raise JsonHttpError(f"invalid query value for {key}")
+        return normalized or None
+
     def get_json(
         self,
         path: str,
-        params: Mapping[str, Any] | None = None,
+        params: Mapping[str, object] | None = None,
     ) -> JsonHttpResponse:
         """GET and decode JSON, retrying transient failures.
 
@@ -99,7 +128,7 @@ class JsonHttpClient:
         request = self._client.build_request(
             "GET",
             path.lstrip("/"),
-            params=params,
+            params=self._query_params(params),
         )
         last_error: Exception | None = None
         for attempt in range(self.max_attempts):

@@ -1,9 +1,16 @@
+from __future__ import annotations
+
+import hashlib
+import json
 from dataclasses import replace
-from pathlib import Path
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 import pytest
 
-import deadlock_build_sync.cache as cache_module
+import deadlock_build_sync.cache_discovery as cache_discovery_module
+import deadlock_build_sync.cache_install as cache_install_module
+import deadlock_build_sync.cache_storage as cache_storage_module
 from deadlock_build_sync.cache import (
     CacheError,
     CacheLocation,
@@ -15,99 +22,22 @@ from deadlock_build_sync.cache import (
     update_managed_builds,
 )
 from deadlock_build_sync.kv3_binary import encode_binary_v4
-from deadlock_build_sync.presentation import MANAGED_MARKER, BuildPresentation
 from deadlock_build_sync.protobuf import (
-    encode_hero_build,
     hero_build_metadata,
-    wrap_hero_build,
 )
-from deadlock_build_sync.purchase_guide import GuideItem, PurchaseGuide, PurchaseWindow
+from deadlock_build_sync.snapshot import sha256_json
+from tests.cache_fixtures import (
+    SNAPSHOT_ID,
+    complete_guide,
+    create_discoverable_cache,
+    guide,
+    set_deadlock_check,
+    snapshot_manifest,
+    unpublished,
+)
 
-SNAPSHOT_ID = "c" * 64
-
-
-def snapshot_manifest() -> dict[str, str]:
-    return {"snapshot_id": SNAPSHOT_ID}
-
-
-def guide() -> PurchaseGuide:
-    window = PurchaseWindow(5000, 10000, 100, 60, 0.6, 0.5)
-    item = GuideItem(123, "Test Item", 1, 200, 0.55, 0.48, 1.0, (window,))
-    return PurchaseGuide(
-        12,
-        "Kelvin",
-        "hero_kelvin",
-        {1: (item,), 2: (), 3: (), 4: ()},
-        build_tag_ids=(1, 2, 3),
-        analysis_start_timestamp=1_767_225_600,
-        as_of_timestamp=1_767_225_600,
-    )
-
-
-def complete_guide() -> PurchaseGuide:
-    window = PurchaseWindow(5000, 10000, 100, 60, 0.6, 0.5)
-    tiers = {
-        tier: tuple(
-            GuideItem(
-                tier * 100 + index,
-                f"Tier {tier} Item {index}",
-                tier,
-                200,
-                0.55,
-                0.48,
-                1.0,
-                (window,),
-            )
-            for index in range(8)
-        )
-        for tier in range(1, 5)
-    }
-    return PurchaseGuide(
-        12,
-        "Kelvin",
-        "hero_kelvin",
-        tiers,
-        snapshot_id=SNAPSHOT_ID,
-        policy_id="policy/kelvin",
-        client_version=123,
-        match_mode="ranked",
-        rank_identity="Phantom I [91]–Eternus VI [116]",
-        build_tag_ids=(1, 2, 3),
-        build_archetype="Spirit Damage",
-        analysis_start_timestamp=1_767_225_600,
-        as_of_timestamp=1_767_225_600,
-    )
-
-
-def existing_blob(
-    build_id: int, hero_id: int, description_patch: str = "Existing"
-) -> bytes:
-    build = encode_hero_build(
-        BuildPresentation(
-            hero_id,
-            "Existing | Ranked | 2026-01-01",
-            (1, 2, 3),
-            f"{description_patch}\n{MANAGED_MARKER}",
-            (),
-            None,
-        ),
-        build_id=build_id,
-        account_id=146293212,
-        timestamp=1,
-    )
-    return wrap_hero_build(build)
-
-
-def create_discoverable_cache(root: Path, account_id: int) -> Path:
-    path = (
-        root
-        / "userdata"
-        / str(account_id)
-        / "1422450/remote/cfg/cached_hero_builds.kv3"
-    )
-    path.parent.mkdir(parents=True)
-    path.touch()
-    return path
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def test_discover_cache_handles_missing_steam_installation(tmp_path: Path) -> None:
@@ -121,7 +51,7 @@ def test_discover_cache_supports_flatpak_steam(
 ) -> None:
     flatpak_root = tmp_path / ".var/app/com.valvesoftware.Steam/.local/share/Steam"
     expected = create_discoverable_cache(flatpak_root, 146293212)
-    monkeypatch.setattr(cache_module.Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(cache_discovery_module.Path, "home", lambda: tmp_path)
 
     location = discover_cache()
 
@@ -138,7 +68,7 @@ def test_discover_cache_deduplicates_legacy_steam_symlink(
     legacy_root = tmp_path / ".steam/steam"
     legacy_root.parent.mkdir(parents=True)
     legacy_root.symlink_to(native_root, target_is_directory=True)
-    monkeypatch.setattr(cache_module.Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(cache_discovery_module.Path, "home", lambda: tmp_path)
 
     roots = steam_roots(home=tmp_path)
     location = discover_cache()
@@ -155,14 +85,14 @@ def test_discover_cache_requires_path_for_duplicate_account_installations(
     flatpak_root = tmp_path / ".var/app/com.valvesoftware.Steam/.local/share/Steam"
     create_discoverable_cache(native_root, 146293212)
     create_discoverable_cache(flatpak_root, 146293212)
-    monkeypatch.setattr(cache_module.Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(cache_discovery_module.Path, "home", lambda: tmp_path)
 
     with pytest.raises(CacheError, match="pass --cache-path"):
         discover_cache(account_id=146293212)
 
 
 def test_managed_update_is_idempotent_and_preserves_other_sections() -> None:
-    root = {
+    root: dict[str, object] = {
         "LastUsedBuilds": {"hero_kelvin": 777},
         "Favorites": [b"favorite"],
         "Unpublished": [],
@@ -185,7 +115,9 @@ def test_managed_update_is_idempotent_and_preserves_other_sections() -> None:
     assert first["SavedLastUsed"] == root["SavedLastUsed"]
     assert first["LastUsedBuilds"] == root["LastUsedBuilds"]
 
-    first_metadata = hero_build_metadata(first["Unpublished"][0])
+    first_build = unpublished(first)[0]
+    assert isinstance(first_build, bytes)
+    first_metadata = hero_build_metadata(first_build)
     assert first_metadata.name is not None
     assert first_metadata.name.startswith("Player One | ")
 
@@ -202,12 +134,15 @@ def test_managed_update_is_idempotent_and_preserves_other_sections() -> None:
     assert created2 == 0
     assert updated2 == 1
     assert removed2 == 0
-    assert len(second["Unpublished"]) == 1
-    assert hero_build_metadata(second["Unpublished"][0]).build_id == 2
+    second_builds = unpublished(second)
+    assert len(second_builds) == 1
+    second_build = second_builds[0]
+    assert isinstance(second_build, bytes)
+    assert hero_build_metadata(second_build).build_id == 2
 
 
 def test_multiple_paths_get_separate_builds_and_stale_path_is_removed() -> None:
-    root = {
+    root: dict[str, object] = {
         "LastUsedBuilds": {"hero_kelvin": 77},
         "Favorites": [b"favorite"],
         "Unpublished": [],
@@ -238,7 +173,7 @@ def test_multiple_paths_get_separate_builds_and_stale_path_is_removed() -> None:
 
     assert set(ids) == {(12, "control"), (12, "damage")}
     assert (created, updated, removed) == (2, 0, 0)
-    assert len(first["Unpublished"]) == 2
+    assert len(unpublished(first)) == 2
 
     second, second_ids, created, updated, removed = update_managed_builds(
         first,
@@ -252,14 +187,14 @@ def test_multiple_paths_get_separate_builds_and_stale_path_is_removed() -> None:
 
     assert second_ids == {(12, "control"): ids[12, "control"]}
     assert (created, updated, removed) == (0, 1, 1)
-    assert len(second["Unpublished"]) == 1
+    assert len(unpublished(second)) == 1
     assert second["LastUsedBuilds"] == root["LastUsedBuilds"]
     assert second["Favorites"] == root["Favorites"]
     assert second["SavedLastUsed"] == root["SavedLastUsed"]
 
 
 def test_v4_cache_decodes_after_managed_update(tmp_path: Path) -> None:
-    root = {
+    root: dict[str, object] = {
         "LastUsedBuilds": {},
         "Favorites": [],
         "Unpublished": [],
@@ -277,17 +212,26 @@ def test_v4_cache_decodes_after_managed_update(tmp_path: Path) -> None:
     path = tmp_path / "cached_hero_builds.kv3"
     path.write_bytes(encode_binary_v4(updated))
     decoded = read_cache(path)
-    assert len(decoded["Unpublished"]) == 1
+    assert len(unpublished(decoded)) == 1
 
 
 def test_install_creates_backup_and_restore_recovers_original(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    created_at = datetime(2026, 1, 2, tzinfo=UTC)
+
+    class FixedDatetime:
+        @staticmethod
+        def now(_timezone: object) -> datetime:
+            return created_at
+
+    monkeypatch.setattr(cache_install_module, "datetime", FixedDatetime)
+    monkeypatch.setattr(cache_storage_module, "datetime", FixedDatetime)
     app_directory = tmp_path / "userdata/146293212/1422450"
     cache_path = app_directory / "remote/cfg/cached_hero_builds.kv3"
     cache_path.parent.mkdir(parents=True)
-    original = {
+    original: dict[str, object] = {
         "LastUsedBuilds": {"hero_kelvin": 777},
         "Favorites": [],
         "Unpublished": [],
@@ -300,7 +244,7 @@ def test_install_creates_backup_and_restore_recovers_original(
     )
     location = CacheLocation(146293212, cache_path, app_directory)
     state_root = tmp_path / "state"
-    monkeypatch.setattr(cache_module, "deadlock_is_running", lambda: False)
+    set_deadlock_check(monkeypatch, lambda: False)
 
     result = install_guides(
         location,
@@ -313,6 +257,16 @@ def test_install_creates_backup_and_restore_recovers_original(
         snapshot_manifest=snapshot_manifest(),
         expected_hero_ids={12},
     )
+    assert hashlib.sha256(cache_path.read_bytes()).hexdigest() == (
+        "693a43b4e26dfff60d0e9620e7ec3e185c33844bed0396386efab9e87328f4f2"
+    )
+    manifest = json.loads(
+        (result.backup_directory / "manifest.json").read_text(encoding="utf-8")
+    )
+    manifest["cache_path"] = "<cache>"
+    assert sha256_json(manifest) == (
+        "baa594f846f97195d5b3f0faad9095fd868bbe2ea32f16fe66e69df8a1963d72"
+    )
     assert result.created == 1
     assert (result.backup_directory / "cached_hero_builds.kv3").is_file()
     assert (result.backup_directory / "remotecache.vdf").is_file()
@@ -320,7 +274,7 @@ def test_install_creates_backup_and_restore_recovers_original(
     assert result.policy_ids == {(12, "default"): "policy/kelvin"}
     installed = read_cache(cache_path)
     assert installed["LastUsedBuilds"] == original["LastUsedBuilds"]
-    assert len(installed["Unpublished"]) == 1
+    assert len(unpublished(installed)) == 1
 
     restored_from = restore_latest(location, backup_root=state_root)
     assert restored_from == result.backup_directory
@@ -346,7 +300,7 @@ def test_install_rejects_incomplete_item_coverage(
         })
     )
     location = CacheLocation(146293212, cache_path, app_directory)
-    monkeypatch.setattr(cache_module, "deadlock_is_running", lambda: False)
+    set_deadlock_check(monkeypatch, lambda: False)
     guides = [guide()]
     manifest = snapshot_manifest()
 
@@ -361,142 +315,3 @@ def test_install_rejects_incomplete_item_coverage(
             backup_root=tmp_path / "state",
             snapshot_manifest=manifest,
         )
-
-
-def isolated_location(tmp_path: Path) -> tuple[CacheLocation, dict[str, object]]:
-    app_directory = tmp_path / "userdata/146293212/1422450"
-    cache_path = app_directory / "remote/cfg/cached_hero_builds.kv3"
-    cache_path.parent.mkdir(parents=True)
-    original: dict[str, object] = {
-        "LastUsedBuilds": {"hero_kelvin": 777},
-        "Favorites": [b"favorite"],
-        "Unpublished": [b"unrelated-private-build"],
-        "SavedLastUsed": [b"saved"],
-        "UnknownFutureField": {"nested": [1, b"opaque"]},
-    }
-    cache_path.write_bytes(encode_binary_v4(original))
-    return CacheLocation(146293212, cache_path, app_directory), original
-
-
-def install_complete(
-    location: CacheLocation,
-    backup_root: Path,
-) -> None:
-    install_guides(
-        location,
-        [complete_guide()],
-        persona="XMLJDX",
-        timestamp=100,
-        patch_title="Patch",
-        patch_published_at="2026-01-01T00:00:00Z",
-        backup_root=backup_root,
-        snapshot_manifest=snapshot_manifest(),
-        expected_hero_ids={12},
-    )
-
-
-def test_install_refuses_if_deadlock_starts_at_mutation_boundary(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    location, original = isolated_location(tmp_path)
-    states = iter((False, True))
-    monkeypatch.setattr(cache_module, "deadlock_is_running", lambda: next(states))
-
-    with pytest.raises(CacheError, match="started before replacement"):
-        install_complete(location, tmp_path / "state")
-
-    assert read_cache(location.cache_path) == original
-
-
-def test_install_restores_after_directory_fsync_failure(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    location, original = isolated_location(tmp_path)
-    monkeypatch.setattr(cache_module, "deadlock_is_running", lambda: False)
-    real_fsync_directory = cache_module._fsync_directory
-    target_fsync_calls = 0
-
-    def inject_failure(path: Path) -> None:
-        nonlocal target_fsync_calls
-        if path == location.cache_path.parent:
-            target_fsync_calls += 1
-        if path == location.cache_path.parent and target_fsync_calls == 1:
-            raise OSError("injected target-directory fsync failure")
-        real_fsync_directory(path)
-
-    monkeypatch.setattr(cache_module, "_fsync_directory", inject_failure)
-
-    with pytest.raises(CacheError, match="original cache was restored"):
-        install_complete(location, tmp_path / "state")
-
-    assert read_cache(location.cache_path) == original
-
-
-def test_out_of_scope_corruption_is_detected_and_restored(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    location, original = isolated_location(tmp_path)
-    monkeypatch.setattr(cache_module, "deadlock_is_running", lambda: False)
-    real_read_cache = cache_module.read_cache
-    calls = 0
-
-    def corrupt_candidate(path: Path) -> dict[str, object]:
-        nonlocal calls
-        calls += 1
-        root = real_read_cache(path)
-        if calls == 2:
-            root["Favorites"] = [b"corrupted"]
-        return root
-
-    monkeypatch.setattr(cache_module, "read_cache", corrupt_candidate)
-
-    with pytest.raises(CacheError, match="out-of-scope"):
-        install_complete(location, tmp_path / "state")
-
-    assert real_read_cache(location.cache_path) == original
-
-
-def test_all_hero_installation_refuses_missing_roster_member(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    location, original = isolated_location(tmp_path)
-    monkeypatch.setattr(cache_module, "deadlock_is_running", lambda: False)
-    guides = [complete_guide()]
-    manifest = snapshot_manifest()
-
-    with pytest.raises(CacheError, match="coverage mismatch"):
-        install_guides(
-            location,
-            guides,
-            persona="XMLJDX",
-            timestamp=100,
-            patch_title="Patch",
-            patch_published_at="2026-01-01T00:00:00Z",
-            backup_root=tmp_path / "state",
-            snapshot_manifest=manifest,
-            expected_hero_ids={12, 13},
-        )
-
-    assert read_cache(location.cache_path) == original
-    assert not (tmp_path / "state").exists()
-
-
-def test_double_failure_reports_recoverable_backup_path(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    location, _ = isolated_location(tmp_path)
-    states = iter((False, True))
-    monkeypatch.setattr(cache_module, "deadlock_is_running", lambda: next(states))
-    monkeypatch.setattr(
-        cache_module,
-        "_restore_cache_file",
-        lambda _source, _destination: (_ for _ in ()).throw(OSError("restore failed")),
-    )
-
-    with pytest.raises(CacheError, match=r"automatic restore failed.*backup is at"):
-        install_complete(location, tmp_path / "state")

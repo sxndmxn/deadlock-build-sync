@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+
+from .value_validation import integer
 
 _MECHANIC_TAG_PHRASES = {
     "melee": ("melee attack", "melee damage", "heavy melee", "light melee"),
@@ -31,14 +32,14 @@ _MECHANIC_TAG_WEIGHTS = {
 }
 
 
-def asset_mechanics_refs(asset: dict[str, Any]) -> tuple[str, ...]:
+def asset_mechanics_refs(asset: dict[str, object]) -> tuple[str, ...]:
     """Return stable source pointers without interpreting free-form mechanics prose.
 
     Returns:
         Asset field references suitable for a mechanical evidence claim.
 
     """
-    item_id = int(asset["id"])
+    item_id = integer(asset.get("id"))
     refs = [f"asset:item:{item_id}"]
     if asset.get("description"):
         refs.append(f"asset:item:{item_id}:description")
@@ -57,7 +58,7 @@ def _mechanic_tags(value: object) -> frozenset[str]:
 
 
 def hero_item_affinity_scores(
-    hero: dict[str, Any], assets: list[dict[str, Any]]
+    hero: dict[str, object], assets: list[dict[str, object]]
 ) -> dict[int, int]:
     """Score explicit item/kit mechanic intersections from current asset prose.
 

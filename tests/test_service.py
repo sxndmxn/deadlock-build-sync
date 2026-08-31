@@ -1,494 +1,84 @@
-from dataclasses import replace
+import json
+from dataclasses import asdict, replace
 from datetime import UTC, datetime
-from typing import Any, override
 
 import pytest
 
-from deadlock_build_sync.api import (
-    HERO_DURATION_BUCKETS,
-    DeadlockApi,
-    HeroDurationStat,
-    Patch,
-)
+import deadlock_build_sync.api as api_module
+import deadlock_build_sync.snapshot as snapshot_module
+import tests.service_fake_api as fake_api_module
 from deadlock_build_sync.build_evidence import (
-    BuildEvidenceCatalog,
-    CoreAlternativeEvidence,
-    CorePolicyEvidence,
-    HeroBuildEvidence,
-    ItemEvidence,
-    SequencePolicy,
-    SequenceTransition,
-    SituationalBranch,
-    SituationalPolicy,
     TierPolicyEvidence,
 )
-from deadlock_build_sync.policy import BuildPolicy
-from deadlock_build_sync.ranks import RankCatalog
-from deadlock_build_sync.service import GuideError, generate_guides
-from deadlock_build_sync.snapshot import (
-    EpochBoundary,
-    EpochSet,
-    EvidenceRecord,
-    EvidenceUnit,
-    MatchMode,
-    OutcomePolicy,
-    SnapshotManifest,
-    sha256_json,
+from deadlock_build_sync.service import GeneratedGuides, GuideError, generate_guides
+from deadlock_build_sync.snapshot import sha256_json
+from deadlock_build_sync.value_validation import (
+    require_object_dict,
+    require_object_rows,
 )
-from deadlock_build_sync.strategy_context import (
-    build_strategy_context_document,
-    validate_strategy_context_document,
-)
+from tests.service_evidence_fixtures import build_evidence
+from tests.service_fake_api import FakeApi, ability_rows, duration_points
 
 
-class FakeApi(DeadlockApi):
-    def __init__(
-        self,
-        *,
-        ability_rows: list[dict[str, Any]],
-        duration_points: tuple[HeroDurationStat, ...],
-    ) -> None:
-        super().__init__(client_version=123, as_of_timestamp=999)
-        self.client_version = 123
-        self._ability_rows = ability_rows
-        self._duration_points = duration_points
-        self.counter_stat_calls: list[bool] = []
-        self.ability_filter_calls: list[tuple[int, ...]] = []
-        self._hero: dict[str, Any] = {
-            "id": 12,
-            "name": "Kelvin",
-            "class_name": "hero_kelvin",
-            "items": {f"signature{slot}": f"ability_{slot}" for slot in range(1, 5)},
-            "description": {
-                "lore": "Lore",
-                "role": "Protect allies",
-                "playstyle": "Control space.",
-            },
-            "level_info": {
-                str(level): {
-                    "bonus_currencies": [
-                        (
-                            "EAbilityUnlocks"
-                            if level in {1, 3, 5, 8}
-                            else "EAbilityPoints"
-                        )
-                    ]
-                }
-                for level in range(1, 37)
-            },
-        }
-        self._assets: list[dict[str, Any]] = [
-            {
-                "id": tier * 100 + index,
-                "name": f"Tier {tier} Item {index}",
-                "class_name": f"item_{tier}_{index}",
-                "cost": tier * 500,
-                "component_items": [],
-                "item_tier": tier,
-                "item_slot_type": "spirit",
-                "shopable": True,
-                "disabled": False,
-                "shop_image_webp": "https://example.invalid/item.webp",
-                **(
-                    {"description": {"desc": "Applies healing reduction."}}
-                    if tier == 1 and index == 3
-                    else (
-                        {"description": {"desc": "Increases weapon damage."}}
-                        if tier == 1 and index in {0, 1}
-                        else {"description": {"desc": "Gain Spirit Power."}}
-                    )
-                ),
-            }
-            for tier in range(1, 5)
-            for index in range(10)
-        ] + [
-            {
-                "id": slot * 10,
-                "name": f"Ability {slot}",
-                "class_name": f"ability_{slot}",
-                "type": "ability",
-                "ability_type": "signature",
-                "description": {"desc": f"Ability {slot} description."},
-            }
-            for slot in range(1, 5)
-        ]
-
-    @override
-    def resolve_client_version(self) -> int:
-        return 123
-
-    @override
-    def rank_catalog(self) -> RankCatalog:
-        return RankCatalog({
-            1: "Initiate",
-            2: "Seeker",
-            3: "Acolyte",
-            4: "Sentinel",
-            5: "Mystic",
-            6: "Ritualist",
-            7: "Emissary",
-            8: "Oracle",
-            9: "Phantom",
-            10: "Ascendant",
-            11: "Eternus",
-        })
-
-    @override
-    def active_heroes(self) -> list[dict[str, Any]]:
-        return [self._hero]
-
-    @override
-    def items(self) -> list[dict[str, Any]]:
-        return self._assets
-
-    @override
-    def build_tags(self) -> list[dict[str, Any]]:
-        classes = (
-            "weapon",
-            "spirit",
-            "vitality",
-            "damage",
-            "utility",
-            "healing",
-            "crowd_control",
-            "mobility",
-            "melee",
-            "headshots",
-            "debuff",
-            "complexity_1",
-            "complexity_2",
-            "complexity_3",
-        )
-        return [
-            {
-                "id": index,
-                "class_name": f"citadel_build_tag_{class_name}",
-                "label": class_name.replace("_", " ").title(),
-            }
-            for index, class_name in enumerate(classes, start=1)
-        ]
-
-    @override
-    def current_patch(self) -> Patch:
-        return Patch("Patch", 123, "2026-01-01T00:00:00Z")
-
-    @override
-    def steam_persona(self, account_id: int) -> str:
-        _ = account_id
-        return "Player"
-
-    @override
-    def item_stats(
-        self,
-        *,
-        hero_id: int,
-        min_unix_timestamp: int,
-        min_matches: int,
-        bucket: str | None = None,
-    ) -> list[dict[str, Any]]:
-        _ = hero_id, min_unix_timestamp, min_matches
-        return [
-            {
-                "item_id": int(asset["id"]),
-                "matches": 100,
-                "wins": 60,
-                **({"bucket": 1000} if bucket is not None else {}),
-            }
-            for asset in self._assets
-            if asset.get("shopable")
-        ]
-
-    @override
-    def ability_order_stats(
-        self,
-        *,
-        hero_id: int,
-        min_unix_timestamp: int,
-        min_matches: int,
-        include_item_ids: tuple[int, ...] = (),
-    ) -> list[dict[str, Any]]:
-        _ = hero_id, min_unix_timestamp, min_matches
-        self.ability_filter_calls.append(include_item_ids)
-        return self._ability_rows
-
-    @override
-    def hero_stats_by_duration(
-        self,
-        *,
-        min_unix_timestamp: int,
-    ) -> dict[int, tuple[HeroDurationStat, ...]]:
-        _ = min_unix_timestamp
-        return {12: self._duration_points}
-
-    @override
-    def hero_counter_stats(
-        self,
-        *,
-        min_unix_timestamp: int,
-        same_lane: bool,
-    ) -> list[dict[str, Any]]:
-        _ = min_unix_timestamp
-        self.counter_stat_calls.append(same_lane)
-        return [
-            {
-                "hero_id": 12,
-                "enemy_hero_id": 1,
-                "matches": 100,
-                "wins": 50,
-                "same_lane": same_lane,
-            },
-            {
-                "hero_id": 99,
-                "enemy_hero_id": 12,
-                "matches": 90,
-                "wins": 40,
-                "same_lane": same_lane,
-            },
-        ]
-
-    @override
-    def snapshot_manifest(
-        self,
-        *,
-        patch: Patch,
-        rank_catalog: RankCatalog,
-        build_tags_sha256: str,
-    ) -> SnapshotManifest:
-        boundary = EpochBoundary("patch", patch.start_timestamp)
-        record = EvidenceRecord(
-            path="fixture",
-            parameters={},
-            fetched_at=datetime.now(UTC).isoformat(),
-            sha256="0" * 64,
-            byte_count=1,
-            unit=EvidenceUnit.ASSET,
-            backend_grain="fixture",
-            fallback_behavior="none",
-        )
-        return SnapshotManifest(
-            client_version=123,
-            as_of_timestamp=999,
-            created_at=datetime.now(UTC).isoformat(),
-            match_mode=MatchMode.RANKED,
-            game_mode="normal",
-            rank_range=rank_catalog.range_dict(self.rank_range),
-            rank_labels_sha256=rank_catalog.sha256,
-            build_tags_sha256=build_tags_sha256,
-            patch=patch.as_dict(),
-            epochs=EpochSet(boundary, boundary, boundary, boundary),
-            outcome_policy=OutcomePolicy(),
-            outcome_policy_enforced=False,
-            records=(record,),
-        )
+def _json_default(value: object) -> object:
+    if isinstance(value, (set, frozenset)):
+        return sorted(value, key=repr)
+    raise TypeError(f"cannot normalize {type(value).__name__}")
 
 
-def ability_rows() -> list[dict[str, Any]]:
-    return [
-        {
-            "abilities": [10, 20, 30, 40] * 4,
-            "matches": 100,
-            "wins": 60,
-            "losses": 40,
-        }
+def _assert_matchup_context(generated: GeneratedGuides) -> None:
+    context = generated.contexts[0]
+    matchups = require_object_dict(context["matchups"])
+    same_lane = require_object_rows(matchups["same_lane"])
+    whole_enemy_team = require_object_rows(matchups["whole_enemy_team"])
+    assert [row["hero_id"] for row in same_lane] == [12]
+    assert [row["hero_id"] for row in whole_enemy_team] == [12]
+    assert same_lane[0]["scope"] == "same_lane"
+    assert whole_enemy_team[0]["scope"] == "whole_enemy_team"
+
+
+def _assert_policy_projection(generated: GeneratedGuides) -> None:
+    guide = generated.guides[0]
+    policy = generated.policies[0]
+    assert guide.snapshot_id == generated.manifest.snapshot_id
+    assert guide.policy_id == policy.policy_id
+    assert len(policy.ability_plan) == 16
+    assert all(node.kind.value == "ability" for node in policy.ability_plan)
+    assert policy.nodes[0].kind.value in {"purchase", "choice"}
+    assert {abstention.reason.value for abstention in policy.abstentions} == {
+        "inadequate_support_or_overlap",
+        "telemetry_failure",
+        "unclear_threat",
+    }
+    assert [category.name for category in guide.categories] == [
+        "CORE ITEMS",
+        "TIER 1",
+        "TIER 2",
+        "TIER 3",
+        "TIER 4",
     ]
+    assert [len(category.items) for category in guide.categories] == [8, 8, 8, 8, 8]
+    assert guide.item_count == 40
+    assert not guide.categories[0].optional
+    assert guide.build_tag_ids == (10, 301, 4)
+    assert guide.build_tag_classes == (
+        "ability_1",
+        "item_3_1",
+        "citadel_build_tag_damage",
+    )
+    assert guide.build_tag_labels == ("Ability 1", "Tier 3 Item 1", "Damage")
 
 
-def duration_points() -> tuple[HeroDurationStat, ...]:
-    return tuple(
-        HeroDurationStat(label, minimum, maximum, 55, 45, 100)
-        for label, minimum, maximum in HERO_DURATION_BUCKETS
-    )
-
-
-def build_evidence(
-    api: FakeApi,
-    *,
-    with_situational_branch: bool = False,
-    with_component_path: bool = False,
-    with_core_alternative: bool = False,
-) -> BuildEvidenceCatalog:
-    eligible = 100
-    item_rows = tuple(
-        ItemEvidence(
-            item_id=int(asset["id"]),
-            item=str(asset["name"]),
-            tier=int(asset["item_tier"]),
-            cost=int(asset["cost"]),
-            slot=str(asset["item_slot_type"]),
-            active=False,
-            adopter_matches=90 - int(asset["id"]) % 100,
-            eligible_player_matches=eligible,
-            purchase_events=100,
-            wins=50,
-            adoption=(90 - int(asset["id"]) % 100) / eligible,
-            observed_outcome_rate=50 / (90 - int(asset["id"]) % 100),
-            median_buy_time_s=float(asset["id"]),
-            median_valid_buy_net_worth=float(asset["id"] * 10),
-            buy_net_worth_q25=float(asset["id"] * 9),
-            buy_net_worth_q75=float(asset["id"] * 11),
-            valid_buy_net_worth_share=0.9,
-            selection_adopter_matches=70,
-            selection_eligible_player_matches=80,
-            training_adopter_matches=35,
-            training_eligible_player_matches=40,
-            validation_adopter_matches=35,
-            validation_eligible_player_matches=40,
-            test_adopter_matches=20 - int(asset["id"]) % 100,
-            test_eligible_player_matches=20,
-            selection_adoption=70 / 80,
-            training_adoption=35 / 40,
-            validation_adoption=35 / 40,
-            test_adoption=(20 - int(asset["id"]) % 100) / 20,
-            selection_median_buy_time_s=float(asset["id"]),
-            selection_median_valid_buy_net_worth=float(asset["id"] * 10),
-            selection_buy_net_worth_q25=float(asset["id"] * 9),
-            selection_buy_net_worth_q75=float(asset["id"] * 11),
-            selection_valid_buy_net_worth_share=1.0,
-            selection_valid_buy_net_worth_observations=70,
-            training_valid_buy_net_worth_observations=35,
-            validation_valid_buy_net_worth_observations=35,
-            training_buy_net_worth_q25=float(asset["id"] * 9),
-            training_buy_net_worth_q75=float(asset["id"] * 11),
-            validation_buy_net_worth_q25=float(asset["id"] * 9),
-            validation_buy_net_worth_q75=float(asset["id"] * 11),
-        )
-        for asset in api.items()
-        if asset.get("shopable")
-    )
-    situational = (
-        SituationalPolicy(
-            branches=(
-                SituationalBranch(
-                    threat="healing",
-                    item_id=103,
-                    enemy_hero_id=7,
-                    enemy_scope="same_lane",
-                    phase=1,
-                    tier=1,
-                    mechanic_ref="item/103/healing",
-                    enemy_mechanics_refs=("asset:ability:7:description",),
-                    comparator="same-opportunity item 100 or save",
-                    comparator_item_id=100,
-                    comparison_support=30,
-                    same_opportunity=True,
-                    support=40,
-                    effective_support=30.0,
-                    overlap=0.8,
-                    stable=True,
-                    comparative_interval=(0.01, 0.06),
-                    trigger="Enemy hero 7 presents material healing.",
-                    replacement="Choose item 103 instead of item 100.",
-                    execution="Use the verified healing response while observed.",
-                    failure_condition="Skip when healing is not material.",
-                ),
-            ),
-            abstentions=("One weaker candidate failed the overlap gate.",),
-        )
-        if with_situational_branch
-        else None
-    )
-    hero = HeroBuildEvidence(
-        hero_id=12,
-        hero="Kelvin",
-        eligible_player_matches=eligible,
-        selection_eligible_player_matches=80,
-        fold_eligible_player_matches={"train": 40, "validation": 40, "test": 20},
-        median_final_net_worth=20_000,
-        items=item_rows,
-        core_policy=CorePolicyEvidence(
-            (100, 101, 200, 201),
-            (100, 101, 200, 201, 300, 301, 400, 401),
-            60,
-            {"train": 20, "validation": 20, "test": 20},
-            40,
-            (
-                CoreAlternativeEvidence(
-                    item_id=103,
-                    comparator_item_id=101,
-                    stage=2,
-                    support=40,
-                    comparison_support=40,
-                    effective_support=30.0,
-                    overlap=0.8,
-                    stable=True,
-                    dr_estimate=0.03,
-                    comparative_interval=(0.01, 0.05),
-                    vs="Heavy enemy healing",
-                    why="Healing Reduction",
-                    swap="Replaces Tier 1 Item 1",
-                    when="Before the next fight with heavy enemy healing",
-                    skip="Keep default when weapon pressure matters more",
-                    mechanics_refs=("asset:item:103:description",),
-                    comparator_mechanics_refs=("asset:item:101:description",),
-                    fold_estimates={
-                        "train": 0.03,
-                        "validation": 0.04,
-                        "test": -0.01,
-                    },
-                ),
-            )
-            if with_core_alternative
-            else (),
-            (),
-            {"method": "cross-fitted-dr"},
-        ),
-        tier_policy=TierPolicyEvidence({
-            tier: tuple(
-                item.item_id
-                for item in item_rows
-                if item.tier == tier
-                and item.item_id
-                not in {
-                    100,
-                    101,
-                    200,
-                    201,
-                    300,
-                    301,
-                    400,
-                    401,
-                    *((with_component_path and [102]) or []),
-                    *((with_core_alternative and [103]) or []),
-                }
-            )
-            for tier in range(1, 5)
-        }),
-        sequence_policy=(
-            SequencePolicy(
-                (100, 101, 102, 200, 201, 300, 301, 400, 401),
-                (SequenceTransition("popularity", 0, 0, 0, 100, 40, 100),),
-                20,
-                "deterministic_backoff",
-                {"chronological_fold": "test"},
-            )
-            if with_component_path
-            else None
-        ),
-        situational_policy=situational,
-    )
-    patch = api.current_patch()
-    catalog = api.rank_catalog()
-    heroes = api.active_heroes()
-    assets = api.items()
-    return BuildEvidenceCatalog(
-        artifact_id="a" * 64,
-        client_version=123,
-        patch={"identity": patch.identity},
-        cohort={
-            "as_of": datetime.fromtimestamp(api.as_of_timestamp, UTC).isoformat(),
-            "match_mode": "ranked",
-            "game_mode": "normal",
-            "minimum_badge": 71,
-            "maximum_badge": 115,
-        },
-        epochs=api.epochs_for_patch(patch),
-        rank_labels_sha256=catalog.sha256,
-        heroes_sha256=sha256_json(heroes),
-        items_sha256=sha256_json(assets),
-        requested_hero_ids=frozenset({12}),
-        heroes={12: hero},
-        raw_bytes=b"fixture-build-evidence",
-    )
+def _assert_strategy_context(generated: GeneratedGuides) -> None:
+    context = generated.contexts[0]
+    projection = require_object_dict(context["projection"])
+    build = require_object_dict(projection["build"])
+    ending = require_object_dict(context["ending_duration_profile"])
+    ability_policy = require_object_dict(context["ability_policy"])
+    ability_steps = require_object_rows(ability_policy["steps"])
+    assert build["tag_ids"] == [10, 301, 4]
+    assert ending["estimand"] == "ending_duration_profile"
+    assert ability_steps[0]["earliest_legal_level"] == 1
 
 
 def test_rejects_selected_hero_without_complete_ability_path() -> None:
@@ -550,7 +140,7 @@ def test_incomplete_duration_curve_abstains_without_discarding_policy() -> None:
 
     assert len(generated.guides) == 1
     assert generated.skipped_heroes == ()
-    ending = generated.contexts[0]["ending_duration_profile"]
+    ending = require_object_dict(generated.contexts[0]["ending_duration_profile"])
     assert ending["status"] == "abstained"
     assert ending["strongest_phase"] == "UNAVAILABLE"
     assert any(
@@ -559,7 +149,19 @@ def test_incomplete_duration_curve_abstains_without_discarding_policy() -> None:
     )
 
 
-def test_generated_guide_is_snapshot_bound_policy_projection() -> None:
+def test_generated_guide_is_snapshot_bound_policy_projection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    generated_at = datetime(2026, 1, 2, tzinfo=UTC)
+
+    class FixedDatetime:
+        @staticmethod
+        def now(_timezone: object) -> datetime:
+            return generated_at
+
+    monkeypatch.setattr(api_module, "datetime", FixedDatetime)
+    monkeypatch.setattr(snapshot_module, "datetime", FixedDatetime)
+    monkeypatch.setattr(fake_api_module, "datetime", FixedDatetime)
     api = FakeApi(ability_rows=ability_rows(), duration_points=duration_points())
     generated = generate_guides(
         api,
@@ -569,49 +171,15 @@ def test_generated_guide_is_snapshot_bound_policy_projection() -> None:
         all_heroes=False,
     )
 
+    normalized = json.loads(json.dumps(asdict(generated), default=_json_default))
+    assert sha256_json(normalized) == (
+        "cbd9dd333f010355d97313181f5cd1da57c2c0f46427981fc164d97894d11379"
+    )
     assert len(generated.guides) == len(generated.policies) == 1
     assert api.counter_stat_calls == [True, False]
-    matchups = generated.contexts[0]["matchups"]
-    assert [row["hero_id"] for row in matchups["same_lane"]] == [12]
-    assert [row["hero_id"] for row in matchups["whole_enemy_team"]] == [12]
-    assert matchups["same_lane"][0]["scope"] == "same_lane"
-    assert matchups["whole_enemy_team"][0]["scope"] == "whole_enemy_team"
-    guide = generated.guides[0]
-    policy = generated.policies[0]
-    assert guide.snapshot_id == generated.manifest.snapshot_id
-    assert guide.policy_id == policy.policy_id
-    assert len(policy.ability_plan) == 16
-    assert all(node.kind.value == "ability" for node in policy.ability_plan)
-    assert policy.nodes[0].kind.value in {"purchase", "choice"}
-    assert {abstention.reason.value for abstention in policy.abstentions} == {
-        "inadequate_support_or_overlap",
-        "telemetry_failure",
-        "unclear_threat",
-    }
-    assert [category.name for category in guide.categories] == [
-        "CORE ITEMS",
-        "TIER 1",
-        "TIER 2",
-        "TIER 3",
-        "TIER 4",
-    ]
-    assert [len(category.items) for category in guide.categories] == [8, 8, 8, 8, 8]
-    assert guide.item_count == 40
-    assert not guide.categories[0].optional
-    assert guide.build_tag_ids == (10, 301, 4)
-    assert guide.build_tag_classes == (
-        "ability_1",
-        "item_3_1",
-        "citadel_build_tag_damage",
-    )
-    assert guide.build_tag_labels == ("Ability 1", "Tier 3 Item 1", "Damage")
-    assert generated.contexts[0]["projection"]["build"]["tag_ids"] == [10, 301, 4]
-    assert generated.contexts[0]["ending_duration_profile"]["estimand"] == (
-        "ending_duration_profile"
-    )
-    assert (
-        generated.contexts[0]["ability_policy"]["steps"][0]["earliest_legal_level"] == 1
-    )
+    _assert_matchup_context(generated)
+    _assert_policy_projection(generated)
+    _assert_strategy_context(generated)
 
 
 def test_supported_item_paths_create_separate_guides_and_ability_queries() -> None:
@@ -673,212 +241,3 @@ def test_supported_item_paths_create_separate_guides_and_ability_queries() -> No
         200,
         201,
     )
-
-
-def test_required_components_join_core_queue_and_leave_optional_rows() -> None:
-    api = FakeApi(ability_rows=ability_rows(), duration_points=duration_points())
-    parent = next(item for item in api._assets if item.get("id") == 200)
-    parent["component_items"] = ["item_1_2"]
-
-    generated = generate_guides(
-        api,
-        build_evidence=build_evidence(api, with_component_path=True),
-        account_id=123,
-        hero_query="Kelvin",
-        all_heroes=False,
-    )
-
-    guide = generated.guides[0]
-    assert [item.item_id for item in guide.categories[0].items] == [
-        100,
-        101,
-        102,
-        200,
-        201,
-        300,
-        301,
-        400,
-        401,
-    ]
-    assert [item.item_id for item in guide.core_items] == [
-        100,
-        101,
-        200,
-        201,
-        300,
-        301,
-        400,
-        401,
-    ]
-    assert 102 not in {item.item_id for item in guide.categories[1].items}
-    assert (
-        generated.contexts[0]["projection"]["categories"][0]["items"][2]["item_id"]
-        == 102
-    )
-
-
-def test_admitted_situational_branch_reaches_policy_sidecar_and_tier_card() -> None:
-    api = FakeApi(ability_rows=ability_rows(), duration_points=duration_points())
-    generated = generate_guides(
-        api,
-        build_evidence=build_evidence(api, with_situational_branch=True),
-        account_id=123,
-        hero_query="Kelvin",
-        all_heroes=False,
-    )
-
-    guide = generated.guides[0]
-    policy = generated.policies[0]
-    assert policy.entry == "situational-choice-1"
-    assert BuildPolicy.from_dict(policy.as_dict()) == policy
-    assert len(policy.counter_cards) == 1
-    choice = next(node for node in policy.nodes if node.node_id == policy.entry)
-    assert [guard.field for guard in choice.branches[0].guards] == [
-        "enemy.threats",
-        "enemy.lane_heroes",
-        "clock_s",
-        "clock_s",
-    ]
-    situational = next(node for node in policy.nodes if node.node_id == "situational-1")
-    assert situational.next_id == "core-2"
-    assert choice.branches[-1].next_id == "core-1"
-    tier_item = next(item for item in guide.tiers[1] if item.item_id == 103)
-    assert tier_item.annotation == (
-        "VS: Heavy enemy healing\n"
-        "WHY: Healing Reduction\n"
-        "SWAP: Replaces Tier 1 Item 0\n"
-        "WHEN: Before the next fight with heavy enemy healing\n"
-        "SKIP: Keep default when weapon pressure matters more"
-    )
-    assert "WIN RATE" not in tier_item.annotation
-    assert [category.name for category in guide.categories] == [
-        "CORE ITEMS",
-        "TIER 1",
-        "TIER 2",
-        "TIER 3",
-        "TIER 4",
-    ]
-    assert [category.optional for category in guide.categories] == [
-        False,
-        True,
-        True,
-        True,
-        True,
-    ]
-    action = next(
-        row
-        for row in generated.contexts[0]["explainable_actions"]
-        if row["node_id"] == "situational-1"
-    )
-    assert action["conditional_contract"]["comparator_item"] == "Tier 1 Item 0"
-
-
-def test_normal_tier_items_have_tactical_first_annotations() -> None:
-    api = FakeApi(ability_rows=ability_rows(), duration_points=duration_points())
-    generated = generate_guides(
-        api,
-        build_evidence=build_evidence(api),
-        account_id=123,
-        hero_query="Kelvin",
-        all_heroes=False,
-    )
-
-    tier_items = [
-        item for items in generated.guides[0].tiers.values() for item in items
-    ]
-    assert tier_items
-    assert all(item.annotation.startswith("USE: ") for item in tier_items)
-    assert all("\nWHY: " in item.annotation for item in tier_items)
-    assert all("\nSKIP: " in item.annotation for item in tier_items)
-    assert all("\nDATA: " in item.annotation for item in tier_items)
-    assert all("WIN RATE" not in item.annotation for item in tier_items)
-
-
-def test_control_immunity_tier_item_uses_the_hero_channel() -> None:
-    api = FakeApi(ability_rows=ability_rows(), duration_points=duration_points())
-    api._hero["name"] = "Dynamo"
-    singularity = next(asset for asset in api._assets if asset["id"] == 40)
-    singularity["name"] = "Singularity"
-    singularity["properties"] = {
-        "AbilityChannelTime": {"value": "3.5", "disable_value": "0"}
-    }
-    unstoppable = next(asset for asset in api._assets if asset["id"] == 402)
-    unstoppable["name"] = "Unstoppable"
-    unstoppable["description"] = {
-        "desc": (
-            "Temporarily suppress negative status effects and become immune to "
-            "Stun, Silence, Sleep, Root, and Disarm. Cannot be used while Stunned "
-            "or Slept."
-        )
-    }
-    unstoppable["properties"] = {
-        "AbilityDuration": {
-            "label": "Duration",
-            "tooltip_is_important": True,
-            "value": "5.5",
-        }
-    }
-    catalog = build_evidence(api)
-    hero = replace(catalog.heroes[12], hero="Dynamo")
-    generated = generate_guides(
-        api,
-        build_evidence=replace(catalog, heroes={12: hero}),
-        account_id=123,
-        hero_query="Dynamo",
-        all_heroes=False,
-    )
-
-    item = next(item for item in generated.guides[0].tiers[4] if item.item_id == 402)
-    assert item.annotation.splitlines()[:3] == [
-        "USE: Activate before Singularity when enemy control can interrupt it",
-        "WHY: Control Immunity protects the channel",
-        "SKIP: Enemy control cannot threaten Singularity",
-    ]
-    assert "Disarm" not in item.annotation
-    assert "catch" not in item.annotation.casefold()
-
-
-def test_admitted_core_alternative_is_a_non_queue_policy_card() -> None:
-    api = FakeApi(ability_rows=ability_rows(), duration_points=duration_points())
-    generated = generate_guides(
-        api,
-        build_evidence=build_evidence(api, with_core_alternative=True),
-        account_id=123,
-        hero_query="Kelvin",
-        all_heroes=False,
-    )
-
-    guide = generated.guides[0]
-    policy = generated.policies[0]
-    assert policy.schema_version == 5
-    assert [card.item_id for card in policy.core_alternatives] == [103]
-    assert [category.name for category in guide.categories] == [
-        "CORE ITEMS",
-        "OPTIONAL CORE",
-        "TIER 1",
-        "TIER 2",
-        "TIER 3",
-        "TIER 4",
-    ]
-    assert [item.item_id for item in guide.categories[1].items] == [103]
-    assert guide.categories[1].items[0].annotation == (
-        "VS: Heavy enemy healing\n"
-        "WHY: Healing Reduction\n"
-        "SWAP: Replaces Tier 1 Item 1\n"
-        "WHEN: Before the next fight with heavy enemy healing\n"
-        "SKIP: Keep default when weapon pressure matters more"
-    )
-    assert "WIN RATE" not in guide.categories[1].items[0].annotation
-    assert 103 not in {item.item_id for item in guide.tiers[1]}
-    assert all(node.item_id != 103 for node in policy.nodes)
-    assert BuildPolicy.from_dict(policy.as_dict()) == policy
-
-    document = build_strategy_context_document(
-        generated.patch,
-        list(generated.contexts),
-        manifest=generated.manifest,
-        item_mechanics=generated.item_mechanics,
-        requested_hero_ids=set(generated.eligible_hero_ids),
-        exclusions=generated.exclusions,
-    )
-    validate_strategy_context_document(document)

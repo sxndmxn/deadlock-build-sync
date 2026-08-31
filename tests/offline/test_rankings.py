@@ -35,7 +35,7 @@ def test_experimental_path_respects_budget_slots_and_actives() -> None:
         )
         for item_id in range(1, 17)
     }
-    rows = [
+    rows: list[dict[str, object]] = [
         {
             "item_id": item_id,
             "tier": asset.tier,

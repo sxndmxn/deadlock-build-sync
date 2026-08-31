@@ -1,424 +1,68 @@
 from __future__ import annotations
 
-import hashlib
-import json
 from collections import Counter
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING
 
 from .artifacts import FingerprintLayers
-from .build_tags import FUNCTION_CLASSES
-from .mechanics import build_hero_mechanics, extract_asset_mechanics
+from .mechanics import build_hero_mechanics
 from .power_curve import summarize_ending_duration_profile
 from .purchase_guide import format_purchase_window
+from .value_validation import integer, object_rows
 
 if TYPE_CHECKING:
     from .api import HeroDurationStat, Patch
     from .mechanics import AbilityTimelineStep
     from .policy import BuildPolicy
-    from .purchase_guide import PurchaseGuide
+    from .purchase_guide import GuideItem, PurchaseGuide
     from .snapshot import SnapshotManifest
 
-CONTEXT_SCHEMA_VERSION = 15
-KIT_BASIS_SCHEMA_VERSION = 3
-NARRATIVE_BASIS_SCHEMA_VERSION = 10
-TIER_LABELS = {1: "I", 2: "II", 3: "III", 4: "IV"}
+from .strategy_context_validation import (
+    CONTEXT_SCHEMA_VERSION,
+    KIT_BASIS_SCHEMA_VERSION,
+    NARRATIVE_BASIS_SCHEMA_VERSION,
+    TIER_LABELS,
+    StrategyContextError,
+    build_item_mechanics_catalog,
+    calculate_context_sha256,
+    calculate_item_mechanics_sha256,
+    calculate_kit_basis_sha256,
+    calculate_narrative_basis_sha256,
+    calculate_source_context_sha256,
+    validate_strategy_context_document,
+)
 
-
-class StrategyContextError(ValueError):
-    """Raised when an exported strategy context is malformed or was edited."""
-
-
-def _validate_build_identity(entry: dict[str, Any], manifest: dict[str, Any]) -> None:
-    projection = entry.get("projection")
-    build = projection.get("build") if isinstance(projection, dict) else None
-    if not isinstance(build, dict):
-        raise StrategyContextError("strategy context has no build identity")
-    ids = build.get("tag_ids")
-    classes = build.get("tag_classes")
-    labels = build.get("tag_labels")
-    valid = (
-        isinstance(ids, list)
-        and len(ids) == 3
-        and all(isinstance(value, int) and value > 0 for value in ids)
-        and len(set(ids)) == 3
-        and isinstance(classes, list)
-        and len(classes) == 3
-        and isinstance(labels, list)
-        and len(labels) == 3
-    )
-    if not valid:
-        raise StrategyContextError("strategy context has invalid build tags")
-    if (
-        not all(isinstance(value, str) and value.strip() for value in classes[:2])
-        or classes[2] not in FUNCTION_CLASSES
-        or build.get("tag_catalog_sha256") != manifest.get("build_tags_sha256")
-        or not isinstance(build.get("archetype"), str)
-        or not build["archetype"].strip()
-    ):
-        raise StrategyContextError("strategy context has invalid build tags")
-
-
-def _canonical_hash(value: Any) -> str:
-    encoded = json.dumps(
-        value,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode()
-    return hashlib.sha256(encoded).hexdigest()
-
-
-def build_item_mechanics_catalog(
-    assets: list[dict[str, Any]],
-    item_ids: set[int],
-) -> dict[str, dict[str, Any]]:
-    """Return deterministic mechanics for the referenced item IDs.
-
-    Returns:
-        A catalog keyed by decimal item ID.
-
-    """
-    assets_by_id = {
-        int(asset["id"]): asset for asset in assets if isinstance(asset.get("id"), int)
-    }
-    return {
-        str(item_id): (
-            extract_asset_mechanics(assets_by_id[item_id])
-            if item_id in assets_by_id
-            else {}
-        )
-        for item_id in sorted(item_ids)
-    }
-
-
-def calculate_item_mechanics_sha256(
-    item_ids: list[int],
-    catalog: dict[str, dict[str, Any]],
-) -> str:
-    """Bind one hero to exactly its referenced mechanics records.
-
-    Returns:
-        A lowercase hexadecimal SHA-256 digest.
-
-    """
-    return _canonical_hash({
-        str(item_id): catalog[str(item_id)] for item_id in item_ids
-    })
-
-
-def _context_item_records(entry: dict[str, Any]) -> list[dict[str, Any]]:
-    records: list[dict[str, Any]] = []
-    core = entry.get("core")
-    if isinstance(core, dict) and isinstance(core.get("items"), list):
-        records.extend(item for item in core["items"] if isinstance(item, dict))
-        optional = core.get("optional_core_substitution_cards")
-        if isinstance(optional, list):
-            records.extend(item for item in optional if isinstance(item, dict))
-    tiers = entry.get("tiers")
-    if isinstance(tiers, dict):
-        for tier_items in tiers.values():
-            if isinstance(tier_items, list):
-                records.extend(item for item in tier_items if isinstance(item, dict))
-    return records
-
-
-def _validated_item_mechanics(value: Any) -> dict[str, dict[str, Any]]:
-    if not isinstance(value, dict) or any(
-        not isinstance(key, str)
-        or not key.isdecimal()
-        or int(key) <= 0
-        or str(int(key)) != key
-        or not isinstance(record, dict)
-        for key, record in value.items()
-    ):
-        raise StrategyContextError("strategy context has invalid item mechanics")
-    return value
-
-
-def _validate_hero_item_mechanics(
-    entry: dict[str, Any],
-    catalog: dict[str, dict[str, Any]],
-    hero_name: str,
-) -> set[int]:
-    item_ids = entry.get("item_mechanics_ids")
-    if not isinstance(item_ids, list):
-        raise StrategyContextError(
-            f"strategy context has invalid item mechanics references for {hero_name}"
-        )
-    normalized_ids = [item_id for item_id in item_ids if isinstance(item_id, int)]
-    if (
-        len(normalized_ids) != len(item_ids)
-        or any(item_id <= 0 for item_id in normalized_ids)
-        or normalized_ids != sorted(set(normalized_ids))
-    ):
-        raise StrategyContextError(
-            f"strategy context has invalid item mechanics references for {hero_name}"
-        )
-    item_records = _context_item_records(entry)
-    if any(
-        not isinstance(item.get("item_id"), int) or "mechanics" in item
-        for item in item_records
-    ) or normalized_ids != sorted({int(item["item_id"]) for item in item_records}):
-        raise StrategyContextError(
-            f"strategy context item mechanics references differ for {hero_name}"
-        )
-    if "hero_description" in entry or "abilities" in entry:
-        raise StrategyContextError(
-            f"strategy context contains duplicate hero mechanics for {hero_name}"
-        )
-    try:
-        item_digest = calculate_item_mechanics_sha256(normalized_ids, catalog)
-    except KeyError as error:
-        raise StrategyContextError(
-            f"strategy context is missing item mechanics for {hero_name}"
-        ) from error
-    if entry.get("item_mechanics_sha256") != item_digest:
-        raise StrategyContextError(
-            f"strategy context item mechanics were edited for {hero_name}; "
-            "run export-context again"
-        )
-    return set(normalized_ids)
-
-
-def _narrative_basis(context: dict[str, Any]) -> dict[str, Any]:
-    core = context.get("core")
-    core_items = core.get("items") if isinstance(core, dict) else None
-    policy = context.get("policy")
-    policy_summary = None
-    if isinstance(policy, dict):
-        policy_summary = {
-            key: policy.get(key)
-            for key in (
-                "variant",
-                "invariant_kit_id",
-                "strategic_role",
-                "abstentions",
-            )
-        }
-    return {
-        "schema_version": NARRATIVE_BASIS_SCHEMA_VERSION,
-        "hero_id": context.get("hero_id"),
-        "path_id": context.get("path_id"),
-        "path_label": context.get("path_label"),
-        "hero": context.get("hero"),
-        "hero_mechanics": context.get("hero_mechanics"),
-        "ability_policy": context.get("ability_policy"),
-        "core_items": [
-            {
-                "item_id": item.get("item_id"),
-                "item": item.get("item"),
-                "tier": item.get("tier"),
-            }
-            for item in core_items or []
-            if isinstance(item, dict)
-        ],
-        "policy_summary": policy_summary,
-    }
-
-
-def _kit_basis(context: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "schema_version": KIT_BASIS_SCHEMA_VERSION,
-        "hero_id": context.get("hero_id"),
-        "path_id": context.get("path_id"),
-        "hero": context.get("hero"),
-        "hero_mechanics": context.get("hero_mechanics"),
-        "ability_policy": context.get("ability_policy"),
-    }
-
-
-def calculate_kit_basis_sha256(context: dict[str, Any]) -> str:
-    """Return the ability-only tactical fingerprint for one hero context.
-
-    Returns:
-        A lowercase hexadecimal SHA-256 digest.
-
-    """
-    return _canonical_hash(_kit_basis(context))
-
-
-def calculate_narrative_basis_sha256(context: dict[str, Any]) -> str:
-    """Return the tactical-basis fingerprint for one hero context.
-
-    Returns:
-        A lowercase hexadecimal SHA-256 digest.
-
-    """
-    return _canonical_hash(_narrative_basis(context))
-
-
-def calculate_context_sha256(context: dict[str, Any]) -> str:
-    """Return the full fingerprint for one hero context.
-
-    Returns:
-        A lowercase hexadecimal SHA-256 digest.
-
-    """
-    payload = dict(context)
-    payload.pop("context_sha256", None)
-    return _canonical_hash(payload)
-
-
-def calculate_source_context_sha256(document: dict[str, Any]) -> str:
-    """Return the fingerprint for a complete exported context document.
-
-    Returns:
-        A lowercase hexadecimal SHA-256 digest.
-
-    """
-    payload = dict(document)
-    payload.pop("source_context_sha256", None)
-    return _canonical_hash(payload)
-
-
-type _StrategyContextHeader = tuple[
-    dict[str, Any],
-    list[Any],
-    dict[str, dict[str, Any]],
-    list[int],
-    list[dict[str, Any]],
+__all__ = [
+    "CONTEXT_SCHEMA_VERSION",
+    "KIT_BASIS_SCHEMA_VERSION",
+    "NARRATIVE_BASIS_SCHEMA_VERSION",
+    "StrategyContextError",
+    "build_hero_strategy_context",
+    "build_item_mechanics_catalog",
+    "build_strategy_context_document",
+    "calculate_context_sha256",
+    "calculate_item_mechanics_sha256",
+    "calculate_kit_basis_sha256",
+    "calculate_narrative_basis_sha256",
+    "calculate_source_context_sha256",
+    "validate_strategy_context_document",
 ]
-
-
-def _strategy_context_header(document: dict[str, Any]) -> _StrategyContextHeader:
-    manifest = document.get("snapshot_manifest")
-    if not isinstance(manifest, dict) or not isinstance(
-        manifest.get("snapshot_id"), str
-    ):
-        raise StrategyContextError("strategy context is missing its snapshot manifest")
-    heroes = document.get("heroes")
-    if not isinstance(heroes, list):
-        raise StrategyContextError("strategy context is missing its heroes array")
-    item_mechanics = _validated_item_mechanics(document.get("item_mechanics"))
-    requested = document.get("requested_hero_ids")
-    exclusions = document.get("exclusions")
-    if not isinstance(requested, list) or not all(
-        isinstance(hero_id, int) for hero_id in requested
-    ):
-        raise StrategyContextError("strategy context has invalid requested heroes")
-    if not isinstance(exclusions, list) or not all(
-        isinstance(exclusion, dict)
-        and isinstance(exclusion.get("hero_id"), int)
-        and isinstance(exclusion.get("reason"), str)
-        and bool(exclusion["reason"].strip())
-        for exclusion in exclusions
-    ):
-        raise StrategyContextError("strategy context has invalid exclusions")
-    return manifest, heroes, item_mechanics, requested, exclusions
-
-
-def _context_build_key(entry: object) -> tuple[int, str]:
-    if not isinstance(entry, dict):
-        raise StrategyContextError("strategy context contains an invalid hero")
-    hero = cast("dict[str, Any]", entry)
-    hero_id = hero.get("hero_id")
-    path_id = hero.get("path_id")
-    if not isinstance(hero_id, int) or not isinstance(path_id, str) or not path_id:
-        raise StrategyContextError("strategy context contains an invalid hero")
-    return hero_id, path_id
-
-
-def _validate_context_hero(
-    entry: dict[str, Any],
-    manifest: dict[str, Any],
-    item_mechanics: dict[str, dict[str, Any]],
-) -> set[int]:
-    hero_name = str(entry.get("hero") or entry["hero_id"])
-    if entry.get("snapshot_id") != manifest["snapshot_id"]:
-        raise StrategyContextError(f"strategy context snapshot differs for {hero_name}")
-    referenced = _validate_hero_item_mechanics(entry, item_mechanics, hero_name)
-    _validate_build_identity(entry, manifest)
-    if entry.get("kit_basis_sha256") != calculate_kit_basis_sha256(entry):
-        raise StrategyContextError(
-            f"strategy context kit basis was edited for {hero_name}; "
-            "run export-context again"
-        )
-    if entry.get("narrative_basis_sha256") != calculate_narrative_basis_sha256(entry):
-        raise StrategyContextError(
-            f"strategy context tactical basis was edited for {hero_name}; "
-            "run export-context again"
-        )
-    if entry.get("context_sha256") != calculate_context_sha256(entry):
-        raise StrategyContextError(
-            f"strategy context was edited for {hero_name}; run export-context again"
-        )
-    return referenced
-
-
-def _validate_context_coverage(
-    seen_hero_ids: set[int],
-    referenced_item_ids: set[int],
-    requested: list[int],
-    exclusions: list[dict[str, Any]],
-    item_mechanics: dict[str, dict[str, Any]],
-) -> None:
-    excluded_ids = {int(exclusion["hero_id"]) for exclusion in exclusions}
-    if seen_hero_ids | excluded_ids != set(requested):
-        raise StrategyContextError("strategy context does not cover requested heroes")
-    if seen_hero_ids & excluded_ids:
-        raise StrategyContextError("strategy context both includes and excludes a hero")
-    if set(item_mechanics) != {str(item_id) for item_id in referenced_item_ids}:
-        raise StrategyContextError("strategy context has unreferenced item mechanics")
-
-
-def validate_strategy_context_document(document: dict[str, Any]) -> None:
-    """Verify schema, coverage, snapshot, hero, and full export fingerprints.
-
-    Raises:
-        StrategyContextError: If the document is malformed, stale, or edited.
-
-    """
-    if document.get("schema_version") != CONTEXT_SCHEMA_VERSION:
-        raise StrategyContextError("unsupported strategy-context schema")
-    manifest, heroes, item_mechanics, requested, exclusions = _strategy_context_header(
-        document
-    )
-
-    seen_build_keys: set[tuple[int, str]] = set()
-    seen_hero_ids: set[int] = set()
-    referenced_item_ids: set[int] = set()
-    for entry in heroes:
-        build_key = _context_build_key(entry)
-        hero_id = build_key[0]
-        if build_key in seen_build_keys:
-            raise StrategyContextError(
-                f"strategy context contains duplicate build {hero_id}/{build_key[1]}"
-            )
-        seen_build_keys.add(build_key)
-        seen_hero_ids.add(hero_id)
-        referenced_item_ids.update(
-            _validate_context_hero(entry, manifest, item_mechanics)
-        )
-    _validate_context_coverage(
-        seen_hero_ids,
-        referenced_item_ids,
-        requested,
-        exclusions,
-        item_mechanics,
-    )
-    if document.get("source_context_sha256") != calculate_source_context_sha256(
-        document
-    ):
-        raise StrategyContextError(
-            "strategy context document was edited; run export-context again"
-        )
 
 
 def _ability_policy(
     guide: PurchaseGuide,
-    kit: dict[str, Any],
+    kit: dict[str, object],
     timeline: tuple[AbilityTimelineStep, ...],
-) -> dict[str, Any] | None:
+) -> dict[str, object] | None:
     path = guide.ability_path
     if path is None or len(timeline) != len(path.ability_ids):
         return None
-    abilities = kit.get("abilities")
-    if not isinstance(abilities, list):
+    abilities = object_rows(kit.get("abilities"))
+    if abilities is None:
         return None
     names = {
-        int(ability["id"]): str(ability.get("name") or ability["id"])
+        integer(ability["id"]): str(ability.get("name") or ability["id"])
         for ability in abilities
-        if isinstance(ability, dict) and isinstance(ability.get("id"), int)
+        if isinstance(ability.get("id"), int)
     }
     purchases: Counter[int] = Counter()
     steps = []
@@ -454,20 +98,20 @@ def _ability_policy(
 
 def _explainable_actions(
     policy: BuildPolicy | None,
-    assets_by_id: dict[int, dict[str, Any]],
-) -> list[dict[str, Any]]:
+    assets_by_id: dict[int, dict[str, object]],
+) -> list[dict[str, object]]:
     if policy is None:
         return []
     claims = {claim.claim_id: claim for claim in policy.evidence}
     counter_cards = {card.evidence_ref: card for card in policy.counter_cards}
-    result: list[dict[str, Any]] = []
+    result: list[dict[str, object]] = []
     for node in policy.nodes:
         if node.evidence_ref is None:
             continue
         claim = claims[node.evidence_ref]
         action_id = node.item_id if node.item_id is not None else node.ability_id
         asset = assets_by_id.get(action_id or -1, {})
-        action: dict[str, Any] = {
+        action: dict[str, object] = {
             "node_id": node.node_id,
             "kind": node.kind.value,
             "action_id": action_id,
@@ -494,7 +138,7 @@ def _explainable_actions(
 def _ending_duration_evidence(
     points: tuple[HeroDurationStat, ...],
     distribution: dict[str, dict[str, float | int]] | None,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     profile = summarize_ending_duration_profile(points, distribution)
     if profile is not None:
         return profile
@@ -519,19 +163,79 @@ def _ending_duration_evidence(
     }
 
 
+def _tier_item_context(
+    item: GuideItem,
+    rank: int,
+    assets_by_id: dict[int, dict[str, object]],
+) -> dict[str, object]:
+    asset = assets_by_id.get(item.item_id, {})
+    context: dict[str, object] = {
+        "item_id": item.item_id,
+        "item": item.name,
+        "slot": str(asset.get("item_slot_type") or "unknown").upper(),
+        "is_active_item": bool(asset.get("is_active_item")),
+        "claim_class": "descriptive",
+    }
+    if item.eligible_player_matches:
+        context.update({
+            "rank_by_first_ownership_net_worth": rank,
+            "purchase_adoption": item.purchase_adoption,
+            "adopter_matches": item.adopter_matches,
+            "eligible_player_matches": item.eligible_player_matches,
+            "purchase_events": item.purchase_events,
+            "observed_outcome_rate_among_adopters": item.observed_outcome_rate,
+            "median_first_ownership_time_s": item.median_buy_time_s,
+            "median_valid_first_ownership_net_worth": item.median_valid_buy_net_worth,
+            "first_ownership_net_worth_q25": item.buy_net_worth_q25,
+            "first_ownership_net_worth_q75": item.buy_net_worth_q75,
+            "valid_first_ownership_net_worth_share": item.valid_buy_net_worth_share,
+            "unit": "eligible_player_appearance",
+        })
+    else:
+        context.update({
+            "rank_by_purchase_event_volume": rank,
+            "observed_purchase_event_net_worth_ranges": [
+                {
+                    "label": format_purchase_window(window),
+                    "observed_outcome_rate": window.observed_outcome_rate,
+                    "purchase_event_observations": window.matches,
+                }
+                for window in item.windows
+            ],
+            "relative_purchase_event_volume": item.relative_purchase_event_volume,
+            "observed_outcome_rate": item.observed_outcome_rate,
+            "purchase_event_observations": item.purchase_event_observations,
+            "unit": "purchase_event",
+        })
+    return context
+
+
+def _strategy_tiers(
+    guide: PurchaseGuide,
+    assets_by_id: dict[int, dict[str, object]],
+) -> dict[str, list[dict[str, object]]]:
+    tiers: dict[str, list[dict[str, object]]] = {}
+    for tier in range(1, 5):
+        tiers[TIER_LABELS[tier]] = [
+            _tier_item_context(item, rank, assets_by_id)
+            for rank, item in enumerate(guide.tiers.get(tier, ()), start=1)
+        ]
+    return tiers
+
+
 def build_hero_strategy_context(
     guide: PurchaseGuide,
-    hero: dict[str, Any],
-    assets: list[dict[str, Any]],
+    hero: dict[str, object],
+    assets: list[dict[str, object]],
     duration_curve: tuple[HeroDurationStat, ...] = (),
     duration_distribution: dict[str, dict[str, float | int]] | None = None,
     *,
-    kit: dict[str, Any] | None = None,
+    kit: dict[str, object] | None = None,
     ability_timeline: tuple[AbilityTimelineStep, ...] = (),
     policy: BuildPolicy | None = None,
     projection: PurchaseGuide | None = None,
-    matchups: dict[str, list[dict[str, Any]]] | None = None,
-) -> dict[str, Any]:
+    matchups: dict[str, list[dict[str, object]]] | None = None,
+) -> dict[str, object]:
     """Build one closed evidence packet for explanation and review.
 
     Returns:
@@ -540,53 +244,11 @@ def build_hero_strategy_context(
     """
     kit = kit or build_hero_mechanics(hero, assets)
     assets_by_id = {
-        int(asset["id"]): asset for asset in assets if isinstance(asset.get("id"), int)
+        integer(asset["id"]): asset
+        for asset in assets
+        if isinstance(asset.get("id"), int)
     }
-    tiers: dict[str, list[dict[str, Any]]] = {}
-    for tier in range(1, 5):
-        tier_items = []
-        for rank, item in enumerate(guide.tiers.get(tier, ()), start=1):
-            asset = assets_by_id.get(item.item_id, {})
-            item_context = {
-                "item_id": item.item_id,
-                "item": item.name,
-                "slot": str(asset.get("item_slot_type") or "unknown").upper(),
-                "is_active_item": bool(asset.get("is_active_item")),
-                "claim_class": "descriptive",
-            }
-            if item.eligible_player_matches:
-                item_context.update({
-                    "rank_by_first_ownership_net_worth": rank,
-                    "purchase_adoption": item.purchase_adoption,
-                    "adopter_matches": item.adopter_matches,
-                    "eligible_player_matches": item.eligible_player_matches,
-                    "purchase_events": item.purchase_events,
-                    "observed_outcome_rate_among_adopters": item.observed_outcome_rate,
-                    "median_first_ownership_time_s": item.median_buy_time_s,
-                    "median_valid_first_ownership_net_worth": item.median_valid_buy_net_worth,
-                    "first_ownership_net_worth_q25": item.buy_net_worth_q25,
-                    "first_ownership_net_worth_q75": item.buy_net_worth_q75,
-                    "valid_first_ownership_net_worth_share": item.valid_buy_net_worth_share,
-                    "unit": "eligible_player_appearance",
-                })
-            else:
-                item_context.update({
-                    "rank_by_purchase_event_volume": rank,
-                    "observed_purchase_event_net_worth_ranges": [
-                        {
-                            "label": format_purchase_window(window),
-                            "observed_outcome_rate": window.observed_outcome_rate,
-                            "purchase_event_observations": window.matches,
-                        }
-                        for window in item.windows
-                    ],
-                    "relative_purchase_event_volume": item.relative_purchase_event_volume,
-                    "observed_outcome_rate": item.observed_outcome_rate,
-                    "purchase_event_observations": item.purchase_event_observations,
-                    "unit": "purchase_event",
-                })
-            tier_items.append(item_context)
-        tiers[TIER_LABELS[tier]] = tier_items
+    tiers = _strategy_tiers(guide, assets_by_id)
 
     ending_profile = _ending_duration_evidence(duration_curve, duration_distribution)
     explainable_actions = _explainable_actions(policy, assets_by_id)
@@ -638,7 +300,7 @@ def build_hero_strategy_context(
             "OPTIONAL CORE and TIER 1–4 never enter the automatic Queue."
         ),
     }
-    context: dict[str, Any] = {
+    context: dict[str, object] = {
         "hero_id": guide.hero_id,
         "hero": guide.hero_name,
         "path_id": guide.path_id,
@@ -727,13 +389,13 @@ def build_hero_strategy_context(
 
 def build_strategy_context_document(
     patch: Patch,
-    contexts: list[dict[str, Any]],
+    contexts: list[dict[str, object]],
     *,
     manifest: SnapshotManifest,
-    item_mechanics: dict[str, dict[str, Any]],
+    item_mechanics: dict[str, dict[str, object]],
     requested_hero_ids: set[int],
     exclusions: tuple[tuple[int, str], ...] = (),
-) -> dict[str, Any]:
+) -> dict[str, object]:
     """Build a complete, snapshot-bound multi-hero context artifact.
 
     Returns:

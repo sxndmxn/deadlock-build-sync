@@ -5,7 +5,6 @@ import json
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 
 API_BASE_URL = "https://api.deadlock-api.com"
 DUCKLAKE_URL = "ducklake:https://s3-cache.deadlock-api.com/fast/db_snapshot.ducklake"
@@ -36,7 +35,7 @@ class Cohort:
         if self.since >= self.resolved_as_of():
             raise ValueError("cohort start must precede as-of timestamp")
 
-    def as_dict(self) -> dict[str, Any]:
+    def as_dict(self) -> dict[str, object]:
         result = asdict(self)
         result["since"] = self.since.isoformat()
         result["as_of"] = self.resolved_as_of().isoformat()
@@ -71,7 +70,7 @@ class RunPaths:
         return paths
 
 
-def canonical_json(value: Any) -> bytes:
+def canonical_json(value: object) -> bytes:
     return json.dumps(
         value,
         sort_keys=True,
@@ -81,7 +80,7 @@ def canonical_json(value: Any) -> bytes:
     ).encode()
 
 
-def sha256_json(value: Any) -> str:
+def sha256_json(value: object) -> str:
     return hashlib.sha256(canonical_json(value)).hexdigest()
 
 

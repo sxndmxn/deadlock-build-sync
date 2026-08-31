@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 
 from .snapshot import sha256_json
+from .value_validation import integer
 
 if TYPE_CHECKING:
     from .purchase_guide import GuideItem
@@ -62,7 +63,7 @@ class BuildTagCatalog:
     sha256: str
 
     @classmethod
-    def from_assets(cls, values: list[dict[str, Any]]) -> BuildTagCatalog:
+    def from_assets(cls, values: list[dict[str, object]]) -> BuildTagCatalog:
         tags: list[BuildTag] = []
         for value in values:
             class_name = value.get("class_name")
@@ -101,16 +102,6 @@ class BuildTagCatalog:
         except StopIteration as error:
             raise BuildTagError(f"missing build tag {class_name}") from error
 
-    def as_list(self) -> list[dict[str, str | int]]:
-        return [
-            {
-                "class_name": tag.class_name,
-                "label": tag.label,
-                "id": tag.tag_id,
-            }
-            for tag in sorted(self.tags, key=lambda tag: tag.class_name)
-        ]
-
 
 @dataclass(frozen=True)
 class BuildTagSelection:
@@ -120,7 +111,7 @@ class BuildTagSelection:
     archetype: str
 
 
-def _asset_text(value: Any) -> str:
+def _asset_text(value: object) -> str:
     if isinstance(value, dict):
         return " ".join(f"{key} {_asset_text(nested)}" for key, nested in value.items())
     if isinstance(value, list):
@@ -130,7 +121,7 @@ def _asset_text(value: Any) -> str:
     return ""
 
 
-def _function_class(asset: dict[str, Any]) -> str:
+def _function_class(asset: dict[str, object]) -> str:
     text = _asset_text(asset).casefold()
     rules = (
         (
@@ -201,7 +192,7 @@ def _core_icon_item(core_items: tuple[GuideItem, ...]) -> GuideItem:
     )
 
 
-def _asset_identity(asset: dict[str, Any], *, kind: str) -> tuple[str, str]:
+def _asset_identity(asset: dict[str, object], *, kind: str) -> tuple[str, str]:
     class_name = asset.get("class_name")
     label = asset.get("name")
     if (
@@ -216,7 +207,7 @@ def _asset_identity(asset: dict[str, Any], *, kind: str) -> tuple[str, str]:
 
 def _core_taxonomy(
     core_item_ids: tuple[int, ...],
-    assets_by_id: dict[int, dict[str, Any]],
+    assets_by_id: dict[int, dict[str, object]],
 ) -> tuple[str, str]:
     axis_cost = dict.fromkeys(AXIS_CLASSES, 0)
     function_cost = dict.fromkeys(FUNCTION_CLASSES, 0)
@@ -227,7 +218,7 @@ def _core_taxonomy(
     }
     for item_id in core_item_ids:
         asset = assets_by_id[item_id]
-        cost = int(asset.get("cost") or 0)
+        cost = integer(asset.get("cost"), default=0)
         axis = slot_class.get(str(asset.get("item_slot_type") or "").casefold())
         if axis is not None:
             axis_cost[axis] += cost
@@ -249,7 +240,7 @@ def _core_taxonomy(
 def select_build_tags(
     ability_path_ids: tuple[int, ...],
     core_items: tuple[GuideItem, ...],
-    assets: list[dict[str, Any]],
+    assets: list[dict[str, object]],
     catalog: BuildTagCatalog,
 ) -> BuildTagSelection:
     """Select the first-maxed ability, best CORE item, and build function icons.
@@ -262,7 +253,9 @@ def select_build_tags(
 
     """
     by_id = {
-        int(asset["id"]): asset for asset in assets if isinstance(asset.get("id"), int)
+        cast("int", asset["id"]): asset
+        for asset in assets
+        if isinstance(asset.get("id"), int)
     }
     core_item_ids = tuple(item.item_id for item in core_items)
     if not core_item_ids or any(item_id not in by_id for item_id in core_item_ids):

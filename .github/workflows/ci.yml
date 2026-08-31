@@ -20,7 +20,7 @@ jobs:
         uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
           enable-cache: true
-          python-version: "3.12"
+          python-version: "3.13"
 
       - name: Verify lockfile
         run: uv lock --check
@@ -37,8 +37,23 @@ jobs:
       - name: Type-check
         run: uv run ty check
 
-      - name: Test
-        run: uv run pytest
+      - name: Check cognitive complexity
+        run: uv run complexipy
+
+      - name: Test with branch coverage
+        run: uv run coverage run -m pytest -W error
+
+      - name: Write coverage report
+        run: uv run coverage json
+
+      - name: Enforce numeric quality limits
+        run: uv run tools/quality_gate.py
+
+      - name: Find dead code
+        run: uv run vulture
+
+      - name: Find repeated code
+        run: uv run pylint --disable=all --enable=duplicate-code src scripts
 
       - name: Verify dependencies
         run: uv pip check

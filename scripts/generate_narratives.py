@@ -6,7 +6,6 @@ import json
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 
 from deadlock_build_sync.artifacts import atomic_write_json
 from deadlock_build_sync.narratives import (
@@ -18,6 +17,12 @@ from deadlock_build_sync.narratives import (
 from deadlock_build_sync.strategy_context import (
     StrategyContextError,
     validate_strategy_context_document,
+)
+from deadlock_build_sync.value_validation import (
+    integer,
+    object_dict,
+    object_list,
+    object_rows,
 )
 
 type BuildKey = tuple[int, str]
@@ -45,24 +50,24 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _load_object(path: Path) -> dict[str, Any]:
+def _load_object(path: Path) -> dict[str, object]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
         raise GenerationError(f"could not read {path}: {error}") from error
-    if not isinstance(value, dict):
+    document = object_dict(value)
+    if document is None:
         raise GenerationError(f"{path} did not contain a JSON object")
-    return value
+    return document
 
 
 def _selected_heroes(
-    document: dict[str, Any],
+    document: dict[str, object],
     selectors: list[str] | None,
-) -> list[dict[str, Any]]:
-    heroes = document.get("heroes")
-    if not isinstance(heroes, list) or not all(
-        isinstance(hero, dict) for hero in heroes
-    ):
+) -> list[dict[str, object]]:
+    raw_heroes = object_list(document.get("heroes"))
+    heroes = object_rows(document.get("heroes"))
+    if raw_heroes is None or heroes is None or len(heroes) != len(raw_heroes):
         raise GenerationError("strategy context is missing its heroes array")
     if not selectors:
         return heroes
@@ -89,7 +94,7 @@ def _selected_heroes(
     return selected
 
 
-def _build_key(entry: dict[str, Any]) -> BuildKey | None:
+def _build_key(entry: dict[str, object]) -> BuildKey | None:
     hero_id = entry.get("hero_id")
     path_id = entry.get("path_id")
     if not isinstance(hero_id, int) or not isinstance(path_id, str) or not path_id:
@@ -97,23 +102,21 @@ def _build_key(entry: dict[str, Any]) -> BuildKey | None:
     return hero_id, path_id
 
 
-def _existing_entries(path: Path) -> dict[BuildKey, dict[str, Any]]:
+def _existing_entries(path: Path) -> dict[BuildKey, dict[str, object]]:
     if not path.is_file():
         return {}
-    heroes = _load_object(path).get("heroes")
-    if not isinstance(heroes, list):
+    heroes = object_rows(_load_object(path).get("heroes"))
+    if heroes is None:
         return {}
-    entries: dict[BuildKey, dict[str, Any]] = {}
+    entries: dict[BuildKey, dict[str, object]] = {}
     for entry in heroes:
-        if not isinstance(entry, dict):
-            continue
         key = _build_key(entry)
         if key is not None:
             entries[key] = entry
     return entries
 
 
-def deterministic_narrative(hero: dict[str, Any]) -> dict[str, Any]:
+def deterministic_narrative(hero: dict[str, object]) -> dict[str, object]:
     """Create one exact-identity build description entry.
 
     Returns:
@@ -138,7 +141,7 @@ def deterministic_narrative(hero: dict[str, Any]) -> dict[str, Any]:
     except NarrativeError as error:
         raise GenerationError(str(error)) from error
     return {
-        "hero_id": int(hero["hero_id"]),
+        "hero_id": integer(hero["hero_id"]),
         "path_id": str(hero["path_id"]),
         "hero": str(hero.get("hero") or hero["hero_id"]),
         "snapshot_id": str(hero["snapshot_id"]),
@@ -151,16 +154,16 @@ def deterministic_narrative(hero: dict[str, Any]) -> dict[str, Any]:
 
 
 def validated_reusable_entries(
-    existing: dict[BuildKey, dict[str, Any]],
-    source_heroes: dict[BuildKey, dict[str, Any]],
-) -> dict[BuildKey, dict[str, Any]]:
+    existing: dict[BuildKey, dict[str, object]],
+    source_heroes: dict[BuildKey, dict[str, object]],
+) -> dict[BuildKey, dict[str, object]]:
     """Return entries that equal the current deterministic result.
 
     Returns:
         Reusable entries keyed by hero and path.
 
     """
-    reusable: dict[BuildKey, dict[str, Any]] = {}
+    reusable: dict[BuildKey, dict[str, object]] = {}
     for build_key, entry in existing.items():
         hero = source_heroes.get(build_key)
         if hero is None:
@@ -175,18 +178,19 @@ def validated_reusable_entries(
 
 
 def _artifact_document(
-    source: dict[str, Any],
-    generated: dict[BuildKey, dict[str, Any]],
+    source: dict[str, object],
+    generated: dict[BuildKey, dict[str, object]],
     *,
     requested_hero_ids: set[int],
-) -> dict[str, Any]:
-    manifest = source["snapshot_manifest"]
-    source_exclusions = source.get("exclusions")
+) -> dict[str, object]:
+    manifest = object_dict(source.get("snapshot_manifest"))
+    if manifest is None:
+        raise GenerationError("strategy context has no snapshot manifest")
+    source_exclusions = object_rows(source.get("exclusions")) or []
     exclusions = [
         exclusion
-        for exclusion in source_exclusions or []
-        if isinstance(exclusion, dict)
-        and exclusion.get("hero_id") in requested_hero_ids
+        for exclusion in source_exclusions
+        if exclusion.get("hero_id") in requested_hero_ids
     ]
     return {
         "schema_version": SCHEMA_VERSION,
@@ -212,32 +216,33 @@ def _artifact_document(
 
 
 def generate_document(
-    source: dict[str, Any],
-    selected: list[dict[str, Any]],
-    existing: dict[BuildKey, dict[str, Any]],
+    source: dict[str, object],
+    selected: list[dict[str, object]],
+    existing: dict[BuildKey, dict[str, object]],
     *,
     include_all_exclusions: bool,
     force: bool,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     """Create a complete deterministic description artifact.
 
     Returns:
         The validated artifact document.
 
     """
-    requested_hero_ids = {int(hero["hero_id"]) for hero in selected}
+    requested_hero_ids = {integer(hero["hero_id"]) for hero in selected}
     if include_all_exclusions:
+        exclusions = object_rows(source.get("exclusions")) or []
         requested_hero_ids.update(
-            int(exclusion["hero_id"])
-            for exclusion in source.get("exclusions") or []
-            if isinstance(exclusion, dict) and isinstance(exclusion.get("hero_id"), int)
+            integer(exclusion["hero_id"])
+            for exclusion in exclusions
+            if isinstance(exclusion.get("hero_id"), int)
         )
     source_heroes = {
-        (int(hero["hero_id"]), str(hero["path_id"])): hero for hero in selected
+        (integer(hero["hero_id"]), str(hero["path_id"])): hero for hero in selected
     }
     generated = {} if force else validated_reusable_entries(existing, source_heroes)
     for index, hero in enumerate(selected, start=1):
-        build_key = int(hero["hero_id"]), str(hero["path_id"])
+        build_key = integer(hero["hero_id"]), str(hero["path_id"])
         action = "reuse" if build_key in generated else "write"
         if build_key not in generated:
             generated[build_key] = deterministic_narrative(hero)
@@ -270,11 +275,14 @@ def main(argv: list[str] | None = None) -> int:
             force=args.force,
         )
         atomic_write_json(args.output, document)
-        print(f"Wrote {len(document['heroes'])} description(s): {args.output}")
-        return 0
+        heroes = object_list(document.get("heroes"))
+        if heroes is None:
+            raise GenerationError("generated artifact has no heroes array")
+        print(f"Wrote {len(heroes)} description(s): {args.output}")
     except GenerationError as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
+    return 0
 
 
 if __name__ == "__main__":

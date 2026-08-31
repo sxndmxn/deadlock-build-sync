@@ -1,5 +1,3 @@
-from typing import Any
-
 import pytest
 
 from deadlock_build_sync.api import HERO_DURATION_BUCKETS, ApiError, DeadlockApi
@@ -19,9 +17,9 @@ def test_all_analytics_queries_use_the_same_rank_range(
         match_mode=MatchMode.UNRANKED,
         as_of_timestamp=999,
     )
-    calls: list[tuple[str, dict[str, Any]]] = []
+    calls: list[tuple[str, dict[str, object]]] = []
 
-    def record(path: str, params: dict[str, Any] | None = None) -> list[object]:
+    def record(path: str, params: dict[str, object] | None = None) -> list[object]:
         calls.append((path, params or {}))
         return []
 
@@ -59,9 +57,9 @@ def test_resolves_one_available_version_and_pins_every_asset_request(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     api = DeadlockApi(client_version=20)
-    calls: list[tuple[str, dict[str, Any]]] = []
+    calls: list[tuple[str, dict[str, object]]] = []
 
-    def fixture(path: str, params: dict[str, Any] | None = None) -> list[Any]:
+    def fixture(path: str, params: dict[str, object] | None = None) -> list[object]:
         calls.append((path, params or {}))
         if path.endswith("client-versions"):
             return [10, 20, 30]
@@ -99,7 +97,7 @@ def test_normal_ruleset_rejects_street_brawl_assets(
 ) -> None:
     api = DeadlockApi(client_version=20)
 
-    def fixture(path: str, _params: dict[str, Any] | None = None) -> list[Any]:
+    def fixture(path: str, _params: dict[str, object] | None = None) -> list[object]:
         if path.endswith("client-versions"):
             return [20]
         return [

@@ -3,5 +3,9 @@
 dist/
 __pycache__/
 .pytest_cache/
+.coverage
+coverage.json
+.complexipy_cache/
+mutants/
 *.py[cod]
 generated/

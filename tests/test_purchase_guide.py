@@ -215,9 +215,9 @@ def test_adaptive_increment_and_central_buyer_distribution_ignore_outcome_peaks(
 
 
 def test_guide_keeps_missing_timing_sorts_all_items_by_event_volume() -> None:
-    assets = []
-    overall = []
-    buckets = []
+    assets: list[dict[str, object]] = []
+    overall: list[dict[str, object]] = []
+    buckets: list[dict[str, object]] = []
     for index in range(10):
         item_id = 1000 + index
         assets.append({

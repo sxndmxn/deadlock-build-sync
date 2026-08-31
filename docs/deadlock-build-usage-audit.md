@@ -536,7 +536,7 @@ The generated category summaries currently have a median length of about 253 byt
 Recommended fixed descriptions:
 
 - CORE ITEMS: “AUTO QUEUE • Default path, buy left→right.”
-- TIER 1–4: “Excluded from Queue • Choose deliberately.”
+- TIER 1–4: no category note.
 
 If a trustworthy hero-specific condition becomes available, use a second compact clause. Do not dump all item names into the header.
 

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from deadlock_build_sync.http_client import JsonHttpClient, JsonHttpError
+from deadlock_build_sync.value_validation import integer, object_list, object_rows
 
 from .config import API_BASE_URL, Cohort, RunPaths, sha256_json
 
@@ -27,14 +28,14 @@ class ApiClient:
     def close(self) -> None:
         self._http.close()
 
-    def get(self, path: str, params: dict[str, Any] | None = None) -> Any:
+    def get(self, path: str, params: dict[str, object] | None = None) -> object:
         try:
             return self._http.get_json(path, params).data
         except JsonHttpError as error:
             raise ApiError(str(error)) from error
 
 
-def write_json(path: Path, value: Any) -> None:
+def write_json(path: Path, value: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False, default=str)
@@ -43,21 +44,47 @@ def write_json(path: Path, value: Any) -> None:
     )
 
 
-def read_json(path: Path) -> Any:
+def read_json(path: Path) -> object:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def capture_sources(paths: RunPaths) -> dict[str, Any]:
+def _latest_client_version(value: object) -> int:
+    versions = object_list(value)
+    if versions is None:
+        raise ApiError("client-version response was not a list")
+    valid = sorted(version for version in versions if isinstance(version, int))
+    if not valid:
+        raise ApiError("client-version response contained no numeric version")
+    return valid[-1]
+
+
+def _active_hero(row: dict[str, object]) -> bool:
+    return (
+        isinstance(row.get("id"), int)
+        and not row.get("disabled")
+        and not row.get("in_development")
+        and str(row.get("game_mode") or "normal").casefold() == "normal"
+    )
+
+
+def _shop_item(row: dict[str, object]) -> bool:
+    tier = row.get("item_tier")
+    return (
+        isinstance(row.get("id"), int)
+        and row.get("type") == "upgrade"
+        and bool(row.get("shopable"))
+        and not row.get("disabled")
+        and isinstance(tier, int)
+        and 1 <= tier <= 4
+    )
+
+
+def capture_sources(paths: RunPaths) -> dict[str, object]:
     client = ApiClient()
     try:
         versions = client.get("/v1/assets/client-versions")
-        valid_versions = sorted(
-            version for version in versions if isinstance(version, int)
-        )
-        if not valid_versions:
-            raise ApiError("client-version response contained no numeric version")
-        client_version = valid_versions[-1]
-        params = {"client_version": client_version}
+        client_version = _latest_client_version(versions)
+        params: dict[str, object] = {"client_version": client_version}
         heroes = client.get("/v1/assets/heroes", {**params, "only_active": True})
         items = client.get("/v1/assets/items", params)
         ranks = client.get("/v1/assets/ranks", params)
@@ -66,33 +93,19 @@ def capture_sources(paths: RunPaths) -> dict[str, Any]:
     finally:
         client.close()
 
+    hero_rows = object_rows(heroes)
+    item_rows = object_rows(items)
+    if hero_rows is None or item_rows is None:
+        raise ApiError("asset response was not an array of objects")
     active_heroes = sorted(
-        (
-            hero
-            for hero in heroes
-            if isinstance(hero, dict)
-            and isinstance(hero.get("id"), int)
-            and not hero.get("disabled", False)
-            and not hero.get("in_development", False)
-            and str(hero.get("game_mode") or "normal").casefold() == "normal"
-        ),
-        key=lambda row: int(row["id"]),
+        (hero for hero in hero_rows if _active_hero(hero)),
+        key=lambda row: integer(row["id"]),
     )
     shop_items = sorted(
-        (
-            item
-            for item in items
-            if isinstance(item, dict)
-            and isinstance(item.get("id"), int)
-            and item.get("type") == "upgrade"
-            and item.get("shopable")
-            and not item.get("disabled", False)
-            and isinstance(item.get("item_tier"), int)
-            and 1 <= int(item["item_tier"]) <= 4
-        ),
-        key=lambda row: int(row["id"]),
+        (item for item in item_rows if _shop_item(item)),
+        key=lambda row: integer(row["id"]),
     )
-    payloads = {
+    payloads: dict[str, object] = {
         "client_versions.json": versions,
         "heroes.json": active_heroes,
         "items-all.json": items,
@@ -111,7 +124,7 @@ def capture_sources(paths: RunPaths) -> dict[str, Any]:
     }
 
 
-def _analytics_params(cohort: Cohort, hero_id: int) -> dict[str, Any]:
+def _analytics_params(cohort: Cohort, hero_id: int) -> dict[str, object]:
     return {
         "game_mode": "normal",
         "match_mode": "ranked",
@@ -124,14 +137,16 @@ def _analytics_params(cohort: Cohort, hero_id: int) -> dict[str, Any]:
     }
 
 
-def capture_api_audit(paths: RunPaths, cohort: Cohort) -> dict[str, Any]:
-    heroes = read_json(paths.raw / "heroes.json")
+def capture_api_audit(paths: RunPaths, cohort: Cohort) -> dict[str, object]:
+    heroes = object_rows(read_json(paths.raw / "heroes.json"))
+    if not heroes:
+        raise ApiError("hero asset file has no objects")
     client = ApiClient()
-    failures: list[dict[str, Any]] = []
+    failures: list[dict[str, object]] = []
     calls = 0
     try:
         for index, hero in enumerate(heroes, start=1):
-            hero_id = int(hero["id"])
+            hero_id = integer(hero["id"])
             params = _analytics_params(cohort, hero_id)
             requests = (
                 ("item-stats", "/v1/analytics/item-stats", params),
@@ -163,7 +178,7 @@ def capture_api_audit(paths: RunPaths, cohort: Cohort) -> dict[str, Any]:
             ("45-50m", 2700, 2999),
             ("50m-plus", 3000, 6999),
         )
-        base = _analytics_params(cohort, int(heroes[0]["id"]))
+        base = _analytics_params(cohort, integer(heroes[0]["id"]))
         base.pop("hero_id")
         for label, minimum, maximum in duration_buckets:
             target = paths.api / f"hero-duration-{label}.json"

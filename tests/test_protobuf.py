@@ -4,6 +4,7 @@ from dataclasses import replace
 import pytest
 
 from deadlock_build_sync.ability_order import AbilityPath
+from deadlock_build_sync.offline.config import sha256_json
 from deadlock_build_sync.presentation import (
     MAX_BUILD_NAME_CHARACTERS,
     BuildPresentation,
@@ -11,6 +12,7 @@ from deadlock_build_sync.presentation import (
 )
 from deadlock_build_sync.protobuf import (
     MANAGED_MARKER,
+    describe_guide,
     encode_hero_build,
     extract_hero_build,
     hero_build_metadata,
@@ -18,6 +20,18 @@ from deadlock_build_sync.protobuf import (
     wrap_hero_build,
 )
 from deadlock_build_sync.purchase_guide import GuideItem, PurchaseGuide, PurchaseWindow
+
+
+def _byte_fields(payload: bytes, number: int) -> list[bytes]:
+    return [
+        field.value
+        for field in parse_fields(payload)
+        if field.number == number and isinstance(field.value, bytes)
+    ]
+
+
+def _byte_field(payload: bytes, number: int) -> bytes:
+    return _byte_fields(payload, number)[0]
 
 
 def sample_guide() -> PurchaseGuide:
@@ -113,6 +127,23 @@ def test_build_wrapper_and_metadata_round_trip() -> None:
     assert "Emissary I–Eternus V" in (metadata.description or "")
     assert "Ranked" in (metadata.description or "")
     assert metadata.publish_timestamp is None
+
+
+def test_describe_guide_includes_presentation_and_ability_data() -> None:
+    guide = ability_guide()
+    details = describe_guide(guide, presentation=presentation(guide))
+
+    assert details["hero_id"] == 12
+    assert details["presentation"] == {
+        "name": "XMLJDX | Spirit Damage | Test Patch / 0101–0101",
+        "tag_ids": [1, 2, 3],
+        "description": presentation(guide).description,
+    }
+    assert details["ability_path"] is not None
+    assert sha256_json(details) == (
+        "2867dbf9abc88cb3fb421426435707aa1cca4c5f885c8493511defc9e309019d"
+    )
+    assert describe_guide(sample_guide())["ability_path"] is None
 
 
 def test_build_name_truncates_a_long_deadlock_patch_title() -> None:
@@ -238,34 +269,13 @@ def test_encodes_native_ability_order_and_descriptions() -> None:
     metadata = hero_build_metadata(build)
     assert "Core profile: ability damage and uptime." in (metadata.description or "")
 
-    details = next(
-        field.value
-        for field in parse_fields(build)
-        if field.number == 10 and isinstance(field.value, bytes)
-    )
-    details_fields = list(parse_fields(details))
-    first_category = next(
-        field.value
-        for field in details_fields
-        if field.number == 1 and isinstance(field.value, bytes)
-    )
-    category_description = next(
-        field.value.decode()
-        for field in parse_fields(first_category)
-        if field.number == 3 and isinstance(field.value, bytes)
-    )
+    details = _byte_field(build, 10)
+    first_category = _byte_field(details, 1)
+    category_description = _byte_field(first_category, 3).decode()
     assert category_description == "Leading options: Test Item."
 
-    ability_order = next(
-        field.value
-        for field in details_fields
-        if field.number == 2 and isinstance(field.value, bytes)
-    )
-    changes = [
-        field.value
-        for field in parse_fields(ability_order)
-        if field.number == 1 and isinstance(field.value, bytes)
-    ]
+    ability_order = _byte_field(details, 2)
+    changes = _byte_fields(ability_order, 1)
     assert len(changes) == 16
 
     first = {field.number: field.value for field in parse_fields(changes[0])}

@@ -36,6 +36,35 @@ class _Leaf:
     diagnostics: tuple[dict[str, object], ...]
 
 
+@dataclass(frozen=True)
+class _SplitData:
+    identities: list[PlayerIdentity]
+    item_ids: tuple[int, ...]
+    fold_rows: dict[str, list[int]]
+    final: np.ndarray
+    early: np.ndarray
+    model: KMeans
+    train_labels: np.ndarray
+
+
+@dataclass(frozen=True)
+class _Assignments:
+    confidence: np.ndarray
+    labels: np.ndarray
+    admitted_rows: list[int]
+    identities: list[PlayerIdentity]
+    labels_admitted: np.ndarray
+    fold_counts: dict[int, dict[str, int]]
+
+
+@dataclass(frozen=True)
+class _SplitEvidence:
+    gain: float
+    distinct: tuple[int, ...]
+    validation_metrics: tuple[tuple[float, float], ...]
+    test_metrics: tuple[tuple[float, float], ...] | None
+
+
 def _item_universe(
     inventories: dict[PlayerIdentity, tuple[int, ...]],
     members: frozenset[PlayerIdentity],
@@ -146,12 +175,12 @@ def _early_metrics(
     )
 
 
-def _attempt_split(
+def _fit_split(
     inventories: dict[PlayerIdentity, tuple[int, ...]],
     early_inventories: dict[PlayerIdentity, tuple[int, ...]],
     folds_by_match: dict[int, str],
     members: frozenset[PlayerIdentity],
-) -> tuple[_Leaf, _Leaf] | None:
+) -> _SplitData | None:
     identities = sorted(members)
     training_members = frozenset(
         identity for identity in members if folds_by_match[identity[0]] == "train"
@@ -170,30 +199,38 @@ def _attempt_split(
     final = _matrix(inventories, identities, item_ids)
     early = _matrix(early_inventories, identities, item_ids)
     train_rows = fold_rows["train"]
-    validation_rows = fold_rows["validation"]
-    test_rows = fold_rows["test"]
-    if (
-        any(
-            len(fold_rows[fold]) < MINIMUM_PATH_SUPPORT * 2
-            for fold in ("train", "validation")
-        )
-        or len(np.unique(final[train_rows], axis=0)) < 2
-    ):
+    too_small = any(
+        len(fold_rows[fold]) < MINIMUM_PATH_SUPPORT * 2
+        for fold in ("train", "validation")
+    )
+    if too_small or len(np.unique(final[train_rows], axis=0)) < 2:
         return None
     model = KMeans(n_clusters=2, n_init=20, random_state=0)
     model.fit(final[train_rows])
     train_labels = model.predict(final[train_rows])
     if len(np.unique(train_labels)) < 2:
         return None
+    return _SplitData(
+        identities,
+        item_ids,
+        fold_rows,
+        final,
+        early,
+        model,
+        train_labels,
+    )
 
-    assignment_model = LogisticRegression(
+
+def _assign_split(data: _SplitData, folds_by_match: dict[int, str]) -> _Assignments:
+    train_rows = data.fold_rows["train"]
+    model = LogisticRegression(
         C=1.0,
         max_iter=2_000,
         random_state=0,
         solver="liblinear",
     )
-    assignment_model.fit(final[train_rows], train_labels)
-    probabilities = assignment_model.predict_proba(final)
+    model.fit(data.final[train_rows], data.train_labels)
+    probabilities = model.predict_proba(data.final)
     confidence = probabilities.max(axis=1)
     labels = probabilities.argmax(axis=1)
     admitted_rows = [
@@ -201,80 +238,120 @@ def _attempt_split(
         for index, probability in enumerate(confidence)
         if probability >= MINIMUM_ASSIGNMENT_CONFIDENCE
     ]
-    admitted_identities = [identities[index] for index in admitted_rows]
+    identities = [data.identities[index] for index in admitted_rows]
     admitted_labels = labels[admitted_rows]
-    counts = _fold_counts(admitted_identities, admitted_labels, folds_by_match)
-    gain = _validation_gain(
-        final[train_rows],
-        final[validation_rows],
-        model.cluster_centers_,
+    counts = _fold_counts(identities, admitted_labels, folds_by_match)
+    return _Assignments(
+        confidence,
+        labels,
+        admitted_rows,
+        identities,
+        admitted_labels,
+        counts,
     )
-    distinct = _distinct_items(model.cluster_centers_, item_ids)
+
+
+def _split_evidence(
+    data: _SplitData, assignments: _Assignments
+) -> _SplitEvidence | None:
+    train_rows = data.fold_rows["train"]
+    validation_rows = data.fold_rows["validation"]
+    gain = _validation_gain(
+        data.final[train_rows],
+        data.final[validation_rows],
+        data.model.cluster_centers_,
+    )
+    distinct = _distinct_items(data.model.cluster_centers_, data.item_ids)
     if (
-        not _has_fold_support(counts)
+        not _has_fold_support(assignments.fold_counts)
         or gain < MINIMUM_VALIDATION_GAIN
         or len(distinct) < MINIMUM_DISTINCT_ITEMS
     ):
         return None
-
-    confident_validation_rows = [
+    confident_validation = [
         row
         for row in validation_rows
-        if confidence[row] >= MINIMUM_ASSIGNMENT_CONFIDENCE
+        if assignments.confidence[row] >= MINIMUM_ASSIGNMENT_CONFIDENCE
     ]
     validation_metrics = _early_metrics(
-        early[train_rows],
-        train_labels,
-        early[confident_validation_rows],
-        labels[confident_validation_rows],
+        data.early[train_rows],
+        data.train_labels,
+        data.early[confident_validation],
+        assignments.labels[confident_validation],
     )
-    if validation_metrics is None or any(
+    if validation_metrics is None:
+        return None
+    weak = any(
         precision < MINIMUM_VALIDATION_PRECISION or recall < MINIMUM_VALIDATION_RECALL
         for precision, recall in validation_metrics
-    ):
+    )
+    if weak:
         return None
-    confident_test_rows = [
-        row for row in test_rows if confidence[row] >= MINIMUM_ASSIGNMENT_CONFIDENCE
+    confident_test = [
+        row
+        for row in data.fold_rows["test"]
+        if assignments.confidence[row] >= MINIMUM_ASSIGNMENT_CONFIDENCE
     ]
     test_metrics = _early_metrics(
-        early[train_rows],
-        train_labels,
-        early[confident_test_rows],
-        labels[confident_test_rows],
+        data.early[train_rows],
+        data.train_labels,
+        data.early[confident_test],
+        assignments.labels[confident_test],
     )
+    return _SplitEvidence(gain, distinct, validation_metrics, test_metrics)
 
+
+def _metric(
+    metrics: tuple[tuple[float, float], ...] | None,
+    label: int,
+    index: int,
+) -> float | None:
+    return metrics[label][index] if metrics is not None else None
+
+
+def _split_children(
+    data: _SplitData,
+    assignments: _Assignments,
+    evidence: _SplitEvidence,
+) -> tuple[_Leaf, _Leaf]:
     children: list[_Leaf] = []
     for label in (0, 1):
         child_ids = frozenset(
             identity
             for identity, assigned in zip(
-                admitted_identities, admitted_labels, strict=True
+                assignments.identities, assignments.labels_admitted, strict=True
             )
             if int(assigned) == label
         )
-        children.append(
-            _Leaf(
-                child_ids,
-                (
-                    {
-                        "validation_distortion_gain": gain,
-                        "assignment_confidence_floor": MINIMUM_ASSIGNMENT_CONFIDENCE,
-                        "fold_support": counts[label],
-                        "validation_precision": validation_metrics[label][0],
-                        "validation_recall": validation_metrics[label][1],
-                        "test_precision": (
-                            test_metrics[label][0] if test_metrics is not None else None
-                        ),
-                        "test_recall": (
-                            test_metrics[label][1] if test_metrics is not None else None
-                        ),
-                        "distinct_item_ids": list(distinct),
-                        "abstained_matches": len(identities) - len(admitted_rows),
-                    },
-                ),
-            )
-        )
+        diagnostics: dict[str, object] = {
+            "validation_distortion_gain": evidence.gain,
+            "assignment_confidence_floor": MINIMUM_ASSIGNMENT_CONFIDENCE,
+            "fold_support": assignments.fold_counts[label],
+            "validation_precision": evidence.validation_metrics[label][0],
+            "validation_recall": evidence.validation_metrics[label][1],
+            "test_precision": _metric(evidence.test_metrics, label, 0),
+            "test_recall": _metric(evidence.test_metrics, label, 1),
+            "distinct_item_ids": list(evidence.distinct),
+            "abstained_matches": len(data.identities) - len(assignments.admitted_rows),
+        }
+        children.append(_Leaf(child_ids, (diagnostics,)))
     return children[0], children[1]
+
+
+def _attempt_split(
+    inventories: dict[PlayerIdentity, tuple[int, ...]],
+    early_inventories: dict[PlayerIdentity, tuple[int, ...]],
+    folds_by_match: dict[int, str],
+    members: frozenset[PlayerIdentity],
+) -> tuple[_Leaf, _Leaf] | None:
+    data = _fit_split(inventories, early_inventories, folds_by_match, members)
+    if data is None:
+        return None
+    assignments = _assign_split(data, folds_by_match)
+    evidence = _split_evidence(data, assignments)
+    if evidence is None:
+        return None
+    return _split_children(data, assignments, evidence)
 
 
 def _split_recursively(

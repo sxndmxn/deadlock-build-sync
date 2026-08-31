@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import Any
 
 from .snapshot import sha256_json
 
@@ -62,7 +61,7 @@ class RankCatalog:
     labels: dict[int, str]
 
     @classmethod
-    def from_assets(cls, rows: list[dict[str, Any]]) -> RankCatalog:
+    def from_assets(cls, rows: list[dict[str, object]]) -> RankCatalog:
         labels: dict[int, str] = {}
         for row in rows:
             tier = row.get("tier")

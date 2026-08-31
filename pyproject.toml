@@ -61,18 +61,24 @@ deadlock-build-sync = "deadlock_build_sync.cli:main"
 
 [dependency-groups]
 dev = [
+  "complexipy>=5,<7",
+  "coverage>=7.13,<8",
   "duckdb==1.5.5",
   "joblib>=1.5,<1.6",
   "matplotlib>=3.10,<3.11",
+  "mutmut>=3,<4",
   "numpy>=2.3,<2.4",
   "polars>=1.33,<1.34",
   "pyarrow>=21,<22",
   "pytest>=8.3",
+  "pylint>=3,<5",
   "pytz>=2025.2",
+  "radon>=6,<7",
   "ruff>=0.16.0",
   "scikit-learn>=1.7,<1.8",
   "scipy>=1.16,<1.17",
   "ty>=0.0.64",
+  "vulture>=2,<3",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -86,6 +92,123 @@ addopts = "-q"
 norecursedirs = ["tests/evals"]
 pythonpath = ["."]
 testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = [
+  "deadlock_build_sync",
+  "scripts",
+]
+
+[tool.coverage.json]
+output = "coverage.json"
+pretty_print = true
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+skip_empty = true
+
+[tool.complexipy]
+check-script = false
+max-complexity-allowed = 21
+no-ignore = true
+paths = [
+  "scripts",
+  "src",
+  "tests",
+  "tools",
+]
+quiet = false
+
+[tool.mutmut]
+also_copy = ["docs", "tools"]
+only_mutate = [
+  "src/deadlock_build_sync/cache.py",
+  "src/deadlock_build_sync/cache_discovery.py",
+  "src/deadlock_build_sync/cache_install.py",
+  "src/deadlock_build_sync/cache_projection.py",
+  "src/deadlock_build_sync/cache_storage.py",
+  "src/deadlock_build_sync/cache_types.py",
+  "src/deadlock_build_sync/kv3_binary.py",
+  "src/deadlock_build_sync/protobuf.py",
+]
+pytest_add_cli_args = [
+  "-W",
+  "error",
+  "-k",
+  "not test_stage_trace_covers_presentation_and_protobuf_with_safe_facts and not test_trace_summary_renders_tree_and_per_function_time",
+]
+pytest_add_cli_args_test_selection = ["tests"]
+source_paths = [
+  "scripts",
+  "src/deadlock_build_sync",
+]
+
+[tool.pylint.similarities]
+ignore-comments = true
+ignore-docstrings = true
+ignore-imports = true
+ignore-signatures = true
+min-similarity-lines = 6
+
+[tool.vulture]
+min_confidence = 60
+ignore_names = [
+  "ABILITY_DECISION",
+  "ALCHEMIST",
+  "ARCANIST",
+  "ARCHON",
+  "EVIDENCE_CONFLICT",
+  "FOUR",
+  "GAME",
+  "ILLEGAL_PATH",
+  "INELIGIBLE",
+  "INITIATE",
+  "ITEM_FLOW_PAIR",
+  "MYSTIC",
+  "RITUALIST",
+  "SEEKER",
+  "STALE_MECHANICS",
+  "TRAIN",
+  "TWO",
+  "_LayoutCohort",
+  "_LayoutRow",
+  "backbone_fold_matches",
+  "buyer_matches",
+  "buy_nw_q25",
+  "buy_nw_q75",
+  "candidate_audit",
+  "comparison_baseline",
+  "competing_events",
+  "cumulative_cost",
+  "expected_calibration_error",
+  "final_owned_items",
+  "first_item_id",
+  "focal_appearances",
+  "fold_comparative_estimates",
+  "fold_eligible_player_matches",
+  "median_buy_net_worth",
+  "median_duration_s",
+  "outcome_rate",
+  "player_matches",
+  "previous_item_id",
+  "raw_rate",
+  "retained_path_appearances",
+  "score_column",
+  "selection_valid_buy_net_worth_observations",
+  "shrunk_rate",
+  "test_adoption",
+  "trigger",
+  "valid_buy_nw_share",
+  "wilson_lower_bound",
+]
+paths = [
+  "scripts",
+  "src",
+  "tests",
+  "tools",
+]
 
 [tool.uv]
 index-strategy = "first-index"
@@ -109,7 +232,6 @@ unsafe-fixes = false
 [tool.ruff.lint]
 allowed-confusables = ["–"]
 ignore = [
-  "any-type", # Dynamic API and KV3 payloads require explicit Any boundaries.
   "f-string-in-exception", # Error messages intentionally include runtime context.
   "incorrect-blank-line-before-class", # Conflicts with D211.
   "line-too-long", # The formatter owns line wrapping.
@@ -128,9 +250,11 @@ ignore = [
 ]
 select = ["ALL"]
 
+[tool.ruff.lint.mccabe]
+max-complexity = 21
+
 [tool.ruff.lint.per-file-ignores]
 "scripts/*.py" = [
-  "complex-structure",
   "print",
   "raise-within-try",
   "subprocess-without-shell-equals-true",
@@ -139,24 +263,18 @@ select = ["ALL"]
   "too-many-locals",
   "too-many-statements",
   "too-many-statements-in-try-clause",
-  "try-consider-else",
 ]
 "src/deadlock_build_sync/api.py" = [
   "suspicious-url-open-usage", # The constructor restricts requests to HTTP(S).
   "too-many-arguments", # Snapshot identity is explicit at this I/O boundary.
 ]
-"src/deadlock_build_sync/artifacts.py" = [
-  "complex-structure", # Sidecar admission reports every identity and coverage defect.
-]
-"src/deadlock_build_sync/build_evidence.py" = [
-  "complex-structure", # Artifact admission checks every identity, count, and layout invariant.
+"src/deadlock_build_sync/build_evidence*.py" = [
   "too-many-arguments", # Compatibility inputs stay explicit at the artifact boundary.
   "too-many-boolean-expressions", # Malformed evidence is rejected field by field.
   "too-many-branches", # Hero admission reports each malformed count and layout invariant precisely.
   "too-many-locals", # Admission retains named identity fields for precise incompatibility errors.
 ]
-"src/deadlock_build_sync/cache.py" = [
-  "complex-structure",
+"src/deadlock_build_sync/cache*.py" = [
   "too-many-arguments",
   "too-many-branches", # The mutation boundary validates each durability/safety gate explicitly.
   "too-many-locals", # Pre/post identities remain named for auditability.
@@ -164,36 +282,28 @@ select = ["ALL"]
   "too-many-statements-in-try-clause",
   "raise-within-try", # Validation failures are recovered by the surrounding transaction.
 ]
-"src/deadlock_build_sync/cli.py" = [
+"src/deadlock_build_sync/cli*.py" = [
   "import-outside-top-level", # Optional analysis dependencies stay lazy.
   "print",
   "too-many-statements", # The flat CLI keeps every user command visible in one parser.
 ]
 "src/deadlock_build_sync/evaluation.py" = [
-  "complex-structure", # Evaluation and rollback gates report each independent failure mode.
   "too-many-branches", # Monitoring retains explicit rollback, refusal, and alert precedence.
 ]
 "src/deadlock_build_sync/kv3_binary.py" = [
-  "complex-structure",
   "float-equality-comparison",
   "too-many-branches",
 ]
-"src/deadlock_build_sync/mechanics.py" = [
-  "complex-structure", # Mechanics validation enumerates currency and legal-state gates.
-]
 "src/deadlock_build_sync/narratives.py" = [
-  "complex-structure", # Artifact admission reports each identity and coverage failure explicitly.
   "too-many-boolean-expressions",
   "too-many-branches",
   "too-many-locals",
   "too-many-statements",
 ]
 "src/deadlock_build_sync/offline/*.py" = [
-  "complex-structure", # Analytical stages keep their computations together for reproducibility.
   "docstring-missing-exception",
   "docstring-missing-returns",
   "hardcoded-sql-expression", # SQL is local and built only from pinned constants/validated integer IDs.
-  "manual-list-comprehension",
   "print", # The long-running producer emits CLI progress directly.
   "subprocess-without-shell-equals-true", # Git arguments are fixed and the executable path is resolved.
   "suspicious-subprocess-import", # Producer records Git identity with a resolved executable and shell disabled.
@@ -206,35 +316,27 @@ select = ["ALL"]
   "typing-only-first-party-import",
   "typing-only-standard-library-import",
 ]
-"src/deadlock_build_sync/policy.py" = [
-  "complex-structure", # Graph, guard, and legal-state validation are exhaustive by design.
+"src/deadlock_build_sync/policy*.py" = [
   "docstring-extraneous-exception", # Lazy codec delegates raise the documented PolicyError.
   "import-outside-top-level", # Lazy codec imports avoid a model/codec import cycle.
   "too-many-return-statements", # Typed guard dispatch has one terminal per operator.
   "too-many-statements-in-try-clause", # Mechanics errors are translated at one boundary.
 ]
 "src/deadlock_build_sync/protobuf.py" = ["too-many-arguments"]
-"src/deadlock_build_sync/purchase_guide.py" = [
-  "complex-structure",
+"src/deadlock_build_sync/purchase*.py" = [
   "too-many-locals",
 ]
-"src/deadlock_build_sync/renderer.py" = [
-  "complex-structure", # Projection validates layout and Queue semantics together.
-]
-"src/deadlock_build_sync/strategy_context.py" = [
-  "complex-structure", # Artifact admission checks every completeness/fingerprint gate.
+"src/deadlock_build_sync/strategy_context*.py" = [
   "too-many-arguments", # Closed evidence packet inputs remain explicit at export.
   "too-many-boolean-expressions", # Tag identity is admitted as one closed contract.
   "too-many-branches", # Validation reports exact malformed artifact conditions.
 ]
-"src/deadlock_build_sync/tracing.py" = [
-  "complex-structure", # The streaming summarizer validates and routes every event shape.
+"src/deadlock_build_sync/tracing*.py" = [
   "too-many-branches",
   "too-many-locals",
   "too-many-statements",
 ]
-"src/deadlock_build_sync/service.py" = [
-  "complex-structure", # Cohort collection and policy construction enforce staged abstentions.
+"src/deadlock_build_sync/service*.py" = [
   "too-many-arguments", # Structured skip reporting retains hero identity and reason.
   "too-many-branches", # Policy construction keeps each mechanics-backed conditional gate explicit.
   "too-many-locals", # Evidence identities stay named across collection and projection.
@@ -253,6 +355,10 @@ select = ["ALL"]
   "float-equality-comparison",
   "import-private-name", # Unit tests exercise pure producer helpers directly.
   "pytest-composite-assertion",
+]
+"tools/*.py" = [
+  "subprocess-without-shell-equals-true", # Git arguments are fixed and shell use is disabled.
+  "suspicious-subprocess-import", # The gate resolves Git and runs fixed read-only arguments.
 ]
 
 [tool.ruff.format]
@@ -276,7 +382,6 @@ all = "error"
 
 [tool.ty.src]
 include = [
-  "evals",
   "scripts",
   "src",
   "tests",

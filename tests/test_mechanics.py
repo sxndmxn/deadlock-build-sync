@@ -1,5 +1,3 @@
-from typing import Any
-
 import pytest
 
 from deadlock_build_sync.mechanics import (
@@ -12,7 +10,6 @@ from deadlock_build_sync.mechanics import (
     ability_definitions_from_kit,
     build_hero_mechanics,
     classify_item_threat_responses,
-    classify_observed_item_threats,
     conditional_item_decision,
     optional_item_decision,
     purchase_item,
@@ -21,32 +18,15 @@ from deadlock_build_sync.mechanics import (
     validate_ability_timeline,
     validate_imbue,
 )
-
-
-def item(
-    item_id: int,
-    class_name: str,
-    *,
-    cost: int = 500,
-    components: list[str] | None = None,
-    active: bool = False,
-) -> dict[str, Any]:
-    return {
-        "id": item_id,
-        "class_name": class_name,
-        "name": class_name,
-        "cost": cost,
-        "component_items": components or [],
-        "item_slot_type": "weapon",
-        "item_tier": 1,
-        "shopable": True,
-        "disabled": False,
-        "is_active_item": active,
-    }
+from deadlock_build_sync.value_validation import (
+    require_object_dict,
+    require_object_rows,
+)
+from tests.mechanics_fixtures import item
 
 
 def test_kit_record_preserves_structured_text_scaling_and_properties() -> None:
-    hero = {
+    hero: dict[str, object] = {
         "id": 7,
         "name": "Hero",
         "class_name": "hero_test",
@@ -59,7 +39,7 @@ def test_kit_record_preserves_structured_text_scaling_and_properties() -> None:
         "level_info": [{"level": 1, "ability_points": 0}],
         "items": {f"signature{slot}": f"ability_{slot}" for slot in range(1, 5)},
     }
-    assets = [
+    assets: list[dict[str, object]] = [
         {
             "id": slot,
             "class_name": f"ability_{slot}",
@@ -87,11 +67,16 @@ def test_kit_record_preserves_structured_text_scaling_and_properties() -> None:
         "role": "Controls space",
     }
     assert record["scaling_stats"] == hero["scaling_stats"]
-    assert record["abilities"][0]["properties"]["damage"]["stat_coefficients"] == {
+    abilities = require_object_rows(record["abilities"])
+    properties = require_object_dict(abilities[0]["properties"])
+    damage = require_object_dict(properties["damage"])
+    assert damage["stat_coefficients"] == {
         "spirit": 0.7,
         "weapon": 0.2,
     }
-    assert len(record["mechanics_sha256"]) == 64
+    mechanics_sha256 = record["mechanics_sha256"]
+    assert isinstance(mechanics_sha256, str)
+    assert len(mechanics_sha256) == 64
 
 
 def test_item_graph_handles_branches_cost_credit_and_component_consumption() -> None:
@@ -159,7 +144,7 @@ def test_component_schedule_rebuys_only_after_the_first_copy_is_consumed() -> No
     ],
 )
 def test_item_graph_rejects_missing_references_and_cycles(
-    assets: list[dict[str, Any]],
+    assets: list[dict[str, object]],
 ) -> None:
     with pytest.raises(MechanicsError):
         ItemGraph.from_assets(assets)
@@ -369,7 +354,7 @@ def test_unstoppable_immunity_is_control_defense_and_protects_singularity() -> N
     }
     weapon = item(100, "weapon_item")
     weapon["description"] = {"desc": "Gain Weapon Damage."}
-    hero_mechanics = {
+    hero_mechanics: dict[str, object] = {
         "abilities": [
             {
                 "id": 30,
@@ -402,213 +387,4 @@ def test_unstoppable_immunity_is_control_defense_and_protects_singularity() -> N
         "Control Immunity",
         "Before entering the next control-heavy fight",
         "Keep default when weapon pressure matters more",
-    )
-
-
-@pytest.mark.parametrize(
-    ("description", "expected"),
-    [
-        ("Restore Health to an ally.", "healing"),
-        ("Gain Weapon Damage.", "bullet_pressure"),
-        ("Gain Spirit Power.", "spirit_pressure"),
-        ("Apply a Stun after a delay.", "control"),
-        ("Teleport to the target.", "mobility_escape"),
-        ("Shield an ally.", "ally_protection"),
-    ],
-)
-def test_observed_enemy_item_threats_require_explicit_mechanics(
-    description: str,
-    expected: str,
-) -> None:
-    asset = item(99, "threat")
-    asset["description"] = {"desc": description}
-
-    assert expected in classify_observed_item_threats(asset)
-
-
-def test_anti_heal_is_not_mislabeled_as_enemy_healing() -> None:
-    asset = item(99, "anti_heal")
-    asset["description"] = {"desc": "Applies healing reduction."}
-
-    assert "healing" not in classify_observed_item_threats(asset)
-
-
-def test_disabled_property_labels_do_not_create_observed_threats() -> None:
-    asset = item(99, "neutral")
-    asset["properties"] = {
-        "WeaponPower": {
-            "label": "Weapon Damage",
-            "value": "0",
-            "disable_value": "0",
-        },
-        "TechPower": {
-            "label": "Spirit Power",
-            "value": "0",
-            "disable_value": "0",
-        },
-    }
-
-    assert classify_observed_item_threats(asset) == frozenset()
-
-
-def test_disabled_property_labels_do_not_create_counter_responses() -> None:
-    asset = item(99, "neutral")
-    asset["properties"] = {
-        "BulletResist": {
-            "label": "Bullet Resist",
-            "value": "0",
-            "disable_value": "0",
-        },
-        "SpiritShield": {
-            "label": "Spirit Shield",
-            "value": "0",
-            "disable_value": "0",
-        },
-    }
-
-    assert classify_item_threat_responses(asset) == frozenset()
-
-
-def test_only_important_typed_properties_create_observed_threats() -> None:
-    asset = item(99, "spirit")
-    asset["properties"] = {
-        "TechPower": {
-            "label": "Spirit Power",
-            "value": "18",
-            "disable_value": "0",
-            "tooltip_is_important": False,
-        }
-    }
-
-    assert classify_observed_item_threats(asset) == frozenset()
-
-    asset["properties"]["TechPower"]["tooltip_is_important"] = True
-
-    assert classify_observed_item_threats(asset) == frozenset({"spirit_pressure"})
-
-
-def test_hidden_minor_resist_does_not_make_melee_charge_a_bullet_response() -> None:
-    asset = item(99, "melee_charge")
-    asset["description"] = {"desc": "Charge a heavy melee attack faster."}
-    asset["properties"] = {
-        "BulletResist": {
-            "label": "Bullet Resist",
-            "provided_property_type": "MODIFIER_VALUE_BULLET_ARMOR_DAMAGE_RESIST",
-            "tooltip_is_important": False,
-            "value": "0.06",
-        }
-    }
-
-    assert "bullet_pressure" not in classify_item_threat_responses(asset)
-
-
-def test_enemy_resist_reduction_is_not_a_defensive_response() -> None:
-    hunter_aura = item(99, "hunters_aura")
-    hunter_aura["description"] = {
-        "desc": "Reduces nearby enemies' Bullet Resist and Fire Rate."
-    }
-    hunter_aura["properties"] = {
-        "BulletArmorReduction": {
-            "label": "Enemy Bullet Resist",
-            "provided_property_type": "MODIFIER_VALUE_BULLET_ARMOR_RESIST_REDUCTION",
-            "tooltip_is_important": True,
-            "value": "-0.12",
-        },
-        "FireRateSlow": {
-            "label": "Enemy Fire Rate Slow",
-            "provided_property_type": "MODIFIER_VALUE_FIRE_RATE_SLOW",
-            "tooltip_is_important": True,
-            "value": "0.15",
-        },
-    }
-    comparator = item(100, "weapon_item")
-    comparator["description"] = {"desc": "Gain Weapon Damage."}
-
-    assert classify_item_threat_responses(hunter_aura) == frozenset({"bullet_pressure"})
-    assert conditional_item_decision(hunter_aura, comparator) == (
-        "Heavy bullet damage",
-        "Fire Rate Slow",
-        "Before the next bullet-heavy fight",
-        "Keep default when weapon pressure matters more",
-    )
-
-
-def test_bullet_resist_reduction_label_is_not_bullet_defense() -> None:
-    shredder = item(99, "bullet_resist_shredder")
-    shredder["description"] = {"desc": "Reduces Bullet Resist on enemies."}
-    shredder["properties"] = {
-        "BulletArmorReduction": {
-            "label": "Bullet Resist",
-            "tooltip_is_important": True,
-            "value": "-10",
-        }
-    }
-
-    assert "bullet_pressure" not in classify_item_threat_responses(shredder)
-
-
-def test_automatically_does_not_create_ally_protection() -> None:
-    active_reload = item(99, "active_reload")
-    active_reload["description"] = {
-        "desc": "Automatically finish reloading and gain Bullet Lifesteal."
-    }
-
-    assert "ally_protection" not in classify_item_threat_responses(active_reload)
-    assert optional_item_decision(active_reload) == (
-        "You need sustain between fights",
-        "Sustain",
-        "Immediate damage or defense matters more",
-    )
-
-
-def test_upgrade_only_ability_text_does_not_create_enemy_threat() -> None:
-    rising_ram = item(99, "rising_ram")
-    rising_ram["type"] = "ability"
-    rising_ram["description"] = {
-        "desc": "Charge forward and knock enemies upward.",
-        "t1_desc": "+25% Weapon Damage for 5s.",
-    }
-
-    assert "bullet_pressure" not in classify_observed_item_threats(rising_ram)
-
-    assassinate = item(100, "assassinate")
-    assassinate["type"] = "ability"
-    assassinate["description"] = {
-        "desc": "Deal damage with bonus Weapon Damage against wounded targets."
-    }
-
-    assert "bullet_pressure" in classify_observed_item_threats(assassinate)
-
-
-def test_optional_item_copy_uses_only_controlled_grounded_purposes() -> None:
-    weapon = item(99, "weapon")
-    weapon["description"] = {"desc": "Gain Weapon Damage and Fire Rate."}
-
-    assert optional_item_decision(weapon) == (
-        "Weapon pressure is your next priority",
-        "Weapon Pressure",
-        "Defense or Spirit pressure matters more",
-    )
-
-    unknown = item(100, "unknown")
-    unknown["description"] = {"desc": "A mysterious item."}
-    assert optional_item_decision(unknown) is None
-
-
-def test_optional_item_copy_uses_visible_innate_properties() -> None:
-    extra_spirit = item(99, "extra_spirit")
-    extra_spirit["properties"] = {
-        "TechPower": {
-            "label": "Spirit Power",
-            "provided_property_type": "MODIFIER_VALUE_TECH_POWER",
-            "tooltip_is_elevated": True,
-            "tooltip_is_important": False,
-            "value": "10",
-        }
-    }
-
-    assert optional_item_decision(extra_spirit) == (
-        "Spirit pressure is your next priority",
-        "Spirit Pressure",
-        "Defense or weapon pressure matters more",
     )

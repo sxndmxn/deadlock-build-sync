@@ -116,7 +116,7 @@ def test_rejects_changed_context_or_basis(
 ) -> None:
     path = tmp_path / "narratives.json"
     write_catalog(path)
-    context = {
+    context: dict[str, object] = {
         "context_sha256": CONTEXT_ID,
         "narrative_basis_sha256": BASIS_ID,
         field: value,
@@ -183,7 +183,7 @@ def test_rejects_outdated_description_generator(tmp_path: Path) -> None:
 
 
 def test_build_description_is_deterministic_and_grounded() -> None:
-    context = {
+    context: dict[str, object] = {
         "hero": "Kelvin",
         "hero_mechanics": {
             "description": {
@@ -212,7 +212,7 @@ def test_build_description_is_deterministic_and_grounded() -> None:
     ["Weapon", "Spirit", "Vitality", "Hybrid", "Support"],
 )
 def test_build_description_preserves_the_selected_archetype(archetype: str) -> None:
-    context = {
+    context: dict[str, object] = {
         "hero": "Test Hero",
         "hero_mechanics": {
             "description": {

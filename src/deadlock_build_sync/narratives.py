@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
+
+from .value_validation import integer, object_dict, object_list
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -14,9 +16,6 @@ NARRATIVE_SCHEMA_VERSION = 9
 NARRATIVE_GENERATOR_VERSION = 1
 MINIMUM_BUILD_DESCRIPTION_CHARACTERS = 80
 MAXIMUM_BUILD_DESCRIPTION_CHARACTERS = 700
-NARRATIVE_FIELD_SURFACES = {
-    "build_description": ("player.description",),
-}
 
 
 class NarrativeError(RuntimeError):
@@ -33,10 +32,10 @@ class NarrativeCatalog:
     source_context_sha256: str
     requested_hero_ids: frozenset[int]
     exclusions: dict[int, str]
-    heroes: dict[tuple[int, str], dict[str, Any]]
+    heroes: dict[tuple[int, str], dict[str, object]]
 
 
-def _is_sha256(value: Any) -> bool:
+def _is_sha256(value: object) -> bool:
     return (
         isinstance(value, str)
         and len(value) == 64
@@ -44,13 +43,13 @@ def _is_sha256(value: Any) -> bool:
     )
 
 
-def _require_sha(path: Path, value: Any, label: str) -> str:
+def _require_sha(path: Path, value: object, label: str) -> str:
     if not _is_sha256(value):
         raise NarrativeError(f"{path} has no valid {label} fingerprint")
     return str(value)
 
 
-def _require_identity(path: Path, entry: dict[str, Any], snapshot_id: str) -> None:
+def _require_identity(path: Path, entry: dict[str, object], snapshot_id: str) -> None:
     if entry.get("snapshot_id") != snapshot_id:
         raise NarrativeError(f"{path} contains a hero from another snapshot")
     for field, label in (
@@ -61,58 +60,56 @@ def _require_identity(path: Path, entry: dict[str, Any], snapshot_id: str) -> No
         _require_sha(path, entry.get(field), label)
 
 
-def _read_narrative_document(path: Path) -> dict[str, Any]:
+def _read_narrative_document(path: Path) -> dict[str, object]:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
         raise NarrativeError(
             f"could not read narrative artifact {path}: {error}"
         ) from error
-    if (
-        not isinstance(data, dict)
-        or data.get("schema_version") != NARRATIVE_SCHEMA_VERSION
-    ):
+    document = object_dict(data)
+    if document is None or document.get("schema_version") != NARRATIVE_SCHEMA_VERSION:
         raise NarrativeError(
             f"{path} is not a supported narrative artifact; regenerate it"
         )
-    if data.get("generator_version") != NARRATIVE_GENERATOR_VERSION:
+    if document.get("generator_version") != NARRATIVE_GENERATOR_VERSION:
         raise NarrativeError(f"{path} uses an outdated description generator")
-    return data
+    return document
 
 
 type _CatalogHeader = tuple[
     str,
     str,
-    dict[str, Any],
-    dict[str, Any],
+    dict[str, object],
+    dict[str, object],
     list[int],
-    list[Any],
-    list[Any],
+    list[object],
+    list[object],
 ]
 
 
-def _catalog_header(path: Path, data: dict[str, Any]) -> _CatalogHeader:
+def _catalog_header(path: Path, data: dict[str, object]) -> _CatalogHeader:
     snapshot_id = _require_sha(path, data.get("snapshot_id"), "snapshot")
     source_context = _require_sha(
         path,
         data.get("source_context_sha256"),
         "source context",
     )
-    patch = data.get("patch")
-    cohort = data.get("cohort")
+    patch = object_dict(data.get("patch"))
+    cohort = object_dict(data.get("cohort"))
     requested = data.get("requested_hero_ids")
-    exclusions = data.get("exclusions")
-    entries = data.get("heroes")
+    exclusions = object_list(data.get("exclusions"))
+    entries = object_list(data.get("heroes"))
     header_checks = (
-        isinstance(patch, dict) and _is_sha256(patch.get("identity")),
-        isinstance(cohort, dict),
-        isinstance(cohort, dict) and isinstance(cohort.get("client_version"), int),
-        isinstance(cohort, dict) and isinstance(cohort.get("match_mode"), str),
-        isinstance(cohort, dict) and isinstance(cohort.get("game_mode"), str),
+        patch is not None and _is_sha256(patch.get("identity")),
+        cohort is not None,
+        cohort is not None and isinstance(cohort.get("client_version"), int),
+        cohort is not None and isinstance(cohort.get("match_mode"), str),
+        cohort is not None and isinstance(cohort.get("game_mode"), str),
         isinstance(requested, list)
         and all(isinstance(hero_id, int) for hero_id in requested),
-        isinstance(exclusions, list),
-        isinstance(entries, list),
+        exclusions is not None,
+        entries is not None,
     )
     if not all(header_checks):
         raise NarrativeError(
@@ -132,51 +129,59 @@ def _catalog_header(path: Path, data: dict[str, Any]) -> _CatalogHeader:
     )
 
 
-def _catalog_exclusions(path: Path, exclusions: list[Any]) -> dict[int, str]:
+def _catalog_exclusions(path: Path, exclusions: list[object]) -> dict[int, str]:
     exclusion_map: dict[int, str] = {}
     for exclusion in exclusions:
+        row = object_dict(exclusion)
+        if row is None:
+            raise NarrativeError(f"{path} contains an invalid hero exclusion")
+        hero_id = row.get("hero_id")
+        reason = row.get("reason")
         if (
-            not isinstance(exclusion, dict)
-            or not isinstance(exclusion.get("hero_id"), int)
-            or not isinstance(exclusion.get("reason"), str)
-            or not exclusion["reason"].strip()
+            not isinstance(hero_id, int)
+            or not isinstance(reason, str)
+            or not reason.strip()
         ):
             raise NarrativeError(f"{path} contains an invalid hero exclusion")
-        exclusion_map[int(exclusion["hero_id"])] = str(exclusion["reason"]).strip()
+        exclusion_map[hero_id] = reason.strip()
     return exclusion_map
 
 
 def _catalog_heroes(
     path: Path,
-    entries: list[Any],
+    entries: list[object],
     snapshot_id: str,
-) -> dict[tuple[int, str], dict[str, Any]]:
-    heroes: dict[tuple[int, str], dict[str, Any]] = {}
+) -> dict[tuple[int, str], dict[str, object]]:
+    heroes: dict[tuple[int, str], dict[str, object]] = {}
     for entry in entries:
+        row = object_dict(entry)
+        if row is None:
+            raise NarrativeError(f"{path} contains an invalid hero narrative")
+        hero_id = row.get("hero_id")
+        path_id = row.get("path_id")
         if (
-            not isinstance(entry, dict)
-            or not isinstance(entry.get("hero_id"), int)
-            or not isinstance(entry.get("path_id"), str)
-            or not entry["path_id"].strip()
+            not isinstance(hero_id, int)
+            or not isinstance(path_id, str)
+            or not path_id.strip()
         ):
             raise NarrativeError(f"{path} contains an invalid hero narrative")
-        if entry.get("generator_version") != NARRATIVE_GENERATOR_VERSION:
+        if row.get("generator_version") != NARRATIVE_GENERATOR_VERSION:
             raise NarrativeError(
                 f"{path} contains a hero from an outdated description generator"
             )
-        _require_identity(path, entry, snapshot_id)
-        build_key = int(entry["hero_id"]), str(entry["path_id"])
+        _require_identity(path, row, snapshot_id)
+        build_key = hero_id, path_id
         if build_key in heroes:
             raise NarrativeError(
                 f"{path} contains duplicate build {build_key[0]}/{build_key[1]}"
             )
-        heroes[build_key] = entry
+        heroes[build_key] = row
     return heroes
 
 
 def _validate_catalog_coverage(
     path: Path,
-    heroes: dict[tuple[int, str], dict[str, Any]],
+    heroes: dict[tuple[int, str], dict[str, object]],
     exclusion_map: dict[int, str],
     requested_ids: set[int],
 ) -> None:
@@ -211,7 +216,7 @@ def load_narrative_catalog(path: Path) -> NarrativeCatalog:
     return NarrativeCatalog(
         snapshot_id=snapshot_id,
         patch_identity=str(patch["identity"]),
-        client_version=int(cohort["client_version"]),
+        client_version=integer(cohort["client_version"]),
         match_mode=str(cohort["match_mode"]),
         game_mode=str(cohort["game_mode"]),
         source_context_sha256=source_context,
@@ -223,10 +228,10 @@ def load_narrative_catalog(path: Path) -> NarrativeCatalog:
 
 def _narrative_entry(
     guide: PurchaseGuide,
-    context: dict[str, Any],
+    context: dict[str, object],
     patch: Patch,
     catalog: NarrativeCatalog,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     if catalog.patch_identity != patch.identity:
         raise NarrativeError("narrative artifact patch identity does not match the run")
     if catalog.snapshot_id != guide.snapshot_id:
@@ -262,7 +267,7 @@ def _narrative_entry(
 
 def apply_narrative(
     guide: PurchaseGuide,
-    context: dict[str, Any],
+    context: dict[str, object],
     patch: Patch,
     catalog: NarrativeCatalog,
 ) -> PurchaseGuide:
@@ -291,22 +296,23 @@ def _sentence(value: object) -> str:
     return text if text[-1] in ".!?" else text + "."
 
 
-def _first_maxed_ability(context: dict[str, Any]) -> str:
-    policy = context.get("ability_policy")
-    steps = policy.get("steps") if isinstance(policy, dict) else None
-    if not isinstance(steps, list):
+def _first_maxed_ability(context: dict[str, object]) -> str:
+    policy = object_dict(context.get("ability_policy"))
+    steps = object_list(policy.get("steps")) if policy is not None else None
+    if steps is None:
         return ""
     for step in steps:
+        row = object_dict(step)
         if (
-            isinstance(step, dict)
-            and step.get("action") == "UPGRADE_3"
-            and isinstance(step.get("ability"), str)
+            row is not None
+            and row.get("action") == "UPGRADE_3"
+            and isinstance(row.get("ability"), str)
         ):
-            return str(step["ability"]).strip()
+            return str(row["ability"]).strip()
     return ""
 
 
-def deterministic_build_description(context: dict[str, Any]) -> str:
+def deterministic_build_description(context: dict[str, object]) -> str:
     """Build one stable player-facing description from pinned context fields.
 
     Returns:
@@ -356,10 +362,10 @@ def deterministic_build_description(context: dict[str, Any]) -> str:
     description = " ".join(sentence for sentence in with_playstyle if sentence)
     if len(description) > MAXIMUM_BUILD_DESCRIPTION_CHARACTERS:
         description = " ".join(fixed)
+    description_length = len(description)
     if (
-        not MINIMUM_BUILD_DESCRIPTION_CHARACTERS
-        <= len(description)
-        <= MAXIMUM_BUILD_DESCRIPTION_CHARACTERS
+        description_length < MINIMUM_BUILD_DESCRIPTION_CHARACTERS
+        or description_length > MAXIMUM_BUILD_DESCRIPTION_CHARACTERS
     ):
         raise NarrativeError(
             "deterministic build description is outside its size limit"

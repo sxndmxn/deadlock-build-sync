@@ -6,6 +6,7 @@ from deadlock_build_sync.build_tags import (
     select_build_tags,
 )
 from deadlock_build_sync.purchase_guide import GuideItem
+from deadlock_build_sync.value_validation import require_object_rows
 
 
 def tag_assets() -> list[dict[str, object]]:
@@ -71,7 +72,7 @@ def guide_item(
 
 def test_selects_first_maxed_ability_best_tier_three_core_and_function() -> None:
     catalog = BuildTagCatalog.from_assets(tag_assets())
-    assets = [
+    assets: list[dict[str, object]] = [
         {
             "id": 1,
             "name": "Tier 3 Weapon",
@@ -96,7 +97,9 @@ def test_selects_first_maxed_ability_best_tier_three_core_and_function() -> None
             "item_slot_type": "spirit",
             "description": "Applies anti-heal.",
         },
-        *[
+    ]
+    assets.extend(
+        require_object_rows([
             {
                 "id": ability_id,
                 "name": f"Ability {ability_id}",
@@ -104,8 +107,8 @@ def test_selects_first_maxed_ability_best_tier_three_core_and_function() -> None
                 "type": "ability",
             }
             for ability_id in (10, 20, 30, 40)
-        ],
-    ]
+        ])
+    )
     ability_path = (*((10, 20, 30, 40) * 3), 20, 10, 30, 40)
 
     selected = select_build_tags(
@@ -132,7 +135,7 @@ def test_selects_first_maxed_ability_best_tier_three_core_and_function() -> None
 
 def test_core_icon_falls_back_to_best_tier_four_item() -> None:
     catalog = BuildTagCatalog.from_assets(tag_assets())
-    assets = [
+    assets: list[dict[str, object]] = [
         {
             "id": item_id,
             "name": f"Item {item_id}",
@@ -167,7 +170,7 @@ def test_core_icon_falls_back_to_best_tier_four_item() -> None:
 
 def test_rejects_incomplete_ability_path_and_core_without_late_tier() -> None:
     catalog = BuildTagCatalog.from_assets(tag_assets())
-    assets = [
+    assets: list[dict[str, object]] = [
         {
             "id": 1,
             "name": "Item 1",
@@ -175,15 +178,17 @@ def test_rejects_incomplete_ability_path_and_core_without_late_tier() -> None:
             "cost": 500,
             "item_slot_type": "weapon",
         },
-        *[
+    ]
+    assets.extend(
+        require_object_rows([
             {
                 "id": ability_id,
                 "name": f"Ability {ability_id}",
                 "class_name": f"ability_{ability_id}",
             }
             for ability_id in (10, 20, 30, 40)
-        ],
-    ]
+        ])
+    )
     core = (guide_item(1, tier=2, win_rate=0.50),)
 
     with pytest.raises(BuildTagError, match="complete four-ability"):
