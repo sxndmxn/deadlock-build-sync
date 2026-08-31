@@ -114,7 +114,6 @@ check-script = false
 max-complexity-allowed = 21
 no-ignore = true
 paths = [
-  "evals",
   "scripts",
   "src",
   "tests",
@@ -205,7 +204,6 @@ ignore_names = [
   "wilson_lower_bound",
 ]
 paths = [
-  "evals",
   "scripts",
   "src",
   "tests",
@@ -384,7 +382,6 @@ all = "error"
 
 [tool.ty.src]
 include = [
-  "evals",
   "scripts",
   "src",
   "tests",

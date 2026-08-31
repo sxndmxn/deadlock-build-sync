@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import ast
+import tomllib
+from pathlib import Path
 
 import pytest
 
 from tools import quality_gate
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 def metric(
@@ -79,3 +83,16 @@ def test_crap_boundaries() -> None:
         quality_gate.crap_score(quality_gate.MAX_COMPLEXITY, 100.0)
         <= quality_gate.MAX_CRAP
     )
+
+
+def test_static_analysis_paths_contain_python_files() -> None:
+    configuration = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text())
+    tools = configuration["tool"]
+    configured_paths = {
+        *tools["complexipy"]["paths"],
+        *tools["vulture"]["paths"],
+        *tools["ty"]["src"]["include"],
+    }
+
+    for relative_path in configured_paths:
+        assert next((PROJECT_ROOT / relative_path).rglob("*.py"), None), relative_path
