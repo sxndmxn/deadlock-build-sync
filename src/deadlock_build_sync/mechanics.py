@@ -34,6 +34,7 @@ from .mechanics_item_text import (
 )
 from .mechanics_items import CategoryBonus, CategoryBonusTable, ItemGraph, ItemNode
 from .mechanics_optional import optional_item_decision
+from .mechanics_spike import power_spike_text
 from .mechanics_threats import (
     classify_item_threat_responses,
     conditional_item_decision,
@@ -65,6 +66,7 @@ __all__ = [
     "normalize_hero_description",
     "normalize_mechanical_value",
     "optional_item_decision",
+    "power_spike_text",
     "purchase_item",
     "schedule_ability_path",
     "schedule_component_path",

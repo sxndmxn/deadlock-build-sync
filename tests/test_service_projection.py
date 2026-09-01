@@ -175,6 +175,67 @@ def test_control_immunity_tier_item_uses_the_hero_channel() -> None:
     assert "catch" not in item.annotation.casefold()
 
 
+def test_power_spike_line_leads_core_and_tier_hovers() -> None:
+    api = FakeApi(ability_rows=ability_rows(), duration_points=duration_points())
+    napalm = next(asset for asset in api._assets if asset["id"] == 10)
+    napalm["properties"] = {
+        "Damage": {
+            "value": 40.0,
+            "scale_function": {
+                "class_name": "scale_function_tech_damage",
+                "specific_stat_scale_type": "ETechPower",
+                "stat_scale": 0.6,
+            },
+        },
+        "AbilityDuration": {
+            "value": "0",
+            "disable_value": "0",
+            "scale_function": {"specific_stat_scale_type": "ETechDuration"},
+        },
+    }
+    spirit = {
+        "TechPower": {
+            "provided_property_type": "MODIFIER_VALUE_TECH_POWER",
+            "tooltip_is_important": True,
+            "value": "10",
+        }
+    }
+    for item_id in (100, 103, 402):
+        next(asset for asset in api._assets if asset["id"] == item_id)["properties"] = (
+            spirit
+        )
+
+    generated = generate_guides(
+        api,
+        build_evidence=build_evidence(api, with_core_alternative=True),
+        account_id=123,
+        hero_query="Kelvin",
+        all_heroes=False,
+    )
+
+    guide = generated.guides[0]
+    core = next(item for item in guide.categories[0].items if item.item_id == 100)
+    assert core.annotation.startswith("POWER SPIKE: Ability 1 spirit x0.6\n")
+    assert core.annotation.splitlines()[1].startswith("PURCHASE WINDOW: ")
+    tier = next(item for item in guide.tiers[4] if item.item_id == 402)
+    assert tier.annotation.startswith("POWER SPIKE: Ability 1 spirit x0.6\nUSE: ")
+    plain = next(item for item in guide.tiers[4] if item.item_id == 403)
+    assert plain.annotation.startswith("USE: ")
+    optional = next(
+        category for category in guide.categories if category.name == "OPTIONAL CORE"
+    )
+    assert all(item.annotation.startswith("VS: ") for item in optional.items)
+    assert all(
+        len(item.annotation) <= 200
+        for category in guide.categories
+        for item in category.items
+    )
+    assert (
+        BuildPolicy.from_dict(generated.policies[0].as_dict())
+        == (generated.policies[0])
+    )
+
+
 def test_admitted_core_alternative_is_a_non_queue_policy_card() -> None:
     api = FakeApi(ability_rows=ability_rows(), duration_points=duration_points())
     generated = generate_guides(

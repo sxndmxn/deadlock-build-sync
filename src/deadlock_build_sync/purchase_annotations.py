@@ -4,7 +4,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from .build_evidence import reliable_purchase_window
-from .mechanics import optional_item_decision
+from .mechanics import optional_item_decision, power_spike_text
 from .value_validation import integer
 
 if TYPE_CHECKING:
@@ -18,7 +18,9 @@ from .purchase_types import (
     _GENERIC_CONDITIONAL_PHRASES,
     CONDITIONAL_ANNOTATION_LABELS,
     MAX_ITEM_ANNOTATION_BYTES,
+    MAX_ITEM_ANNOTATION_CHARS,
     MAX_TACTICAL_INSTRUCTION_BYTES,
+    POWER_SPIKE_LABEL,
     TIER_ANNOTATION_LABELS,
     GuideItem,
     PurchaseGuide,
@@ -146,6 +148,39 @@ def validate_tier_annotation(annotation: str) -> None:
         )
 
 
+def split_power_spike(annotation: str) -> tuple[str, str]:
+    """Separate a leading power spike line from the rest of an annotation.
+
+    Returns:
+        The spike text (empty when absent) and the remaining annotation body.
+
+    Raises:
+        ValueError: If a power spike line has no text or no body after it.
+
+    """
+    prefix = f"{POWER_SPIKE_LABEL}: "
+    if not annotation.startswith(prefix):
+        return "", annotation
+    spike, _, body = annotation.removeprefix(prefix).partition("\n")
+    if not spike.strip() or not body.strip():
+        raise ValueError("power spike line needs text and a following annotation")
+    return spike, body
+
+
+def _with_power_spike(
+    item: GuideItem,
+    asset: dict[str, object] | None,
+    hero_mechanics: dict[str, object] | None,
+) -> GuideItem:
+    if asset is None:
+        return item
+    budget = (
+        MAX_ITEM_ANNOTATION_CHARS - len(item.annotation) - len(POWER_SPIKE_LABEL) - 3
+    )
+    spike = power_spike_text(asset, hero_mechanics, max_chars=budget)
+    return replace(item, power_spike=spike)
+
+
 def guide_item_from_evidence(item: ItemEvidence) -> GuideItem:
     window = reliable_purchase_window(item)
     return GuideItem(
@@ -205,26 +240,49 @@ def _annotated_tier_item(
         annotation = tier_item_annotation(use=use, why=why, skip=skip, item=item)
     except ValueError:
         return None
-    return replace(item, verified_tier_annotation=annotation)
+    annotated = replace(item, verified_tier_annotation=annotation)
+    return _with_power_spike(annotated, asset, hero_mechanics)
+
+
+def _assets_by_id(
+    assets: list[dict[str, object]] | None,
+) -> dict[int, dict[str, object]] | None:
+    if assets is None:
+        return None
+    return {
+        integer(asset["id"]): asset
+        for asset in assets
+        if isinstance(asset.get("id"), int)
+    }
+
+
+def _spike_core_items(
+    by_id: dict[int, GuideItem],
+    selected: SelectedHeroBuild,
+    assets_by_id: dict[int, dict[str, object]] | None,
+    hero_mechanics: dict[str, object] | None,
+) -> None:
+    if assets_by_id is None:
+        return
+    core_ids = {item.item_id for item in (*selected.core, *selected.core_purchase_path)}
+    for item_id in core_ids:
+        by_id[item_id] = _with_power_spike(
+            by_id[item_id], assets_by_id.get(item_id), hero_mechanics
+        )
 
 
 def _project_tiers(
     selected: SelectedHeroBuild,
     by_id: dict[int, GuideItem],
-    assets: list[dict[str, object]] | None,
+    assets_by_id: dict[int, dict[str, object]] | None,
     hero_mechanics: dict[str, object] | None,
 ) -> dict[int, tuple[GuideItem, ...]]:
     tiers = {
         tier: tuple(by_id[item.item_id] for item in items)
         for tier, items in selected.tiers.items()
     }
-    if assets is None:
+    if assets_by_id is None:
         return tiers
-    assets_by_id = {
-        integer(asset["id"]): asset
-        for asset in assets
-        if isinstance(asset.get("id"), int)
-    }
     annotated_tiers: dict[int, tuple[GuideItem, ...]] = {}
     for tier, items in tiers.items():
         annotated = (
@@ -256,7 +314,9 @@ def build_purchase_guide_from_evidence(
 
     """
     by_id = _guide_items_by_id(selected)
-    tiers = _project_tiers(selected, by_id, assets, hero_mechanics)
+    assets_by_id = _assets_by_id(assets)
+    tiers = _project_tiers(selected, by_id, assets_by_id, hero_mechanics)
+    _spike_core_items(by_id, selected, assets_by_id, hero_mechanics)
     return PurchaseGuide(
         hero_id=integer(hero["id"]),
         hero_name=str(hero.get("name") or f"Hero {hero['id']}"),

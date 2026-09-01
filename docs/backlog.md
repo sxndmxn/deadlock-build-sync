@@ -6,10 +6,20 @@ Goal: bring back concise player-facing spike and curve guidance only when the
 underlying telemetry can support it. Do not add generic prose or repeat facts
 already shown by Deadlock's native item tooltip.
 
-Keep the implementation evidence-first and deterministic:
+Delivered: a mechanics-only `POWER SPIKE` hover line on `CORE ITEMS` and tier rows.
+It matches an important item stat to a hero ability scale function and names up to
+two abilities with the spirit coefficient. Item win rate is not a spike signal. In
+the current cohort it correlates 0.51 with cost, 0.46 with buy time, and follows the
+team net-worth lead at purchase (25% behind, 72% ahead). No outcome statistic
+selects, orders, or admits the line.
+
+Still open:
 
 - Collect joint item-ownership and ability-unlock state so a `POWER SPIKE` can name
   a verified state transition, its prerequisite, tactical conversion, and counterplay.
+  The offline extract keeps only shop items, so no ability-unlock time is observable.
+- Enforce Steam's 200-character limit on every note. Nine `TIER 4` cards exceed it
+  today; only the spike decision respects the limit.
 - Add landmark-at-risk estimates before emitting a live `CURVE RESPONSE`; match-ending
   duration buckets remain labeled as descriptive associations and cannot drive it.
 - Render admitted spike/curve cards from typed policy data. If no card passes, omit

@@ -56,6 +56,12 @@ pick-rate, buyer-match, and purchase-event statistics. Category height grows wit
 the number of item rows so item cards are not cut off. When purchase telemetry has a
 supported majority imbue target, the hover names that ability and the Steam build
 encodes its current ability ID.
+A `CORE ITEMS` or tier hover opens with a `POWER SPIKE` line when the item grants an
+important stat that one of the hero's ability scale functions consumes. The line names
+up to two abilities and the spirit-damage coefficient. It is pinned mechanics only; no
+outcome statistic selects, orders, or admits it. The line is omitted when the complete
+note would pass Steam's 200-character limit. `OPTIONAL CORE` and conditional counter
+items keep their five-line card without it.
 Each build's three header icons are deterministic: the ability maxed first, the
 highest-win-rate Tier 3 CORE item (or Tier 4 when CORE has no Tier 3 item), and the
 dominant functional build tag. The item win rate is descriptive buyer telemetry.

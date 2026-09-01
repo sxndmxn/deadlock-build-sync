@@ -2,6 +2,7 @@ from dataclasses import replace
 
 import pytest
 
+from deadlock_build_sync import purchase_annotations
 from deadlock_build_sync.purchase_guide import (
     GuideCategory,
     GuideItem,
@@ -11,6 +12,7 @@ from deadlock_build_sync.purchase_guide import (
     choose_adaptive_bucket_increment,
     conditional_item_annotation,
     format_purchase_window,
+    split_power_spike,
     tactical_item_annotation,
     tier_item_annotation,
     validate_tier_annotation,
@@ -85,6 +87,87 @@ def test_verified_tier_annotation_replaces_raw_win_rate_stats() -> None:
     )
     assert "WIN RATE" not in item.annotation
     validate_tier_annotation(item.annotation)
+
+
+def test_power_spike_line_leads_core_and_tier_hovers_but_not_conditional() -> None:
+    core = replace(evidence_item(), power_spike="Napalm spirit x0.6")
+    assert core.annotation.startswith(
+        "POWER SPIKE: Napalm spirit x0.6\nPURCHASE WINDOW: "
+    )
+
+    card = tier_item_annotation(
+        use="Spirit pressure is your next priority",
+        why="Spirit Power",
+        skip="Defense or weapon pressure matters more",
+        item=evidence_item(),
+    )
+    tier = replace(evidence_item(), verified_tier_annotation=card, power_spike="X")
+    assert tier.annotation.splitlines()[:2] == [
+        "POWER SPIKE: X",
+        "USE: Spirit pressure is your next priority",
+    ]
+    assert split_power_spike(tier.annotation) == ("X", card)
+    validate_tier_annotation(split_power_spike(tier.annotation)[1])
+
+    conditional = conditional_item_annotation(
+        vs="Heavy Spirit damage",
+        why="Spirit Resist for self",
+        swap="Replaces Phantom Strike",
+        when="Before the next Spirit-heavy fight",
+        skip="Keep default when catch matters more",
+    )
+    swap = replace(evidence_item(), conditional_annotation=conditional, power_spike="X")
+    assert swap.annotation == conditional
+    assert split_power_spike(conditional) == ("", conditional)
+
+
+@pytest.mark.parametrize("annotation", ["POWER SPIKE: \nUSE: x", "POWER SPIKE: x"])
+def test_split_power_spike_rejects_empty_text_or_body(annotation: str) -> None:
+    with pytest.raises(ValueError, match="power spike line"):
+        split_power_spike(annotation)
+
+
+def test_overlong_spike_is_dropped_while_the_tier_card_survives() -> None:
+    asset: dict[str, object] = {
+        "id": 1,
+        "name": "Mystic Expansion",
+        "description": {"desc": "Gain Spirit Power."},
+        "properties": {
+            "TechPower": {
+                "provided_property_type": "MODIFIER_VALUE_TECH_POWER",
+                "tooltip_is_important": True,
+                "value": "10",
+            }
+        },
+    }
+    scale = {"class_name": "scale_function_tech_damage", "stat_scale": 0.6}
+
+    def kit(name: str) -> dict[str, object]:
+        return {
+            "abilities": [
+                {
+                    "id": 10,
+                    "slot": 1,
+                    "name": name,
+                    "properties": {"Damage": {"value": 40.0, "scale_function": scale}},
+                }
+            ]
+        }
+
+    projected = purchase_annotations._annotated_tier_item(
+        evidence_item(), asset, kit("A" * 120)
+    )
+    assert projected is not None
+    assert not projected.power_spike
+    assert projected.annotation.startswith("USE: ")
+    validate_tier_annotation(projected.annotation)
+
+    spiked = purchase_annotations._annotated_tier_item(
+        evidence_item(), asset, kit("Napalm")
+    )
+    assert spiked is not None
+    assert spiked.annotation.startswith("POWER SPIKE: Napalm spirit x0.6\nUSE: ")
+    assert len(spiked.annotation) <= 200
 
 
 def test_tier_annotation_rejects_unstructured_or_oversized_copy() -> None:

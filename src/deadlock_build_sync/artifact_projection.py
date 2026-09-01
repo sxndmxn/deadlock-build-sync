@@ -19,6 +19,7 @@ from .purchase_guide import (
     GuideCategory,
     GuideItem,
     guide_item_from_evidence,
+    split_power_spike,
     standard_category_description,
     validate_tier_annotation,
 )
@@ -90,15 +91,22 @@ def _apply_projected_annotation(
                 "artifact projection has an invalid conditional annotation"
             ) from error
         return replace(projected, conditional_annotation=annotation)
+    try:
+        spike, body = split_power_spike(annotation)
+    except ValueError as error:
+        raise ArtifactBundleError(
+            "artifact projection has an invalid power spike"
+        ) from error
+    projected = replace(projected, power_spike=spike)
     if expected_tier is None:
         return projected
     try:
-        validate_tier_annotation(annotation)
+        validate_tier_annotation(body)
     except ValueError as error:
         raise ArtifactBundleError(
             "artifact projection has an invalid tier annotation"
         ) from error
-    return replace(projected, verified_tier_annotation=annotation)
+    return replace(projected, verified_tier_annotation=body)
 
 
 def _guide_item(

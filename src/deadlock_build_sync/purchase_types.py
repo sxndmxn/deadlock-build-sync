@@ -22,6 +22,8 @@ OPTIONAL_CORE_CATEGORY_DESCRIPTION = (
 )
 TIER_CATEGORY_DESCRIPTION = ""
 MAX_ITEM_ANNOTATION_BYTES = 240
+MAX_ITEM_ANNOTATION_CHARS = 200
+POWER_SPIKE_LABEL = "POWER SPIKE"
 MAX_CATEGORY_DESCRIPTION_BYTES = 240
 MAX_TACTICAL_INSTRUCTION_BYTES = 165
 CATEGORY_BASE_HEIGHT = 164.0
@@ -94,6 +96,7 @@ class GuideItem:
     tactical_annotation: str = ""
     conditional_annotation: str = ""
     verified_tier_annotation: str = ""
+    power_spike: str = ""
     eligible_player_matches: int = 0
     adopter_matches: int = 0
     purchase_adoption: float = 0.0
@@ -112,8 +115,12 @@ class GuideItem:
     def annotation(self) -> str:
         if self.conditional_annotation:
             return self.conditional_annotation
-        if self.verified_tier_annotation:
-            return self.verified_tier_annotation
+        body = self.verified_tier_annotation or self._evidence_annotation()
+        if self.power_spike:
+            return f"{POWER_SPIKE_LABEL}: {self.power_spike}\n{body}"
+        return body
+
+    def _evidence_annotation(self) -> str:
         if self.eligible_player_matches:
             return item_stat_context(self)
         timing = (
