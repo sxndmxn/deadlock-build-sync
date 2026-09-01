@@ -14,6 +14,8 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Repository quality gates for complexity, coverage, CRAP score, dead code,
+  repeated code, and Steam-boundary mutation testing.
 - Read-only artifact freshness, evidence refresh, and state-aware recommendation
   commands.
 - Pinned build tags, archetype titles, tactical hover projection, and typed
@@ -23,6 +25,8 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Leave the `TIER 1` through `TIER 4` category notes empty. Only `CORE ITEMS`
+  and `OPTIONAL CORE` keep a Queue note.
 - Show mechanics-grounded `VS`, `WHY`, `SWAP`, `WHEN`, and `SKIP` lines on
   conditional item hovers. Keep general item statistics on normal tier references.
 - Require a concrete threat response and normal-item purpose before an item can move
