@@ -88,8 +88,8 @@ deadlock-build-sync sync
 ```
 
 To upgrade after pulling a newer release, run `uv tool install --force .`.
-The separate `codex` CLI must already be authenticated. Close Deadlock before
-running `sync`; the command refuses to write while the game is open.
+Close Deadlock before running `sync`; the command refuses to write while the
+game is open.
 
 `sync` also requires a validated `build-evidence.json` from the offline
 player-match analysis pipeline. Its default location is
@@ -389,10 +389,10 @@ multiple accounts.
 
 - Refuses cache changes while Deadlock is running.
 - Fetches and validates every requested guide before touching the cache.
-- Never invokes Codex while reading or changing Steam data.
-- Recomputes exported source and per-hero fingerprints before invoking Codex,
-  so a context edited after export is rejected.
-- Rejects stale, cross-cohort, incomplete, or policy-changing Codex artifacts.
+- Recomputes exported source and per-hero fingerprints before generating
+  descriptions, so a context edited after export is rejected.
+- Rejects stale, cross-cohort, incomplete, or policy-changing description
+  artifacts.
 - Creates a timestamped backup of `cached_hero_builds.kv3` and
   `remotecache.vdf`.
 - Writes a temporary KV3 file, decodes and validates it, atomically replaces the

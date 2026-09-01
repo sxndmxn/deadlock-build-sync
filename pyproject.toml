@@ -12,7 +12,6 @@ license = "MIT"
 keywords = [
   "build-guide",
   "cli",
-  "codex",
   "deadlock",
   "game-analytics",
   "linux",
@@ -47,7 +46,7 @@ analysis = [
   "matplotlib>=3.10,<3.11",
   "numpy>=2.3,<2.4",
   "polars>=1.33,<1.34",
-  "pyarrow>=21,<22",
+  "pyarrow>=23.0.1,<24",
   "pytz>=2025.2",
   "scikit-learn>=1.7,<1.8",
   "scipy>=1.16,<1.17",
@@ -69,7 +68,7 @@ dev = [
   "mutmut>=3,<4",
   "numpy>=2.3,<2.4",
   "polars>=1.33,<1.34",
-  "pyarrow>=21,<22",
+  "pyarrow>=23.0.1,<24",
   "pytest>=8.3",
   "pylint>=3,<5",
   "pytz>=2025.2",
@@ -89,7 +88,6 @@ packages = ["src/deadlock_build_sync", "scripts"]
 
 [tool.pytest.ini_options]
 addopts = "-q"
-norecursedirs = ["tests/evals"]
 pythonpath = ["."]
 testpaths = ["tests"]
 

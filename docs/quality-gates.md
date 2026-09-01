@@ -22,8 +22,8 @@ scheduled or manual workflow runs the slower mutation gate.
 
 The numeric gate checks all tracked Python files for file size, cyclomatic
 complexity, Halstead difficulty, and forbidden type names. Coverage and CRAP
-apply to `src/` and `scripts/`. Complexipy checks `evals/`, `scripts/`, `src/`,
-`tests/`, and `tools/`.
+apply to `src/` and `scripts/`. Complexipy checks `scripts/`, `src/`, `tests/`, and
+`tools/`.
 
 ## Fast local gate
 
