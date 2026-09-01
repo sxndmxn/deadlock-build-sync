@@ -12,7 +12,6 @@ license = "MIT"
 keywords = [
   "build-guide",
   "cli",
-  "codex",
   "deadlock",
   "game-analytics",
   "linux",
@@ -89,7 +88,6 @@ packages = ["src/deadlock_build_sync", "scripts"]
 
 [tool.pytest.ini_options]
 addopts = "-q"
-norecursedirs = ["tests/evals"]
 pythonpath = ["."]
 testpaths = ["tests"]
 
