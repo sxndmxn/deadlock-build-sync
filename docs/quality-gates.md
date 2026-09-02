@@ -1,7 +1,7 @@
 # Quality gates
 
 The repository uses local, repeatable Python tools as the source of truth. CI
-runs all fast gates on each pull request and each push to `main`. A separate
+runs all fast gates on each pull request and each push to `master`. A separate
 scheduled or manual workflow runs the slower mutation gate.
 
 ## Enforced limits

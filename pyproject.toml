@@ -34,7 +34,7 @@ dependencies = [
 ]
 
 [project.urls]
-Changelog = "https://github.com/sxndmxn/deadlock-build-sync/blob/main/CHANGELOG.md"
+Changelog = "https://github.com/sxndmxn/deadlock-build-sync/blob/master/CHANGELOG.md"
 Documentation = "https://github.com/sxndmxn/deadlock-build-sync#readme"
 Issues = "https://github.com/sxndmxn/deadlock-build-sync/issues"
 Repository = "https://github.com/sxndmxn/deadlock-build-sync"

@@ -1173,10 +1173,10 @@ The key words **MUST**, **MUST NOT**, **REQUIRED**, **SHOULD**, **SHOULD NOT**, 
 - **Status:** `Verified`
 - **Requirement:** All work **MUST** remain on `feat/evidence-grounded-build-policy` (or a
   clearly superseding feature branch), be committed and pushed, and be presented in an
-  open pull request targeting `main`. The agent **MUST NOT** merge the PR.
+  open pull request targeting `master`. The agent **MUST NOT** merge the PR.
 - **Research basis:** User delivery instruction.
 - **Acceptance:** Remote PR reports the intended head/base, open state, commits, and checks;
-  `main` remains unchanged by this work.
+  `master` remains unchanged by this work.
 - **Proof:** `git`/hosting-service PR metadata at handoff.
 - **Dependencies:** REQ-OPS-004, REQ-OPS-005, REQ-EVA-009.
 
