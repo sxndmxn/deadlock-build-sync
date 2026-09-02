@@ -56,9 +56,12 @@ pick-rate, buyer-match, and purchase-event statistics. Category height grows wit
 the number of item rows so item cards are not cut off. When purchase telemetry has a
 supported majority imbue target, the hover names that ability and the Steam build
 encodes its current ability ID.
-A `CORE ITEMS` or tier hover opens with a `POWER SPIKE` line when the item grants an
-important stat that one of the hero's ability scale functions consumes. The line names
-up to two abilities and the spirit-damage coefficient. It is pinned mechanics only; no
+A `CORE ITEMS` or tier hover opens with a `POWER SPIKE` line when the item is bought
+for its spirit power and a hero ability scale function consumes it. The item must grant
+an unconditional positive spirit stat, so enemy spirit reduction, imbue-only grants, and
+stacking gains never qualify. It must also either occupy the spirit slot or grant at
+least 30 spirit power, which keeps small rider stats on defensive items out. The line
+names up to two abilities and the spirit coefficient. It is pinned mechanics only; no
 outcome statistic selects, orders, or admits it. The line is omitted when the complete
 note would pass Steam's 200-character limit. `OPTIONAL CORE` and conditional counter
 items keep their five-line card without it.

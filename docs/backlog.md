@@ -17,7 +17,10 @@ Still open:
 
 - Collect joint item-ownership and ability-unlock state so a `POWER SPIKE` can name
   a verified state transition, its prerequisite, tactical conversion, and counterplay.
-  The offline extract keeps only shop items, so no ability-unlock time is observable.
+  The warehouse `match_player` table exposes `stats.ability_points` and `stats.level`
+  beside `stats.time_stamp_s`, but the offline extract pulls neither. Adding them
+  makes boons per minute and ability rank at a landmark observable, which is what an
+  `acquisition_state` with a level range needs.
 - Enforce Steam's 200-character limit on every note. Nine `TIER 4` cards exceed it
   today; only the spike decision respects the limit.
 - Add landmark-at-risk estimates before emitting a live `CURVE RESPONSE`; match-ending

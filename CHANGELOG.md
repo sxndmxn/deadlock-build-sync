@@ -15,9 +15,11 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 
 - A mechanics-only `POWER SPIKE` line at the top of `CORE ITEMS` and tier item
-  hovers. It names up to two abilities whose scale functions consume an important
-  stat the item grants. No outcome statistic selects or orders it, and the line is
-  omitted when the complete note would pass Steam's 200-character limit.
+  hovers. It names up to two abilities whose scale functions consume the spirit
+  power an item is bought for. Enemy spirit reduction, imbue-only grants, stacking
+  gains, and small rider stats on off-slot items are all rejected. No outcome
+  statistic selects or orders it, and the line is omitted when the complete note
+  would pass Steam's 200-character limit.
 - Repository quality gates for complexity, coverage, CRAP score, dead code,
   repeated code, and Steam-boundary mutation testing.
 - Read-only artifact freshness, evidence refresh, and state-aware recommendation

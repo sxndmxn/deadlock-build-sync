@@ -132,11 +132,12 @@ def test_overlong_spike_is_dropped_while_the_tier_card_survives() -> None:
         "id": 1,
         "name": "Mystic Expansion",
         "description": {"desc": "Gain Spirit Power."},
+        "item_slot_type": "spirit",
         "properties": {
-            "TechPower": {
+            "SpiritPower": {
                 "provided_property_type": "MODIFIER_VALUE_TECH_POWER",
                 "tooltip_is_important": True,
-                "value": "10",
+                "value": "20",
             }
         },
     }
