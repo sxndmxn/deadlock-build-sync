@@ -162,8 +162,6 @@ def test_policy_item_projection_keeps_all_claim_and_node_fields() -> None:
         relative_purchase_event_volume=0.0,
         windows=(),
         required_flex_slots=1,
-        tactical_annotation=node.annotation,
-        conditional_annotation=node.annotation,
     )
 
 
@@ -196,7 +194,7 @@ def test_projection_separates_default_queue_from_optional_branch() -> None:
     guide = projected_guide()
 
     assert sha256_json(asdict(guide)) == (
-        "ca7d7d0fe60c7c842aec96c6127c8da21e1e455f42fefb5fcc9708c2a9d9e927"
+        "6dcc4ae06b6efab6a330b1e664e2303d74ca8c1e336a6c305b3a85912f545234"
     )
     assert [category.optional for category in guide.categories] == [False, True]
     assert [item.item_id for item in guide.categories[0].items] == [1]
@@ -206,7 +204,7 @@ def test_projection_separates_default_queue_from_optional_branch() -> None:
     assert guide.snapshot_id == SNAPSHOT
     assert guide.policy_id == policy().policy_id
     assert projection_fingerprint(guide) == (
-        "f8bd86d0ea67e94339f1d47b686d7d883035edd1a74e873ea30b416d692e00fd"
+        "75419c12d0e75630469bdc0d4b339246d0050bc07dca3107ebbe2b88cd0ac94c"
     )
 
 

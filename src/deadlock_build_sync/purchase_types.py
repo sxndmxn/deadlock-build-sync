@@ -23,7 +23,6 @@ OPTIONAL_CORE_CATEGORY_DESCRIPTION = (
 TIER_CATEGORY_DESCRIPTION = ""
 MAX_ITEM_ANNOTATION_BYTES = 240
 MAX_CATEGORY_DESCRIPTION_BYTES = 240
-MAX_TACTICAL_INSTRUCTION_BYTES = 165
 CATEGORY_BASE_HEIGHT = 164.0
 CATEGORY_ROW_HEIGHT = 155.5
 CATEGORY_LAYOUTS = {
@@ -36,7 +35,6 @@ CATEGORY_LAYOUTS = {
 }
 DEFAULT_CATEGORY_LAYOUT = (760.0, 8)
 CONDITIONAL_ANNOTATION_LABELS = ("VS", "WHY", "SWAP", "WHEN", "SKIP")
-TIER_ANNOTATION_LABELS = ("USE", "WHY", "SKIP", "DATA")
 _GENERIC_CONDITIONAL_PHRASES = (
     "documented mechanic",
     "fits the current fight",
@@ -91,9 +89,6 @@ class GuideItem:
     required_flex_slots: int | None = None
     sell_priority: int | None = None
     imbue_target_ability_id: int | None = None
-    tactical_annotation: str = ""
-    conditional_annotation: str = ""
-    verified_tier_annotation: str = ""
     eligible_player_matches: int = 0
     adopter_matches: int = 0
     purchase_adoption: float = 0.0
@@ -110,10 +105,6 @@ class GuideItem:
 
     @property
     def annotation(self) -> str:
-        if self.conditional_annotation:
-            return self.conditional_annotation
-        if self.verified_tier_annotation:
-            return self.verified_tier_annotation
         if self.eligible_player_matches:
             return item_stat_context(self)
         timing = (
@@ -279,34 +270,27 @@ def _format_observed_purchase_window(q25: float | None, q75: float | None) -> st
     lower = _nearest_thousand(q25)
     upper = _nearest_thousand(q75)
     if lower == upper:
-        return f"about {lower}k souls"
-    return f"{lower}k–{upper}k souls"
+        return f"about {lower}k"
+    return f"{lower}k - {upper}k"
 
 
 def item_stat_context(item: GuideItem) -> str:
-    """Render the compact analytics block shown under an item's native tooltip.
+    """Render the two-line statistics card shown on every Steam item hover.
 
     Returns:
-        Purchase window, raw buyer win rate, and player-match pick rate.
+        The soul window, then the pick rate, buyer win rate, and buyer match count.
 
     """
     window = _format_observed_purchase_window(
         item.buy_net_worth_q25,
         item.buy_net_worth_q75,
     )
-    lines = [
-        f"PURCHASE WINDOW: {window}",
-        f"WIN RATE: {item.observed_outcome_rate * 100:.1f}%",
-        f"PICK RATE: {item.purchase_adoption * 100:.1f}%",
-        f"BUYER MATCHES: {item.adopter_matches:,}",
-        f"PURCHASE EVENTS: {item.purchase_events:,}",
-    ]
-    if item.imbue_target_ability:
-        lines.append(
-            f"IMBUE: {item.imbue_target_ability} "
-            f"({item.imbue_target_share * 100:.1f}%, n={item.imbue_observations:,})"
-        )
-    return "\n".join(lines)
+    return (
+        f"SOUL WINDOW: {window}\n"
+        f"PR: {item.purchase_adoption * 100:.1f}% "
+        f"| WR: {item.observed_outcome_rate * 100:.1f}% "
+        f"| TOTAL GAMES: {item.adopter_matches:,}"
+    )
 
 
 def format_purchase_window(window: PurchaseWindow) -> str:

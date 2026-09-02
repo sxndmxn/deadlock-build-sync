@@ -44,18 +44,28 @@ The rich output is a typed, snapshot-bound policy graph:
 
 Steam receives `CORE ITEMS`, an `OPTIONAL CORE` row when a like-state alternative
 passes every evidence gate, then `TIER 1` through `TIER 4`. Only the complete
-economy-bounded default enters Queue. `OPTIONAL CORE` holds non-backbone substitutions with
-explicit decisions; an admitted item is removed from its tier row. Each conditional
-hover uses five fixed lines: `VS`, `WHY`, `SWAP`, `WHEN`, and `SKIP`. The item and
-the normal item must both have pinned mechanics that support the decision. Each tier
-row remains an
-optional, non-CORE reference menu of up to ten supported items, not a claim that
-every item should be bought or that popularity proves a situational counter. Item
-hovers in the normal tier menus contain deterministic purchase-window, win-rate,
-pick-rate, buyer-match, and purchase-event statistics. Category height grows with
-the number of item rows so item cards are not cut off. When purchase telemetry has a
-supported majority imbue target, the hover names that ability and the Steam build
-encodes its current ability ID.
+economy-bounded default enters Queue. `OPTIONAL CORE` holds non-backbone substitutions
+with explicit decisions; an admitted item is removed from its tier row. The item and
+the normal item must both have pinned mechanics that support the decision, which stays
+in the policy sidecar. Each tier row remains an optional, non-CORE reference menu of up
+to ten supported items, not a claim that every item should be bought or that popularity
+proves a situational counter.
+
+Every item hover in every row carries the same two-line statistics card and nothing
+else:
+
+```
+SOUL WINDOW: 2k - 15k
+PR: 80.6% | WR: 49.0% | TOTAL GAMES: 12,611
+```
+
+`SOUL WINDOW` is the middle half of the buyer net worth at purchase. `PR` is the pick
+rate across the hero's analysed games. `WR` is the raw buyer win rate. `TOTAL GAMES` is
+the buyer match count behind that win rate. The card is derived, so a stored artifact
+whose card no longer matches its evidence is rejected. Category height grows with the
+number of item rows so item cards are not cut off. When purchase telemetry has a
+supported majority imbue target, the Steam build encodes its current ability ID and
+Steam shows its own imbue icon.
 Each build's three header icons are deterministic: the ability maxed first, the
 highest-win-rate Tier 3 CORE item (or Tier 4 when CORE has no Tier 3 item), and the
 dominant functional build tag. The item win rate is descriptive buyer telemetry.

@@ -25,19 +25,22 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Show one two-line statistics card on every item hover: `SOUL WINDOW`, then
+  `PR`, `WR`, and `TOTAL GAMES`. This replaces the four-line `USE` / `WHY` /
+  `SKIP` / `DATA` tier card, the five-line `VS` / `WHY` / `SWAP` / `WHEN` /
+  `SKIP` swap card, and the five-line `CORE ITEMS` block. The `IMBUE` line is
+  gone because Steam shows its own imbue icon. The card is derived from evidence,
+  so a stored artifact whose card no longer matches is rejected. Conditional
+  decision copy stays in the policy sidecar.
 - Leave the `TIER 1` through `TIER 4` category notes empty. Only `CORE ITEMS`
   and `OPTIONAL CORE` keep a Queue note.
-- Show mechanics-grounded `VS`, `WHY`, `SWAP`, `WHEN`, and `SKIP` lines on
-  conditional item hovers. Keep general item statistics on normal tier references.
 - Require a concrete threat response and normal-item purpose before an item can move
   into `OPTIONAL CORE`; keep unsupported choices in their tier reference row.
 - Keep CORE as the only automatic path while making all four tier menus sparse,
   disjoint, mechanics-labeled optional references.
 - Generate build descriptions from pinned role, playstyle, archetype, and ability
   order without a model or network request.
-- Show purchase window, win rate, pick rate, buyer matches, and purchase events in
-  item hovers. Encode a supported majority imbue target when it is a current hero
-  ability.
+- Encode a supported majority imbue target when it is a current hero ability.
 - Derive visible build titles from CORE item composition so an ability-path label
   cannot misname a weapon-, spirit-, or vitality-heavy build.
 - Show the first-maxed ability, highest-win-rate Tier 3 CORE item (Tier 4 fallback),

@@ -2,11 +2,10 @@ import math
 
 import pytest
 
-from deadlock_build_sync import mechanics_item_text, mechanics_optional
+from deadlock_build_sync import mechanics_abilities, mechanics_item_text
 from deadlock_build_sync.mechanics import (
     classify_item_threat_responses,
     conditional_item_decision,
-    optional_item_decision,
 )
 from tests.mechanics_fixtures import item
 
@@ -160,66 +159,8 @@ def test_property_number_rejects_non_numeric_or_non_finite_values(
     properties: object,
     name: str,
 ) -> None:
-    assert mechanics_optional._property_number({"properties": properties}, name) is None
-
-
-def test_channel_protection_needs_complete_matching_ability_data() -> None:
-    control_item = item(1, "control_immunity")
-    control_item["description"] = {"desc": "Gain Control Immunity."}
-    control_item["properties"] = {"AbilityDuration": {"value": 3}}
-
-    assert optional_item_decision(control_item, hero_mechanics={}) == (
-        "Enemy control blocks your next commit",
-        "Control Immunity",
-        "Damage or mobility matters more",
-    )
-    assert optional_item_decision(
-        control_item,
-        hero_mechanics={
-            "abilities": [
-                {"id": "bad", "slot": 1, "name": "Bad"},
-                {"id": 2, "slot": "bad", "name": "Bad"},
-                {"id": 3, "slot": 3, "name": ""},
-                {
-                    "id": 4,
-                    "slot": 4,
-                    "name": "Too Long",
-                    "properties": {"AbilityChannelTime": {"value": 4}},
-                },
-            ]
-        },
-    ) == (
-        "Enemy control blocks your next commit",
-        "Control Immunity",
-        "Damage or mobility matters more",
-    )
-
-
-def test_channel_protection_prefers_an_ultimate_then_stable_slot_order() -> None:
-    control_item = item(1, "control_immunity")
-    control_item["description"] = {"desc": "Gain Control Immunity."}
-    control_item["properties"] = {"AbilityDuration": {"value": 5}}
-    hero: dict[str, object] = {
-        "abilities": [
-            {
-                "id": 10,
-                "slot": 1,
-                "name": "Basic Channel",
-                "properties": {"AbilityChannelTime": {"value": 2}},
-            },
-            {
-                "id": 40,
-                "slot": 4,
-                "name": "Ultimate Channel",
-                "properties": {"AbilityChannelTime": {"value": 4}},
-            },
-        ]
-    }
-
-    assert optional_item_decision(control_item, hero_mechanics=hero) == (
-        "Activate before Ultimate Channel when enemy control can interrupt it",
-        "Control Immunity protects the channel",
-        "Enemy control cannot threaten Ultimate Channel",
+    assert (
+        mechanics_abilities._property_number({"properties": properties}, name) is None
     )
 
 

@@ -33,7 +33,6 @@ from .mechanics_item_text import (
     classify_observed_item_threats,
 )
 from .mechanics_items import CategoryBonus, CategoryBonusTable, ItemGraph, ItemNode
-from .mechanics_optional import optional_item_decision
 from .mechanics_threats import (
     classify_item_threat_responses,
     conditional_item_decision,
@@ -64,7 +63,6 @@ __all__ = [
     "extract_asset_mechanics",
     "normalize_hero_description",
     "normalize_mechanical_value",
-    "optional_item_decision",
     "purchase_item",
     "schedule_ability_path",
     "schedule_component_path",

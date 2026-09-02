@@ -20,9 +20,7 @@ from .purchase_guide import (
     GuideItem,
     guide_item_from_evidence,
     standard_category_description,
-    validate_tier_annotation,
 )
-from .renderer import validate_optional_annotation
 from .value_validation import integer, object_dict, object_list, object_rows
 
 
@@ -75,30 +73,19 @@ def _optional_int(value: object, label: str) -> int | None:
     return value
 
 
-def _apply_projected_annotation(
-    projected: GuideItem,
-    annotation: object,
-    expected_tier: int | None,
-) -> GuideItem:
+def _check_projected_annotation(projected: GuideItem, annotation: object) -> None:
+    """Confirm a stored item annotation still matches its evidence.
+
+    Raises:
+        ArtifactBundleError: If the annotation is absent or stale.
+
+    """
     if not isinstance(annotation, str):
         raise ArtifactBundleError("artifact projection has no item annotation")
-    if annotation.startswith("VS: "):
-        try:
-            validate_optional_annotation(annotation)
-        except ValueError as error:
-            raise ArtifactBundleError(
-                "artifact projection has an invalid conditional annotation"
-            ) from error
-        return replace(projected, conditional_annotation=annotation)
-    if expected_tier is None:
-        return projected
-    try:
-        validate_tier_annotation(annotation)
-    except ValueError as error:
+    if annotation != projected.annotation:
         raise ArtifactBundleError(
-            "artifact projection has an invalid tier annotation"
-        ) from error
-    return replace(projected, verified_tier_annotation=annotation)
+            f"artifact projection item {projected.item_id} has a stale annotation"
+        )
 
 
 def _guide_item(
@@ -137,9 +124,8 @@ def _guide_item(
             value.get("imbue_target_ability_id"), "imbue target"
         ),
     )
-    return _apply_projected_annotation(
-        projected, value.get("annotation"), expected_tier
-    )
+    _check_projected_annotation(projected, value.get("annotation"))
+    return projected
 
 
 type _CategorySpec = tuple[str, bool, int, int, int | None]

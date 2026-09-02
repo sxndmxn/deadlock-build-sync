@@ -53,7 +53,7 @@ def test_loads_exact_reviewed_bundle_without_analytics_refetch(
 
     normalized = json.loads(json.dumps(asdict(bundle), default=_json_default))
     assert sha256_json(normalized) == (
-        "cf0bbf5e163579bbec7b38f9290d8a94adbc3f3f73bc44f59a1d2d5b31a3ceb6"
+        "92eafe3537636cb750b121088cdd15a5008b6532d7d666824d91c131de37cdc8"
     )
     assert len(bundle.guides) == 1
     guide = bundle.guides[0]
@@ -75,17 +75,10 @@ def test_loads_exact_reviewed_bundle_without_analytics_refetch(
     )
     assert not guide.rendered_categories[1].description
     assert guide.rendered_categories[0].items[0].annotation == (
-        "PURCHASE WINDOW: 4k–14k souls\n"
-        "WIN RATE: 50.0%\n"
-        "PICK RATE: 80.0%\n"
-        "BUYER MATCHES: 60\n"
-        "PURCHASE EVENTS: 80"
+        "SOUL WINDOW: 4k - 14k\nPR: 80.0% | WR: 50.0% | TOTAL GAMES: 60"
     )
     assert guide.rendered_categories[1].items[0].annotation == (
-        "USE: Spirit pressure is your next priority\n"
-        "WHY: Spirit Pressure\n"
-        "SKIP: Defense or weapon pressure matters more\n"
-        "DATA: 1k–2k souls • PICK 50.0% • BUYERS 50"
+        "SOUL WINDOW: 4k - 14k\nPR: 80.0% | WR: 50.0% | TOTAL GAMES: 60"
     )
     assert guide.ability_path is not None
     assert len(guide.ability_path.ability_ids) == 16

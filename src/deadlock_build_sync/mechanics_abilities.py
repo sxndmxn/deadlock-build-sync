@@ -1,11 +1,28 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 from .mechanics_assets import DEFAULT_ABILITY_UPGRADE_COSTS, MechanicsError
 from .mechanics_item_text import canonical_mechanics_text
-from .mechanics_optional import _property_number
 from .value_validation import integer, object_rows
+
+
+def _property_number(asset: dict[str, object], name: str) -> float | None:
+    properties = asset.get("properties")
+    if not isinstance(properties, dict):
+        return None
+    prop = properties.get(name)
+    if not isinstance(prop, dict):
+        return None
+    value = prop.get("value")
+    if not isinstance(value, (str, int, float)):
+        return None
+    try:
+        number = float(value)
+    except ValueError:
+        return None
+    return number if math.isfinite(number) else None
 
 
 def ability_definitions_from_kit(

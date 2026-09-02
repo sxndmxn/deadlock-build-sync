@@ -157,17 +157,6 @@ def _response_property_mechanics(
     }
 
 
-def _visible_property_mechanics(
-    asset: dict[str, object],
-) -> dict[str, dict[str, object]]:
-    return {
-        name: value
-        for name, value in _active_property_mechanics(asset).items()
-        if value.get("tooltip_is_important") is True
-        or value.get("tooltip_is_elevated") is True
-    }
-
-
 def _material_observed_mechanics(asset: dict[str, object]) -> dict[str, object]:
     mechanics = extract_asset_mechanics(asset)
     observed: dict[str, object] = {}
@@ -180,14 +169,6 @@ def _material_observed_mechanics(asset: dict[str, object]) -> dict[str, object]:
     important_properties = _response_property_mechanics(asset)
     if important_properties:
         observed["properties"] = normalize_mechanical_value(important_properties)
-    return observed
-
-
-def _optional_observed_mechanics(asset: dict[str, object]) -> dict[str, object]:
-    observed = _material_observed_mechanics(asset)
-    visible_properties = _visible_property_mechanics(asset)
-    if visible_properties:
-        observed["properties"] = normalize_mechanical_value(visible_properties)
     return observed
 
 

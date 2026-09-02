@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from .build_evidence import reliable_purchase_window
-from .mechanics import optional_item_decision
 from .value_validation import integer
 
 if TYPE_CHECKING:
@@ -18,43 +16,9 @@ from .purchase_types import (
     _GENERIC_CONDITIONAL_PHRASES,
     CONDITIONAL_ANNOTATION_LABELS,
     MAX_ITEM_ANNOTATION_BYTES,
-    MAX_TACTICAL_INSTRUCTION_BYTES,
-    TIER_ANNOTATION_LABELS,
     GuideItem,
     PurchaseGuide,
-    _format_observed_purchase_window,
-    item_stat_context,
 )
-
-
-def tactical_item_annotation(instruction: str, item: GuideItem) -> str:
-    """Compose an action-first annotation within Steam's UTF-8 byte ceiling.
-
-    Returns:
-        The bounded tactical and observational annotation.
-
-    Raises:
-        ValueError: If the tactical instruction exceeds its UTF-8 contract.
-
-    """
-    action = instruction.strip()
-    if not action or len(action.encode("utf-8")) > MAX_TACTICAL_INSTRUCTION_BYTES:
-        raise ValueError(
-            "tactical instruction must be 1–"
-            f"{MAX_TACTICAL_INSTRUCTION_BYTES} UTF-8 bytes"
-        )
-    context = item_stat_context(item)
-    combined = f"{action}\n{context}"
-    annotation = (
-        combined
-        if len(combined.encode("utf-8")) <= MAX_ITEM_ANNOTATION_BYTES
-        else context
-    )
-    if len(annotation.encode("utf-8")) > MAX_ITEM_ANNOTATION_BYTES:
-        raise ValueError(
-            f"item annotation exceeds {MAX_ITEM_ANNOTATION_BYTES} UTF-8 bytes"
-        )
-    return annotation
 
 
 def conditional_item_annotation(
@@ -90,60 +54,6 @@ def conditional_item_annotation(
             f"item annotation exceeds {MAX_ITEM_ANNOTATION_BYTES} UTF-8 bytes"
         )
     return annotation
-
-
-def tier_item_annotation(
-    *,
-    use: str,
-    why: str,
-    skip: str,
-    item: GuideItem,
-) -> str:
-    """Create one deterministic tactical card for a normal tier item.
-
-    Returns:
-        Four bounded lines without raw win-rate data.
-
-    Raises:
-        ValueError: If the copy is incomplete or exceeds the Steam byte limit.
-
-    """
-    window = _format_observed_purchase_window(
-        item.buy_net_worth_q25,
-        item.buy_net_worth_q75,
-    )
-    data = (
-        f"{window} • PICK {item.purchase_adoption * 100:.1f}% "
-        f"• BUYERS {item.adopter_matches:,}"
-    )
-    cleaned = tuple(value.strip() for value in (use, why, skip, data))
-    if any(not value or "\n" in value or "\r" in value for value in cleaned):
-        raise ValueError("tier annotation fields must be single-line text")
-    annotation = "\n".join(
-        f"{label}: {value}"
-        for label, value in zip(TIER_ANNOTATION_LABELS, cleaned, strict=True)
-    )
-    validate_tier_annotation(annotation)
-    return annotation
-
-
-def validate_tier_annotation(annotation: str) -> None:
-    """Validate the fixed normal-tier annotation contract.
-
-    Raises:
-        ValueError: If the annotation does not match the bounded four-line format.
-
-    """
-    lines = annotation.splitlines()
-    if len(lines) != len(TIER_ANNOTATION_LABELS) or any(
-        not line.startswith(f"{label}: ") or not line.removeprefix(f"{label}: ").strip()
-        for label, line in zip(TIER_ANNOTATION_LABELS, lines, strict=True)
-    ):
-        raise ValueError("tier annotation must contain USE, WHY, SKIP, and DATA")
-    if len(annotation.encode("utf-8")) > MAX_ITEM_ANNOTATION_BYTES:
-        raise ValueError(
-            f"item annotation exceeds {MAX_ITEM_ANNOTATION_BYTES} UTF-8 bytes"
-        )
 
 
 def guide_item_from_evidence(item: ItemEvidence) -> GuideItem:
@@ -190,64 +100,11 @@ def _guide_items_by_id(selected: SelectedHeroBuild) -> dict[int, GuideItem]:
     return by_id
 
 
-def _annotated_tier_item(
-    item: GuideItem,
-    asset: dict[str, object] | None,
-    hero_mechanics: dict[str, object] | None,
-) -> GuideItem | None:
-    if asset is None:
-        return None
-    decision = optional_item_decision(asset, hero_mechanics=hero_mechanics)
-    if decision is None:
-        return None
-    use, why, skip = decision
-    try:
-        annotation = tier_item_annotation(use=use, why=why, skip=skip, item=item)
-    except ValueError:
-        return None
-    return replace(item, verified_tier_annotation=annotation)
-
-
-def _project_tiers(
-    selected: SelectedHeroBuild,
-    by_id: dict[int, GuideItem],
-    assets: list[dict[str, object]] | None,
-    hero_mechanics: dict[str, object] | None,
-) -> dict[int, tuple[GuideItem, ...]]:
-    tiers = {
-        tier: tuple(by_id[item.item_id] for item in items)
-        for tier, items in selected.tiers.items()
-    }
-    if assets is None:
-        return tiers
-    assets_by_id = {
-        integer(asset["id"]): asset
-        for asset in assets
-        if isinstance(asset.get("id"), int)
-    }
-    annotated_tiers: dict[int, tuple[GuideItem, ...]] = {}
-    for tier, items in tiers.items():
-        annotated = (
-            projected
-            for item in items
-            if (
-                projected := _annotated_tier_item(
-                    item, assets_by_id.get(item.item_id), hero_mechanics
-                )
-            )
-            is not None
-        )
-        annotated_tiers[tier] = tuple(annotated)
-    return annotated_tiers
-
-
 def build_purchase_guide_from_evidence(
     hero: dict[str, object],
     selected: SelectedHeroBuild,
     *,
     ability_path: AbilityPath | None = None,
-    assets: list[dict[str, object]] | None = None,
-    hero_mechanics: dict[str, object] | None = None,
 ) -> PurchaseGuide:
     """Project validated player-match evidence into the analytic guide model.
 
@@ -256,7 +113,10 @@ def build_purchase_guide_from_evidence(
 
     """
     by_id = _guide_items_by_id(selected)
-    tiers = _project_tiers(selected, by_id, assets, hero_mechanics)
+    tiers = {
+        tier: tuple(by_id[item.item_id] for item in items)
+        for tier, items in selected.tiers.items()
+    }
     return PurchaseGuide(
         hero_id=integer(hero["id"]),
         hero_name=str(hero.get("name") or f"Hero {hero['id']}"),
