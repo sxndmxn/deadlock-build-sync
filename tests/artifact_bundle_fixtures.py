@@ -1,9 +1,9 @@
 import hashlib
 import json
-import math
 from datetime import UTC, datetime
 from pathlib import Path
 
+from deadlock_build_sync.ability_order import AbilityPath
 from deadlock_build_sync.api import Patch
 from deadlock_build_sync.artifacts import build_policy_artifact
 from deadlock_build_sync.narratives import (
@@ -37,6 +37,7 @@ from deadlock_build_sync.value_validation import (
     integer,
     require_object_rows,
 )
+from tests.build_evidence_fixtures import _fixture_card
 
 PATCH = Patch("Patch", 100, "2026-01-01T00:00:00Z")
 
@@ -74,7 +75,7 @@ def _manifest(evidence: dict[str, object], raw_evidence: bytes) -> SnapshotManif
                 {
                     "artifact_id": evidence["artifact_id"],
                     "hero_count": 1,
-                    "method": "state-aware-multi-path-v7",
+                    "method": "state-aware-multi-path-v8",
                 },
                 datetime.now(UTC).isoformat(),
                 hashlib.sha256(raw_evidence).hexdigest(),
@@ -122,22 +123,6 @@ def _policy(snapshot_id: str) -> BuildPolicy:
         nodes=nodes,
         evidence=(),
         ability_plan=ability_plan,
-    )
-
-
-def _fixture_card(tier: int, offset: int) -> str:
-    """Build the item card the projection must carry for a fixture item.
-
-    Returns:
-        The two-line card derived from the values the evidence fixture writes.
-
-    """
-    adopters = 80 - offset
-    lower = math.floor((4_000 * tier + offset * 100) / 1000 + 0.5)
-    return (
-        f"SOUL WINDOW: {lower}k - {lower + 10}k\n"
-        f"PR: 80.0% | WR: {(adopters // 2) / adopters * 100:.1f}% "
-        f"| TOTAL GAMES: 60"
     )
 
 
@@ -260,10 +245,10 @@ def _build_evidence() -> dict[str, object]:
             })
     boundary = EpochBoundary(PATCH.identity, 100)
     payload = {
-        "schema_version": 8,
+        "schema_version": 9,
         "producer": "fixture",
         "method": {
-            "version": "state-aware-multi-path-v7",
+            "version": "state-aware-multi-path-v8",
             "minimum_core_item_count": 4,
             "maximum_core_item_count": 9,
             "minimum_core_support": 20,
@@ -412,6 +397,9 @@ def _write_bundle(root: Path) -> tuple[Path, Path, Path, Path]:
         "policy_id": policy.policy_id,
         "ability_policy": {
             "selection": "MOST_SUPPORTED_LEGAL_STATE",
+            "quality": AbilityPath(
+                ability_ids, 235, 135, 100, 250
+            ).quality_assessment(),
             "all_valid_telemetry_appearances": 250,
             "complete_path_appearances": 150,
             "final_branch_support": 100,

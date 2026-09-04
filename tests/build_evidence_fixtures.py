@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from typing import TYPE_CHECKING
 
 from deadlock_build_sync.mechanics import ItemGraph
@@ -229,10 +230,10 @@ def _document(
         "evaluation": {"chronological_fold": "test"},
     }
     payload = {
-        "schema_version": 8,
+        "schema_version": 9,
         "producer": "deadlock-build-sync.offline",
         "method": {
-            "version": "state-aware-multi-path-v7",
+            "version": "state-aware-multi-path-v8",
             "minimum_core_item_count": 4,
             "maximum_core_item_count": 9,
             "minimum_core_support": 20,
@@ -350,3 +351,19 @@ def _sequence_policy(document: dict[str, object]) -> dict[str, object]:
 
 def _situational_policy(document: dict[str, object]) -> dict[str, object]:
     return require_object_dict(_first_build(document)["situational_policy"])
+
+
+def _fixture_card(tier: int, offset: int) -> str:
+    """Build the item card the projection must carry for a fixture item.
+
+    Returns:
+        The two-line card derived from the values the evidence fixture writes.
+
+    """
+    adopters = 80 - offset
+    lower = math.floor((4_000 * tier + offset * 100) / 1000 + 0.5)
+    return (
+        f"SOUL WINDOW: {lower}k - {lower + 10}k\n"
+        f"PR: 80.0% | WR: {(adopters // 2) / adopters * 100:.1f}% "
+        f"| TOTAL GAMES: 60"
+    )

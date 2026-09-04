@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Isolate optional CORE shortlisting and imbue selection from historical test
+  purchases, and use a training-only denominator for path labels.
+- Check ability conditioning for single-path heroes and retain explicit support
+  status and fallback reasons in context artifacts.
+- Add read-only `quality-report` with exact-runtime replay, later-data admission,
+  per-build/route diagnostics, and explicit unevaluated results for missing evidence.
+- Advance build-evidence schema to 9, selection method to v8, and context schema
+  to 16; older bundles require regeneration.
+
 All notable changes to this project are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),

@@ -89,7 +89,8 @@ def _path_label(
         ).fetchone()
     finally:
         con.unregister("_build_path_members")
-    if row is not None and int(row[1]) / len(path.member_ids) >= 0.5:
+    training_members = path.fold_support.get("train", 0)
+    if row is not None and training_members and int(row[1]) / training_members >= 0.5:
         ability = assets_by_id.get(int(row[0]), {})
         name = ability.get("name")
         if isinstance(name, str) and name.strip():

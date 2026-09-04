@@ -344,7 +344,7 @@ def test_export_production_evidence_writes_closed_document(
     assert document["requested_hero_ids"] == [7]
     assert len(str(document["artifact_id"])) == 64
     assert sha256_json(document) == (
-        "5cfa7595e55ed1c738e5ce5e0ab445bae284e0dc93d6ce9c678832cf9e70f309"
+        "95f998d15061ce2dc1069e24c73ff688fae5380e5598d81b6bde86c6ce43e516"
     )
     assert fake.closed
 

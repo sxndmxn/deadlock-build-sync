@@ -498,7 +498,11 @@ The key words **MUST**, **MUST NOT**, **REQUIRED**, **SHOULD**, **SHOULD NOT**, 
   only the base description or an important active property. They **MUST** distinguish
   defense from enemy resistance reduction and **MUST NOT** use upgrade-only ability
   text. Target and comparator support **MUST** be at least 20, and the comparative
-  estimate **MUST** be positive, in training, validation, and untouched test folds.
+  estimate **MUST** be positive in training, validation, and the historical test
+  fold. Because that last fold gates branch release, it **MUST** be labeled release
+  validation rather than untouched final evaluation. The frozen shipped policy
+  **MUST** be evaluated separately on later decision states; missing later states
+  **MUST** remain explicitly unevaluated.
 - **Research basis:** [Counter purchases and situational branches](deadlock-strategy-description-research.md#counter-purchases-and-situational-branches), F-12.
 - **Acceptance:** Counter cards lacking any contract field are rejected; hard-control,
   healing, bullet, spirit, mobility, and ally-protection fixtures map only to mechanically
@@ -554,7 +558,9 @@ The key words **MUST**, **MUST NOT**, **REQUIRED**, **SHOULD**, **SHOULD NOT**, 
 - **Requirement:** For each hero and supported build path, production **MUST** select a
   mechanics-compatible four-to-six-item backbone from training rows, then complete it
   to a legal four-to-nine-item default. Validation rows **MUST** gate support and
-  stability. Test rows **MUST** be audit-only. The default catalog investment **MUST
+  stability. Test rows **MUST** be audit-only for CORE/tier membership, ordering,
+  optional CORE shortlisting, and imbue selection. Situational release validation
+  follows the separate requirement above. The default catalog investment **MUST
   NOT** exceed the training-and-validation cohort median final net worth. Each Tier
   I–IV menu **MUST** exclude the complete CORE path, contain one through ten items,
   and require at least 20 adopters and 5% adoption in both training and validation.

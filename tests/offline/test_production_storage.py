@@ -75,6 +75,7 @@ def _metrics() -> dict[int, dict[str, object]]:
             "item_name": f"Item {item_id}",
             "tier": 1,
             "adopter_matches": 40 - item_id,
+            "selection_adopter_matches": 40 - item_id,
         }
         for item_id in (1, 2, 3, 4)
     }
@@ -187,7 +188,7 @@ def test_core_alternatives_audit_mechanics_estimability_and_admission(
     monkeypatch.setattr(storage, "cross_fitted_dr_contrast", _contrast)
 
     admitted, audit = storage._core_alternatives(
-        pl.DataFrame({"item_id": [3, 4]}),
+        pl.DataFrame({"item_id": [3, 4], "fold": ["train", "validation"]}),
         (1, 2),
         (1,),
         hero_metrics,
@@ -206,7 +207,7 @@ def test_core_alternatives_audit_mechanics_estimability_and_admission(
 
     monkeypatch.setattr(storage, "cross_fitted_dr_contrast", _raise_contrast)
     _, failed_audit = storage._core_alternatives(
-        pl.DataFrame({"item_id": [3, 4]}),
+        pl.DataFrame({"item_id": [3, 4], "fold": ["train", "validation"]}),
         (1, 2),
         (1,),
         hero_metrics,

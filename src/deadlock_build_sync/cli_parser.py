@@ -216,6 +216,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="typed policy sidecar (default: policies.json beside build evidence)",
     )
     recommendation.add_argument("--artifacts", type=Path)
+    quality = subparsers.add_parser(
+        "quality-report",
+        help="audit frozen build quality and optional later replay without Steam or network",
+    )
+    quality.add_argument("--artifacts", type=Path)
+    quality.add_argument(
+        "--replay", type=Path, help="deidentified later decision replay JSON"
+    )
+    quality.add_argument(
+        "--assets", type=Path, help="item assets pinned to build evidence"
+    )
     preview = subparsers.add_parser(
         "preview", help="generate and print guides without changing Steam data"
     )
@@ -288,6 +299,7 @@ def build_parser() -> argparse.ArgumentParser:
         status,
         refresh,
         recommendation,
+        quality,
         preview,
         install,
         install_artifacts,

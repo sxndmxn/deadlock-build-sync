@@ -252,6 +252,8 @@ def test_ability_path_filters_non_integer_item_ids(tmp_path: Path) -> None:
     raw = cast("dict[str, object]", hero["ability_policy"])
     raw["selection"] = ""
     raw["filter_item_ids"] = [1, "bad", 2]
+    quality = cast("dict[str, object]", raw["quality"])
+    quality.update(status="pass", build_conditioned=True)
 
     path = projection._ability_path(hero, policy)
 

@@ -23,6 +23,23 @@ class AbilityPath:
     decision_support: tuple[int, ...] = ()
     selection: str = "MOST_SUPPORTED_LEGAL_STATE"
     filter_item_ids: tuple[int, ...] = ()
+    fallback_reason: str | None = None
+
+    def quality_assessment(self) -> dict[str, object]:
+        supported = self.minimum_decision_support >= LOW_ABILITY_DECISION_SUPPORT
+        compatible = bool(self.filter_item_ids) and self.fallback_reason is None
+        return {
+            "status": "fail"
+            if not supported
+            else "pass"
+            if compatible
+            else "unevaluated",
+            "minimum_decision_support": self.minimum_decision_support,
+            "required_decision_support": LOW_ABILITY_DECISION_SUPPORT,
+            "build_conditioned": compatible,
+            "fallback_reason": self.fallback_reason,
+            "claim": "supported observed order; tactical superiority is not established",
+        }
 
     @property
     def final_branch_support_share(self) -> float:

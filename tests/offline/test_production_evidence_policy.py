@@ -307,7 +307,7 @@ def test_path_label_prefers_imbue_then_slot_item_and_default() -> None:
         [(1, 0, 99), (2, 0, 99)],
     )
     members = frozenset({(1, 0), (2, 0)})
-    ability_path = DiscoveredBuildPath("ability", members, (10,), {}, {})
+    ability_path = DiscoveredBuildPath("ability", members, (10,), {"train": 2}, {})
 
     assert _path_label(con, ability_path, {99: {"name": " Mini Turret "}}) == (
         "Mini Turret"
