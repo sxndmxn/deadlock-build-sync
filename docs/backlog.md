@@ -14,8 +14,8 @@ Keep the implementation evidence-first and deterministic:
   duration buckets remain labeled as descriptive associations and cannot drive it.
 - Render admitted spike/curve cards from typed policy data. If no card passes, omit
   the section instead of generating filler.
-- Without an admitted hero-relative rationale, keep item hover additions limited to
-  `PURCHASE WINDOW`, `WIN RATE`, and `PICK RATE`; rely on the game's native item
+- Without an admitted hero-relative rationale, keep the item hover limited to the
+  `SOUL WINDOW`, `PR`, `WR`, and `TOTAL GAMES` card; rely on the game's native item
   description for mechanics.
 
 Acceptance:

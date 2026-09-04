@@ -19,7 +19,6 @@ from .purchase_guide import (
     GuideCategory,
     GuideItem,
     PurchaseGuide,
-    conditional_item_annotation,
 )
 from .renderer_items import apply_sell_priorities as _apply_sell_priorities
 from .renderer_items import branch_label as _branch_label
@@ -116,7 +115,6 @@ def _project_conditional_item(
         return item
     return _project_guide_item_policy_fields(
         item,
-        conditional_annotation=node.annotation,
         required_flex_slots=node.required_flex_slots or None,
         sell_priority=node.sell_priority,
         imbue_target_ability_id=(
@@ -166,13 +164,6 @@ def _evidence_optional_core(
     return tuple(
         _project_guide_item_policy_fields(
             item,
-            conditional_annotation=conditional_item_annotation(
-                vs=card_by_item[item.item_id].vs,
-                why=card_by_item[item.item_id].why,
-                swap=card_by_item[item.item_id].swap,
-                when=card_by_item[item.item_id].when,
-                skip=card_by_item[item.item_id].skip,
-            ),
             required_flex_slots=None,
             sell_priority=None,
             imbue_target_ability_id=item.imbue_target_ability_id,

@@ -4,7 +4,6 @@ from deadlock_build_sync.mechanics import (
     classify_item_threat_responses,
     classify_observed_item_threats,
     conditional_item_decision,
-    optional_item_decision,
 )
 from tests.mechanics_fixtures import item
 
@@ -158,11 +157,6 @@ def test_automatically_does_not_create_ally_protection() -> None:
     }
 
     assert "ally_protection" not in classify_item_threat_responses(active_reload)
-    assert optional_item_decision(active_reload) == (
-        "You need sustain between fights",
-        "Sustain",
-        "Immediate damage or defense matters more",
-    )
 
 
 def test_upgrade_only_ability_text_does_not_create_enemy_threat() -> None:
@@ -182,37 +176,3 @@ def test_upgrade_only_ability_text_does_not_create_enemy_threat() -> None:
     }
 
     assert "bullet_pressure" in classify_observed_item_threats(assassinate)
-
-
-def test_optional_item_copy_uses_only_controlled_grounded_purposes() -> None:
-    weapon = item(99, "weapon")
-    weapon["description"] = {"desc": "Gain Weapon Damage and Fire Rate."}
-
-    assert optional_item_decision(weapon) == (
-        "Weapon pressure is your next priority",
-        "Weapon Pressure",
-        "Defense or Spirit pressure matters more",
-    )
-
-    unknown = item(100, "unknown")
-    unknown["description"] = {"desc": "A mysterious item."}
-    assert optional_item_decision(unknown) is None
-
-
-def test_optional_item_copy_uses_visible_innate_properties() -> None:
-    extra_spirit = item(99, "extra_spirit")
-    extra_spirit["properties"] = {
-        "TechPower": {
-            "label": "Spirit Power",
-            "provided_property_type": "MODIFIER_VALUE_TECH_POWER",
-            "tooltip_is_elevated": True,
-            "tooltip_is_important": False,
-            "value": "10",
-        }
-    }
-
-    assert optional_item_decision(extra_spirit) == (
-        "Spirit pressure is your next priority",
-        "Spirit Pressure",
-        "Defense or weapon pressure matters more",
-    )

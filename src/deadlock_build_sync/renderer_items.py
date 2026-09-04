@@ -36,11 +36,8 @@ def guide_item(
     )
     if claim is None:
         raise PolicyError(f"purchase node {node.node_id} has no current evidence")
-    annotation = node.annotation.strip()
     if optional:
-        validate_optional_annotation(annotation)
-    elif not annotation:
-        annotation = "Default core purchase; use the policy sidecar for timing and deviation rules."
+        validate_optional_annotation(node.annotation.strip())
     estimate = claim.estimate or 0.0
     interval_lower = claim.interval[0] if claim.interval is not None else 0.0
     return GuideItem(
@@ -55,8 +52,6 @@ def guide_item(
         required_flex_slots=node.required_flex_slots or None,
         sell_priority=node.sell_priority,
         imbue_target_ability_id=node.imbue_target_ability_id,
-        tactical_annotation=annotation,
-        conditional_annotation=annotation if optional else "",
     )
 
 
@@ -66,7 +61,6 @@ def project_guide_item_policy_fields(
     required_flex_slots: int | None,
     sell_priority: int | None,
     imbue_target_ability_id: int | None,
-    conditional_annotation: str | None = None,
 ) -> GuideItem:
     return GuideItem(
         item_id=item.item_id,
@@ -80,13 +74,6 @@ def project_guide_item_policy_fields(
         required_flex_slots=required_flex_slots,
         sell_priority=sell_priority,
         imbue_target_ability_id=imbue_target_ability_id,
-        tactical_annotation=item.tactical_annotation,
-        conditional_annotation=(
-            item.conditional_annotation
-            if conditional_annotation is None
-            else conditional_annotation
-        ),
-        verified_tier_annotation=item.verified_tier_annotation,
         eligible_player_matches=item.eligible_player_matches,
         adopter_matches=item.adopter_matches,
         purchase_adoption=item.purchase_adoption,

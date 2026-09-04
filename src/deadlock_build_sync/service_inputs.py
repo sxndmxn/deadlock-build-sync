@@ -174,8 +174,6 @@ def _prepare_hero_inputs(
             hero,
             selected_build,
             ability_path=ability_path,
-            assets=evidence.assets,
-            hero_mechanics=kit,
         )
         if not analytic_guide.has_complete_item_coverage:
             return (

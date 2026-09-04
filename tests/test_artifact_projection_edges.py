@@ -93,26 +93,15 @@ def test_optional_int_rejects_invalid_values(value: object) -> None:
         projection._optional_int(value, "field")
 
 
-def test_projected_annotation_rejects_missing_and_invalid_text(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_projected_annotation_rejects_missing_and_stale_text(tmp_path: Path) -> None:
     _hero, _policy_value, evidence = _inputs(tmp_path)
     item = guide_item_from_evidence(evidence.items[0])
     with pytest.raises(ArtifactBundleError, match="no item annotation"):
-        projection._apply_projected_annotation(item, None, 1)
+        projection._check_projected_annotation(item, None)
+    with pytest.raises(ArtifactBundleError, match="stale annotation"):
+        projection._check_projected_annotation(item, "USE: old copy")
 
-    def invalid(_annotation: str) -> None:
-        raise ValueError("invalid")
-
-    monkeypatch.setattr(projection, "validate_optional_annotation", invalid)
-    with pytest.raises(ArtifactBundleError, match="invalid conditional"):
-        projection._apply_projected_annotation(item, "VS: invalid", None)
-
-    assert projection._apply_projected_annotation(item, "plain", None) == item
-    monkeypatch.setattr(projection, "validate_tier_annotation", invalid)
-    with pytest.raises(ArtifactBundleError, match="invalid tier annotation"):
-        projection._apply_projected_annotation(item, "plain", 1)
+    assert projection._check_projected_annotation(item, item.annotation) is None
 
 
 @pytest.mark.parametrize(
@@ -122,7 +111,7 @@ def test_projected_annotation_rejects_missing_and_invalid_text(
         ({"item_id": 0, "item": "Item"}, "incomplete item"),
         ({"item_id": 1001, "item": ""}, "incomplete item"),
         (
-            {"item_id": 9999, "item": "Other", "annotation": "plain"},
+            {"item_id": 9999, "item": "Other", "annotation": "SOUL WINDOW: 1k - 2k"},
             "conflicts with build evidence",
         ),
     ],

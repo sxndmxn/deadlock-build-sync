@@ -11,9 +11,6 @@ from deadlock_build_sync.purchase_guide import (
     choose_adaptive_bucket_increment,
     conditional_item_annotation,
     format_purchase_window,
-    tactical_item_annotation,
-    tier_item_annotation,
-    validate_tier_annotation,
     wilson_score_interval,
 )
 
@@ -41,21 +38,16 @@ def evidence_item(
     )
 
 
-def test_evidence_item_annotation_is_compact_player_facing_copy() -> None:
+def test_every_item_card_is_the_two_line_statistics_block() -> None:
     assert evidence_item().annotation == (
-        "PURCHASE WINDOW: 4k–14k souls\n"
-        "WIN RATE: 49.0%\n"
-        "PICK RATE: 80.6%\n"
-        "BUYER MATCHES: 12,611\n"
-        "PURCHASE EVENTS: 12,700"
+        "SOUL WINDOW: 4k - 14k\nPR: 80.6% | WR: 49.0% | TOTAL GAMES: 12,611"
     )
+    assert len(evidence_item().annotation.encode("utf-8")) <= 240
 
 
-def test_item_annotation_uses_stats_and_observed_imbue_target_only() -> None:
-    item = evidence_item()
+def test_the_card_carries_no_generated_copy_or_imbue_line() -> None:
     item = replace(
-        item,
-        tactical_annotation="AI prose must not appear.",
+        evidence_item(),
         imbue_target_ability_id=40,
         imbue_target_ability="Frozen Shelter",
         imbue_target_matches=75,
@@ -63,58 +55,21 @@ def test_item_annotation_uses_stats_and_observed_imbue_target_only() -> None:
         imbue_target_share=0.75,
     )
 
-    assert "AI prose" not in item.annotation
-    assert item.annotation.endswith("IMBUE: Frozen Shelter (75.0%, n=100)")
-
-
-def test_verified_tier_annotation_replaces_raw_win_rate_stats() -> None:
-    item = evidence_item()
-    annotation = tier_item_annotation(
-        use="Spirit pressure is your next priority",
-        why="Spirit Power",
-        skip="Defense or weapon pressure matters more",
-        item=item,
-    )
-    item = replace(item, verified_tier_annotation=annotation)
-
-    assert item.annotation == (
-        "USE: Spirit pressure is your next priority\n"
-        "WHY: Spirit Power\n"
-        "SKIP: Defense or weapon pressure matters more\n"
-        "DATA: 4k–14k souls • PICK 80.6% • BUYERS 12,611"
-    )
-    assert "WIN RATE" not in item.annotation
-    validate_tier_annotation(item.annotation)
-
-
-def test_tier_annotation_rejects_unstructured_or_oversized_copy() -> None:
-    with pytest.raises(ValueError, match="USE, WHY, SKIP, and DATA"):
-        validate_tier_annotation("AI prose")
-    with pytest.raises(ValueError, match="240"):
-        tier_item_annotation(
-            use="x" * 241,
-            why="Spirit Power",
-            skip="Defense matters more",
-            item=evidence_item(),
-        )
+    assert item.annotation == evidence_item().annotation
+    assert "IMBUE" not in item.annotation
+    assert "USE:" not in item.annotation
 
 
 def test_collapsed_and_missing_purchase_windows_remain_readable() -> None:
     assert evidence_item(q25=1_553, q75=2_449).annotation.startswith(
-        "PURCHASE WINDOW: about 2k souls\n"
+        "SOUL WINDOW: about 2k\n"
     )
-
-
-def test_tactical_copy_keeps_the_complete_stats_block() -> None:
-    item = evidence_item()
-
-    assert tactical_item_annotation("x" * 165, item).endswith(item.annotation)
     assert evidence_item(q25=None, q75=None).annotation.startswith(
-        "PURCHASE WINDOW: unavailable\n"
+        "SOUL WINDOW: unavailable\n"
     )
 
 
-def test_conditional_annotation_replaces_stats_with_fixed_decision_lines() -> None:
+def test_conditional_annotation_keeps_its_fixed_policy_sidecar_lines() -> None:
     annotation = conditional_item_annotation(
         vs="Heavy Spirit damage",
         why="Spirit Resist and Debuff Resist for self/ally",
@@ -122,18 +77,15 @@ def test_conditional_annotation_replaces_stats_with_fixed_decision_lines() -> No
         when="Before the next Spirit-heavy fight",
         skip="Keep default when catch matters more",
     )
-    item = replace(evidence_item(), conditional_annotation=annotation)
 
-    assert item.annotation == (
+    assert annotation == (
         "VS: Heavy Spirit damage\n"
         "WHY: Spirit Resist and Debuff Resist for self/ally\n"
         "SWAP: Replaces Phantom Strike\n"
         "WHEN: Before the next Spirit-heavy fight\n"
         "SKIP: Keep default when catch matters more"
     )
-    assert len(item.annotation.encode("utf-8")) <= 240
-    assert "WIN RATE" not in item.annotation
-    assert "WIN RATE" in evidence_item().annotation
+    assert len(annotation.encode("utf-8")) <= 240
 
 
 def test_conditional_annotation_rejects_generic_or_oversized_copy() -> None:

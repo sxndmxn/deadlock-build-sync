@@ -11,7 +11,6 @@ from deadlock_build_sync.mechanics import (
     build_hero_mechanics,
     classify_item_threat_responses,
     conditional_item_decision,
-    optional_item_decision,
     purchase_item,
     schedule_component_path,
     sell_item,
@@ -354,34 +353,7 @@ def test_unstoppable_immunity_is_control_defense_and_protects_singularity() -> N
     }
     weapon = item(100, "weapon_item")
     weapon["description"] = {"desc": "Gain Weapon Damage."}
-    hero_mechanics: dict[str, object] = {
-        "abilities": [
-            {
-                "id": 30,
-                "slot": 3,
-                "name": "Rejuvenating Aurora",
-                "properties": {"AbilityChannelTime": {"value": "4.0"}},
-            },
-            {
-                "id": 40,
-                "slot": 4,
-                "name": "Singularity",
-                "properties": {"AbilityChannelTime": {"value": "3.5"}},
-            },
-        ]
-    }
-
     assert classify_item_threat_responses(unstoppable) == frozenset({"hard_control"})
-    assert optional_item_decision(unstoppable) == (
-        "Enemy control blocks your next commit",
-        "Control Immunity",
-        "Damage or mobility matters more",
-    )
-    assert optional_item_decision(unstoppable, hero_mechanics=hero_mechanics) == (
-        "Activate before Singularity when enemy control can interrupt it",
-        "Control Immunity protects the channel",
-        "Enemy control cannot threaten Singularity",
-    )
     assert conditional_item_decision(unstoppable, weapon) == (
         "Hard control or debuffs",
         "Control Immunity",

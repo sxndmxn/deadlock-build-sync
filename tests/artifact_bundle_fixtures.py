@@ -1,5 +1,6 @@
 import hashlib
 import json
+import math
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -124,6 +125,22 @@ def _policy(snapshot_id: str) -> BuildPolicy:
     )
 
 
+def _fixture_card(tier: int, offset: int) -> str:
+    """Build the item card the projection must carry for a fixture item.
+
+    Returns:
+        The two-line card derived from the values the evidence fixture writes.
+
+    """
+    adopters = 80 - offset
+    lower = math.floor((4_000 * tier + offset * 100) / 1000 + 0.5)
+    return (
+        f"SOUL WINDOW: {lower}k - {lower + 10}k\n"
+        f"PR: 80.0% | WR: {(adopters // 2) / adopters * 100:.1f}% "
+        f"| TOTAL GAMES: 60"
+    )
+
+
 def _projection() -> dict[str, object]:
     rows: list[dict[str, object]] = []
     for row_index, (name, count) in enumerate((
@@ -151,15 +168,9 @@ def _projection() -> dict[str, object]:
                 {
                     "item_id": start + offset,
                     "item": f"Item {start + offset}",
-                    "annotation": (
-                        f"Observed evidence for item {start + offset}."
-                        if row_index == 0
-                        else (
-                            "USE: Spirit pressure is your next priority\n"
-                            "WHY: Spirit Pressure\n"
-                            "SKIP: Defense or weapon pressure matters more\n"
-                            "DATA: 1k–2k souls • PICK 50.0% • BUYERS 50"
-                        )
+                    "annotation": _fixture_card(
+                        (offset // 2) + 1 if row_index == 0 else row_index,
+                        offset,
                     ),
                     "required_flex_slots": None,
                     "sell_priority": None,
