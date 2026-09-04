@@ -7,7 +7,7 @@ from .build_tags import FUNCTION_CLASSES
 from .mechanics import extract_asset_mechanics
 from .value_validation import integer, object_dict, object_list, object_rows
 
-CONTEXT_SCHEMA_VERSION = 15
+CONTEXT_SCHEMA_VERSION = 16
 KIT_BASIS_SCHEMA_VERSION = 3
 NARRATIVE_BASIS_SCHEMA_VERSION = 10
 TIER_LABELS = {1: "I", 2: "II", 3: "III", 4: "IV"}

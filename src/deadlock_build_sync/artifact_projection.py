@@ -372,7 +372,9 @@ def _ability_path(hero: dict[str, object], policy: BuildPolicy) -> AbilityPath:
             f"hero {policy.hero_id} ability policy has incoherent support"
         )
     wins = round(float(rate) * matches)
-    return AbilityPath(
+    quality = object_dict(raw.get("quality"))
+    fallback_reason = quality.get("fallback_reason") if quality is not None else None
+    path = AbilityPath(
         ability_ids=ability_ids,
         matches=matches,
         wins=wins,
@@ -386,4 +388,10 @@ def _ability_path(hero: dict[str, object], policy: BuildPolicy) -> AbilityPath:
             for item_id in object_list(raw.get("filter_item_ids")) or []
             if isinstance(item_id, int)
         ),
+        fallback_reason=fallback_reason if isinstance(fallback_reason, str) else None,
     )
+    if quality != path.quality_assessment():
+        raise ArtifactBundleError(
+            "ability quality assessment differs from its evidence"
+        )
+    return path

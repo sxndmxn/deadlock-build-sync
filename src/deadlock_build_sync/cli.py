@@ -15,6 +15,7 @@ from .cache import (
 from .cli_export import _run_export_context, _run_restore, _run_trace_summary
 from .cli_install import _run_install
 from .cli_parser import DEFAULT_NARRATIVE_PATH, build_parser, positive_int
+from .cli_quality import run_quality_report
 from .cli_recommend import _run_preview, _run_recommend
 from .cli_status import _run_status
 from .cli_support import (
@@ -232,6 +233,7 @@ def _dispatch(args: argparse.Namespace) -> int:
         "status": _run_status,
         "refresh-evidence": _run_refresh_evidence,
         "recommend": _run_recommend,
+        "quality-report": run_quality_report,
         "preview": _run_preview,
         "install": _run_install,
         "install-artifacts": _run_install_artifacts,

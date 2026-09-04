@@ -314,9 +314,11 @@ def export_production_evidence(paths: RunPaths, output: Path) -> dict[str, objec
             "outcome_usage": (
                 "cross-fitted doubly robust contrasts may admit non-backbone CORE "
                 "substitutions only after positive train and validation intervals, "
-                "overlap, balance, ESS, uncertainty, and stability gates; test is "
-                "audit-only and results never prove causation"
+                "overlap, balance, ESS, uncertainty, and stability gates; the "
+                "historical test fold also gates situational branch release and "
+                "is not independent evaluation of the shipped policy"
             ),
+            "independent_evaluation": "later replay states after the frozen artifact cutoff",
         },
         "cohort": {
             **cohort,

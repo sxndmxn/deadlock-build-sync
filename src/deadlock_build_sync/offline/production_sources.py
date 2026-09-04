@@ -268,6 +268,7 @@ def _path_item_metrics(
                 FROM first_purchases p
                 JOIN _build_path_members m USING (match_id, player_slot)
                 WHERE p.imbued_ability_id > 0
+                  AND p.fold IN ('train', 'validation')
                 GROUP BY p.item_id, p.imbued_ability_id
             ), ranked_imbues AS (
                 SELECT *,

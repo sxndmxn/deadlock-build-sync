@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 from .ability_order import LOW_ABILITY_DECISION_SUPPORT, select_ability_path
@@ -72,10 +72,7 @@ def _ability_path_for_build(
     analysis_start: int,
     selected_build: SelectedHeroBuild,
     global_path: AbilityPath,
-    use_item_filter: bool,
 ) -> AbilityPath:
-    if not use_item_filter:
-        return global_path
     filter_item_ids = tuple(item.item_id for item in selected_build.backbone)
     filtered_rows = api.ability_order_stats(
         hero_id=hero_id,
@@ -92,7 +89,14 @@ def _ability_path_for_build(
         and filtered_path.minimum_decision_support >= LOW_ABILITY_DECISION_SUPPORT
     ):
         return filtered_path
-    return global_path
+    return replace(
+        global_path,
+        fallback_reason=(
+            "build-conditioned ability telemetry has no complete order"
+            if filtered_path is None
+            else "build-conditioned ability order has a decision supported by fewer than 20 observations"
+        ),
+    )
 
 
 def _invalid_imbue_target(
@@ -168,7 +172,6 @@ def _prepare_hero_inputs(
             analysis_start=evidence.analysis_start,
             selected_build=selected_build,
             global_path=global_ability_path,
-            use_item_filter=len(hero_builds) > 1,
         )
         analytic_guide = build_purchase_guide_from_evidence(
             hero,

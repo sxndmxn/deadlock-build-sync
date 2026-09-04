@@ -87,6 +87,7 @@ def _ability_policy(
     return {
         "selection": path.selection,
         "filter_item_ids": list(path.filter_item_ids),
+        "quality": path.quality_assessment(),
         "language_ceiling": "descriptive default projection, not a universal path",
         "all_valid_telemetry_appearances": path.cohort_matches,
         "complete_path_appearances": path.complete_path_matches,

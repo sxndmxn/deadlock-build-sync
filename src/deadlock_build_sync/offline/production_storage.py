@@ -24,6 +24,7 @@ from deadlock_build_sync.value_validation import (
 from .core_policy import (
     cross_fitted_dr_contrast,
 )
+from .core_policy_config import SELECTION_FOLDS
 from .production_sequence import _replacement_is_legal
 from .production_sources import MINIMUM_CORE_SUPPORT
 
@@ -98,7 +99,7 @@ def _core_alternative_candidates(
         for item_id, row in metrics.items()
         if item_id not in default_set
         and integer(row["tier"]) == integer(comparator["tier"])
-        and integer(row["adopter_matches"]) >= MINIMUM_CORE_SUPPORT
+        and integer(row["selection_adopter_matches"]) >= MINIMUM_CORE_SUPPORT
         and _replacement_is_legal(
             default_item_ids,
             comparator_id,
@@ -110,7 +111,7 @@ def _core_alternative_candidates(
     return sorted(
         candidates,
         key=lambda row: (
-            -integer(row["adopter_matches"]),
+            -integer(row["selection_adopter_matches"]),
             integer(row["item_id"]),
         ),
     )[:2]
@@ -149,6 +150,7 @@ def _core_alternatives(
     graph: ItemGraph,
     priorities: dict[int, tuple[float, float, int]],
 ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    decisions = decisions.filter(pl.col("fold").is_in(SELECTION_FOLDS))
     metrics = {
         integer(row["item_id"]): row for row in hero_metrics.iter_rows(named=True)
     }

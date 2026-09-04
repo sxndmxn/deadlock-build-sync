@@ -94,6 +94,19 @@ class DecisionState:
             raise RecommendationError(
                 f"could not read decision state {path}: {error}"
             ) from error
+        return cls.from_document(value)
+
+    @classmethod
+    def from_document(cls, value: object) -> DecisionState:
+        """Validate the same closed state used by recommend and offline replay.
+
+        Returns:
+            A validated decision state.
+
+        Raises:
+            RecommendationError: If any state field is malformed.
+
+        """
         if not isinstance(value, dict):
             raise RecommendationError("decision state root must be an object")
         if value.get("schema_version") != DECISION_STATE_SCHEMA_VERSION:

@@ -210,6 +210,12 @@ events; and monitoring/rollback rules. See the
 
 ## Patch workflow
 
+Use `deadlock-build-sync quality-report --artifacts PATH` to inspect ability
+support, fallbacks, and independent replay coverage for each frozen build.
+Missing replay evidence is reported as unevaluated. See
+[Build quality and independent replay](docs/build-quality.md) for inputs,
+technical acceptance criteria, and the limits of these diagnostics.
+
 Check the whole artifact chain first. This command is read-only:
 
 ```bash

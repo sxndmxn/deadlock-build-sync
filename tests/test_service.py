@@ -173,7 +173,7 @@ def test_generated_guide_is_snapshot_bound_policy_projection(
 
     normalized = json.loads(json.dumps(asdict(generated), default=_json_default))
     assert sha256_json(normalized) == (
-        "68afd66213ec36d8740fb39125e9cd0a33f65cb85fdb0a6e2eddad3db3ac1916"
+        "c3ad8b0199316e3944c62c16099c2d15de9f47d8e531c7c106e37a540d1b0132"
     )
     assert len(generated.guides) == len(generated.policies) == 1
     assert api.counter_stat_calls == [True, False]

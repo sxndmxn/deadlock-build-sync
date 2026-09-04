@@ -257,9 +257,14 @@ def _build_path_payload(
             "route_diagnostics": route_diagnostics,
             "transitions": _sequence_rows(con, hero_id, path.member_ids),
             "evaluation": {
-                "chronological_fold": "test",
-                "metrics": _sequence_evaluation(context.paths, hero_id),
-                "claim": "outcome-agnostic next-action imitation",
+                "status": "unevaluated",
+                "scope": "exact_runtime_policy",
+                "reason": "replay the frozen typed policy on later decision states with quality-report",
+                "hero_baseline_diagnostics": _sequence_evaluation(
+                    context.paths, hero_id
+                ),
+                "diagnostic_scope": "hero-wide historical models; not this build policy",
+                "claim": "outcome-agnostic next-action imitation; no outcome improvement claim",
             },
         },
         "situational_policy": situational_policy,

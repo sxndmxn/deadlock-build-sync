@@ -45,6 +45,10 @@ data.
 
 ## Change and release bar
 
+- Use the documented Python/uv workflow. This repository has no Node package
+  workflow; do not run npm or pnpm as a substitute for its quality gates.
+- PR verification notes must identify checks actually run and distinguish
+  passing, failing, and unrun checks. Fixture validation does not certify live builds.
 - Add a regression test for every correctness or safety fix.
 - Run the complete fast local gate in [docs/quality-gates.md](docs/quality-gates.md)
   before handoff.
