@@ -229,3 +229,31 @@ The fixed build pools themselves already used release evidence with later-fold
 checks. Chronological validation in the combination screen is therefore an
 exploratory diagnostic, not a fresh untouched holdout. The follow-up tools do
 not load test-fold match rows.
+
+## Alternative algorithm experiments
+
+See [ALGORITHMS.md](ALGORITHMS.md) for the research/protocol and
+[ALGORITHM_RESULTS.md](ALGORITHM_RESULTS.md) for the completed comparison.
+Train a fresh categorical BC control and IQL/CQL/QQL adaptations with:
+
+```bash
+uv run --project experiments/qdfm python -m experiments.qdfm.algorithm_run \
+  --directory generated/qdfm/data \
+  --output generated/qdfm/algorithm-comparison --seed 42
+```
+
+Repeat with seeds 43 and 44. Existing seed directories are rejected to preserve
+checkpoints; choose a new output directory for a new run. Each invocation
+trains both the known-outcome two-purchase task and the frozen real pilot.
+
+```bash
+uv run --project experiments/qdfm python -m experiments.qdfm.algorithm_review \
+  --directory generated/qdfm/data --runs generated/qdfm/algorithm-comparison \
+  --previews generated/qdfm/build-constrained --old-runs generated/qdfm
+```
+
+Review requires the original frozen behavior checkpoints and actor-ablation
+report. It validates training-source, data, model, and preview identities.
+Output includes support-gated previews, per-hero diagnostics, exact synthetic
+outcomes, and validation imitation metrics. It does not estimate a Deadlock
+policy's causal win-rate gain. No new dependencies or Steam access are needed.
