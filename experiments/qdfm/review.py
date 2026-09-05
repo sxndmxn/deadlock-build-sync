@@ -9,16 +9,18 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from experiments.qdfm.evaluate import load_fold, probabilities
+from experiments.qdfm.evaluate import Fold, load_fold, probabilities
 from experiments.qdfm.extract import HEROES
 from experiments.qdfm.model import Config, Flow, Network
 
 
-def examples(directory: Path, runs: Path) -> list[dict[str, object]]:
-    torch.set_num_threads(2)
-    torch.manual_seed(947)
-    metadata = json.loads((directory / "dataset.json").read_text())
-    fold = load_fold(str(directory / "validation.npz"))
+def selected_rows(fold: Fold) -> list[int]:
+    """Select the same observed states for the broad and build-specific previews.
+
+    Returns:
+        Validation row indices, in hero and relative wealth order.
+
+    """
     chosen = []
     for hero in HEROES:
         rows = np.flatnonzero(fold.hero_ids == hero)
@@ -28,6 +30,15 @@ def examples(directory: Path, runs: Path) -> list[dict[str, object]]:
                 (states[:, 0] * 2400 - 900) / 900
             ).square()
             chosen.append(int(rows[int(score.argmin())]))
+    return chosen
+
+
+def examples(directory: Path, runs: Path) -> list[dict[str, object]]:
+    torch.set_num_threads(2)
+    torch.manual_seed(947)
+    metadata = json.loads((directory / "dataset.json").read_text())
+    fold = load_fold(str(directory / "validation.npz"))
+    chosen = selected_rows(fold)
     states, masks = fold.transitions.states[chosen], fold.transitions.masks[chosen]
     flow_probs, behavior_probs = [], []
     for seed in (42, 43, 44):
@@ -95,8 +106,10 @@ def render(rows: list[dict[str, object]], output: Path) -> None:
         lines += [
             f"## {row['hero']} — {int(row['time_s']) // 60}:{int(row['time_s']) % 60:02d}",
             "",
-            f"Wealth: {row['wealth']:,}; lobby percentile: {float(row['lobby_wealth_percentile']):.0%}; "
-            f"snapshot age: {row['snapshot_age_s']} seconds.",
+            (
+                f"Wealth: {row['wealth']:,}; lobby percentile: {float(row['lobby_wealth_percentile']):.0%}; "
+                f"snapshot age: {row['snapshot_age_s']} seconds."
+            ),
             "",
             "Owned: " + ", ".join(row["owned_items"]) + ".",
             "",
