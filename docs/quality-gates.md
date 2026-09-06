@@ -19,6 +19,8 @@ scheduled or manual workflow runs the slower mutation gate.
 | Dead code | zero | Vulture |
 | Repeated code blocks | zero | Pylint similarities |
 | `Any` or `Unknown` annotation names | zero | `tools/quality_gate.py` |
+| Undeclared, unused, or development-only runtime dependencies | zero, with documented indirect-use exceptions | Deptry |
+| Imports across unapproved module boundaries | zero | Tach |
 
 The numeric gate checks all tracked Python files for file size, cyclomatic
 complexity, Halstead difficulty, and forbidden type names. Coverage and CRAP
@@ -35,6 +37,8 @@ uv sync --frozen
 uv run ruff format --check .
 uv run ruff check .
 uv run ty check
+uv run deptry .
+uv run tach check
 uv run complexipy
 uv run coverage erase
 uv run coverage run -m pytest -W error
@@ -48,6 +52,22 @@ uv build
 
 The coverage command treats warnings as errors. `coverage.json` supplies both
 repository coverage and per-function data for the CRAP calculation.
+
+[Deptry](https://deptry.com/usage/) checks the installed product code, including
+the optional offline producer and packaged narrative script. The `test` extra
+is a development group. Experiments have separate dependency manifests and are
+outside this product dependency check. Arrow conversion and timezone support
+load `pyarrow` and `pytz` indirectly; these are the only unused-import exceptions.
+
+[Tach](https://docs.gauge.sh/usage/configuration/) checks imports within `src`,
+including type-only imports, against `tach.toml`. Only the main CLI may invoke
+the offline producer. The producer may use shared runtime modules. Unused
+dependency declarations and circular module dependencies fail the check.
+Deptry also scans the packaged narrative script. Experiment dependency manifests
+remain separate from these product checks.
+Do not run `tach sync` to admit an unintended import. Review boundary changes.
+The Tach pytest plugin is disabled so the full coverage gate always runs the
+complete test suite.
 
 ## Mutation gate
 

@@ -129,6 +129,42 @@ real cache remains, select it with `--account-id` or `--cache-path`.
 
 ## Development
 
+Create complete builds from the normal application without Steam:
+
+```bash
+uv run build --hero kelvin
+# Equivalent command:
+uv run deadlock-build-sync build --hero kelvin
+```
+
+Omit `--hero` to build all eligible heroes. The command uses the current
+`build-evidence.json`, validates the normal policy, and writes descriptions,
+policies, Markdown, and JSON. `--details` shows complete optional routes.
+Use `--format json` for structured output. `uv sync` installs dependencies;
+it does not create hero builds.
+
+Both `build` and `sync` write `builds.json` in the artifact directory. It points
+to `builds/<snapshot-id>/INDEX.md`, one Markdown guide per build, detailed guides,
+and `guides.json`. Each guide shows the core purchase path, all eligible choices,
+component costs and rebuys, and the full tiered item pool. `PICK ONE` means the
+next purchase for one need. It does not limit the number of choices in a match.
+Steam still receives the validated core Queue and optional item rows; the full
+purchase guidance is in the review files and preview JSON.
+
+`refresh-evidence` now records strict adjacent purchase counts from the training
+cohort for every pool item. A position needs at least 20 buyers and 10% of that
+item's buyers. Missing or weak timing remains **Timing unknown**. Existing
+version 9 evidence without the extension stays usable, with unknown optional
+timing. Refresh it to obtain positions. The new guidance does not promote
+research candidates or change core admission and conditional outcome gates.
+
+```bash
+uv run deadlock-build-sync refresh-evidence
+uv run build --hero kelvin --details
+# Installation remains an explicit command:
+uv run deadlock-build-sync sync
+```
+
 The default uv development group includes the test, type, coverage, complexity,
 dead-code, duplicate-code, and mutation tools. Validate a checkout with:
 
@@ -138,6 +174,8 @@ uv sync --frozen
 uv run ruff format --check .
 uv run ruff check .
 uv run ty check
+uv run deptry .
+uv run tach check
 uv run complexipy
 uv run coverage erase
 uv run coverage run -m pytest -W error

@@ -57,6 +57,7 @@ test = [
 
 [project.scripts]
 deadlock-build-sync = "deadlock_build_sync.cli:main"
+build = "deadlock_build_sync.cli:build_main"
 
 [dependency-groups]
 dev = [
@@ -78,6 +79,8 @@ dev = [
   "scipy>=1.16,<1.17",
   "ty>=0.0.64",
   "vulture>=2,<3",
+  "deptry>=0.25.1",
+  "tach>=0.35.0",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -87,9 +90,18 @@ packages = ["src/deadlock_build_sync", "scripts"]
 "schemas" = "schemas"
 
 [tool.pytest.ini_options]
-addopts = "-q"
+addopts = "-q -p no:tach"
 pythonpath = ["."]
 testpaths = ["tests"]
+
+[tool.deptry]
+known_first_party = ["deadlock_build_sync", "scripts"]
+optional_dependencies_dev_groups = ["test"]
+extend_exclude = ["^experiments/", "^generated/", "^tools/", "^dist/", "^mutants/"]
+
+[tool.deptry.per_rule_ignores]
+# DuckDB/Polars load Arrow at their conversion boundary. Arrow uses pytz for timestamps.
+DEP002 = ["pyarrow", "pytz"]
 
 [tool.coverage.run]
 branch = true

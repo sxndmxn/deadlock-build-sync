@@ -19,6 +19,7 @@ from .cli_support import (
 from .freshness import (
     require_current_build_evidence,
 )
+from .purchase_markdown import build_markdown
 from .recommendation import DecisionState, RecommendationError, recommend
 from .tracing import record_stage_facts
 
@@ -129,5 +130,13 @@ def _run_preview(args: argparse.Namespace) -> int:
         guide_count=len(generated.guides),
         policy_count=len(generated.policies),
     )
-    print(json.dumps(payload, indent=2, ensure_ascii=False))
+    if args.format == "markdown":
+        print(
+            "\n".join(
+                build_markdown(guide, details=args.details)
+                for guide in generated.guides
+            )
+        )
+    else:
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
     return 0

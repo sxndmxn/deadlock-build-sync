@@ -109,7 +109,7 @@ def generate_guides(
         ),
         scope="whole_enemy_team",
     )
-    persona = api.steam_persona(account_id)
+    persona = api.steam_persona(account_id) if account_id else "Build Preview"
 
     generation_evidence = _GenerationEvidence(
         assets,

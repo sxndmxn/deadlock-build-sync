@@ -43,6 +43,7 @@ from .production_sources import (
     _path_item_metrics,
 )
 from .production_storage import _core_alternatives, _core_decisions
+from .production_timing import timing_payload
 
 if TYPE_CHECKING:
     import duckdb
@@ -249,6 +250,9 @@ def _build_path_payload(
             for row in path_metrics.sort("item_id").iter_rows(named=True)
         ],
         "tier_policy": tier_policy,
+        "purchase_timing": timing_payload(
+            con, hero_id, path.member_ids, expanded_default_path, tier_policy
+        ),
         "sequence_policy": {
             "version": SEQUENCE_POLICY_VERSION,
             "minimum_support": SEQUENCE_MINIMUM_SUPPORT,

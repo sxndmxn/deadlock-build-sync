@@ -1,0 +1,112 @@
+import json
+from dataclasses import replace
+from pathlib import Path
+
+import pytest
+
+from deadlock_build_sync import cli, cli_support
+from deadlock_build_sync.cli_build import write_build_guides
+from deadlock_build_sync.purchase_guidance_types import PurchaseTiming
+from deadlock_build_sync.service import generate_guides
+from deadlock_build_sync.value_validation import (
+    require_object_dict,
+    require_object_rows,
+)
+from tests.service_evidence_fixtures import build_evidence
+from tests.service_fake_api import FakeApi, ability_rows, duration_points
+
+
+@pytest.mark.parametrize("output_format", ["markdown", "json"])
+def test_normal_build_generates_full_files_without_steam(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    output_format: str,
+) -> None:
+    api = FakeApi(ability_rows=ability_rows(), duration_points=duration_points())
+    for asset in api._assets:
+        if asset["id"] in {102, 104}:
+            asset["description"] = "Grants bullet resist."
+    evidence = build_evidence(api)
+    hero = evidence.heroes[12]
+    timing = tuple(
+        PurchaseTiming(item, 35, (25, *(0 for _ in hero.core_policy.default_item_ids)))
+        for values in hero.tier_policy.item_ids_by_tier.values()
+        for item in values
+    )
+    hero = replace(hero, purchase_timing=timing)
+    evidence = replace(evidence, heroes={12: hero}, hero_builds={12: (hero,)})
+    monkeypatch.setattr(
+        cli,
+        "_current_evidence",
+        lambda _args: (tmp_path / "build-evidence.json", evidence),
+    )
+    monkeypatch.setattr(cli_support, "_api", lambda *_args: api)
+
+    def forbidden(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("build accessed Steam")
+
+    monkeypatch.setattr(cli, "_location", forbidden)
+    monkeypatch.setattr(cli_support, "install_guides", forbidden)
+    monkeypatch.setattr(api, "steam_persona", forbidden)
+    result = cli.main([
+        "build",
+        "--hero",
+        "Kelvin",
+        "--format",
+        output_format,
+        "--artifacts",
+        str(tmp_path),
+    ])
+    assert result == 0
+    output = capsys.readouterr()
+    if output_format == "json":
+        emitted = require_object_dict(json.loads(output.out))
+        assert (
+            require_object_rows(emitted["guides"])[0]["purchase_guidance"] is not None
+        )
+    else:
+        assert "# Kelvin" in output.out
+        assert "## Item pool" in output.out
+        assert "PICK ONE" in output.out
+    for filename in (
+        "strategy-context.json",
+        "policies.json",
+        "narratives.json",
+        "builds.json",
+    ):
+        assert (tmp_path / filename).is_file()
+    index = require_object_dict(json.loads((tmp_path / "builds.json").read_text()))
+    directory = Path(str(index["directory"]))
+    files = list(directory.glob("*.md"))
+    assert len(files) == 3
+    text = next(path for path in files if path.name.endswith(".details.md")).read_text()
+    assert "Choice details" in text
+    bundle = require_object_dict(json.loads((directory / "guides.json").read_text()))
+    guide = require_object_rows(bundle["guides"])[0]
+    guidance = require_object_dict(guide["purchase_guidance"])
+    choices = require_object_rows(guidance["choices"])
+    assert len(choices) == 32
+    assert all(row["timing"] is not None for row in choices)
+
+
+def test_build_alias_and_reject_missing_guidance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(cli.sys, "argv", ["build", "--hero", "Kelvin"])
+    seen: list[list[str]] = []
+    monkeypatch.setattr(cli, "main", lambda args: seen.append(args) or 0)
+    assert cli.build_main() == 0
+    assert seen == [["build", "--hero", "Kelvin"]]
+    api = FakeApi(ability_rows=ability_rows(), duration_points=duration_points())
+    generated = generate_guides(
+        api,
+        build_evidence=build_evidence(api),
+        account_id=0,
+        hero_query="Kelvin",
+        all_heroes=False,
+    )
+    with pytest.raises(ValueError, match="no purchase guidance"):
+        write_build_guides(
+            tmp_path, [replace(generated.guides[0], purchase_guidance=None)], generated
+        )

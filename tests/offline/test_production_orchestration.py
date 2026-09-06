@@ -129,6 +129,7 @@ def _patch_path_dependencies(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     monkeypatch.setattr(production_paths, "_situational_policy", _return({"items": []}))
     monkeypatch.setattr(production_paths, "_sequence_rows", _return([{"item": 1}]))
+    monkeypatch.setattr(production_paths, "timing_payload", _return({"version": 1}))
     monkeypatch.setattr(
         production_paths, "_sequence_evaluation", _return({"top1": 0.5})
     )

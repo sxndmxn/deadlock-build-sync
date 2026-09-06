@@ -172,7 +172,7 @@ def test_run_preview_emits_generated_guides(
 
     monkeypatch.setattr(cli_recommend, "_describe_preview_guide", describe)
     monkeypatch.setattr(cli_recommend, "record_stage_facts", lambda *_args, **_kw: None)
-    args = Namespace(narratives=None, hero=None, all=True)
+    args = Namespace(narratives=None, hero=None, all=True, format="json", details=False)
 
     assert cli_recommend._run_preview(args) == 0
     assert json.loads(capsys.readouterr().out) == {

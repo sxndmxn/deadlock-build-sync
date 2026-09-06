@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from dataclasses import asdict
 from typing import TYPE_CHECKING
 
 from .artifacts import FingerprintLayers
@@ -353,6 +354,9 @@ def build_hero_strategy_context(
         "policy": policy.as_dict() if policy is not None else None,
         "explainable_actions": explainable_actions,
         "projection": projection_context,
+        "purchase_guidance": asdict(projected.purchase_guidance)
+        if projected.purchase_guidance
+        else None,
         "interpretation_constraints": [
             "Tier membership is player-match first-ownership adoption; left-to-right display order is observed net-worth timing, not outcome rate.",
             "Observed adopter outcomes and ending-duration profiles are descriptive associations, not item effects or live power curves.",

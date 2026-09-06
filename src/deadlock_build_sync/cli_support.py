@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -117,7 +117,7 @@ def _sync_artifact_directory(configured: Path | None) -> Path:
 def _build_evidence_path(args: argparse.Namespace) -> Path:
     if args.build_evidence is not None:
         return args.build_evidence.expanduser().resolve()
-    configured = args.artifacts if args.command == "sync" else None
+    configured = args.artifacts if args.command in {"sync", "build"} else None
     return _sync_artifact_directory(configured) / _BUILD_EVIDENCE_FILENAME
 
 
@@ -290,4 +290,8 @@ def _describe_preview_guide(
         account_id=account_id,
         timestamp=0,
     )
-    return describe_guide(guide, presentation=presentation)
+    described = describe_guide(guide, presentation=presentation)
+    described["purchase_guidance"] = (
+        asdict(guide.purchase_guidance) if guide.purchase_guidance else None
+    )
+    return described

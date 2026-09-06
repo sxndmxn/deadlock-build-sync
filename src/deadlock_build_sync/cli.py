@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import sys
+from contextlib import redirect_stdout
 from typing import TYPE_CHECKING
 
 from scripts.generate_narratives import main as generate_narratives_main
@@ -12,6 +14,7 @@ from .cache import (
     CacheError,
     deadlock_is_running,
 )
+from .cli_build import write_build_guides
 from .cli_export import _run_export_context, _run_restore, _run_trace_summary
 from .cli_install import _run_install
 from .cli_parser import DEFAULT_NARRATIVE_PATH, build_parser, positive_int
@@ -23,6 +26,7 @@ from .cli_support import (
     _BUILD_EVIDENCE_FILENAME,
     _POLICY_FILENAME,
     _build_evidence_path,
+    _describe_preview_guide,
     _generate,
     _install_and_record,
     _install_generated_guides,
@@ -44,6 +48,7 @@ from .narratives import (
     apply_narrative,
     load_narrative_catalog,
 )
+from .purchase_markdown import build_markdown
 from .recommendation import RecommendationError
 from .service import GuideError
 from .steam_identity import local_steam_persona
@@ -54,36 +59,71 @@ from .tracing import (
 
 if TYPE_CHECKING:
     import argparse
+    from pathlib import Path
 
-__all__ = ["DEFAULT_NARRATIVE_PATH", "build_parser", "main", "positive_int"]
+    from .build_evidence import BuildEvidenceCatalog
+    from .purchase_guide import PurchaseGuide
+    from .service import GeneratedGuides
+
+__all__ = [
+    "DEFAULT_NARRATIVE_PATH",
+    "build_main",
+    "build_parser",
+    "main",
+    "positive_int",
+]
 
 
-def _run_sync(args: argparse.Namespace) -> int:
-    artifact_directory = _sync_artifact_directory(args.artifacts)
+def _current_evidence(args: argparse.Namespace) -> tuple[Path, BuildEvidenceCatalog]:
     evidence_path = _build_evidence_path(args)
     evidence = require_current_build_evidence(
-        evidence_path,
-        DeadlockApi(args.api_base_url),
+        evidence_path, DeadlockApi(args.api_base_url)
     )
     _record_fresh_evidence(evidence_path, evidence)
-    location = _location(args)
-    if deadlock_is_running():
-        raise CacheError("Deadlock is running; close it before syncing private builds")
+    return evidence_path, evidence
 
-    generated = _generate(
-        args,
-        evidence,
-        location.account_id,
-        all_heroes=args.all or args.hero is None,
-    )
+
+def _require_complete(generated: GeneratedGuides) -> None:
     if not generated.guides:
         raise GuideError("no heroes had complete reliable analytics")
     if not generated.subset_selected and generated.exclusions:
         raise GuideError(
-            "all-hero sync requires complete roster coverage; exclusions: "
+            "all-hero sync/build requires complete roster coverage; exclusions: "
             + ", ".join(generated.skipped_heroes)
         )
 
+
+def _run_build(args: argparse.Namespace) -> int:
+    directory = _sync_artifact_directory(args.artifacts)
+    _, evidence = _current_evidence(args)
+    generated = _generate(args, evidence, 0, all_heroes=args.all or args.hero is None)
+    _require_complete(generated)
+    guides = _write_build_artifacts(generated, directory)
+    if args.format == "markdown":
+        print(
+            "\n".join(build_markdown(guide, details=args.details) for guide in guides)
+        )
+    else:
+        print(
+            json.dumps(
+                {
+                    "snapshot_manifest": generated.manifest.as_dict(),
+                    "guides": [
+                        _describe_preview_guide(guide, generated, account_id=0)
+                        for guide in guides
+                    ],
+                },
+                indent=2,
+                ensure_ascii=False,
+            )
+        )
+    print(f"Build files: {directory / 'builds.json'}", file=sys.stderr)
+    return 0
+
+
+def _write_build_artifacts(
+    generated: GeneratedGuides, artifact_directory: Path
+) -> list[PurchaseGuide]:
     context_path = artifact_directory / "strategy-context.json"
     policy_path = artifact_directory / _POLICY_FILENAME
     narrative_path = artifact_directory / "narratives.json"
@@ -98,8 +138,9 @@ def _run_sync(args: argparse.Namespace) -> int:
         "--output",
         str(narrative_path),
     ]
-    if generate_narratives_main(generation_args) != 0:
-        raise NarrativeError("deterministic description generation failed")
+    with redirect_stdout(sys.stderr):
+        if generate_narratives_main(generation_args) != 0:
+            raise NarrativeError("deterministic description generation failed")
     record_stage_facts(_ARTIFACT_WRITE_STAGE, path=narrative_path)
 
     catalog = load_narrative_catalog(narrative_path)
@@ -107,6 +148,26 @@ def _run_sync(args: argparse.Namespace) -> int:
         apply_narrative(guide, context, generated.patch, catalog)
         for guide, context in zip(generated.guides, generated.contexts, strict=True)
     ]
+    write_build_guides(artifact_directory, guides, generated)
+    return guides
+
+
+def _run_sync(args: argparse.Namespace) -> int:
+    artifact_directory = _sync_artifact_directory(args.artifacts)
+    evidence_path, evidence = _current_evidence(args)
+    location = _location(args)
+    if deadlock_is_running():
+        raise CacheError("Deadlock is running; close it before syncing private builds")
+
+    generated = _generate(
+        args,
+        evidence,
+        location.account_id,
+        all_heroes=args.all or args.hero is None,
+    )
+    _require_complete(generated)
+
+    guides = _write_build_artifacts(generated, artifact_directory)
     result = _install_generated_guides(location, guides, generated)
     print(
         f"Synced {len(result.build_ids)} private guide(s): "
@@ -229,6 +290,7 @@ def _run_install_artifacts(args: argparse.Namespace) -> int:
 
 def _dispatch(args: argparse.Namespace) -> int:
     handlers = {
+        "build": _run_build,
         "sync": _run_sync,
         "status": _run_status,
         "refresh-evidence": _run_refresh_evidence,
@@ -276,6 +338,16 @@ def main(argv: list[str] | None = None) -> int:
         if session.directory is not None:
             print(f"Trace: {session.directory}", file=sys.stderr)
     return result
+
+
+def build_main() -> int:
+    """Support the short `uv run build` command.
+
+    Returns:
+        The build command exit status.
+
+    """
+    return main(["build", *sys.argv[1:]])
 
 
 if __name__ == "__main__":

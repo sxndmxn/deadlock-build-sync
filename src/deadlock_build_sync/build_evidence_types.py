@@ -11,6 +11,7 @@ from .core_alternative_types import CoreAlternativeDescription
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
+    from .purchase_guidance_types import PurchaseTiming
     from .snapshot import EpochSet
 
 BUILD_EVIDENCE_SCHEMA_VERSION = 9
@@ -246,6 +247,7 @@ class HeroBuildEvidence:
     path_label: str = "Evidence Default"
     signature_item_ids: tuple[int, ...] = ()
     discovery: dict[str, object] = field(default_factory=dict)
+    purchase_timing: tuple[PurchaseTiming, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -266,6 +268,7 @@ class SelectedHeroBuild:
     core_joint_share: float
     median_final_net_worth: int
     core_target_cost: int
+    purchase_timing: tuple[PurchaseTiming, ...] = ()
 
 
 @dataclass(frozen=True)

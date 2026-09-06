@@ -38,6 +38,7 @@ def test_public_parser_help_is_stable(
 ) -> None:
     monkeypatch.delenv(TRACE_ENVIRONMENT_VARIABLE, raising=False)
     commands = (
+        "build",
         "sync",
         "status",
         "refresh-evidence",
@@ -58,13 +59,14 @@ def test_public_parser_help_is_stable(
         help_text[command or "root"] = capsys.readouterr().out
 
     assert sha256_json(help_text) == (
-        "46e01d8ef6cfcf338d2c395b5ddf4050d80a5dc36e3a316c16cb701b03dd5f42"
+        "87772c5702fcfe0628042dc9aa92f1abcf12338c06737ae325c48f71b97f898d"
     )
 
 
 def test_public_parser_defaults_are_stable(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(TRACE_ENVIRONMENT_VARIABLE, raising=False)
     requests = (
+        ["build"],
         ["sync"],
         ["status"],
         ["refresh-evidence"],
@@ -81,7 +83,7 @@ def test_public_parser_defaults_are_stable(monkeypatch: pytest.MonkeyPatch) -> N
     ]
 
     assert sha256_json(values) == (
-        "db316528a506729e34fc1c23ff4c726feb0aba2a1726e6e6b640dca006dc3557"
+        "862ee96bf144a3f0208d1023b3b5db6fe3446ceebc1144389102d72440c77b9d"
     )
 
 

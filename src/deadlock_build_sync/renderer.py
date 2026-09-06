@@ -246,6 +246,7 @@ def _project_evidence_layout(
         core_joint_share=layout.core_joint_share,
         median_final_net_worth=layout.median_final_net_worth,
         core_target_cost=layout.core_target_cost,
+        purchase_timing=layout.purchase_timing,
     )
 
 

@@ -340,6 +340,11 @@ def test_sync_generates_artifacts_and_installs_without_extra_flags(
         path.write_text("{}\n", encoding="utf-8")
 
     monkeypatch.setattr(cli_module, "_write_policy_artifact", fake_write_policies)
+    monkeypatch.setattr(
+        cli_module,
+        "write_build_guides",
+        lambda *_args: calls.update({"build_files": True}),
+    )
 
     def fake_narratives(argv: list[str] | None = None) -> int:
         calls["generation_args"] = argv
@@ -400,6 +405,7 @@ def test_sync_generates_artifacts_and_installs_without_extra_flags(
     ])
     assert cli_module._run_sync(args) == 0
     assert calls["all_heroes"] is True
+    assert calls["build_files"] is True
     assert (tmp_path / "artifacts/strategy-context.json").is_file()
     assert (tmp_path / "artifacts/policies.json").is_file()
     generation_args = calls["generation_args"]

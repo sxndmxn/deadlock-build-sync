@@ -13,6 +13,7 @@ from deadlock_build_sync.build_evidence_types import (
     TierPolicyEvidence,
 )
 from deadlock_build_sync.mechanics import InventoryState, ItemGraph, MechanicsError
+from deadlock_build_sync.purchase_guidance_types import PurchaseTiming
 from tests.build_evidence_fixtures import _assets, _document, _write
 
 
@@ -157,6 +158,11 @@ def test_selected_path_uses_a_legal_fallback(tmp_path: Path) -> None:
     )
 
     assert set(path) == set(order)
+    timed = replace(incomplete, purchase_timing=(PurchaseTiming(103, 20, (20, 0)),))
+    with pytest.raises(ArtifactError, match="cannot be reused"):
+        build_evidence_selection._replay_selected_path(
+            graph, timed, by_id, selected, order
+        )
 
 
 def test_selected_path_validates_each_fallback_gate(

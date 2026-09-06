@@ -4,6 +4,7 @@ from .artifacts import ArtifactError
 from .build_evidence_core import _core_policy, _hero_items, _tier_policy
 from .build_evidence_references import validate_policy_item_references
 from .build_evidence_sequence import _sequence_policy, _situational_policy
+from .build_evidence_timing import purchase_timing
 from .build_evidence_types import HeroBuildEvidence, ItemEvidence
 from .build_evidence_values import _required_int
 from .value_validation import object_dict, object_list
@@ -135,6 +136,9 @@ def _build_path(
         path_label=path_label,
         signature_item_ids=signature,
         discovery=discovery,
+        purchase_timing=purchase_timing(
+            document.get("purchase_timing"), sequence_policy, tier_policy, items
+        ),
     )
 
 

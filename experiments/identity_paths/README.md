@@ -7,6 +7,20 @@ The original five-method implementation, artifacts and production interfaces
 remain unchanged. Read [PROTOCOL.md](PROTOCOL.md) for fixed choices and limits.
 Read [RESULTS.md](RESULTS.md) for the completed comparison and concrete findings.
 
+For a user-facing build, run the [full guide assembly](../build_guides/README.md).
+It joins each discovered core to its complete tiered **item pool**, corrects
+component placement, and shows optional choice points and their resulting paths:
+
+```bash
+uv run --project experiments/identity_paths python -m experiments.identity_paths.run preview \
+  --output generated/identity-paths/trial-v1 \
+  --preview-output generated/build-guides/review-v1
+```
+
+The original core-path reports below are frozen experiment evidence. They do
+not constitute complete build guidance. Assembly preserves their admission
+results; adding an item pool does not validate an unsupported core or branch.
+
 ## Reproduce
 
 Run from the repository root with the documented uv version `>=0.12,<0.13`.

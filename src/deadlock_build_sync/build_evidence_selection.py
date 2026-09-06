@@ -148,6 +148,10 @@ def _replay_selected_path(
         ) from error
     if set(state.owned) == set(selected.item_ids):
         return path_ids
+    if evidence.purchase_timing:
+        raise ArtifactError(
+            "purchase timing cannot be reused with a fallback core path"
+        )
     fallback = _expand_component_path(graph, selected_order, by_id)
     if len(fallback) != len(set(fallback)):
         raise ArtifactError(
@@ -342,6 +346,7 @@ def select_hero_build(
         ),
         median_final_net_worth=evidence.median_final_net_worth,
         core_target_cost=selected_cost,
+        purchase_timing=evidence.purchase_timing,
     )
 
 

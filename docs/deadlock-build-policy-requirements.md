@@ -712,6 +712,28 @@ The key words **MUST**, **MUST NOT**, **REQUIRED**, **SHOULD**, **SHOULD NOT**, 
 
 ## 7. Valve rendering and guide UX
 
+**Terminology and preview acceptance:** The tiered lists are the **item pool**.
+A build combines an automatically discovered, evidence-supported core with its
+purchase path and explicit decisions drawn from that pool. Complete build previews
+must show both: all admitted pool items, where a choice fits, its need/mechanic,
+what it consumes, replaces or delays, its incremental cost, and the resulting
+remaining path. A core-only experiment report or a tier-only listing does not
+satisfy that presentation contract. Core admission, legal branch execution and
+conditional outcome validation remain separate; rendering a candidate never
+upgrades its evidence status. The local discovery-to-guide implementation and
+verification command are recorded in [the assembly contract](../experiments/build_guides/README.md).
+
+**Purchase decisions:** Show every matching option for a specific need. Do not
+apply a shortlist limit. Use **OPTIONAL** for one item and **PICK ONE** for
+alternative next purchases. Use **UPGRADE** for a component path. A component and
+its parent are not alternatives. Show intermediate stopping costs and shared
+component rebuys. Keep each purchase at its supported position. If timing evidence
+is insufficient, retain the item in the pool and mark **Timing unknown**. Require
+an explicit legal position before adding that item to an executable path. Do not
+move it after the core by default. Use the main documented effect for purpose
+groups. Minor bonus stats must not determine those groups. Markdown must show the
+core, purchase decisions, and full tiered pool without requiring a browser.
+
 ### REQ-RND-001 — Separate queued core from optional menus
 
 - **Priority/stage:** `P0`

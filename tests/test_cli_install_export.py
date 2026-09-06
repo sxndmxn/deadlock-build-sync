@@ -370,7 +370,7 @@ def test_support_loads_and_writes_complete_artifacts(
 def test_support_preview_uses_the_install_serializer(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    guide = cast("PurchaseGuide", object())
+    guide = cast("PurchaseGuide", SimpleNamespace(purchase_guidance=None))
     generated = cast(
         "GeneratedGuides",
         SimpleNamespace(
@@ -402,7 +402,8 @@ def test_support_preview_uses_the_install_serializer(
     )
 
     assert cli_support._describe_preview_guide(guide, generated, account_id=7) == {
-        "guide": True
+        "guide": True,
+        "purchase_guidance": None,
     }
     assert calls == [
         (

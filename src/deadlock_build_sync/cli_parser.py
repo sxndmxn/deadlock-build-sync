@@ -148,13 +148,31 @@ def _snapshot_arguments(parser: argparse.ArgumentParser) -> None:
         )
 
 
+def _build_arguments(build: argparse.ArgumentParser) -> None:
+    build_selection = build.add_mutually_exclusive_group()
+    build_selection.add_argument("--hero", help="create builds for one active hero")
+    build_selection.add_argument(
+        "--all",
+        action="store_true",
+        help="create builds for all eligible heroes (default)",
+    )
+    _rank_arguments(build)
+    _snapshot_arguments(build)
+    build.add_argument(
+        "--artifacts", type=Path, help="evidence and build artifact directory"
+    )
+    build.add_argument("--format", choices=("markdown", "json"), default="markdown")
+    build.add_argument(
+        "--details", action="store_true", help="show full optional routes and evidence"
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="deadlock-build-sync",
         description="Generate private analytics-driven Deadlock hero builds.",
     )
-    environment_trace = os.environ.get(TRACE_ENVIRONMENT_VARIABLE) or None
-    _trace_argument(parser, default=environment_trace)
+    _trace_argument(parser, default=os.environ.get(TRACE_ENVIRONMENT_VARIABLE) or None)
     parser.add_argument("--api-base-url", default=DEFAULT_API_BASE_URL)
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -180,6 +198,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
         help="directory for reusable evidence and build artifacts",
     )
+
+    build = subparsers.add_parser(
+        "build", help="create complete Markdown and JSON builds without Steam"
+    )
+    _build_arguments(build)
 
     status = subparsers.add_parser(
         "status",
@@ -235,6 +258,8 @@ def build_parser() -> argparse.ArgumentParser:
     _rank_arguments(preview)
     _snapshot_arguments(preview)
     _narrative_argument(preview)
+    preview.add_argument("--format", choices=("json", "markdown"), default="json")
+    preview.add_argument("--details", action="store_true")
 
     install = subparsers.add_parser(
         "install", help="install private guides into My Builds"
@@ -296,6 +321,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     for command_parser in (
         sync,
+        build,
         status,
         refresh,
         recommendation,

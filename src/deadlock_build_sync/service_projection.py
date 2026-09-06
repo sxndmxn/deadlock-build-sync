@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 
 from .build_tags import BuildTagCatalog, BuildTagError, select_build_tags
 from .narratives import apply_narrative
+from .purchase_guidance import attach_purchase_guidance
 from .renderer import ProjectionIdentity, project_policy_to_guide
 from .strategy_context import build_hero_strategy_context
 
@@ -54,6 +55,7 @@ def _project_hero_guide(
         layout_source=inputs.analytic_guide,
     )
     projected = replace(projected, ability_path=inputs.analytic_guide.ability_path)
+    projected = attach_purchase_guidance(projected, environment.assets)
     if projected.ability_path is None:
         raise GuideError(f"{projected.hero_name} has no complete ability path")
     try:
