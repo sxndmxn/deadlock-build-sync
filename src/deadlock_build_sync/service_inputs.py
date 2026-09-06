@@ -31,7 +31,6 @@ if TYPE_CHECKING:
 
 from .service_types import (
     GuideError,
-    _handle_incomplete_analytics,
     _HeroInputs,
 )
 
@@ -220,21 +219,24 @@ def _collect_hero_inputs(
     *,
     all_heroes: bool,
 ) -> tuple[list[_HeroInputs], list[str], list[tuple[int, str]]]:
+    if not all_heroes and len(selected) > 1:
+        raise GuideError("A single-hero request cannot include multiple heroes")
     inputs_by_hero: list[_HeroInputs] = []
     skipped_heroes: list[str] = []
     exclusions: list[tuple[int, str]] = []
     for hero in selected:
+        hero_id = integer(hero["id"])
+        exclusion = evidence.build_evidence.exclusions.get(hero_id)
+        if exclusion is not None:
+            exclusions.append((hero_id, exclusion))
+            skipped_heroes.append(f"{hero.get('name', hero_id)} ({exclusion})")
+            continue
+        if hero_id not in evidence.build_evidence.heroes:
+            raise GuideError(f"Hero {hero_id} is missing build evidence")
         prepared = _prepare_hero_inputs(api, hero, evidence)
         if isinstance(prepared, str):
-            hero_id = integer(hero["id"])
-            _handle_incomplete_analytics(
-                all_heroes=all_heroes,
-                skipped_heroes=skipped_heroes,
-                exclusions=exclusions,
-                hero_id=hero_id,
-                hero_name=str(hero.get("name") or hero_id),
-                reason=prepared,
+            raise GuideError(
+                f"Hero {hero_id} has incomplete generation data: {prepared}"
             )
-            continue
         inputs_by_hero.extend(prepared)
     return inputs_by_hero, skipped_heroes, exclusions

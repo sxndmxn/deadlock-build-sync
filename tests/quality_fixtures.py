@@ -8,7 +8,7 @@ from tests.recommendation_fixtures import build_policy, state
 
 def replay_row() -> dict[str, object]:
     document = asdict(state())
-    document["schema_version"] = 2
+    document["schema_version"] = 3
     document["inventory"] = {
         "items": document.pop("owned_items"),
         "components": document.pop("owned_components"),

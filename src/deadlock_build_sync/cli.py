@@ -86,11 +86,11 @@ def _current_evidence(args: argparse.Namespace) -> tuple[Path, BuildEvidenceCata
 def _require_complete(generated: GeneratedGuides) -> None:
     if not generated.guides:
         raise GuideError("no heroes had complete reliable analytics")
-    if not generated.subset_selected and generated.exclusions:
-        raise GuideError(
-            "all-hero sync/build requires complete roster coverage; exclusions: "
-            + ", ".join(generated.skipped_heroes)
-        )
+    covered = {guide.hero_id for guide in generated.guides} | {
+        hero for hero, _ in generated.exclusions
+    }
+    if not generated.subset_selected and covered != generated.eligible_hero_ids:
+        raise GuideError("Build evidence does not cover every requested hero")
 
 
 def _run_build(args: argparse.Namespace) -> int:
@@ -188,7 +188,7 @@ def _run_sync(args: argparse.Namespace) -> int:
 
 def _run_refresh_evidence(args: argparse.Namespace) -> int:
     try:
-        from .offline.cli import main as offline_main
+        from .offline.refresh import main as offline_main
     except ImportError as error:
         raise GuideError(
             "refresh-evidence requires the analysis dependencies; "
@@ -196,7 +196,6 @@ def _run_refresh_evidence(args: argparse.Namespace) -> int:
         ) from error
     output = _sync_artifact_directory(args.artifacts) / _BUILD_EVIDENCE_FILENAME
     forwarded = [
-        "all",
         "--min-rank",
         str(args.min_badge),
         "--max-rank",

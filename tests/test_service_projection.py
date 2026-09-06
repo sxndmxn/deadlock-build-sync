@@ -26,7 +26,12 @@ def test_required_components_join_core_queue_and_leave_optional_rows() -> None:
     )
 
     guide = generated.guides[0]
-    assert [item.item_id for item in guide.categories[0].items] == [
+    assert [
+        item.item_id
+        for row in guide.categories
+        if not row.optional
+        for item in row.items
+    ] == [
         100,
         101,
         102,
@@ -50,7 +55,12 @@ def test_required_components_join_core_queue_and_leave_optional_rows() -> None:
     assert 102 not in {item.item_id for item in guide.categories[1].items}
     projection = require_object_dict(generated.contexts[0]["projection"])
     categories = require_object_rows(projection["categories"])
-    projected_items = require_object_rows(categories[0]["items"])
+    projected_items = [
+        item
+        for row in categories
+        if not row["optional"]
+        for item in require_object_rows(row["items"])
+    ]
     assert projected_items[2]["item_id"] == 102
 
 
@@ -89,20 +99,10 @@ def test_admitted_situational_branch_reaches_policy_sidecar_and_tier_card() -> N
     tier_item = next(item for item in guide.tiers[1] if item.item_id == 103)
     assert tier_item.annotation.startswith("SOUL WINDOW: ")
     assert "VS: " not in tier_item.annotation
-    assert [category.name for category in guide.categories] == [
-        "CORE ITEMS",
-        "TIER 1",
-        "TIER 2",
-        "TIER 3",
-        "TIER 4",
+    assert [row.name for row in guide.categories[-4:]] == [
+        f"ITEM POOL | TIER {tier}" for tier in range(1, 5)
     ]
-    assert [category.optional for category in guide.categories] == [
-        False,
-        True,
-        True,
-        True,
-        True,
-    ]
+    assert all(row.optional for row in guide.categories[-4:])
     actions = require_object_rows(generated.contexts[0]["explainable_actions"])
     action = next(row for row in actions if row["node_id"] == "situational-1")
     contract = require_object_dict(action["conditional_contract"])
@@ -149,22 +149,16 @@ def test_admitted_core_alternative_is_a_non_queue_policy_card() -> None:
     policy = generated.policies[0]
     assert policy.schema_version == 5
     assert [card.item_id for card in policy.core_alternatives] == [103]
-    assert [category.name for category in guide.categories] == [
-        "CORE ITEMS",
-        "OPTIONAL CORE",
-        "TIER 1",
-        "TIER 2",
-        "TIER 3",
-        "TIER 4",
-    ]
-    assert [item.item_id for item in guide.categories[1].items] == [103]
+    optional = next(row for row in guide.categories if row.name == "OPTIONAL CORE")
+    assert optional.optional
+    assert [item.item_id for item in optional.items] == [103]
     card = policy.core_alternatives[0]
     assert (card.vs, card.why, card.swap) == (
         "Heavy enemy healing",
         "Healing Reduction",
         "Replaces Tier 1 Item 1",
     )
-    assert guide.categories[1].items[0].annotation.startswith("SOUL WINDOW: ")
+    assert optional.items[0].annotation.startswith("SOUL WINDOW: ")
     assert 103 not in {item.item_id for item in guide.tiers[1]}
     assert all(node.item_id != 103 for node in policy.nodes)
     assert BuildPolicy.from_dict(policy.as_dict()) == policy

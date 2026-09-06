@@ -6,7 +6,7 @@ import polars as pl
 
 from deadlock_build_sync.offline.api import write_json
 from deadlock_build_sync.offline.config import RunPaths
-from deadlock_build_sync.offline.report_types import ReportTables
+from tools.comparisons.legacy.report_types import ReportTables
 
 if TYPE_CHECKING:
     from pathlib import Path

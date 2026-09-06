@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import sys
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -93,7 +93,7 @@ def _api(args: argparse.Namespace, evidence: BuildEvidenceCatalog) -> DeadlockAp
 def _report_skipped(generated: GeneratedGuides) -> None:
     if generated.skipped_heroes:
         print(
-            "Skipped heroes with incomplete analytics: "
+            "Skipped heroes with evidence exclusions: "
             + ", ".join(generated.skipped_heroes),
             file=sys.stderr,
         )
@@ -205,7 +205,8 @@ def _install_generated_guides(
             patch_published_at=generated.patch.published_at,
             rank_range=generated.rank_range,
             snapshot_manifest=generated.manifest.as_dict(),
-            expected_hero_ids=set(generated.eligible_hero_ids),
+            expected_hero_ids=set(generated.eligible_hero_ids)
+            - {hero for hero, _ in generated.exclusions},
             allow_subset=generated.subset_selected,
         ),
     )
@@ -292,6 +293,6 @@ def _describe_preview_guide(
     )
     described = describe_guide(guide, presentation=presentation)
     described["purchase_guidance"] = (
-        asdict(guide.purchase_guidance) if guide.purchase_guidance else None
+        guide.purchase_guidance.as_dict() if guide.purchase_guidance else None
     )
     return described

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from .purchase_categories import choice_instruction, conditional_instruction
+
 if TYPE_CHECKING:
     from .purchase_guidance_types import (
         PurchaseChoice,
@@ -45,7 +47,13 @@ def _option(guidance: PurchaseGuidance, card: PurchaseChoice) -> str:
             )
             + "."
         )
-    return line + " " + card.purpose.trigger + "."
+    return (
+        line
+        + " "
+        + card.purpose.trigger
+        + "."
+        + conditional_instruction(guidance, card)
+    )
 
 
 def _decision(guidance: PurchaseGuidance, decision: PurchaseDecision) -> list[str]:
@@ -82,7 +90,7 @@ def _details(guidance: PurchaseGuidance) -> list[str]:
         lines.extend([
             f"### {card.name}",
             "",
-            f"Consider when: {card.purpose.trigger}.",
+            choice_instruction(guidance, card),
             f"Timing: {card.timing_basis}.",
             f"Mechanic source: {card.purpose.basis}; {card.purpose.evidence or 'unclassified'}.",
         ])
@@ -170,7 +178,7 @@ def build_markdown(guide: PurchaseGuide, *, details: bool = False) -> str:
         "Each choice keeps the core's upgrade lineages. Recalculate from actual inventory when you combine choices. Slots and active-item limits still apply.",
         "",
         guidance.evidence_basis
-        + ". Enemy and ahead/behind preferences remain unvalidated.",
+        + ". Automatic choices require admitted branch evidence.",
         "",
     ])
     return "\n".join(lines)

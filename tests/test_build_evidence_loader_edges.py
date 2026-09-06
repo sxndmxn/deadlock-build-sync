@@ -233,7 +233,9 @@ def test_loader_rejects_malformed_heroes_and_duplicate_paths(tmp_path: Path) -> 
     no_builds = _document()
     require_object_rows(no_builds["heroes"])[0]["builds"] = []
     _write_validated(path, no_builds)
-    with pytest.raises(ArtifactError, match="no supported build paths"):
+    with pytest.raises(
+        ArtifactError, match="no validated builds or supported exclusion"
+    ):
         load_build_evidence(path)
 
     duplicate_paths = _document()

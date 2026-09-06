@@ -19,6 +19,7 @@ from .policy import (
     PolicyNode,
     next_policy_decision,
 )
+from .recommendation_plan import recommend_guide
 from .recommendation_state import (
     DECISION_STATE_SCHEMA_VERSION,
     DecisionState,
@@ -286,6 +287,15 @@ def recommend(
         observed_threats = _observed_threats(state, assets, graph)
     except MechanicsError as error:
         raise RecommendationError(str(error)) from error
+    builds = catalog.hero_builds.get(state.hero_id, (catalog.heroes[state.hero_id],))
+    evidence = next(
+        (build for build in builds if build.path_id == policy.path_id), None
+    )
+    if (
+        evidence is not None
+        and evidence.discovery.get("method") == "eclat_leiden_pairwise"
+    ):
+        return recommend_guide(evidence, policy, state, assets)
     if _required_core_complete(policy, inventory):
         return Recommendation(
             RecommendationAction.END,

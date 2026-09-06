@@ -8,17 +8,20 @@ import polars as pl
 import pytest
 
 from deadlock_build_sync.mechanics import ItemGraph
-from deadlock_build_sync.offline import production_evidence, production_paths
+from deadlock_build_sync.offline import (
+    production_evidence as current_production_evidence,
+)
 from deadlock_build_sync.offline.api import write_json
-from deadlock_build_sync.offline.build_paths import DiscoveredBuildPath
 from deadlock_build_sync.offline.config import RunPaths, sha256_json
-from deadlock_build_sync.offline.core_policy import BackboneSelection
 from deadlock_build_sync.offline.production_sources import (
     UnsupportedBuildPathError,
     _HeroExportContext,
 )
 from deadlock_build_sync.value_validation import object_dict, object_list
 from tests.mechanics_fixtures import item
+from tools.comparisons.legacy import production_evidence, production_paths
+from tools.comparisons.legacy.build_paths import DiscoveredBuildPath
+from tools.comparisons.legacy.core_policy import BackboneSelection
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -315,47 +318,65 @@ def test_export_production_evidence_writes_closed_document(
     def connect(*_args: object, **_kwargs: object) -> duckdb.DuckDBPyConnection:
         return cast("duckdb.DuckDBPyConnection", fake)
 
-    monkeypatch.setattr(production_evidence.duckdb, "connect", connect)
-    monkeypatch.setattr(production_evidence, "_folds_by_match", _return({1: "train"}))
+    monkeypatch.setattr(current_production_evidence.duckdb, "connect", connect)
     monkeypatch.setattr(
-        production_evidence,
-        "_core_economy_reference",
-        _return({"target_core_cost": 3_000}),
+        current_production_evidence, "_folds_by_match", _return({1: "train"})
     )
     monkeypatch.setattr(
-        production_evidence,
+        current_production_evidence,
         "_patch_at",
         _return({"identity": "patch", "start_timestamp": 1}),
     )
     monkeypatch.setattr(
-        production_evidence,
+        current_production_evidence,
         "_enemy_threat_evidence",
         _return({}),
     )
     monkeypatch.setattr(
-        production_evidence,
-        "_parallel_hero_export",
-        _return([{"hero_id": 7, "hero": "Hero", "builds": []}]),
+        current_production_evidence,
+        "discover_roster",
+        _return([{"hero_id": 7, "hero": "Hero", "builds": [{"path_id": "test"}]}]),
     )
     target = paths.run / "build-evidence.json"
 
-    document = production_evidence.export_production_evidence(paths, target)
+    document = current_production_evidence.export_production_evidence(paths, target)
 
     assert target.exists()
     assert document["requested_hero_ids"] == [7]
     assert len(str(document["artifact_id"])) == 64
     assert sha256_json(document) == (
-        "95f998d15061ce2dc1069e24c73ff688fae5380e5598d81b6bde86c6ce43e516"
+        "089ebbbe2b2dc716cb2cedd10484ba7aa6791c2494a3d1ad55a621ee67b4ab19"
     )
     assert fake.closed
+    previous = target.read_bytes()
+    monkeypatch.setattr(
+        current_production_evidence,
+        "discover_roster",
+        _return([
+            {
+                "hero_id": 7,
+                "hero": "Hero",
+                "builds": [],
+                "exclusion": {"reason": "weak outcome"},
+            }
+        ]),
+    )
+    with pytest.raises(ValueError, match=r"No builds passed.*unchanged"):
+        current_production_evidence.export_production_evidence(paths, target)
+    assert target.read_bytes() == previous
+    assert "weak outcome" in (paths.run / "discovery-exclusions.json").read_text()
 
 
 def test_export_rejects_invalid_manifest(tmp_path: Path) -> None:
     paths = RunPaths.create(tmp_path, "bad-export")
     write_json(paths.run / "manifest.json", [])
     with pytest.raises(RuntimeError, match="must be a dictionary"):
-        production_evidence.export_production_evidence(paths, paths.run / "output.json")
+        current_production_evidence.export_production_evidence(
+            paths, paths.run / "output.json"
+        )
 
     write_json(paths.run / "manifest.json", {})
     with pytest.raises(RuntimeError, match="lacks frozen cohort"):
-        production_evidence.export_production_evidence(paths, paths.run / "output.json")
+        current_production_evidence.export_production_evidence(
+            paths, paths.run / "output.json"
+        )

@@ -130,7 +130,7 @@ def test_selected_path_rejects_duplicate_and_invalid_sequence_paths(
     duplicate = replace(
         hero, sequence_policy=replace(sequence, default_path=(101, 101))
     )
-    with pytest.raises(ArtifactError, match="path repeats an item"):
+    with pytest.raises(ArtifactError, match="invalid component-expanded path"):
         build_evidence_selection._replay_selected_path(
             graph, duplicate, by_id, selected, order
         )
@@ -142,92 +142,25 @@ def test_selected_path_rejects_duplicate_and_invalid_sequence_paths(
         )
 
 
-def test_selected_path_uses_a_legal_fallback(tmp_path: Path) -> None:
-    hero = _hero(tmp_path / "evidence.json")
-    sequence = hero.sequence_policy
-    assert sequence is not None
-    incomplete = replace(hero, sequence_policy=replace(sequence, default_path=(101,)))
-    graph = ItemGraph.from_assets(_assets())
-    by_id = {item.item_id: item for item in hero.items}
-    selected, order, _ = build_evidence_selection._select_core_candidate(
-        graph, hero, by_id
-    )
-
-    path = build_evidence_selection._replay_selected_path(
-        graph, incomplete, by_id, selected, order
-    )
-
-    assert set(path) == set(order)
-    timed = replace(incomplete, purchase_timing=(PurchaseTiming(103, 20, (20, 0)),))
-    with pytest.raises(ArtifactError, match="cannot be reused"):
-        build_evidence_selection._replay_selected_path(
-            graph, timed, by_id, selected, order
-        )
-
-
-def test_selected_path_validates_each_fallback_gate(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize("timing", [(), (PurchaseTiming(103, 20, (20, 0)),)])
+def test_selected_path_rejects_incomplete_core_without_fallback(
+    tmp_path: Path, timing: tuple[PurchaseTiming, ...]
 ) -> None:
     hero = _hero(tmp_path / "evidence.json")
-    sequence = hero.sequence_policy
-    assert sequence is not None
-    incomplete = replace(hero, sequence_policy=replace(sequence, default_path=(101,)))
+    assert hero.sequence_policy is not None
+    incomplete = replace(
+        hero,
+        sequence_policy=replace(hero.sequence_policy, default_path=(101,)),
+        purchase_timing=timing,
+    )
     graph = ItemGraph.from_assets(_assets())
     by_id = {item.item_id: item for item in hero.items}
     selected, order, _ = build_evidence_selection._select_core_candidate(
         graph, hero, by_id
     )
-
-    monkeypatch.setattr(
-        build_evidence_selection,
-        "_expand_component_path",
-        lambda *_args: (101, 101),
-    )
-    with pytest.raises(ArtifactError, match="path repeats an item"):
-        build_evidence_selection._replay_selected_path(
-            graph, incomplete, by_id, selected, order
-        )
-
-    monkeypatch.setattr(
-        build_evidence_selection,
-        "_expand_component_path",
-        lambda *_args: (101,),
-    )
-    with pytest.raises(ArtifactError, match="does not end in CORE"):
-        build_evidence_selection._replay_selected_path(
-            graph, incomplete, by_id, selected, order
-        )
-
-
-def test_selected_path_rejects_fallback_window_conflict(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    hero = _hero(tmp_path / "evidence.json")
-    sequence = hero.sequence_policy
-    assert sequence is not None
-    incomplete = replace(hero, sequence_policy=replace(sequence, default_path=(101,)))
-    graph = ItemGraph.from_assets(_assets())
-    by_id = {item.item_id: item for item in hero.items}
-    selected, order, _ = build_evidence_selection._select_core_candidate(
-        graph, hero, by_id
-    )
-    calls = 0
-
-    def schedule(
-        _path: tuple[int, ...],
-        _bounds: dict[int, tuple[float, float]],
-    ) -> tuple[float, ...] | None:
-        nonlocal calls
-        calls += 1
-        return (0.0,) if calls == 1 else None
-
-    monkeypatch.setattr(
-        build_evidence_selection, "nondecreasing_window_schedule", schedule
-    )
-
-    with pytest.raises(ArtifactError, match="fallback path violates"):
+    with pytest.raises(
+        ArtifactError, match="does not end in CORE; refresh-evidence is required"
+    ):
         build_evidence_selection._replay_selected_path(
             graph, incomplete, by_id, selected, order
         )

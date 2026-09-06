@@ -6,10 +6,10 @@ import duckdb
 import polars as pl
 import pytest
 
-from deadlock_build_sync.offline import rankings as rankings_module
 from deadlock_build_sync.offline.api import write_json
 from deadlock_build_sync.offline.config import RunPaths
-from deadlock_build_sync.offline.ranking_assets import Asset
+from tools.comparisons.legacy import rankings as rankings_module
+from tools.comparisons.legacy.ranking_assets import Asset
 
 if TYPE_CHECKING:
     from pathlib import Path

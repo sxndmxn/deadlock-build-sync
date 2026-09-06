@@ -210,6 +210,7 @@ def _tier_policy(
     }:
         raise ArtifactError(f"hero {hero_id} has an incomplete tier policy")
     raw_membership = cast("dict[str, object]", raw_membership_value)
+    discovery_pool = value.get("source_fold") == "discovery"
     by_id = {item.item_id: item for item in items}
     item_ids_by_tier: dict[int, tuple[int, ...]] = {}
     for tier in range(1, 5):
@@ -226,18 +227,27 @@ def _tier_policy(
             raise ArtifactError(f"hero {hero_id} has invalid Tier {tier} membership")
         for item_id in item_ids:
             item = by_id.get(item_id)
-            if (
-                item is None
-                or item.tier != tier
-                or item.training_adopter_matches < MINIMUM_TIER_SUPPORT
-                or item.validation_adopter_matches < MINIMUM_TIER_SUPPORT
-                or item.training_adoption < MINIMUM_TIER_ADOPTION
-                or item.validation_adoption < MINIMUM_TIER_ADOPTION
-                or abs(item.training_adoption - item.validation_adoption)
-                > MAXIMUM_TIER_ADOPTION_DRIFT
-            ):
+            if not _supported_pool_item(item, tier, discovery=discovery_pool):
                 raise ArtifactError(
                     f"hero {hero_id} has an unsupported Tier {tier} item"
                 )
         item_ids_by_tier[tier] = item_ids
-    return TierPolicyEvidence(item_ids_by_tier)
+    return TierPolicyEvidence(item_ids_by_tier, discovery_pool)
+
+
+def _supported_pool_item(
+    item: ItemEvidence | None, tier: int, *, discovery: bool
+) -> bool:
+    if (
+        item is None
+        or item.tier != tier
+        or item.training_adopter_matches < MINIMUM_TIER_SUPPORT
+    ):
+        return False
+    return discovery or (
+        item.validation_adopter_matches >= MINIMUM_TIER_SUPPORT
+        and min(item.training_adoption, item.validation_adoption)
+        >= MINIMUM_TIER_ADOPTION
+        and abs(item.training_adoption - item.validation_adoption)
+        <= MAXIMUM_TIER_ADOPTION_DRIFT
+    )

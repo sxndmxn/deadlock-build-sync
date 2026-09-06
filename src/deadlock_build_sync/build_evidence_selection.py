@@ -5,6 +5,7 @@ import math
 from typing import cast
 
 from .artifacts import ArtifactError
+from .build_evidence_discovery import frozen_windows
 from .build_evidence_types import (
     BuildEvidenceCatalog,
     CoreCandidate,
@@ -15,6 +16,7 @@ from .build_evidence_types import (
     reliable_purchase_window,
 )
 from .build_evidence_values import _required_int
+from .core_substitutions import validate_substitution_routes
 from .mechanics import (
     InventoryState,
     ItemGraph,
@@ -22,6 +24,7 @@ from .mechanics import (
     purchase_item,
     schedule_component_path,
 )
+from .value_validation import object_dict
 
 
 def _replay_component_path(
@@ -88,9 +91,7 @@ def _select_core_candidate(
         raise ArtifactError(
             f"hero {evidence.hero_id} has an illegal state-aware core: {error}"
         ) from error
-    if len(candidate_path) != len(set(candidate_path)) or set(state.owned) != set(
-        candidate.item_ids
-    ):
+    if set(state.owned) != set(candidate.item_ids):
         raise ArtifactError(f"hero {evidence.hero_id} has no legal state-aware core")
     return candidate, selected_order, cost
 
@@ -131,14 +132,12 @@ def _replay_selected_path(
         if evidence.sequence_policy is not None
         else _expand_component_path(graph, selected_order, by_id)
     )
-    if len(path_ids) != len(set(path_ids)):
-        raise ArtifactError(
-            f"hero {evidence.hero_id} component-expanded path repeats an item"
-        )
+    frozen = object_dict(evidence.discovery.get("frozen_guide"))
+    if frozen is not None:
+        window_bounds = frozen_windows(frozen)
     if nondecreasing_window_schedule(path_ids, window_bounds) is None:
         raise ArtifactError(
-            f"hero {evidence.hero_id} component-expanded path violates "
-            "first-ownership soul windows"
+            f"hero {evidence.hero_id} component-expanded path violates first-ownership soul windows"
         )
     try:
         state = _replay_component_path(graph, by_id, path_ids)
@@ -148,26 +147,9 @@ def _replay_selected_path(
         ) from error
     if set(state.owned) == set(selected.item_ids):
         return path_ids
-    if evidence.purchase_timing:
-        raise ArtifactError(
-            "purchase timing cannot be reused with a fallback core path"
-        )
-    fallback = _expand_component_path(graph, selected_order, by_id)
-    if len(fallback) != len(set(fallback)):
-        raise ArtifactError(
-            f"hero {evidence.hero_id} component-expanded path repeats an item"
-        )
-    if nondecreasing_window_schedule(fallback, window_bounds) is None:
-        raise ArtifactError(
-            f"hero {evidence.hero_id} fallback path violates first-ownership "
-            "soul windows"
-        )
-    state = _replay_component_path(graph, by_id, fallback)
-    if set(state.owned) != set(selected.item_ids):
-        raise ArtifactError(
-            f"hero {evidence.hero_id} component-expanded path does not end in CORE"
-        )
-    return fallback
+    raise ArtifactError(
+        f"hero {evidence.hero_id} component-expanded path does not end in CORE; refresh-evidence is required"
+    )
 
 
 def _tier_selection(
@@ -190,7 +172,7 @@ def _tier_selection(
     if any(
         item.item_id in core_ids
         or item.item_id in optional_core_ids
-        or not has_visible_upgrade(item)
+        or (not evidence.tier_policy.discovery_pool and not has_visible_upgrade(item))
         for item in membership
     ):
         raise ArtifactError(
@@ -217,7 +199,7 @@ def _tier_selection(
             ),
         )
     )
-    if membership != expected_order:
+    if not evidence.tier_policy.discovery_pool and membership != expected_order:
         raise ArtifactError(
             f"hero {evidence.hero_id} Tier {tier} policy order is not deterministic"
         )
@@ -316,6 +298,7 @@ def select_hero_build(
         alternative.item_id for alternative in evidence.core_policy.alternatives
     }
     tiers = _selected_tiers(graph, evidence, core_ids, optional_core_ids)
+    validate_substitution_routes(graph, evidence.automatic_branches, selected_order)
     return SelectedHeroBuild(
         hero_id=evidence.hero_id,
         path_id=evidence.path_id,
@@ -347,6 +330,7 @@ def select_hero_build(
         median_final_net_worth=evidence.median_final_net_worth,
         core_target_cost=selected_cost,
         purchase_timing=evidence.purchase_timing,
+        automatic_branches=evidence.automatic_branches,
     )
 
 

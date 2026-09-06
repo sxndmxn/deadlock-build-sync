@@ -6,8 +6,8 @@ import duckdb
 import polars as pl
 import pytest
 
-from deadlock_build_sync.offline import analysis
 from deadlock_build_sync.offline.config import RunPaths
+from tools.comparisons.legacy import analysis
 
 if TYPE_CHECKING:
     from collections.abc import Callable

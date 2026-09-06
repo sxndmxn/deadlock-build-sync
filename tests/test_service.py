@@ -50,15 +50,16 @@ def _assert_policy_projection(generated: GeneratedGuides) -> None:
         "telemetry_failure",
         "unclear_threat",
     }
-    assert [category.name for category in guide.categories] == [
-        "CORE ITEMS",
-        "TIER 1",
-        "TIER 2",
-        "TIER 3",
-        "TIER 4",
+    assert [row.name for row in guide.categories[-4:]] == [
+        f"ITEM POOL | TIER {tier}" for tier in range(1, 5)
     ]
-    assert [len(category.items) for category in guide.categories] == [8, 8, 8, 8, 8]
-    assert guide.item_count == 40
+    assert [len(row.items) for row in guide.categories[-4:]] == [8] * 4
+    assert [
+        item.item_id
+        for row in guide.categories
+        if not row.optional
+        for item in row.items
+    ] == [item.item_id for item in guide.core_purchase_items]
     assert not guide.categories[0].optional
     assert guide.build_tag_ids == (10, 301, 4)
     assert guide.build_tag_classes == (
@@ -173,7 +174,7 @@ def test_generated_guide_is_snapshot_bound_policy_projection(
 
     normalized = json.loads(json.dumps(asdict(generated), default=_json_default))
     assert sha256_json(normalized) == (
-        "c847e18ca6bfb644a657bce7e7b1c7fcb8407bd7265170e2e11eb8ec13f01ba2"
+        "3092bea459dbaeda02a0b6bafea276a9f5a2bb1826d1dd0806a10c0c331c0514"
     )
     assert len(generated.guides) == len(generated.policies) == 1
     assert api.counter_stat_calls == [True, False]

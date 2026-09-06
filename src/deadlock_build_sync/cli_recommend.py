@@ -21,6 +21,7 @@ from .freshness import (
 )
 from .purchase_markdown import build_markdown
 from .recommendation import DecisionState, RecommendationError, recommend
+from .recommendation_plan import recommendation_markdown
 from .tracing import record_stage_facts
 
 if TYPE_CHECKING:
@@ -61,21 +62,9 @@ def _run_recommend(args: argparse.Namespace) -> int:
         raise RecommendationError(
             "typed policy sidecar differs from the current build evidence"
         )
-    policy = next(
-        (
-            candidate
-            for (hero_id, path_id), candidate in sorted(policies.items())
-            if hero_id == state.hero_id and path_id == "default"
-        ),
-        next(
-            (
-                candidate
-                for (hero_id, _), candidate in sorted(policies.items())
-                if hero_id == state.hero_id
-            ),
-            None,
-        ),
-    )
+    default = evidence.heroes.get(state.hero_id)
+    path_id = state.path_id or (default.path_id if default else "default")
+    policy = policies.get((state.hero_id, path_id))
     if policy is None:
         raise RecommendationError("decision state hero is absent from typed policies")
     pinned_api = DeadlockApi(
@@ -85,7 +74,10 @@ def _run_recommend(args: argparse.Namespace) -> int:
         epochs=evidence.epochs,
     )
     decision = recommend(evidence, policy, state, pinned_api.items())
-    print(json.dumps(decision.as_dict(), indent=2, ensure_ascii=False))
+    if args.format == "markdown":
+        print(recommendation_markdown(decision))
+    else:
+        print(json.dumps(decision.as_dict(), indent=2, ensure_ascii=False))
     return 0
 
 

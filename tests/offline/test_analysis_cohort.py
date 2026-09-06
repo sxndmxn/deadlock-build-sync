@@ -3,7 +3,7 @@ from __future__ import annotations
 import duckdb
 import polars as pl
 
-from deadlock_build_sync.offline.analysis_cohort import (
+from tools.comparisons.legacy.analysis_cohort import (
     _cohort_adoption_stability,
     _cohort_audits,
     _paired_adoption_stability,

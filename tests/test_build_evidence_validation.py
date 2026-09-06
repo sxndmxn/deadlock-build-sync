@@ -16,7 +16,9 @@ from deadlock_build_sync.snapshot import (
 )
 from deadlock_build_sync.value_validation import (
     integer,
+    require_object_dict,
     require_object_list,
+    require_object_rows,
 )
 from tests.build_evidence_fixtures import (
     PATCH_IDENTITY,
@@ -73,16 +75,10 @@ def test_loader_rejects_repeated_default_path_item(tmp_path: Path) -> None:
 def test_selection_rejects_default_path_outside_soul_windows(tmp_path: Path) -> None:
     path = tmp_path / "build-evidence.json"
     document = _document()
-    _sequence_policy(document)["component_expanded_default_path"] = [
-        102,
-        201,
-        202,
-        301,
-        302,
-        401,
-        402,
-        101,
-    ]
+    build = require_object_rows(require_object_rows(document["heroes"])[0]["builds"])[0]
+    discovery = require_object_dict(build["discovery"])
+    frozen = require_object_dict(discovery["frozen_guide"])
+    frozen["bounds"] = {"101": [20_000, 30_000], "102": [1_000, 2_000]}
     _refingerprint(document)
     _write(path, document)
 

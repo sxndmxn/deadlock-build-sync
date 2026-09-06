@@ -52,22 +52,6 @@ class _HeroInputs:
     situational_policy: SituationalPolicy | None
 
 
-def _handle_incomplete_analytics(
-    *,
-    all_heroes: bool,
-    skipped_heroes: list[str],
-    exclusions: list[tuple[int, str]],
-    hero_id: int,
-    hero_name: str,
-    reason: str,
-) -> None:
-    if all_heroes:
-        skipped_heroes.append(f"{hero_name} ({reason})")
-        exclusions.append((hero_id, reason))
-        return
-    raise GuideError(f"{hero_name} did not have {reason}")
-
-
 def _duration_distribution(
     heroes: list[dict[str, object]],
     curves: dict[int, tuple[HeroDurationStat, ...]],

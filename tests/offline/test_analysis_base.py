@@ -5,7 +5,8 @@ from typing import TYPE_CHECKING
 import duckdb
 import polars as pl
 
-from deadlock_build_sync.offline.analysis_base import (
+from deadlock_build_sync.offline.config import RunPaths
+from tools.comparisons.legacy.analysis_base import (
     _add_intervals_and_eb,
     _confounding_correlations_for_group,
     _connection,
@@ -15,7 +16,6 @@ from deadlock_build_sync.offline.analysis_base import (
     _state_overlap_diagnostics,
     _write_csv,
 )
-from deadlock_build_sync.offline.config import RunPaths
 
 if TYPE_CHECKING:
     from pathlib import Path

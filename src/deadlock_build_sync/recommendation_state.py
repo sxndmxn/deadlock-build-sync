@@ -3,16 +3,24 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from typing import TYPE_CHECKING
+
+from .match_choices import MatchEconomy
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-DECISION_STATE_SCHEMA_VERSION = 2
+DECISION_STATE_SCHEMA_VERSION = 3
 _DECISION_STATE_FIELDS = frozenset({
     "schema_version",
+    "path_id",
+    "selected_optional_items",
+    "placement_overrides",
+    "core_substitution_item_id",
+    "economy",
+    "enemy_observed_at_s",
     "build_evidence_id",
     "client_version",
     "patch_identity",
@@ -76,6 +84,12 @@ class DecisionState:
     allied_hero_ids: tuple[int, ...] = ()
     objectives: tuple[str, ...] = ()
     threats: tuple[str, ...] = ()
+    path_id: str | None = None
+    selected_optional_items: tuple[int, ...] = ()
+    placement_overrides: dict[int, int] = field(default_factory=dict)
+    core_substitution_item_id: int | None = None
+    economy: MatchEconomy | None = None
+    enemy_observed_at_s: int | None = None
 
     @classmethod
     def from_file(cls, path: Path) -> DecisionState:
@@ -174,6 +188,29 @@ class DecisionState:
             objectives=_unique_strings(value.get("objectives", []), "objectives"),
             threats=_unique_strings(value.get("threats", []), "threats"),
         )
+        state = replace(
+            state,
+            path_id=_text(value.get("path_id"), "path id")
+            if value.get("path_id") is not None
+            else None,
+            selected_optional_items=_unique_integers(
+                value.get("selected_optional_items", []), "selected optional items"
+            ),
+            placement_overrides=_placements(value.get("placement_overrides", {})),
+            core_substitution_item_id=_optional_integer(
+                value.get("core_substitution_item_id"), "core substitution item"
+            ),
+            economy=_economy(value.get("economy")),
+            enemy_observed_at_s=_integer(
+                value.get("enemy_observed_at_s"), "enemy observation time", minimum=0
+            )
+            if value.get("enemy_observed_at_s") is not None
+            else None,
+        )
+        if not set(state.placement_overrides) <= set(state.selected_optional_items):
+            raise RecommendationError(
+                "Placement overrides must refer to selected optional items"
+            )
         if not set(state.lane_enemy_hero_ids) <= set(state.enemy_hero_ids):
             raise RecommendationError("lane enemy heroes are not on the enemy team")
         return state
@@ -192,6 +229,7 @@ class Recommendation:
     backoff_level: str | None = None
     reason: str = ""
     counter: dict[str, object] | None = None
+    purchase_plan: dict[str, object] | None = None
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -206,6 +244,7 @@ class Recommendation:
             "backoff_level": self.backoff_level,
             "reason": self.reason,
             "counter": self.counter,
+            "purchase_plan": self.purchase_plan,
         }
 
 
@@ -219,6 +258,10 @@ def _text(value: object, label: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise RecommendationError(f"decision state has invalid {label}")
     return value.strip()
+
+
+def _optional_integer(value: object, label: str) -> int | None:
+    return _integer(value, label) if value is not None else None
 
 
 def _integers(value: object, label: str) -> tuple[int, ...]:
@@ -243,3 +286,46 @@ def _unique_strings(value: object, label: str) -> tuple[str, ...]:
     if len(result) != len(set(result)):
         raise RecommendationError(f"decision state has duplicate {label}")
     return result
+
+
+def _placements(value: object) -> dict[int, int]:
+    if not isinstance(value, dict):
+        raise RecommendationError(
+            "Placement overrides must map item IDs to checkpoints"
+        )
+    result = {}
+    for key, position in value.items():
+        if (
+            not isinstance(key, str)
+            or not key.isdecimal()
+            or str(int(key)) != key
+            or int(key) < 1
+        ):
+            raise RecommendationError("Placement override keys must be item IDs")
+        result[int(key)] = _integer(position, "purchase checkpoint", minimum=0)
+    return result
+
+
+def _economy(value: object) -> MatchEconomy | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict) or set(value) - {
+        "personal_net_worth",
+        "lobby_net_worths",
+        "observed_at_s",
+    }:
+        raise RecommendationError("Match economy has invalid fields")
+    personal = value.get("personal_net_worth")
+    observed = value.get("observed_at_s")
+    lobby = value.get("lobby_net_worths", [])
+    if not isinstance(lobby, list) or len(lobby) > 12:
+        raise RecommendationError("Lobby wealth must contain at most 12 player values")
+    return MatchEconomy(
+        _integer(personal, "personal net worth", minimum=0)
+        if personal is not None
+        else None,
+        tuple(_integer(amount, "lobby net worth", minimum=0) for amount in lobby),
+        _integer(observed, "economy observation time", minimum=0)
+        if observed is not None
+        else None,
+    )

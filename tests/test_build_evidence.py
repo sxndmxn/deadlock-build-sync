@@ -86,17 +86,15 @@ def test_load_and_select_exact_build_layout(tmp_path: Path) -> None:
         202,
         301,
         302,
-        401,
-        402,
     ]
     assert selected.core_joint_matches == 80
     assert selected.core_joint_share == 0.10
-    assert selected.core_target_cost == 20_000
+    assert selected.core_target_cost == 12_000
     assert {tier: len(items) for tier, items in selected.tiers.items()} == {
         1: 9,
         2: 9,
         3: 9,
-        4: 9,
+        4: 10,
     }
     assert [item.item_id for item in selected.tiers[1]] == [
         103,
@@ -166,7 +164,7 @@ def test_sparse_supported_tiers_do_not_require_filler(tmp_path: Path) -> None:
         1: 1,
         2: 1,
         3: 1,
-        4: 1,
+        4: 3,
     }
 
 

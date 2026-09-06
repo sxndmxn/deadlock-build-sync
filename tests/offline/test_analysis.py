@@ -2,7 +2,7 @@ import duckdb
 import polars as pl
 import pytest
 
-from deadlock_build_sync.offline.analysis import (
+from tools.comparisons.legacy.analysis import (
     _add_same_opportunity_comparators,
     _effective_property_value,
     _interval_overlap_ratio,

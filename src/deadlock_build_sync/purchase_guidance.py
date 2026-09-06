@@ -7,6 +7,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from .mechanics import ItemGraph, MechanicsError
+from .purchase_categories import purchase_categories
 from .purchase_decisions import decisions_at
 from .purchase_guidance_types import PurchaseChoice, PurchaseGuidance
 from .purchase_planner import plan_purchases
@@ -107,5 +108,18 @@ def attach_purchase_guidance(
         choices,
         decisions,
         {item: node.name for item, node in graph.nodes.items()},
+        automatic_branches=tuple(
+            replace(
+                branch,
+                default_plan=plan_purchases(
+                    graph,
+                    branch.substituted_path or path,
+                    branch.substituted_core or core,
+                    {branch.item_id: branch.after_step},
+                ),
+            )
+            for branch in guide.automatic_branches
+        ),
     )
-    return replace(guide, purchase_guidance=guidance)
+    complete = replace(guide, purchase_guidance=guidance)
+    return replace(complete, categories=purchase_categories(complete))

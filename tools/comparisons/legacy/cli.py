@@ -1,0 +1,368 @@
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import shutil
+import subprocess
+from datetime import UTC, datetime
+from pathlib import Path
+
+from deadlock_build_sync.offline.api import (
+    capture_api_audit,
+    capture_sources,
+    read_json,
+    write_json,
+)
+from deadlock_build_sync.offline.config import Cohort, RunPaths, parse_timestamp
+from deadlock_build_sync.offline.extract import extract_cohort
+from deadlock_build_sync.offline.production_evidence import export_production_evidence
+from deadlock_build_sync.value_validation import integer, object_dict, object_list
+
+from .analysis import analyze
+from .layout import write_build_layout
+from .rankings import generate_rankings
+from .report import render_report
+
+PACKAGE_ROOT = Path(__file__).resolve().parents[1]
+_SOURCE_CHECKOUT = Path(__file__).resolve().parents[3]
+PRODUCTION_REPO = (
+    _SOURCE_CHECKOUT
+    if (_SOURCE_CHECKOUT / "pyproject.toml").is_file()
+    else PACKAGE_ROOT
+)
+_STATE_HOME = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state"))
+PROJECT_ROOT = _STATE_HOME / "deadlock-build-sync/offline"
+MAX_CACHE_BYTES = 8 * 1024**3
+_MANIFEST_FILENAME = "manifest.json"
+_HEROES_SOURCE = "raw/heroes.json"
+_ANALYSIS_DATABASE = "raw/analysis.duckdb"
+
+
+def _repo_identity() -> dict[str, str]:
+    if PRODUCTION_REPO == PACKAGE_ROOT:
+        digest = hashlib.sha256()
+        for path in sorted(PACKAGE_ROOT.rglob("*.py")):
+            digest.update(str(path.relative_to(PACKAGE_ROOT)).encode())
+            digest.update(path.read_bytes())
+        return {
+            "status": "installed-package",
+            "tracked_index_sha256": digest.hexdigest(),
+        }
+    git = shutil.which("git")
+    if git is None:
+        raise RuntimeError("git is required to record the producer source identity")
+    status = subprocess.run(
+        [git, "status", "--short", "--branch"],
+        cwd=PRODUCTION_REPO,
+        check=True,
+        capture_output=True,
+        shell=False,
+        text=True,
+    ).stdout
+    index = subprocess.run(
+        [git, "ls-files", "-s"],
+        cwd=PRODUCTION_REPO,
+        check=True,
+        capture_output=True,
+        shell=False,
+    ).stdout
+    return {
+        "status": status.strip(),
+        "tracked_index_sha256": hashlib.sha256(index).hexdigest(),
+    }
+
+
+def _manifest(paths: RunPaths, cohort: Cohort) -> dict[str, object]:
+    target = paths.run / _MANIFEST_FILENAME
+    if target.exists():
+        manifest = object_dict(read_json(target))
+        if manifest is None:
+            raise SystemExit("existing run manifest is not an object")
+        return manifest
+    return {
+        "schema_version": 1,
+        "generated_at": datetime.now(tz=UTC).isoformat(),
+        "cohort": cohort.as_dict(),
+        "run_id": paths.run.name,
+        "project_root": str(paths.root),
+        "producer_source": str(PRODUCTION_REPO),
+    }
+
+
+def _cohort_from_manifest(manifest: dict[str, object]) -> Cohort:
+    value = object_dict(manifest.get("cohort"))
+    if value is None:
+        raise SystemExit("existing run manifest has no valid frozen cohort")
+    since = parse_timestamp(str(value["since"]))
+    as_of = parse_timestamp(str(value["as_of"]))
+    if since is None or as_of is None:
+        raise SystemExit("existing run manifest has incomplete cohort timestamps")
+    cohort = Cohort(
+        minimum_badge=integer(value["minimum_badge"]),
+        maximum_badge=integer(value["maximum_badge"]),
+        since=since,
+        as_of=as_of,
+        match_mode=str(value.get("match_mode") or "Ranked"),
+        game_mode=str(value.get("game_mode") or "Normal"),
+    )
+    cohort.validate()
+    return cohort
+
+
+def _check_explicit_cohort_args(args: argparse.Namespace, frozen: Cohort) -> None:
+    comparisons = (
+        ("--min-rank", args.min_rank, frozen.minimum_badge),
+        ("--max-rank", args.max_rank, frozen.maximum_badge),
+        ("--since", parse_timestamp(args.since), frozen.since),
+        ("--as-of", parse_timestamp(args.as_of), frozen.resolved_as_of()),
+    )
+    conflicts = [
+        name
+        for name, requested, stored in comparisons
+        if requested is not None and requested != stored
+    ]
+    if conflicts:
+        raise SystemExit(
+            "existing run has a different frozen cohort; use a new --run-id "
+            f"instead of changing {', '.join(conflicts)}"
+        )
+
+
+def _save_manifest(paths: RunPaths, manifest: dict[str, object]) -> None:
+    write_json(paths.run / _MANIFEST_FILENAME, manifest)
+
+
+def _cache_size(paths: RunPaths) -> int:
+    return sum(path.stat().st_size for path in paths.run.rglob("*") if path.is_file())
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        while chunk := stream.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _frozen_data_hashes(paths: RunPaths) -> dict[str, str]:
+    return {
+        str(path.relative_to(paths.run)): _file_sha256(path)
+        for path in sorted(paths.data.glob("*.parquet"))
+    }
+
+
+def _require(paths: RunPaths, *relative: str) -> None:
+    missing = [value for value in relative if not (paths.run / value).exists()]
+    if missing:
+        raise SystemExit(
+            f"run {paths.run.name} is missing prerequisites: {', '.join(missing)}"
+        )
+
+
+def run_extract(paths: RunPaths, cohort: Cohort, manifest: dict[str, object]) -> None:
+    manifest["sources"] = capture_sources(paths)
+    manifest["extraction"] = extract_cohort(paths, cohort)
+    manifest["cache_bytes"] = _cache_size(paths)
+    _save_manifest(paths, manifest)
+
+
+def run_audit(paths: RunPaths, cohort: Cohort, manifest: dict[str, object]) -> None:
+    _require(paths, _HEROES_SOURCE)
+    manifest["api_audit"] = capture_api_audit(paths, cohort)
+    _save_manifest(paths, manifest)
+
+
+def run_analysis(paths: RunPaths, manifest: dict[str, object]) -> None:
+    _require(paths, _ANALYSIS_DATABASE, "raw/api")
+    manifest["analysis"] = analyze(paths)
+    manifest["rankings"] = generate_rankings(paths)
+    manifest["cache_bytes"] = _cache_size(paths)
+    if manifest["cache_bytes"] > MAX_CACHE_BYTES:
+        raise RuntimeError(
+            f"run cache is {manifest['cache_bytes'] / 1024**3:.1f} GiB; 8 GiB cap exceeded"
+        )
+    _save_manifest(paths, manifest)
+
+
+def run_report(paths: RunPaths, manifest: dict[str, object]) -> None:
+    _require(paths, "tables/item_metrics.csv", "tables/top10_rankings.csv")
+    manifest["frozen_data_sha256"] = _frozen_data_hashes(paths)
+    _save_manifest(paths, manifest)
+    manifest["reporting"] = render_report(paths)
+    _save_manifest(paths, manifest)
+
+
+def run_layout(
+    paths: RunPaths,
+    manifest: dict[str, object],
+    *,
+    hero_id: int,
+    hero_name: str,
+    minimum_net_worth: int,
+) -> None:
+    stem = f"late_game_hero_{hero_id}_{minimum_net_worth}"
+    _require(paths, f"tables/{stem}.json", f"tables/{stem}_items.csv")
+    json_path, markdown_path = write_build_layout(
+        paths,
+        hero_id=hero_id,
+        hero_name=hero_name,
+        minimum_net_worth=minimum_net_worth,
+    )
+    manifest["build_layout"] = {
+        "hero_id": hero_id,
+        "hero": hero_name,
+        "minimum_net_worth": minimum_net_worth,
+        "json": str(json_path.relative_to(paths.run)),
+        "markdown": str(markdown_path.relative_to(paths.run)),
+    }
+    _save_manifest(paths, manifest)
+
+
+def run_export_evidence(paths: RunPaths, output: Path) -> None:
+    _require(
+        paths,
+        _MANIFEST_FILENAME,
+        _ANALYSIS_DATABASE,
+        _HEROES_SOURCE,
+        "raw/items.json",
+        "raw/items-all.json",
+        "raw/patches.json",
+        "raw/ranks.json",
+        "tables/item_metrics.csv",
+    )
+    document = export_production_evidence(paths, output)
+    heroes = object_list(document.get("heroes"))
+    if heroes is None:
+        raise RuntimeError("production evidence has no hero array")
+    print(
+        f"Exported {len(heroes)} heroes of production evidence: {output}",
+        flush=True,
+    )
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="deadlock-build-sync refresh-evidence",
+        description="Run the read-only Deadlock evidence producer.",
+    )
+    parser.add_argument(
+        "command",
+        choices=(
+            "extract",
+            "audit",
+            "analyze",
+            "report",
+            "layout",
+            "export-evidence",
+            "all",
+        ),
+    )
+    parser.add_argument("--run-id", help="stable result directory identifier")
+    parser.add_argument("--min-rank", type=int)
+    parser.add_argument("--max-rank", type=int)
+    parser.add_argument("--since")
+    parser.add_argument(
+        "--as-of", help="frozen upper timestamp; defaults to command start"
+    )
+    parser.add_argument("--hero-id", type=int, help="hero identifier for layout")
+    parser.add_argument("--hero-name", help="hero display name for layout")
+    parser.add_argument(
+        "--minimum-net-worth",
+        type=int,
+        default=45_000,
+        help="late-game final-net-worth threshold for layout",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        help="output path required by export-evidence",
+    )
+    return parser
+
+
+def _requested_cohort(args: argparse.Namespace) -> Cohort:
+    defaults = Cohort()
+    cohort = Cohort(
+        minimum_badge=args.min_rank or defaults.minimum_badge,
+        maximum_badge=args.max_rank or defaults.maximum_badge,
+        since=parse_timestamp(args.since) or defaults.since,
+        as_of=parse_timestamp(args.as_of)
+        or datetime.now(tz=UTC).replace(microsecond=0),
+    )
+    cohort.validate()
+    return cohort
+
+
+def _run_layout_request(
+    args: argparse.Namespace,
+    paths: RunPaths,
+    manifest: dict[str, object],
+) -> None:
+    if args.hero_id is None or not args.hero_name:
+        raise SystemExit("layout requires --hero-id and --hero-name")
+    run_layout(
+        paths,
+        manifest,
+        hero_id=args.hero_id,
+        hero_name=args.hero_name,
+        minimum_net_worth=args.minimum_net_worth,
+    )
+
+
+def _run_export_request(args: argparse.Namespace, paths: RunPaths) -> None:
+    if args.output is None:
+        raise SystemExit(f"{args.command} requires --output")
+    run_export_evidence(paths, args.output.expanduser().resolve())
+
+
+def _execute_offline_command(
+    args: argparse.Namespace,
+    paths: RunPaths,
+    cohort: Cohort,
+    manifest: dict[str, object],
+) -> None:
+    if args.command in {"extract", "all"}:
+        run_extract(paths, cohort, manifest)
+    if args.command in {"audit", "all"}:
+        run_audit(paths, cohort, manifest)
+    if args.command in {"analyze", "all"}:
+        run_analysis(paths, manifest)
+    if args.command == "layout":
+        _run_layout_request(args, paths, manifest)
+    if args.command in {"report", "all"}:
+        run_report(paths, manifest)
+    if args.command in {"export-evidence", "all"}:
+        _run_export_request(args, paths)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    cohort = _requested_cohort(args)
+    paths = RunPaths.create(PROJECT_ROOT, args.run_id)
+    existing_run = (paths.run / _MANIFEST_FILENAME).exists()
+    manifest = _manifest(paths, cohort)
+    if existing_run:
+        frozen_cohort = _cohort_from_manifest(manifest)
+        _check_explicit_cohort_args(args, frozen_cohort)
+        cohort = frozen_cohort
+    before = _repo_identity()
+    manifest["producer_source_before"] = before
+    _save_manifest(paths, manifest)
+
+    _execute_offline_command(args, paths, cohort, manifest)
+
+    after = _repo_identity()
+    manifest["producer_source_after"] = after
+    manifest["producer_source_unchanged"] = before == after
+    manifest["completed_at"] = datetime.now(tz=UTC).isoformat()
+    _save_manifest(paths, manifest)
+    if before != after:
+        raise RuntimeError("producer source identity changed during isolated analysis")
+    print(json.dumps({"run": str(paths.run), "manifest": manifest}, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

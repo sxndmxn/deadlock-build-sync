@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-import deadlock_build_sync.offline.cli as cli_module
-from deadlock_build_sync.offline.cli import (
+import tools.comparisons.legacy.cli as cli_module
+from tools.comparisons.legacy.cli import (
     _check_explicit_cohort_args,
     _cohort_from_manifest,
     _file_sha256,

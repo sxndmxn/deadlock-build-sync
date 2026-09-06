@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 import polars as pl
 
 from deadlock_build_sync.offline.config import RunPaths
-from deadlock_build_sync.offline.production_sequence import _sequence_evaluation
+from tools.comparisons.legacy.production_sequence import _sequence_evaluation
 
 if TYPE_CHECKING:
     from pathlib import Path

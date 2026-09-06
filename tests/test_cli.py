@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 import deadlock_build_sync.cli as cli_module
-import deadlock_build_sync.offline.cli as offline_cli_module
+import deadlock_build_sync.offline.refresh as offline_cli_module
 from deadlock_build_sync import cli_support
 from deadlock_build_sync.api import Patch
 from deadlock_build_sync.cache import CacheError, CacheLocation
@@ -69,7 +69,7 @@ def test_refresh_evidence_handoff_exports_and_admits_one_artifact(
     ])
 
     assert cli_module._run_refresh_evidence(args) == 0
-    assert forwarded[0] == "all"
+    assert forwarded[0] == "--min-rank"
     assert forwarded[forwarded.index("--output") + 1] == str(
         tmp_path / "build-evidence.json"
     )

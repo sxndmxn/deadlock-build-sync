@@ -8,8 +8,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from deadlock_build_sync.offline import cli
 from deadlock_build_sync.offline.config import Cohort, RunPaths, sha256_json
+from tools.comparisons.legacy import cli
 
 if TYPE_CHECKING:
     from pathlib import Path

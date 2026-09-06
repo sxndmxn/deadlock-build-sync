@@ -47,6 +47,10 @@ def test_backup_uses_utc_timestamp_and_sequential_suffixes(
     ]
     assert all((path / "cached_hero_builds.kv3").is_file() for path in backups)
     assert all((path / "remotecache.vdf").is_file() for path in backups)
+    assert all(
+        "remotecache.vdf" in {entry.name for entry in path.iterdir()}
+        for path in backups
+    )
 
 
 def test_directory_fsync_uses_directory_flags_and_always_closes(

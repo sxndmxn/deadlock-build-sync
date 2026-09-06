@@ -8,15 +8,18 @@ import duckdb
 import polars as pl
 
 from deadlock_build_sync.mechanics import ItemGraph
-from deadlock_build_sync.offline.build_paths import DiscoveredBuildPath
 from deadlock_build_sync.offline.config import sha256_json
-from deadlock_build_sync.offline.core_policy import (
+from tests.offline.production_evidence_fixtures import (
+    _item_metric_row,
+)
+from tools.comparisons.legacy.build_paths import DiscoveredBuildPath
+from tools.comparisons.legacy.core_policy import (
     BackboneSelection,
     _bundle_support_by_size_and_fold,
     complete_default_core,
     select_supported_backbone,
 )
-from deadlock_build_sync.offline.production_evidence import (
+from tools.comparisons.legacy.production_evidence import (
     UnsupportedBuildPathError,
     _core_economy_reference,
     _HeroExportContext,
@@ -26,10 +29,7 @@ from deadlock_build_sync.offline.production_evidence import (
     _path_payloads,
     _situational_selection_matchups,
 )
-from deadlock_build_sync.offline.production_policy import _purchase_window_bounds
-from tests.offline.production_evidence_fixtures import (
-    _item_metric_row,
-)
+from tools.comparisons.legacy.production_policy import _purchase_window_bounds
 
 
 def test_situational_matchups_keep_full_64_bit_item_ids_after_early_rows() -> None:
@@ -117,10 +117,8 @@ def test_hero_export_runs_eight_workers_and_preserves_order() -> None:
     expected = [{"hero_id": index} for index in range(1, 11)]
 
     with (
-        patch(
-            "deadlock_build_sync.offline.production_evidence.parallel_config"
-        ) as config,
-        patch("deadlock_build_sync.offline.production_evidence.Parallel") as parallel,
+        patch("tools.comparisons.legacy.production_evidence.parallel_config") as config,
+        patch("tools.comparisons.legacy.production_evidence.Parallel") as parallel,
     ):
         parallel.return_value.return_value = expected
         result = _parallel_hero_export(
@@ -211,11 +209,11 @@ def test_path_export_retains_valid_sibling_when_one_path_abstains() -> None:
     try:
         with (
             patch(
-                "deadlock_build_sync.offline.production_evidence._path_label",
+                "tools.comparisons.legacy.production_evidence._path_label",
                 side_effect=path_label,
             ),
             patch(
-                "deadlock_build_sync.offline.production_evidence._build_path_payload",
+                "tools.comparisons.legacy.production_evidence._build_path_payload",
                 side_effect=build_payload,
             ),
         ):

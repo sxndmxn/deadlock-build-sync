@@ -24,7 +24,7 @@ def test_recommendation_expands_components_then_saves_for_parent() -> None:
     assert first.target_item_id == 2
     assert first.incremental_cost == 500
     assert sha256_json(first.as_dict()) == (
-        "f670e055da915d49d270f73870722b32a34da1ad883eb98936c6f1c6218fb5d3"
+        "8712d5362c1959c6d379d9ee1735d909b92b679fe0046ec0350eb5753749e25d"
     )
 
     second = recommend(

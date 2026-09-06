@@ -265,7 +265,7 @@ def test_install_creates_backup_and_restore_recovers_original(
     )
     manifest["cache_path"] = "<cache>"
     assert sha256_json(manifest) == (
-        "baa594f846f97195d5b3f0faad9095fd868bbe2ea32f16fe66e69df8a1963d72"
+        "68e8d42bb3d815c66ebdbbcff2fdbe5a77de3282c1af7a124b934e50e1c57f31"
     )
     assert result.created == 1
     assert (result.backup_directory / "cached_hero_builds.kv3").is_file()

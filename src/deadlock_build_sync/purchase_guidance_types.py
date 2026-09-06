@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .match_choices import AutomaticBranch
 
 
 @dataclass(frozen=True)
@@ -98,4 +102,10 @@ class PurchaseGuidance:
     decisions: tuple[PurchaseDecision, ...]
     names: dict[int, str]
     evidence_basis: str = "Admitted production core; optional effects and timing do not prove an outcome benefit"
-    schema_version: int = 1
+    schema_version: int = 2
+    automatic_branches: tuple[AutomaticBranch, ...] = ()
+
+    def as_dict(self) -> dict[str, object]:
+        result = asdict(self)
+        result["names"] = {str(item): name for item, name in self.names.items()}
+        return result

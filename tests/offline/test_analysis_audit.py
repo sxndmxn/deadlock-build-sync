@@ -6,7 +6,9 @@ import duckdb
 import polars as pl
 import pytest
 
-from deadlock_build_sync.offline.analysis_audit import (
+from deadlock_build_sync.offline.api import write_json
+from deadlock_build_sync.offline.config import RunPaths, sha256_json
+from tools.comparisons.legacy.analysis_audit import (
     _ability_scaling_signals,
     _account_breadth_stability,
     _api_audit,
@@ -16,8 +18,6 @@ from deadlock_build_sync.offline.analysis_audit import (
     _match_bootstrap_intervals,
     _mechanics_audit,
 )
-from deadlock_build_sync.offline.api import write_json
-from deadlock_build_sync.offline.config import RunPaths, sha256_json
 
 if TYPE_CHECKING:
     from pathlib import Path

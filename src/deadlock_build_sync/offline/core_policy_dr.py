@@ -48,7 +48,8 @@ class DrContrast:
 
 def _matrix(frame: pl.DataFrame) -> np.ndarray:
     columns = []
-    for feature in STATE_FEATURES:
+    extra = sorted(name for name in frame.columns if name.startswith("context_"))
+    for feature in (*STATE_FEATURES, *extra):
         if feature in frame.columns:
             columns.append(
                 frame[feature].cast(pl.Float64, strict=False).fill_nan(None).to_numpy()
@@ -58,12 +59,32 @@ def _matrix(frame: pl.DataFrame) -> np.ndarray:
     return np.column_stack(columns)
 
 
+def _context_features(frame: pl.DataFrame) -> pl.DataFrame:
+    columns = []
+    for feature in ("enemy_heroes", "enemy_items", "owned_before"):
+        if feature in frame.columns:
+            groups = frame[feature].to_list()
+            columns.extend(
+                pl.Series(
+                    f"context_{feature}_{item}",
+                    [int(item in (group or [])) for group in groups],
+                )
+                for item in sorted({item for group in groups for item in (group or [])})
+            )
+    if (
+        "relative_wealth" in frame.columns
+        and frame["relative_wealth"].null_count() < frame.height
+    ):
+        columns.append(frame["relative_wealth"].alias("context_relative_wealth"))
+    return frame.with_columns(columns)
+
+
 def _probability_model(x: np.ndarray, y: np.ndarray) -> Pipeline | float:
     if len(np.unique(y)) < 2:
         return float((y.sum() + 1) / (len(y) + 2))
     model = Pipeline(
         [
-            ("imputer", SimpleImputer(strategy="median")),
+            ("imputer", SimpleImputer(strategy="median", keep_empty_features=True)),
             ("scale", StandardScaler()),
             ("model", LogisticRegression(C=0.5, max_iter=500, solver="lbfgs")),
         ],
@@ -106,6 +127,8 @@ def _weighted_smd(
         )
         if pooled > 0:
             maximum = max(maximum, abs(treated_mean - control_mean) / pooled)
+        elif treated_mean != control_mean:
+            return float("inf")
     return maximum
 
 
@@ -225,7 +248,7 @@ def cross_fitted_dr_contrast(
     ).with_columns(
         (pl.col("item_id") == treatment_item_id).cast(pl.Int8).alias("treatment")
     )
-    fold_scores, fold_diagnostics = _fold_results(frame, folds)
+    fold_scores, fold_diagnostics = _fold_results(_context_features(frame), folds)
     scores = {
         key: np.concatenate([fold_scores[fold][key] for fold in SELECTION_FOLDS])
         for key in next(iter(fold_scores.values()))

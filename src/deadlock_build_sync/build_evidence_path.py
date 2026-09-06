@@ -2,11 +2,14 @@ from __future__ import annotations
 
 from .artifacts import ArtifactError
 from .build_evidence_core import _core_policy, _hero_items, _tier_policy
+from .build_evidence_discovery import exclusion_reason, validate_discovery
+from .build_evidence_pool import validate_frozen_pool
 from .build_evidence_references import validate_policy_item_references
 from .build_evidence_sequence import _sequence_policy, _situational_policy
 from .build_evidence_timing import purchase_timing
 from .build_evidence_types import HeroBuildEvidence, ItemEvidence
 from .build_evidence_values import _required_int
+from .match_choices import parse_automatic_branches
 from .value_validation import object_dict, object_list
 
 
@@ -116,6 +119,10 @@ def _build_path(
         items=items,
         hero_id=hero_id,
     )
+    validate_discovery(
+        discovery, core_policy.default_item_ids, sequence_policy.default_path
+    )
+    validate_frozen_pool(document, discovery)
     return HeroBuildEvidence(
         hero_id=hero_id,
         hero=hero_name,
@@ -136,6 +143,11 @@ def _build_path(
         path_label=path_label,
         signature_item_ids=signature,
         discovery=discovery,
+        automatic_branches=parse_automatic_branches(
+            document.get("automatic_choices"),
+            {item for group in tier_policy.item_ids_by_tier.values() for item in group},
+            sequence_policy.default_path,
+        ),
         purchase_timing=purchase_timing(
             document.get("purchase_timing"), sequence_policy, tier_policy, items
         ),
@@ -151,8 +163,13 @@ def _hero_builds(value: object) -> tuple[int, tuple[HeroBuildEvidence, ...]]:
     raw_builds = object_list(document.get("builds"))
     if not isinstance(name, str) or not name.strip():
         raise ArtifactError(f"hero {hero_id} has no name")
-    if not raw_builds:
+    if raw_builds is None:
         raise ArtifactError(f"hero {hero_id} has no supported build paths")
+    if not raw_builds:
+        exclusion_reason(document.get("exclusion"))
+        return hero_id, ()
+    if len(raw_builds) > 3 or document.get("exclusion") is not None:
+        raise ArtifactError(f"hero {hero_id} has conflicting build admission")
     builds = tuple(
         _build_path(build, hero_id=hero_id, hero_name=name.strip())
         for build in raw_builds
@@ -160,4 +177,10 @@ def _hero_builds(value: object) -> tuple[int, tuple[HeroBuildEvidence, ...]]:
     path_ids = [build.path_id for build in builds]
     if len(path_ids) != len(set(path_ids)):
         raise ArtifactError(f"hero {hero_id} contains duplicate build paths")
+    cores = [tuple(sorted(build.core_policy.default_item_ids)) for build in builds]
+    ranks = [build.discovery["selection_rank"] for build in builds]
+    if len(set(cores)) != len(cores) or len(set(ranks)) != len(ranks):
+        raise ArtifactError(
+            f"hero {hero_id} contains duplicate identities or selection ranks"
+        )
     return hero_id, builds

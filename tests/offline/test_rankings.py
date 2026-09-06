@@ -1,4 +1,4 @@
-from deadlock_build_sync.offline.rankings import (
+from tools.comparisons.legacy.rankings import (
     Asset,
     _build_path,
     _longest_common_subsequence,

@@ -1,14 +1,9 @@
 from __future__ import annotations
 
-from collections import Counter
-from collections.abc import Callable
 from datetime import datetime
-from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import duckdb
-from joblib import Parallel, delayed, parallel_config
 
 from deadlock_build_sync.build_evidence import (
     MAXIMUM_TIER_ADOPTION_DRIFT,
@@ -30,190 +25,21 @@ from deadlock_build_sync.value_validation import (
     object_rows,
 )
 
-from .api import read_json
-from .build_paths import DiscoveredBuildPath, discover_build_paths
+from .api import read_json, write_json
 from .config import RunPaths, sha256_json
+from .discovery_export import discover_roster
 from .late_game import load_item_asset_maps
-from .production_paths import _build_path_payload, _fallback_build_path
-from .production_policy import (
-    _core_economy_reference,
-    _item_payload,
-    _path_cohort_summary,
-    _path_label,
-    _tier_policy,
-)
-from .production_sequence import (
-    _core_target_order,
-    _expanded_default_path,
-    _maximum_agreement_orders,
-    _sequence_rows,
-)
-from .production_situational import _situational_policy
-from .production_situational_data import (
-    _situational_cells,
-    _situational_selection_matchups,
-    _situational_state_overlap,
-)
 from .production_sources import (
-    DEFAULT_BUILD_PATH_LABEL,
-    HERO_EXPORT_WORKERS,
     MINIMUM_CORE_SUPPORT,
     SCHEMA_VERSION,
     SEQUENCE_MINIMUM_SUPPORT,
     UnsupportedBuildPathError,
-    _early_inventories_for_hero,
     _enemy_threat_evidence,
     _HeroExportContext,
-    _inventories_for_hero,
     _patch_at,
-    _patch_content_sha256,
     _rank_labels_sha256,
 )
-from .production_storage import _atomic_write, _core_decisions, _folds_by_match
-
-if TYPE_CHECKING:
-    import polars as pl
-
-__all__ = [
-    "UnsupportedBuildPathError",
-    "_HeroExportContext",
-    "_core_economy_reference",
-    "_core_target_order",
-    "_expanded_default_path",
-    "_item_payload",
-    "_maximum_agreement_orders",
-    "_parallel_hero_export",
-    "_patch_content_sha256",
-    "_path_cohort_summary",
-    "_path_payloads",
-    "_sequence_rows",
-    "_situational_policy",
-    "_situational_selection_matchups",
-    "_tier_policy",
-    "export_production_evidence",
-]
-
-
-def _parallel_hero_export(
-    jobs: list[tuple[int, dict[str, object]]],
-    worker: Callable[[tuple[int, dict[str, object]]], dict[str, object]],
-) -> list[dict[str, object]]:
-    worker_count = min(HERO_EXPORT_WORKERS, len(jobs))
-    with parallel_config(
-        backend="loky",
-        n_jobs=worker_count,
-        inner_max_num_threads=1,
-    ):
-        return Parallel()(delayed(worker)(job) for job in jobs)
-
-
-def _path_payloads(
-    con: duckdb.DuckDBPyConnection,
-    hero_id: int,
-    hero: dict[str, object],
-    paths: tuple[DiscoveredBuildPath, ...],
-    inventories: dict[tuple[int, int], tuple[int, ...]],
-    context: _HeroExportContext,
-    *,
-    core_decisions: pl.DataFrame | None = None,
-    situational_evidence: tuple[pl.DataFrame, pl.DataFrame] | None = None,
-) -> tuple[list[dict[str, object]], list[dict[str, str]]]:
-    labels = [_path_label(con, path, context.mechanics_assets_by_id) for path in paths]
-    label_counts = Counter(labels)
-    payloads: list[dict[str, object]] = []
-    abstentions: list[dict[str, str]] = []
-    for path, label in zip(paths, labels, strict=True):
-        try:
-            payloads.append(
-                _build_path_payload(
-                    con,
-                    hero_id,
-                    hero,
-                    path,
-                    label,
-                    label_counts,
-                    inventories,
-                    context,
-                    core_decisions,
-                    situational_evidence,
-                )
-            )
-        except UnsupportedBuildPathError as error:
-            abstentions.append({
-                "path_id": path.path_id,
-                "reason": str(error),
-            })
-    if payloads:
-        return payloads, abstentions
-    fallback = _fallback_build_path(inventories, context.folds_by_match)
-    return (
-        [
-            _build_path_payload(
-                con,
-                hero_id,
-                hero,
-                fallback,
-                DEFAULT_BUILD_PATH_LABEL,
-                Counter({DEFAULT_BUILD_PATH_LABEL: 1}),
-                inventories,
-                context,
-                core_decisions,
-                situational_evidence,
-            )
-        ],
-        abstentions,
-    )
-
-
-def _build_hero_payload(
-    job: tuple[int, dict[str, object]],
-    *,
-    context: _HeroExportContext,
-) -> dict[str, object]:
-    index, hero = job
-    con = duckdb.connect(str(context.paths.raw / "analysis.duckdb"), read_only=True)
-    con.execute("SET threads = 1")
-    try:
-        hero_id = integer(hero["id"])
-        name = str(hero.get("name") or hero_id)
-        print(
-            f"Production evidence {index}/{context.hero_count} started: {name}",
-            flush=True,
-        )
-        inventories = _inventories_for_hero(con, hero_id, context.components)
-        paths = discover_build_paths(
-            inventories,
-            _early_inventories_for_hero(con, hero_id),
-            context.folds_by_match,
-        )
-        core_decisions = _core_decisions(con, hero_id)
-        situational_evidence = (
-            _situational_state_overlap(con, hero_id),
-            _situational_cells(con, hero_id, selection_only=False),
-        )
-        builds, path_abstentions = _path_payloads(
-            con,
-            hero_id,
-            hero,
-            paths,
-            inventories,
-            context,
-            core_decisions=core_decisions,
-            situational_evidence=situational_evidence,
-        )
-        payload = {
-            "hero_id": hero_id,
-            "hero": name,
-            "builds": builds,
-            "path_abstentions": path_abstentions,
-        }
-        print(
-            f"Production evidence {index}/{context.hero_count} completed: {name}",
-            flush=True,
-        )
-        return payload
-    finally:
-        con.close()
+from .production_storage import _atomic_write, _folds_by_match
 
 
 def export_production_evidence(paths: RunPaths, output: Path) -> dict[str, object]:
@@ -251,7 +77,10 @@ def export_production_evidence(paths: RunPaths, output: Path) -> dict[str, objec
     client_version = integer(sources["client_version"])
     try:
         folds_by_match = _folds_by_match(con)
-        core_economy_reference = _core_economy_reference(con, cohort)
+        core_economy_reference = {
+            "target_core_cost": 19200,
+            "basis": "frozen discovery maximum",
+        }
     finally:
         con.close()
 
@@ -267,10 +96,13 @@ def export_production_evidence(paths: RunPaths, output: Path) -> dict[str, objec
         target_core_cost=integer(core_economy_reference["target_core_cost"]),
         enemy_threat_evidence=_enemy_threat_evidence(heroes, normal_assets),
     )
-    hero_payloads = _parallel_hero_export(
-        list(enumerate(heroes, start=1)),
-        partial(_build_hero_payload, context=export_context),
-    )
+    hero_payloads = discover_roster(heroes, export_context)
+    if not any(hero["builds"] for hero in hero_payloads):
+        report = paths.run / "discovery-exclusions.json"
+        write_json(report, hero_payloads)
+        raise UnsupportedBuildPathError(
+            f"No builds passed. Existing artifact bundle is unchanged. Reasons: {report}"
+        )
 
     epochs = {
         name: {
@@ -298,26 +130,17 @@ def export_production_evidence(paths: RunPaths, output: Path) -> dict[str, objec
             "minimum_imbue_support": MINIMUM_IMBUE_SUPPORT,
             "minimum_imbue_share": MINIMUM_IMBUE_SHARE,
             "core_selection": (
-                "temporally stable supported four-to-six-item backbone, then a "
-                "jointly supported mechanically legal completion of up to nine items "
-                "within ten percent of the Oracle I+ economy target when available"
+                "Eclat four-to-six-item exact cores, Leiden groups, frozen selection "
+                "ranking, corrected core outcomes, and supported pairwise order"
             ),
             "tier_membership": (
-                "training adoption descending after fold support, five-percent "
-                "adoption, ten-point drift, and upgrade-visibility gates"
+                "discovery buyers of the exact core; minimum 20 buyers, maximum 10 per tier"
             ),
             "tier_display_order": (
-                "train-plus-validation median valid pre-purchase net worth, then "
-                "median buy time and item id"
+                "discovery median first-purchase time, then item id"
             ),
             "core_economy_reference": core_economy_reference,
-            "outcome_usage": (
-                "cross-fitted doubly robust contrasts may admit non-backbone CORE "
-                "substitutions only after positive train and validation intervals, "
-                "overlap, balance, ESS, uncertainty, and stability gates; the "
-                "historical test fold also gates situational branch release and "
-                "is not independent evaluation of the shipped policy"
-            ),
+            "outcome_usage": "freeze candidates, ranking, orders, and pools before corrected validation; reserved test data is not used",
             "independent_evaluation": "later replay states after the frozen artifact cutoff",
         },
         "cohort": {
@@ -331,6 +154,7 @@ def export_production_evidence(paths: RunPaths, output: Path) -> dict[str, objec
         "rank_labels_sha256": _rank_labels_sha256(paths),
         "heroes_sha256": sha256_json(heroes),
         "items_sha256": sha256_json(normal_assets),
+        "mechanics_assets": normal_assets,
         "source_sha256": sources.get("source_sha256", {}),
         "frozen_data_sha256": manifest.get("frozen_data_sha256", {}),
         "requested_hero_ids": sorted(integer(hero["id"]) for hero in heroes),

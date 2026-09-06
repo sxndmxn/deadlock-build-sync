@@ -332,6 +332,7 @@ def _reconstruct_guides(
             evidence,
             manifest=context.manifest,
             rank_identity=context.rank_identity,
+            assets=list(build_evidence.assets),
         )
         guides.append(
             apply_narrative(
@@ -374,11 +375,22 @@ def load_artifact_guide_bundle(
         context,
         manifest,
     )
+    if dict(exclusions) != build_evidence.exclusions:
+        raise ArtifactBundleError("Artifact exclusions differ from build evidence")
     by_policy = _decoded_policies(policies)
     heroes = _hero_contexts(context)
     if set(heroes) != set(by_policy):
         raise ArtifactBundleError(
             "strategy contexts and policies cover different heroes"
+        )
+    admitted_identities = {
+        (hero_id, build.path_id)
+        for hero_id, builds in build_evidence.hero_builds.items()
+        for build in builds
+    }
+    if set(heroes) != admitted_identities:
+        raise ArtifactBundleError(
+            "Artifact bundle does not contain every admitted build identity"
         )
 
     guides = _reconstruct_guides(

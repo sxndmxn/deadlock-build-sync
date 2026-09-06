@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 from .artifacts import ArtifactError
+from .build_evidence_discovery import (
+    REFRESH_INSTRUCTION,
+    discovery_rank,
+    exclusion_reason,
+)
 from .build_evidence_path import _hero_builds
 from .build_evidence_types import (
     BUILD_EVIDENCE_SCHEMA_VERSION,
@@ -25,7 +30,7 @@ from .build_evidence_types import (
 )
 from .build_evidence_values import _required_int, _required_sha256
 from .snapshot import EpochBoundary, EpochSet, MatchMode, sha256_json
-from .value_validation import object_dict, object_list
+from .value_validation import object_dict, object_list, object_rows
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -87,7 +92,9 @@ def _validate_method(document: dict[str, object]) -> None:
     if method is None or any(
         method.get(key) != value for key, value in _EXPECTED_METHOD.items()
     ):
-        raise ArtifactError("build evidence uses an unsupported selection method")
+        raise ArtifactError(
+            f"build evidence uses an unsupported selection method. {REFRESH_INSTRUCTION}"
+        )
 
 
 def _header(document: dict[str, object]) -> _Header:
@@ -96,7 +103,7 @@ def _header(document: dict[str, object]) -> _Header:
     if not isinstance(artifact_id, str) or artifact_id != sha256_json(payload):
         raise ArtifactError("build evidence fingerprint does not match its contents")
     if document.get("schema_version") != BUILD_EVIDENCE_SCHEMA_VERSION:
-        raise ArtifactError("unsupported build-evidence schema")
+        raise ArtifactError(f"unsupported build-evidence schema. {REFRESH_INSTRUCTION}")
     _validate_method(document)
     heroes = object_list(document.get("heroes"))
     requested = object_list(document.get("requested_hero_ids"))
@@ -124,18 +131,16 @@ def _catalog_heroes(
     if len(hero_builds) != len(hero_rows):
         raise ArtifactError("build evidence contains duplicate heroes")
     by_id = {
-        hero_id: max(
-            builds,
-            key=lambda build: (build.eligible_player_matches, build.path_id),
-        )
+        hero_id: min(builds, key=lambda build: discovery_rank(build.discovery))
         for hero_id, builds in hero_builds.items()
+        if builds
     }
     requested_ids = frozenset(
         _required_int(hero_id, "requested hero id", minimum=1) for hero_id in requested
     )
     if len(requested_ids) != len(requested):
         raise ArtifactError("build evidence contains duplicate requested heroes")
-    if requested_ids != set(by_id):
+    if requested_ids != set(hero_builds):
         raise ArtifactError("build evidence does not exactly cover requested heroes")
     return hero_builds, by_id, requested_ids
 
@@ -177,9 +182,21 @@ def load_build_evidence(path: Path) -> BuildEvidenceCatalog:
         heroes=by_id,
         hero_builds=hero_builds,
         raw_bytes=raw,
+        exclusions={
+            _required_int(
+                row["hero_id"], "excluded hero id", minimum=1
+            ): exclusion_reason(row.get("exclusion"))
+            for row in object_rows(header.heroes) or []
+            if row.get("builds") == []
+        },
     )
     _validate_catalog(catalog)
-    return catalog
+    assets = object_rows(document.get("mechanics_assets"))
+    if not assets or sha256_json(assets) != catalog.items_sha256:
+        raise ArtifactError(
+            f"Build evidence has no compatible mechanics assets. {REFRESH_INSTRUCTION}"
+        )
+    return replace(catalog, assets=tuple(assets))
 
 
 def assert_build_evidence_compatible(

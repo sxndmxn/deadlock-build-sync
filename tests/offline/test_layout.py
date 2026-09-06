@@ -6,12 +6,12 @@ import polars as pl
 import pytest
 
 from deadlock_build_sync.offline.config import RunPaths, sha256_json
-from deadlock_build_sync.offline.layout import (
+from deadlock_build_sync.value_validation import require_object_rows
+from tools.comparisons.legacy.layout import (
     create_build_layout,
     render_build_layout_markdown,
     write_build_layout,
 )
-from deadlock_build_sync.value_validation import require_object_rows
 
 
 def _items() -> pl.DataFrame:

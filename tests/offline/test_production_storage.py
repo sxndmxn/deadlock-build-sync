@@ -13,6 +13,7 @@ from deadlock_build_sync.offline.config import sha256_json
 from deadlock_build_sync.value_validation import integer
 from tests.mechanics_fixtures import item
 from tests.offline.production_evidence_fixtures import _item_graph
+from tools.comparisons.legacy import production_storage as legacy_storage
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -59,7 +60,7 @@ def test_fold_and_decision_queries_return_typed_data() -> None:
         )
 
         folds = storage._folds_by_match(con)
-        decisions = storage._core_decisions(con, 7)
+        decisions = legacy_storage._core_decisions(con, 7)
     finally:
         con.close()
 
@@ -84,9 +85,9 @@ def _metrics() -> dict[int, dict[str, object]]:
 def test_core_candidate_and_best_alternative_selection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(storage, "_replacement_is_legal", _legal_replacement)
+    monkeypatch.setattr(legacy_storage, "_replacement_is_legal", _legal_replacement)
     metrics = _metrics()
-    candidates = storage._core_alternative_candidates(
+    candidates = legacy_storage._core_alternative_candidates(
         metrics,
         (1, 2),
         {1, 2},
@@ -117,10 +118,10 @@ def test_core_candidate_and_best_alternative_selection(
             "comparative_interval": [0.01, 0.02],
         },
     ]
-    best = storage._best_core_alternatives_by_item(alternatives)
+    best = legacy_storage._best_core_alternatives_by_item(alternatives)
     assert [(row["item_id"], row["stage"]) for row in best] == [(4, 1), (3, 2)]
     with pytest.raises(TypeError, match="two values"):
-        storage._best_core_alternatives_by_item([
+        legacy_storage._best_core_alternatives_by_item([
             {**alternatives[0], "comparative_interval": [0.1]}
         ])
 
@@ -183,11 +184,11 @@ def test_core_alternatives_audit_mechanics_estimability_and_admission(
     graph = _item_graph({})
     hero_metrics = pl.DataFrame(list(_metrics().values()))
     assets = {item_id: item(item_id, f"item_{item_id}") for item_id in (1, 2, 3, 4)}
-    monkeypatch.setattr(storage, "_replacement_is_legal", _legal_replacement)
-    monkeypatch.setattr(storage, "conditional_item_decision", _conditional)
-    monkeypatch.setattr(storage, "cross_fitted_dr_contrast", _contrast)
+    monkeypatch.setattr(legacy_storage, "_replacement_is_legal", _legal_replacement)
+    monkeypatch.setattr(legacy_storage, "conditional_item_decision", _conditional)
+    monkeypatch.setattr(legacy_storage, "cross_fitted_dr_contrast", _contrast)
 
-    admitted, audit = storage._core_alternatives(
+    admitted, audit = legacy_storage._core_alternatives(
         pl.DataFrame({"item_id": [3, 4], "fold": ["train", "validation"]}),
         (1, 2),
         (1,),
@@ -205,8 +206,8 @@ def test_core_alternatives_audit_mechanics_estimability_and_admission(
         "41ce216c1c81f5e8c9039db54bca362b43390ec816fb019f8d529bee91e3dc16"
     )
 
-    monkeypatch.setattr(storage, "cross_fitted_dr_contrast", _raise_contrast)
-    _, failed_audit = storage._core_alternatives(
+    monkeypatch.setattr(legacy_storage, "cross_fitted_dr_contrast", _raise_contrast)
+    _, failed_audit = legacy_storage._core_alternatives(
         pl.DataFrame({"item_id": [3, 4], "fold": ["train", "validation"]}),
         (1, 2),
         (1,),

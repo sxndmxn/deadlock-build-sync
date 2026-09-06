@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import TYPE_CHECKING, cast
 
 from .artifact_bundle_types import (
@@ -7,11 +8,18 @@ from .artifact_bundle_types import (
     ArtifactBundleError,
 )
 from .artifact_projection import _ability_path, _categories
+from .build_evidence import select_hero_build
 from .build_tags import FUNCTION_CLASSES
+from .mechanics import ItemGraph, ability_definitions_from_kit
+from .policy import ValidationContext
+from .purchase_categories import category_records
+from .purchase_guidance import attach_purchase_guidance
 from .purchase_guide import (
     PurchaseGuide,
+    build_purchase_guide_from_evidence,
     guide_item_from_evidence,
 )
+from .renderer import ProjectionIdentity, project_policy_to_guide
 from .value_validation import integer, object_dict
 
 if TYPE_CHECKING:
@@ -146,7 +154,10 @@ def _guide(
     *,
     manifest: dict[str, object],
     rank_identity: str,
+    assets: list[dict[str, object]] | None = None,
 ) -> PurchaseGuide:
+    if assets is not None:
+        return _canonical_guide(hero, policy, evidence, manifest, rank_identity, assets)
     hero_name, class_name = _hero_identity(hero, policy)
     categories, core_items, optional_core_items, tiers = _categories(
         hero, policy, evidence
@@ -209,3 +220,67 @@ def _guide(
         analysis_start_timestamp=_analysis_start_timestamp(manifest),
         as_of_timestamp=as_of_timestamp,
     )
+
+
+def _canonical_guide(
+    hero: dict[str, object],
+    policy: BuildPolicy,
+    evidence: HeroBuildEvidence,
+    manifest: dict[str, object],
+    rank_identity: str,
+    assets: list[dict[str, object]],
+) -> PurchaseGuide:
+    hero_name, class_name = _hero_identity(hero, policy)
+    kit = object_dict(hero.get("hero_mechanics"))
+    if kit is None:
+        raise ArtifactBundleError("Artifact has no hero mechanics")
+    ability = _ability_path(hero, policy)
+    layout = build_purchase_guide_from_evidence(
+        {"id": policy.hero_id, "name": hero_name, "class_name": class_name},
+        select_hero_build(evidence, assets),
+        ability_path=ability,
+    )
+    validation = ValidationContext(
+        ItemGraph.from_assets(assets),
+        ability_definitions_from_kit(kit),
+        kit.get("level_info"),
+    )
+    projected = project_policy_to_guide(
+        policy,
+        validation,
+        assets=assets,
+        identity=ProjectionIdentity(
+            hero_name,
+            class_name,
+            integer(manifest.get("client_version")),
+            str(manifest.get("match_mode")),
+            rank_identity,
+        ),
+        layout_source=layout,
+    )
+    identity = _build_identity(hero, policy, manifest)
+    projected = replace(
+        projected,
+        ability_path=ability,
+        build_tag_ids=identity.tag_ids,
+        build_tag_classes=identity.tag_classes,
+        build_tag_labels=identity.tag_labels,
+        build_tag_catalog_sha256=identity.catalog_sha256,
+        build_archetype=identity.archetype,
+        analysis_start_timestamp=_analysis_start_timestamp(manifest),
+        as_of_timestamp=integer(manifest.get("as_of_timestamp")),
+    )
+    guide = attach_purchase_guidance(projected, assets)
+    raw = object_dict(hero.get("projection"))
+    if (
+        raw is None
+        or raw.get("guide_version") != 2
+        or raw.get("categories") != category_records(guide.rendered_categories)
+    ):
+        raise ArtifactBundleError(
+            "Artifact categories differ from the canonical purchase guide; run build again"
+        )
+    _, _, _, target_cost = _core_evidence(hero, policy)
+    if target_cost != guide.core_target_cost:
+        raise ArtifactBundleError("Artifact core cost differs from its canonical guide")
+    return guide

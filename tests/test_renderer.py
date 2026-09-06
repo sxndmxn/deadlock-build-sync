@@ -194,7 +194,7 @@ def test_projection_separates_default_queue_from_optional_branch() -> None:
     guide = projected_guide()
 
     assert sha256_json(asdict(guide)) == (
-        "a0c34a90fe5dd60d7d411edcb55780339f94cfa569d44ec3a3e8218d732381d9"
+        "a3da4b95a6e934a5429bb9032a9907861b5f9b811a36496c7abc435cb6588165"
     )
     assert [category.optional for category in guide.categories] == [False, True]
     assert [item.item_id for item in guide.categories[0].items] == [1]
@@ -204,7 +204,7 @@ def test_projection_separates_default_queue_from_optional_branch() -> None:
     assert guide.snapshot_id == SNAPSHOT
     assert guide.policy_id == policy().policy_id
     assert projection_fingerprint(guide) == (
-        "75419c12d0e75630469bdc0d4b339246d0050bc07dca3107ebbe2b88cd0ac94c"
+        "2c6876109f88e2eee335d8059861f0a5066bdbccaf239a402acd5426376d2303"
     )
 
 

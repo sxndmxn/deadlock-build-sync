@@ -46,7 +46,7 @@ _STEAM_CDN_HOST_PATTERN = re.compile(
 )
 
 
-class UnsupportedBuildPathError(RuntimeError):
+class UnsupportedBuildPathError(ValueError):
     """Raised when a discovered item path cannot produce a supported legal core."""
 
 

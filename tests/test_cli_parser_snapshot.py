@@ -7,9 +7,9 @@ import pytest
 
 from deadlock_build_sync import cli_parser
 from deadlock_build_sync.cli_parser import build_parser, positive_int
-from deadlock_build_sync.offline.cli import build_parser as build_offline_parser
 from deadlock_build_sync.snapshot import EpochBoundary, sha256_json
 from deadlock_build_sync.tracing import TRACE_ENVIRONMENT_VARIABLE
+from tools.comparisons.legacy.cli import build_parser as build_offline_parser
 
 if TYPE_CHECKING:
     from argparse import Namespace
@@ -59,7 +59,7 @@ def test_public_parser_help_is_stable(
         help_text[command or "root"] = capsys.readouterr().out
 
     assert sha256_json(help_text) == (
-        "87772c5702fcfe0628042dc9aa92f1abcf12338c06737ae325c48f71b97f898d"
+        "0aaab4aa7de01185d4992603ce1661d406a26eff9b27541997a9d8707268d1b6"
     )
 
 
@@ -83,7 +83,7 @@ def test_public_parser_defaults_are_stable(monkeypatch: pytest.MonkeyPatch) -> N
     ]
 
     assert sha256_json(values) == (
-        "862ee96bf144a3f0208d1023b3b5db6fe3446ceebc1144389102d72440c77b9d"
+        "cd82d519de54bfe6c9f6d53c78984d7e6ac4ffe761fdc1df8a746332f5c1ec07"
     )
 
 

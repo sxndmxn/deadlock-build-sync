@@ -24,16 +24,18 @@ The rich output is a typed, snapshot-bound policy graph:
 - A mechanically legal level/AP ability timeline selected from equivalent reached
   legal states, with support reported at each decision. Price tiers are never treated
   as equal “quarters” of that timeline.
-- A mechanics-compatible, temporally stable four-to-six-item backbone completed to
-  a deterministic four-to-nine-item default. The selector targets the Oracle I+
-  median ending inventory economy after reserving three situational item equivalents,
-  requires joint support across time splits, and never optimizes exact-eight frequency.
-- Cross-fitted doubly robust non-backbone CORE substitutions admitted only after support,
-  effective-sample-size, overlap, balance, uncertainty, and temporal-stability gates.
-- Four compact price-tier reference menus selected by true player-match adoption and
-  ordered left to right by observed first-ownership net worth. They exclude CORE,
-  require at least 20 buyer matches, and stay sparse when fewer than ten choices pass.
-  Outcome rate is descriptive only and never selects or orders an item.
+- Eclat discovers exact four-to-six-item cores. Leiden groups related cores.
+  Pairwise purchase ordering supplies the component path. Whole matches are split
+  by time. Candidates, ranking, paths, pools, and branch conditions are frozen
+  before validation. The reserved test split is not used for admission.
+- Up to three distinct identities per hero can pass the fixed support, outcome,
+  overlap, corrected uncertainty, order, and mechanics checks. The first admitted
+  identity in the frozen selection ranking is the default.
+- Four item pools use discovery buyers who owned that exact core. Each item needs
+  at least 20 buyers. Each tier has up to ten items. Every matching option stays
+  visible. Buyer win rates describe the data; they do not rank pool items.
+- Automatic choices need separate evidence at the current purchase checkpoint.
+  Failed branch checks leave the manual options available.
 - Evidence objects that name their actual unit and claim class. Item adoption uses
   unique first ownership over eligible player-matches; adopter outcome rate remains
   descriptive—not an item effect or causal win-rate improvement.
@@ -42,14 +44,16 @@ The rich output is a typed, snapshot-bound policy graph:
 - An ending-duration profile that describes games ending in each phase. It is not
   a live power curve and never justifies stalling an available close.
 
-Steam receives `CORE ITEMS`, an `OPTIONAL CORE` row when a like-state alternative
-passes every evidence gate, then `TIER 1` through `TIER 4`. Only the complete
-economy-bounded default enters Queue. `OPTIONAL CORE` holds non-backbone substitutions
-with explicit decisions; an admitted item is removed from its tier row. The item and
-the normal item must both have pinned mechanics that support the decision, which stays
-in the policy sidecar. Each tier row remains an optional, non-CORE reference menu of up
-to ten supported items, not a claim that every item should be bought or that popularity
-proves a situational counter.
+Steam receives the validated component path as `CORE 1`, `CORE 2`, and later
+steps. These are the only automatic Queue rows. `OPTIONAL`, `PICK ONE`, and
+`UPGRADE` rows appear at their supported checkpoints. The complete `ITEM POOL`
+follows the path. Choice instructions show the trigger, checkpoint, component
+route, extra cost, and core resume point. Long instructions use extra rows.
+Items with unsupported timing stay in the pool with **Timing unknown**.
+
+All current heroes are requested. A hero must have an admitted build or an explicit
+evidence exclusion. Excluded heroes keep their installed builds. Missing data and
+malformed artifacts are errors. If no build passes, the existing bundle is preserved.
 
 Every item hover in every row carries the same two-line statistics card and nothing
 else:
@@ -148,15 +152,14 @@ to `builds/<snapshot-id>/INDEX.md`, one Markdown guide per build, detailed guide
 and `guides.json`. Each guide shows the core purchase path, all eligible choices,
 component costs and rebuys, and the full tiered item pool. `PICK ONE` means the
 next purchase for one need. It does not limit the number of choices in a match.
-Steam still receives the validated core Queue and optional item rows; the full
-purchase guidance is in the review files and preview JSON.
+Steam, Markdown, JSON, recommendations, and artifact installation use the same
+typed guide and purchase planner.
 
-`refresh-evidence` now records strict adjacent purchase counts from the training
-cohort for every pool item. A position needs at least 20 buyers and 10% of that
-item's buyers. Missing or weak timing remains **Timing unknown**. Existing
-version 9 evidence without the extension stays usable, with unknown optional
-timing. Refresh it to obtain positions. The new guidance does not promote
-research candidates or change core admission and conditional outcome gates.
+`refresh-evidence` records strict adjacent purchase counts from the discovery
+buyers of each exact core. A position needs at least 20 buyers and 10% of the
+item's buyers. Missing or weak timing stays unknown. Evidence schema 10 and guide
+schema 2 are required. Older artifacts must be refreshed and rebuilt.
+See [the default build contract](docs/default-build-system.md).
 
 ```bash
 uv run deadlock-build-sync refresh-evidence
@@ -269,11 +272,10 @@ When build evidence is stale, refresh it before generation:
 uv run deadlock-build-sync refresh-evidence
 ```
 
-The evidence producer reconstructs complete inventories, selects supported legal
-four-to-nine-item cores near the dynamic Oracle I+ economy target, and orders each core
-with deterministic pairwise-precedence dynamic programming subject to mechanics and
-nondecreasing observed first-ownership soul windows. No learned model is part of
-evidence production or runtime selection.
+The evidence producer reconstructs inventory from purchases, sales, and component
+consumption. It uses Eclat, Leiden, and pairwise ordering. The old clustering and
+core-completion fallback are development comparisons only. Analysis dependencies
+are optional; rendering and installation do not load them.
 
 The normal installation workflow remains one command. Close Deadlock, then run:
 
@@ -298,7 +300,7 @@ deidentified state document matching
 
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "build_evidence_id": "<64-character artifact id>",
   "client_version": 6677,
   "patch_identity": "<patch identity>",
@@ -330,11 +332,18 @@ deidentified state document matching
 uv run deadlock-build-sync recommend --state state.json
 ```
 
-The result is `buy`, `save`, `end`, or `abstain`, with policy identity, support,
-backoff level, and component-aware incremental cost. It never mutates Steam and
-never treats next-action imitation as an item-effect claim. Explicit `threats`
-remain supported; pinned enemy-item mechanics add only conservative threat labels,
-and unknown items or conflicting situational branches fail closed.
+The result gives the next purchase, liquid-soul shortfall, remaining route and
+cost, selected placements, and all available choices. Add `--format markdown`
+for text output. Use `path_id` to retain one admitted identity. State schema 3
+also accepts `selected_optional_items`, `placement_overrides`,
+`core_substitution_item_id`, `enemy_observed_at_s`, and `economy`.
+
+Explicit player choices take priority. Otherwise an admitted matching branch can
+apply at the current checkpoint. The default path applies when none matches.
+The planner credits owned components and upgrades, shows required component
+rebuys, and checks item and active-item limits. See the
+[state example and observation rules](docs/default-build-system.md#match-state).
+Steam shows static conditions. This tool does not capture live game state.
 
 ### What is cached
 

@@ -188,7 +188,9 @@ def test_tier_policy_rejects_missing_malformed_and_duplicate_membership(
     _expect_load_error(path, repeated, "unsupported Tier 2 item")
 
 
-def test_tier_policy_rejects_weak_or_drifting_items(tmp_path: Path) -> None:
+def test_discovery_pool_requires_discovery_buyers_and_ignores_validation_shortlists(
+    tmp_path: Path,
+) -> None:
     path = tmp_path / "build-evidence.json"
     _write(path, _document())
     hero = load_build_evidence(path).heroes[13]
@@ -197,7 +199,6 @@ def test_tier_policy_rejects_weak_or_drifting_items(tmp_path: Path) -> None:
     target = next(item for item in hero.items if item.item_id == first_id)
 
     for changed in (
-        replace(target, training_adopter_matches=19),
         replace(target, validation_adopter_matches=19),
         replace(target, training_adoption=0.04),
         replace(target, validation_adoption=0.04),
@@ -206,8 +207,18 @@ def test_tier_policy_rejects_weak_or_drifting_items(tmp_path: Path) -> None:
         items = tuple(
             changed if item.item_id == first_id else item for item in hero.items
         )
-        with pytest.raises(ArtifactError, match="unsupported Tier 1 item"):
-            build_evidence_core._tier_policy(policy_value, 13, items)
+        assert (
+            first_id
+            in build_evidence_core._tier_policy(
+                policy_value, 13, items
+            ).item_ids_by_tier[1]
+        )
+    items = tuple(
+        replace(item, training_adopter_matches=19) if item.item_id == first_id else item
+        for item in hero.items
+    )
+    with pytest.raises(ArtifactError, match="unsupported Tier 1 item"):
+        build_evidence_core._tier_policy(policy_value, 13, items)
 
 
 @pytest.mark.parametrize(

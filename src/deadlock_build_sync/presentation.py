@@ -135,6 +135,8 @@ def _role_and_plan(guide: PurchaseGuide) -> tuple[str, str]:
 
 
 def _queue_rule(guide: PurchaseGuide) -> str:
+    if guide.purchase_guidance is not None:
+        return "AUTO: CORE steps only. OPTIONAL, PICK ONE, UPGRADE, and ITEM POOL rows stay optional."
     if guide.optional_core_items:
         return "AUTO: CORE left→right. OPTIONAL CORE and TIER 1–4 never auto-queue."
     return "AUTO: CORE left→right. TIER 1–4 never auto-queue."

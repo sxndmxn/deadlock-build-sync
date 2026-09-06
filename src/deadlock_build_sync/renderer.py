@@ -12,6 +12,7 @@ from .policy import (
     ValidationContext,
     validate_policy,
 )
+from .purchase_categories import category_records
 from .purchase_guide import (
     CORE_CATEGORY_DESCRIPTION,
     OPTIONAL_CORE_CATEGORY_DESCRIPTION,
@@ -247,6 +248,7 @@ def _project_evidence_layout(
         median_final_net_worth=layout.median_final_net_worth,
         core_target_cost=layout.core_target_cost,
         purchase_timing=layout.purchase_timing,
+        automatic_branches=layout.automatic_branches,
     )
 
 
@@ -424,24 +426,5 @@ def projection_fingerprint(guide: PurchaseGuide) -> str:
             "tag_labels": list(guide.build_tag_labels),
             "tag_catalog_sha256": guide.build_tag_catalog_sha256,
         },
-        "categories": [
-            {
-                "name": category.name,
-                "optional": category.optional,
-                "description": category.description,
-                "width": category.width,
-                "height": category.height,
-                "items": [
-                    {
-                        "item_id": item.item_id,
-                        "annotation": item.annotation,
-                        "required_flex_slots": item.required_flex_slots,
-                        "sell_priority": item.sell_priority,
-                        "imbue_target_ability_id": item.imbue_target_ability_id,
-                    }
-                    for item in category.items
-                ],
-            }
-            for category in guide.rendered_categories
-        ],
+        "categories": category_records(guide.rendered_categories),
     })

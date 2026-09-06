@@ -50,7 +50,7 @@ def test_stale_or_out_of_cohort_state_fails_closed(
 def test_decision_state_file_requires_complete_context(tmp_path: Path) -> None:
     path = tmp_path / "state.json"
     path.write_text(
-        json.dumps({"schema_version": 2, "build_evidence_id": "a" * 64}),
+        json.dumps({"schema_version": 3, "build_evidence_id": "a" * 64}),
         encoding="utf-8",
     )
 
@@ -59,7 +59,7 @@ def test_decision_state_file_requires_complete_context(tmp_path: Path) -> None:
 
     path.write_text(
         json.dumps({
-            "schema_version": 2,
+            "schema_version": 3,
             "account_id": 123,
             "build_evidence_id": "a" * 64,
         }),
@@ -73,7 +73,7 @@ def test_decision_state_file_admits_deidentified_enemy_items(tmp_path: Path) -> 
     path = tmp_path / "state.json"
     path.write_text(
         json.dumps({
-            "schema_version": 2,
+            "schema_version": 3,
             "build_evidence_id": "a" * 64,
             "client_version": 123,
             "patch_identity": "b" * 64,

@@ -6,7 +6,7 @@ import duckdb
 import polars as pl
 import pytest
 
-from deadlock_build_sync.offline.analysis_ridge import (
+from tools.comparisons.legacy.analysis_ridge import (
     _baseline_evaluation,
     _evaluate_ridge_holdout,
     _interval_overlap_ratio,

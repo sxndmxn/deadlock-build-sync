@@ -239,6 +239,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="typed policy sidecar (default: policies.json beside build evidence)",
     )
     recommendation.add_argument("--artifacts", type=Path)
+    recommendation.add_argument(
+        "--format", choices=("json", "markdown"), default="json"
+    )
     quality = subparsers.add_parser(
         "quality-report",
         help="audit frozen build quality and optional later replay without Steam or network",

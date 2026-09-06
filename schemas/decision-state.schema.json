@@ -21,17 +21,46 @@
     "lane_enemy_hero_ids"
   ],
   "properties": {
-    "schema_version": {"const": 2},
-    "build_evidence_id": {"$ref": "#/$defs/sha256"},
-    "client_version": {"type": "integer", "minimum": 1},
-    "patch_identity": {"$ref": "#/$defs/sha256"},
-    "match_mode": {"type": "string", "minLength": 1},
-    "game_mode": {"type": "string", "minLength": 1},
-    "hero_id": {"type": "integer", "minimum": 1},
-    "clock_s": {"type": "integer", "minimum": 0},
-    "average_badge": {"type": "integer", "minimum": 1},
-    "liquid_souls": {"type": "integer", "minimum": 0},
-    "purchases": {"$ref": "#/$defs/id_list"},
+    "schema_version": {
+      "const": 3
+    },
+    "build_evidence_id": {
+      "$ref": "#/$defs/sha256"
+    },
+    "client_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "patch_identity": {
+      "$ref": "#/$defs/sha256"
+    },
+    "match_mode": {
+      "type": "string",
+      "minLength": 1
+    },
+    "game_mode": {
+      "type": "string",
+      "minLength": 1
+    },
+    "hero_id": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "clock_s": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "average_badge": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "liquid_souls": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "purchases": {
+      "$ref": "#/$defs/id_list"
+    },
     "inventory": {
       "type": "object",
       "additionalProperties": false,
@@ -43,21 +72,48 @@
         "active_bindings"
       ],
       "properties": {
-        "items": {"$ref": "#/$defs/unique_id_list"},
-        "components": {"$ref": "#/$defs/unique_id_list"},
-        "open_slots": {"type": "integer", "minimum": 0},
-        "flex_slots": {"type": "integer", "minimum": 0},
-        "active_bindings": {"type": "integer", "minimum": 0, "maximum": 4}
+        "items": {
+          "$ref": "#/$defs/unique_id_list"
+        },
+        "components": {
+          "$ref": "#/$defs/unique_id_list"
+        },
+        "open_slots": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "flex_slots": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "active_bindings": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4
+        }
       }
     },
-    "learned_abilities": {"$ref": "#/$defs/unique_id_list"},
-    "enemy_hero_ids": {"$ref": "#/$defs/unique_id_list"},
-    "lane_enemy_hero_ids": {"$ref": "#/$defs/unique_id_list"},
-    "enemy_item_ids": {"$ref": "#/$defs/unique_id_list"},
-    "allied_hero_ids": {"$ref": "#/$defs/unique_id_list"},
+    "learned_abilities": {
+      "$ref": "#/$defs/unique_id_list"
+    },
+    "enemy_hero_ids": {
+      "$ref": "#/$defs/unique_id_list"
+    },
+    "lane_enemy_hero_ids": {
+      "$ref": "#/$defs/unique_id_list"
+    },
+    "enemy_item_ids": {
+      "$ref": "#/$defs/unique_id_list"
+    },
+    "allied_hero_ids": {
+      "$ref": "#/$defs/unique_id_list"
+    },
     "objectives": {
       "type": "array",
-      "items": {"type": "string", "minLength": 1},
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
       "uniqueItems": true
     },
     "threats": {
@@ -75,6 +131,59 @@
         ]
       },
       "uniqueItems": true
+    },
+    "path_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "selected_optional_items": {
+      "$ref": "#/$defs/unique_id_list"
+    },
+    "placement_overrides": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[1-9][0-9]*$"
+      },
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "enemy_observed_at_s": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "economy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "personal_net_worth": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "lobby_net_worths": {
+          "type": "array",
+          "maxItems": 12,
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "observed_at_s": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      }
+    },
+    "core_substitution_item_id": {
+      "type": "integer",
+      "minimum": 1
     }
   },
   "$defs": {
@@ -84,11 +193,17 @@
     },
     "id_list": {
       "type": "array",
-      "items": {"type": "integer", "minimum": 1}
+      "items": {
+        "type": "integer",
+        "minimum": 1
+      }
     },
     "unique_id_list": {
       "type": "array",
-      "items": {"type": "integer", "minimum": 1},
+      "items": {
+        "type": "integer",
+        "minimum": 1
+      },
       "uniqueItems": true
     }
   }

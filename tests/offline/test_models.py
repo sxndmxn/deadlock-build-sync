@@ -1,4 +1,4 @@
-from deadlock_build_sync.offline.models import (
+from tools.comparisons.legacy.models import (
     BetaPrior,
     beta_posterior,
     fit_beta_prior,

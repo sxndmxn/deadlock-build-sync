@@ -11,10 +11,11 @@ from .core_alternative_types import CoreAlternativeDescription
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
+    from .match_choices import AutomaticBranch
     from .purchase_guidance_types import PurchaseTiming
     from .snapshot import EpochSet
 
-BUILD_EVIDENCE_SCHEMA_VERSION = 9
+BUILD_EVIDENCE_SCHEMA_VERSION = 10
 MAXIMUM_CORE_ITEM_COUNT = 9
 TIER_ITEM_COUNT = 10
 MINIMUM_TIER_SUPPORT = 20
@@ -23,7 +24,7 @@ MAXIMUM_TIER_ADOPTION_DRIFT = 0.10
 MINIMUM_PURCHASE_WINDOW_COVERAGE = 0.50
 MINIMUM_PURCHASE_WINDOW_OBSERVATIONS = 20
 MINIMUM_CORE_SUPPORT = 20
-METHOD_VERSION = "state-aware-multi-path-v8"
+METHOD_VERSION = "eclat-leiden-pairwise-v1"
 SEQUENCE_POLICY_VERSION = 3
 SITUATIONAL_POLICY_VERSION = 2
 CORE_POLICY_VERSION = 3
@@ -175,6 +176,7 @@ class CorePolicyEvidence:
 @dataclass(frozen=True)
 class TierPolicyEvidence:
     item_ids_by_tier: dict[int, tuple[int, ...]]
+    discovery_pool: bool = False
 
 
 @dataclass(frozen=True)
@@ -248,6 +250,7 @@ class HeroBuildEvidence:
     signature_item_ids: tuple[int, ...] = ()
     discovery: dict[str, object] = field(default_factory=dict)
     purchase_timing: tuple[PurchaseTiming, ...] = ()
+    automatic_branches: tuple[AutomaticBranch, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -269,6 +272,7 @@ class SelectedHeroBuild:
     median_final_net_worth: int
     core_target_cost: int
     purchase_timing: tuple[PurchaseTiming, ...] = ()
+    automatic_branches: tuple[AutomaticBranch, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -284,6 +288,8 @@ class BuildEvidenceCatalog:
     requested_hero_ids: frozenset[int]
     heroes: dict[int, HeroBuildEvidence]
     raw_bytes: bytes
+    exclusions: dict[int, str] = field(default_factory=dict)
+    assets: tuple[dict[str, object], ...] = ()
     hero_builds: dict[int, tuple[HeroBuildEvidence, ...]] = field(default_factory=dict)
 
     @property

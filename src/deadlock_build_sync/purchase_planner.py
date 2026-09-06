@@ -23,6 +23,47 @@ def covered(graph: ItemGraph, item: int, owned: tuple[int, ...]) -> bool:
     )
 
 
+def route_targets(graph: ItemGraph, path: tuple[int, ...]) -> tuple[int, ...]:
+    """Associate each component occurrence with its final inventory target.
+
+    Returns:
+        The target corresponding to each original purchase checkpoint.
+
+    """
+    owned: dict[int, list[int]] = {}
+    for index, item in enumerate(path):
+        graph.require(item)
+        lineage = [index]
+        for component in graph.components[item]:
+            lineage.extend(owned.pop(component, []))
+        owned.setdefault(item, []).extend(lineage)
+    targets = list(path)
+    for target, lineage in owned.items():
+        for index in lineage:
+            targets[index] = target
+    return tuple(targets)
+
+
+def first_checkpoint(
+    graph: ItemGraph, path: tuple[int, ...], owned: tuple[int, ...]
+) -> int:
+    """Locate the first required occurrence after crediting actual ownership.
+
+    Returns:
+        The zero-based checkpoint, or the path length when complete.
+
+    """
+    targets = route_targets(graph, path)
+    return next(
+        (
+            index
+            for index, item in enumerate(path)
+            if not covered(graph, targets[index], owned) and item not in owned
+        ),
+        len(path),
+    )
+
+
 class PurchasePlanner:
     def __init__(self, graph: ItemGraph, owned: tuple[int, ...], flex: int) -> None:
         if isinstance(flex, bool) or not isinstance(flex, int):
@@ -155,12 +196,15 @@ def plan_purchases(
             item,
         ),
     )
+    targets = route_targets(graph, path)
     for index in range(len(path) + 1):
         for item in selected:
             if positions[item] == index:
                 planner.acquire(item)
         if index < len(path):
-            planner.acquire(path[index])
+            target = targets[index]
+            if not covered(graph, target, planner.state.owned):
+                planner.acquire(path[index], exact=path[index] != target)
     if not all(covered(graph, item, planner.state.owned) for item in core):
         raise MechanicsError("Choice abandons the core's upgrade lineages")
     return planner.result(liquid_souls)

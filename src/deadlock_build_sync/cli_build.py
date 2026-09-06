@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
 from hashlib import sha256
 from typing import TYPE_CHECKING
 
@@ -39,7 +38,7 @@ def write_build_guides(
             "path_id": guide.path_id,
             "policy_id": guide.policy_id,
             "markdown": f"{stem}.md",
-            "purchase_guidance": asdict(guide.purchase_guidance),
+            "purchase_guidance": guide.purchase_guidance.as_dict(),
             "item_pool": {
                 str(tier): [item.item_id for item in items]
                 for tier, items in guide.tiers.items()

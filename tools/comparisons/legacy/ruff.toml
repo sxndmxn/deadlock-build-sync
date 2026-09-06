@@ -1,0 +1,6 @@
+extend = "../../../pyproject.toml"
+[lint.per-file-ignores]
+"*.py" = ["print", "import-private-name",
+  "typing-only-third-party-import",
+  "suspicious-subprocess-import",
+  "subprocess-without-shell-equals-true", "docstring-missing-exception", "docstring-missing-returns", "hardcoded-sql-expression", "too-many-arguments", "too-many-positional-arguments", "too-many-locals", "too-many-statements", "too-many-statements-in-try-clause", "typing-only-first-party-import", "typing-only-standard-library-import"]

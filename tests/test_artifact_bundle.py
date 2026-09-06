@@ -39,4 +39,4 @@ def test_policy_core_follows_default_through_situational_choice() -> None:
         nodes=(choice, situational, *policy.nodes),
     )
 
-    assert artifact_bundle._policy_core(branched) == tuple(range(1001, 1009))
+    assert artifact_bundle._policy_core(branched) == tuple(range(1001, 1007))

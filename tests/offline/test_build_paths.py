@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from deadlock_build_sync.offline.build_paths import discover_build_paths
+from tools.comparisons.legacy.build_paths import discover_build_paths
 
 
 def _two_paths(

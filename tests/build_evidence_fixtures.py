@@ -21,6 +21,8 @@ from deadlock_build_sync.value_validation import (
 if TYPE_CHECKING:
     from pathlib import Path
 
+from tests.discovery_fixtures import current_document
+
 PATCH_IDENTITY = "f" * 64
 
 
@@ -204,7 +206,7 @@ def _document(
 ) -> dict[str, object]:
     current_assets = assets or _assets()
     item_rows = [_item(asset) for asset in current_assets]
-    selected_default = default_item_ids or [101, 102, 201, 202, 301, 302, 401, 402]
+    selected_default = default_item_ids or [101, 102, 201, 202, 301, 302]
     optional_ids = {integer(row["item_id"]) for row in (core_alternatives or [])}
     graph = ItemGraph.from_assets(current_assets)
     tier_membership = _fixture_tier_membership(
@@ -215,7 +217,7 @@ def _document(
         "version": 3,
         "minimum_support": 20,
         "production_model": "deterministic_backoff",
-        "component_expanded_default_path": [101, 102, 201, 202, 301, 302, 401, 402],
+        "component_expanded_default_path": list(selected_default),
         "transitions": [
             {
                 "level": "popularity",
@@ -324,7 +326,7 @@ def _document(
             }
         ],
     }
-    return {**payload, "artifact_id": sha256_json(payload)}
+    return current_document(payload, current_assets)
 
 
 def _write(path: Path, document: dict[str, object]) -> None:

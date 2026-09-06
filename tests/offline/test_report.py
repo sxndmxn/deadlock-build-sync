@@ -4,14 +4,14 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from deadlock_build_sync.offline.report import _format_scope_median, render_report
-from deadlock_build_sync.offline.report_core import build_core_report_context
-from deadlock_build_sync.offline.report_helpers import (
+from tests.offline.report_fixtures import create_report_run, report_tables
+from tools.comparisons.legacy.report import _format_scope_median, render_report
+from tools.comparisons.legacy.report_core import build_core_report_context
+from tools.comparisons.legacy.report_helpers import (
     _event_inflation_bounds,
     _markdown_table,
 )
-from deadlock_build_sync.offline.report_paths import build_path_report_context
-from tests.offline.report_fixtures import create_report_run, report_tables
+from tools.comparisons.legacy.report_paths import build_path_report_context
 
 
 def test_scope_median_handles_sparse_or_null_stability() -> None:

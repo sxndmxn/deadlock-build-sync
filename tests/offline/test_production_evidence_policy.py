@@ -5,21 +5,7 @@ import polars as pl
 import pytest
 
 from deadlock_build_sync.mechanics import ItemGraph
-from deadlock_build_sync.offline.build_paths import DiscoveredBuildPath
 from deadlock_build_sync.offline.config import sha256_json
-from deadlock_build_sync.offline.core_policy import (
-    cross_fitted_dr_contrast,
-)
-from deadlock_build_sync.offline.production_evidence import (
-    UnsupportedBuildPathError,
-    _core_target_order,
-    _expanded_default_path,
-    _maximum_agreement_orders,
-    _patch_content_sha256,
-    _sequence_rows,
-    _tier_policy,
-)
-from deadlock_build_sync.offline.production_policy import _path_label
 from deadlock_build_sync.value_validation import (
     integer,
     require_object_dict,
@@ -28,6 +14,20 @@ from tests.offline.production_evidence_fixtures import (
     _contrast_rows,
     _item_graph,
 )
+from tools.comparisons.legacy.build_paths import DiscoveredBuildPath
+from tools.comparisons.legacy.core_policy import (
+    cross_fitted_dr_contrast,
+)
+from tools.comparisons.legacy.production_evidence import (
+    UnsupportedBuildPathError,
+    _core_target_order,
+    _expanded_default_path,
+    _maximum_agreement_orders,
+    _patch_content_sha256,
+    _sequence_rows,
+    _tier_policy,
+)
+from tools.comparisons.legacy.production_policy import _path_label
 
 
 def test_cross_fitted_dr_contrast_rejects_a_stable_like_state_tie() -> None:

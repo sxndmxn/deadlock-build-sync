@@ -121,7 +121,7 @@ def test_extract_cohort_runs_all_stages_exports_and_cleanup(
     assert fake.closed
     assert not temporary.exists()
     assert len(fake.inserted) == 1
-    assert sum("COPY" in query for query in fake.queries) == 10
+    assert sum("COPY" in query for query in fake.queries) == 11
     assert any("decision_opportunities" in query for query in fake.queries)
 
 

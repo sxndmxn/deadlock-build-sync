@@ -25,7 +25,7 @@ from tests.recommendation_fixtures import (
 
 def _state_document() -> dict[str, object]:
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "build_evidence_id": "a" * 64,
         "client_version": 123,
         "patch_identity": "b" * 64,

@@ -9,6 +9,7 @@ if TYPE_CHECKING:
     from .build_evidence import (
         CoreAlternativeEvidence,
     )
+    from .match_choices import AutomaticBranch
     from .purchase_guidance_types import PurchaseGuidance, PurchaseTiming
 
 PURCHASE_BUCKET_INCREMENTS = (1000, 2000, 3000, 5000, 7000, 10000)
@@ -180,6 +181,7 @@ class PurchaseGuide:
     as_of_timestamp: int = 0
     purchase_timing: tuple[PurchaseTiming, ...] = ()
     purchase_guidance: PurchaseGuidance | None = None
+    automatic_branches: tuple[AutomaticBranch, ...] = ()
 
     @property
     def item_count(self) -> int:

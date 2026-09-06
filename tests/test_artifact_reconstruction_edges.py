@@ -13,7 +13,7 @@ from deadlock_build_sync.value_validation import (
     require_object_dict,
     require_object_rows,
 )
-from tests.artifact_bundle_fixtures import _write_bundle
+from tests.artifact_bundle_fixtures import _projection, _write_bundle
 
 
 def _inputs(
@@ -23,6 +23,7 @@ def _inputs(
     loaded: object = json.loads(context_path.read_text(encoding="utf-8"))
     context = require_object_dict(loaded)
     hero = require_object_rows(context["heroes"])[0]
+    hero["projection"] = _projection()
     manifest, policies = load_policy_artifact(policy_path)
     policy = policies[12, "default"]
     evidence = load_build_evidence(evidence_path).heroes[12]

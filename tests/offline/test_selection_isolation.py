@@ -3,10 +3,10 @@ from __future__ import annotations
 import duckdb
 
 from deadlock_build_sync.mechanics import ItemGraph
-from deadlock_build_sync.offline.production_policy import _item_payload
 from deadlock_build_sync.offline.production_sources import _path_item_metrics
-from deadlock_build_sync.offline.production_storage import _core_alternative_candidates
 from tests.mechanics_fixtures import item
+from tools.comparisons.legacy.production_policy import _item_payload
+from tools.comparisons.legacy.production_storage import _core_alternative_candidates
 
 
 def test_test_period_cannot_change_imbues_or_alternative_shortlist() -> None:

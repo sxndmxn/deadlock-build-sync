@@ -24,7 +24,8 @@ scheduled or manual workflow runs the slower mutation gate.
 
 The numeric gate checks all tracked Python files for file size, cyclomatic
 complexity, Halstead difficulty, and forbidden type names. Coverage and CRAP
-apply to `src/` and `scripts/`. Complexipy checks `scripts/`, `src/`, `tests/`, and
+apply to `src/` and `scripts/`, including the new discovery code. Historical
+analysis, clustering, model, and report runners are in `tools/comparisons/legacy`. Complexipy checks `scripts/`, `src/`, `tests/`, and
 `tools/`.
 
 ## Fast local gate
@@ -55,15 +56,15 @@ repository coverage and per-function data for the CRAP calculation.
 
 [Deptry](https://deptry.com/usage/) checks the installed product code, including
 the optional offline producer and packaged narrative script. The `test` extra
-is a development group. Experiments have separate dependency manifests and are
-outside this product dependency check. Arrow conversion and timezone support
+is a development group. Comparison tools have separate dependency manifests. Active discovery code is
+inside the product dependency check. Arrow conversion and timezone support
 load `pyarrow` and `pytz` indirectly; these are the only unused-import exceptions.
 
 [Tach](https://docs.gauge.sh/usage/configuration/) checks imports within `src`,
 including type-only imports, against `tach.toml`. Only the main CLI may invoke
 the offline producer. The producer may use shared runtime modules. Unused
 dependency declarations and circular module dependencies fail the check.
-Deptry also scans the packaged narrative script. Experiment dependency manifests
+Deptry also scans the packaged narrative script. Comparison dependency manifests
 remain separate from these product checks.
 Do not run `tach sync` to admit an unintended import. Review boundary changes.
 The Tach pytest plugin is disabled so the full coverage gate always runs the

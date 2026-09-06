@@ -125,6 +125,7 @@ def build_purchase_guide_from_evidence(
         path_id=selected.path_id,
         path_label=selected.path_label,
         purchase_timing=selected.purchase_timing,
+        automatic_branches=selected.automatic_branches,
         signature_item_ids=selected.signature_item_ids,
         ability_path=ability_path,
         core_items=tuple(by_id[item.item_id] for item in selected.core),

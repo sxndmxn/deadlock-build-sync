@@ -5,10 +5,6 @@ import polars as pl
 
 from deadlock_build_sync.mechanics import ItemGraph
 from deadlock_build_sync.offline.config import RunPaths
-from deadlock_build_sync.offline.production_evidence import (
-    _sequence_rows,
-    _situational_policy,
-)
 from deadlock_build_sync.value_validation import (
     number,
     require_object_dict,
@@ -17,6 +13,10 @@ from deadlock_build_sync.value_validation import (
 from tests.offline.production_evidence_fixtures import (
     _candidate_sample,
     _register_situational_tables,
+)
+from tools.comparisons.legacy.production_evidence import (
+    _sequence_rows,
+    _situational_policy,
 )
 
 

@@ -33,7 +33,7 @@ def test_run_recommend_emits_a_compatible_default_policy(
         patch={"identity": "patch"},
         epochs=SimpleNamespace(as_dict=lambda: epochs),
     )
-    state = SimpleNamespace(hero_id=12)
+    state = SimpleNamespace(hero_id=12, path_id=None)
     policy = SimpleNamespace(policy_id="policy")
     manifest = {
         "client_version": 123,
@@ -96,6 +96,7 @@ def test_run_recommend_emits_a_compatible_default_policy(
     )
     monkeypatch.setattr(cli_recommend, "record_stage_facts", lambda *_args, **_kw: None)
     args = Namespace(
+        format="json",
         build_evidence=tmp_path / "evidence.json",
         artifacts=None,
         policies=tmp_path / "policies.json",

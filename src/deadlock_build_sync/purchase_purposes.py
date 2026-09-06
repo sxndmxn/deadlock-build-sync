@@ -13,7 +13,7 @@ from .value_validation import object_dict, object_list, object_rows
 def description_text(value: object) -> str:
     document = object_dict(value)
     if document is not None:
-        return " ".join(description_text(part) for part in document.values())
+        return " ".join(description_text(document[key]) for key in sorted(document))
     rows = object_list(value)
     if rows is not None:
         return " ".join(description_text(part) for part in rows)

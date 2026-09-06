@@ -53,32 +53,29 @@ def test_loads_exact_reviewed_bundle_without_analytics_refetch(
 
     normalized = json.loads(json.dumps(asdict(bundle), default=_json_default))
     assert sha256_json(normalized) == (
-        "ba066b9ec5db4b0ac19e7bcb356d9c6c070e5446b0128427139304c611865069"
+        "bea5633131602958fd0f89873de0eafb0eac32cad4071a16f3dea3a6125d1bf2"
     )
     assert len(bundle.guides) == 1
     guide = bundle.guides[0]
     assert guide.hero_name == "Kelvin"
-    assert guide.item_count == 48
-    assert [len(category.items) for category in guide.rendered_categories] == [
-        8,
-        10,
-        10,
-        10,
-        10,
+    queue = [
+        item.item_id
+        for row in guide.rendered_categories
+        if not row.optional
+        for item in row.items
     ]
+    assert queue == list(range(1001, 1007))
+    assert [len(row.items) for row in guide.rendered_categories[-4:]] == [10] * 4
+    assert all(row.optional for row in guide.rendered_categories[-4:])
     assert guide.summary == (
         "Control committed fights around allied pressure while the reviewed CORE "
         "path keeps reliable damage available."
     )
-    assert guide.rendered_categories[0].description == (
-        "AUTO QUEUE • Default path, buy left→right."
-    )
-    assert not guide.rendered_categories[1].description
-    assert guide.rendered_categories[0].items[0].annotation == (
-        "SOUL WINDOW: 4k - 14k\nPR: 80.0% | WR: 50.0% | TOTAL GAMES: 60"
-    )
-    assert guide.rendered_categories[1].items[0].annotation == (
-        "SOUL WINDOW: 4k - 14k\nPR: 80.0% | WR: 50.0% | TOTAL GAMES: 60"
+    assert "souls" in guide.rendered_categories[0].description
+    assert all(
+        len(item.annotation.splitlines()) == 2
+        for row in guide.rendered_categories
+        for item in row.items
     )
     assert guide.ability_path is not None
     assert len(guide.ability_path.ability_ids) == 16
@@ -107,7 +104,7 @@ def test_rejects_projection_with_stale_category_dimensions(tmp_path: Path) -> No
     context_path, policy_path, narrative_path, evidence_path = _write_bundle(tmp_path)
     context = json.loads(context_path.read_text(encoding="utf-8"))
     hero = context["heroes"][0]
-    hero["projection"]["categories"][0]["height"] = 164.0
+    hero["projection"]["categories"][0]["height"] = 999.0
     hero["narrative_basis_sha256"] = calculate_narrative_basis_sha256(hero)
     hero["context_sha256"] = calculate_context_sha256(hero)
     context["source_context_sha256"] = calculate_source_context_sha256(context)
@@ -119,7 +116,7 @@ def test_rejects_projection_with_stale_category_dimensions(tmp_path: Path) -> No
     narratives["heroes"][0]["narrative_basis_sha256"] = hero["narrative_basis_sha256"]
     narrative_path.write_text(json.dumps(narratives), encoding="utf-8")
 
-    with pytest.raises(ValueError, match="invalid dimensions"):
+    with pytest.raises(ValueError, match="canonical purchase guide"):
         load_artifact_guide_bundle(
             context_path,
             policy_path,

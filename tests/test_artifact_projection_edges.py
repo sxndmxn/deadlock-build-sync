@@ -13,7 +13,7 @@ from deadlock_build_sync.build_evidence import HeroBuildEvidence, load_build_evi
 from deadlock_build_sync.policy import Branch, BuildPolicy, NodeKind, PolicyNode
 from deadlock_build_sync.purchase_guide import GuideItem, guide_item_from_evidence
 from deadlock_build_sync.value_validation import object_dict, require_object_rows
-from tests.artifact_bundle_fixtures import _policy, _write_bundle
+from tests.artifact_bundle_fixtures import _policy, _projection, _write_bundle
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -26,6 +26,7 @@ def _inputs(
     context = object_dict(json.loads(context_path.read_text(encoding="utf-8")))
     assert context is not None
     hero = require_object_rows(context["heroes"])[0]
+    hero["projection"] = _projection()
     catalog = load_build_evidence(evidence_path)
     evidence = catalog.hero_builds[12][0]
     return hero, _policy(str(hero["snapshot_id"])), evidence
@@ -41,7 +42,7 @@ def _items(hero: dict[str, object], row: int) -> list[dict[str, object]]:
     return require_object_rows(_categories(hero)[row]["items"])
 
 
-def _guide_items(evidence: HeroBuildEvidence, count: int = 8) -> tuple[GuideItem, ...]:
+def _guide_items(evidence: HeroBuildEvidence, count: int = 6) -> tuple[GuideItem, ...]:
     return tuple(guide_item_from_evidence(item) for item in evidence.items[:count])
 
 
@@ -144,7 +145,7 @@ def test_projection_rows_and_category_shape_are_strict(tmp_path: Path) -> None:
     with pytest.raises(ArtifactBundleError, match="wrong row count"):
         projection._projection_category_rows({}, (), evidence.hero_id)
 
-    spec: projection._CategorySpec = ("CORE ITEMS", False, 8, 8, None)
+    spec: projection._CategorySpec = ("CORE ITEMS", False, 6, 6, None)
     with pytest.raises(ArtifactBundleError, match="is malformed"):
         projection._projected_category([], spec, evidence=evidence)
 
@@ -169,7 +170,7 @@ def test_projected_category_rejects_duplicates_and_dimensions(tmp_path: Path) ->
     with pytest.raises(ArtifactBundleError, match="invalid dimensions"):
         projection._projected_category(
             core,
-            ("CORE ITEMS", False, 8, 8, None),
+            ("CORE ITEMS", False, 6, 6, None),
             evidence=evidence,
         )
 
