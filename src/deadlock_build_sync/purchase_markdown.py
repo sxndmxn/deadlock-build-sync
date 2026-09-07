@@ -130,6 +130,8 @@ def build_markdown(guide: PurchaseGuide, *, details: bool = False) -> str:
     guidance = guide.purchase_guidance
     if guidance is None:
         raise ValueError("Build has no purchase guidance; generate it with build")
+    if not details and any(category.compact for category in guide.rendered_categories):
+        return _compact_markdown(guide, guidance)
     lines = [
         f"# {guide.hero_name} — {guide.build_archetype}",
         "",
@@ -208,3 +210,31 @@ def _variant_markdown(guide: PurchaseGuide) -> list[str]:
         ),
         "",
     ]
+
+
+def _compact_markdown(guide: PurchaseGuide, guidance: PurchaseGuidance) -> str:
+    lines = [
+        f"# {guide.hero_name} — {guide.build_archetype}",
+        "",
+        f"Core: {guide.core_target_cost:,} souls. Ranks: {guide.rank_identity}.",
+        f"Evidence: {guidance.evidence.get('status', 'observed')}. Limits: {guidance.evidence.get('limitations', [])}.",
+        "",
+        "Buy CORE in order. All other sections are optional. Tier numbers show prices, not purchase order.",
+        "Variant items appear once in CORE OPTIONAL. Complete variant paths, pools, and purchase instructions are in the details file.",
+        "",
+    ]
+    for category in guide.rendered_categories:
+        lines.extend([f"## {category.name}", ""])
+        if category.optional:
+            lines.append(
+                ", ".join(item.name for item in category.items)
+                if category.items
+                else "No supported options."
+            )
+        else:
+            lines.extend(
+                f"{index}. **{step.name}** — {step.incremental_cost:,} souls."
+                for index, step in enumerate(guidance.default_path.actions, 1)
+            )
+        lines.append("")
+    return "\n".join(lines)

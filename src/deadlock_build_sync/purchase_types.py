@@ -131,18 +131,25 @@ class GuideCategory:
     items: tuple[GuideItem, ...]
     description: str = ""
     optional: bool = False
+    compact: bool = False
     width: float = field(init=False)
     height: float = field(init=False)
 
     def __post_init__(self) -> None:
         """Resolve the Steam tile area from the item count."""
         width, columns = CATEGORY_LAYOUTS.get(self.name, DEFAULT_CATEGORY_LAYOUT)
+        if self.compact:
+            columns = min(max(1, len(self.items)), 6 if len(self.items) <= 18 else 12)
+            width = max(128.0, 12.0 + 84.0 * columns) if self.items else 256.0
         rows = max(1, math.ceil(len(self.items) / columns))
         object.__setattr__(self, "width", width)
         object.__setattr__(
             self,
             "height",
-            CATEGORY_BASE_HEIGHT + CATEGORY_ROW_HEIGHT * (rows - 1),
+            48.0
+            if self.compact and not self.items
+            else CATEGORY_BASE_HEIGHT
+            + (129.0 if self.compact else CATEGORY_ROW_HEIGHT) * (rows - 1),
         )
 
 

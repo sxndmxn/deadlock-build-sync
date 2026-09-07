@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from .artifacts import atomic_write_bytes, atomic_write_json
 from .guide_groups import group_record
+from .purchase_categories import category_records
 from .purchase_markdown import build_markdown
 
 if TYPE_CHECKING:
@@ -41,6 +42,7 @@ def write_build_guides(
             "markdown": f"{stem}.md",
             "purchase_guidance": guide.purchase_guidance.as_dict(),
             "guide_group": group_record(guide),
+            "steam_categories": category_records(guide.rendered_categories),
             "variant_path_ids": [
                 member.path_id for member in (guide, *guide.variant_guides)
             ],

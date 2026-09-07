@@ -59,8 +59,8 @@ def test_normal_build_generates_full_files_without_steam(
         )
     else:
         assert "# Kelvin" in output.out
-        assert "## Item pool" in output.out
-        assert "PICK ONE" in output.out
+        assert "## TIER 1" in output.out
+        assert "## CORE OPTIONAL" in output.out
     for filename in (
         "strategy-context.json",
         "policies.json",

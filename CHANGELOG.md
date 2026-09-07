@@ -8,6 +8,9 @@
 - Group related exact cores into one published guide with a default Queue and
   optional variants. Preserve every variant's path, evidence, costs, and pool.
   The v3 method groups frozen core items before validation.
+- Use CORE, CORE OPTIONAL, and TIER 1–4 for the visible guide. Combine variant
+  items without duplicate cards. Size sections for their item counts and keep
+  full purchase instructions in the build description and detailed files.
 - Use one purchase guide for Steam rows, Markdown, JSON, recommendations, and
   installation checks. Keep only the validated component path in automatic Queue.
 - Add selected optional items, placement overrides, actual inventory planning,

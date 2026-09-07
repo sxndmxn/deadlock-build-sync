@@ -77,13 +77,19 @@ The producer saves the groups before validation. No group or variant count limit
 applies. Each exact core retains its original path, costs, support, evidence
 status, ability order, and discovery-buyer pools.
 
-Markdown lists compact changes from the default. Detailed Markdown and JSON
-contain every complete variant. Steam keeps one default Queue, optional variant
-rows, and the complete union of variant pools. Pool notes identify the applicable
-variant numbers. Each source pool still has at most ten items per tier; its
-displayed union can contain more. Empty tiers remain explicit. Select one full
-variant before purchase. Automatic changes during a match still require the
-existing branch and core-substitution evidence.
+Steam and the main Markdown use five or six sections: CORE, CORE OPTIONAL when
+needed, and TIER 1–4. CORE keeps the exact default component purchase order.
+CORE OPTIONAL combines additional items from every variant path and admitted
+core alternatives, with each item shown once. The four tiers combine the supported
+pools and omit items already visible in either core section. This removes repeated
+cards without changing any variant's actual pool. Item notes identify the source
+variant. Conflicting imbue targets remain explicit and do not receive a guessed
+binding. Detailed Markdown and JSON retain every complete variant.
+
+Each source pool still has at most ten items per tier; its displayed union can
+contain more. Empty tiers remain explicit. Select one full variant before
+purchase. Automatic changes during a match still require the existing branch
+and core-substitution evidence.
 
 Evidence schema 12, purchase-guide schema 3, and decision-state schema 3 are
 required. Method `eclat-leiden-pairwise-v3` adds frozen publication groups.
@@ -99,12 +105,23 @@ uv run build
 
 Markdown, JSON, Steam rows, recommendations, and artifact installation use the
 same typed guide and planner. The automatic Queue contains only core component
-steps, in their validated order. Optional instructions appear between these steps
-with `OPTIONAL`, `PICK ONE`, or `UPGRADE` labels. Instructions give the trigger,
-checkpoint, route, extra cost, core resume point, and any required component rebuy.
-Rows are split at the 240-byte UTF-8 limit without removing text or options. The
-default pool item hover remains the two-line statistics card. Variant pool notes
-give the variant scope and refer to that variant's timing and cost details.
+steps, in their validated order. Full purchase instructions stay in the detailed
+guide and Steam build description. They give the trigger, checkpoint, route,
+extra cost, core resume point, and required component rebuy. Long instructions
+do not create more Steam categories. Item notes remain within 240 UTF-8 bytes;
+large scope lists refer to the complete variant details.
+
+Compact dimensions use the recorded 84-by-129-unit outer card footprint and
+12 units of horizontal space for panel edges. Sections use up to six columns,
+or twelve when more than eighteen items need space. A single-item section is
+128 units wide. Empty tiers are 256 by 48 units. Height includes 35 units for the
+header plus every card row. Short section headers keep text out of the card area.
+These dimensions preserve readable card sizes. Screen fit still depends on the
+client scale and available viewport; no live Steam visual check is implied.
+
+The stored canonical projection remains unchanged. Installation validates it
+before constructing the compact display, so current schema-12 evidence and
+reviewed bundles remain usable without another analytics fetch.
 
 Timing requires 20 adjacent first-purchase observations and 10% of that item's
 discovery buyers. Unsupported timing remains explicit. The item stays in the pool

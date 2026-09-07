@@ -53,7 +53,7 @@ def test_loads_exact_reviewed_bundle_without_analytics_refetch(
 
     normalized = json.loads(json.dumps(asdict(bundle), default=_json_default))
     assert sha256_json(normalized) == (
-        "a08ee44c0da6d0a8d36c4cb0db1df5c4f6d72b1f50e0a7c95e9c033096fb891e"
+        "de80951a48a38f25041bf77b3f7b67f1ad7617235ab02dce1ee0616415c1ac61"
     )
     assert len(bundle.guides) == 1
     guide = bundle.guides[0]
@@ -71,9 +71,9 @@ def test_loads_exact_reviewed_bundle_without_analytics_refetch(
         "Control committed fights around allied pressure while the reviewed CORE "
         "path keeps reliable damage available."
     )
-    assert "souls" in guide.rendered_categories[0].description
+    assert "souls" in guide.rendered_categories[0].items[0].annotation
     assert all(
-        len(item.annotation.splitlines()) == 2
+        len(item.annotation.splitlines()) == 3
         for row in guide.rendered_categories
         for item in row.items
     )

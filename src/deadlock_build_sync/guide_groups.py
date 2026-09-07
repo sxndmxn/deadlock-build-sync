@@ -7,8 +7,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from .artifacts import ArtifactError
-from .purchase_categories import split_guidance
-from .purchase_types import GuideCategory
+from .purchase_types import MAX_ITEM_ANNOTATION_BYTES, GuideCategory
 
 if TYPE_CHECKING:
     from .purchase_types import GuideItem, PurchaseGuide
@@ -66,63 +65,122 @@ def group_record(guide: PurchaseGuide) -> dict[str, object]:
     }
 
 
-def _variant_rows(default: PurchaseGuide) -> list[GuideCategory]:
-    result: list[GuideCategory] = []
-    for index, variant in enumerate(default.variant_guides, 1):
-        evidence = variant.evidence_summary
-        path = " -> ".join(item.name for item in variant.core_purchase_items)
-        text = (
-            f"{variant_changes(default, variant)}. Total: {variant.core_target_cost:,} souls. "
-            f"Evidence: {evidence.get('status', 'observed')}; owners D/S/V: "
-            f"{evidence.get('discovery_owners')}/{evidence.get('selection_owners')}/{evidence.get('validation_owners')}. "
-            f"Complete order: {path}. Limits: {evidence.get('limitations', [])}. "
-            f"Timing: {evidence.get('timing_status', 'uncertain')}. {VARIANT_RULE}"
-        )
-        added = tuple(
-            item
-            for item in variant.core_items
-            if item.item_id not in default.signature_item_ids
-        )
-        result.extend(
-            GuideCategory(
-                f"VARIANT {index}" + (f" ({part + 1})" if part else ""),
-                added if part == 0 else (),
-                chunk,
-                optional=True,
+def variant_descriptions(guide: PurchaseGuide) -> list[str]:
+    return [
+        f"V{index}: {variant_changes(guide, variant)}. "
+        f"{variant.core_target_cost:,} souls; {variant.evidence_summary.get('status', 'observed')}. "
+        + " -> ".join(
+            item.name
+            + (
+                f" [imbue {item.imbue_target_ability}]"
+                if item.imbue_target_ability
+                else ""
             )
-            for part, chunk in enumerate(split_guidance(text))
+            for item in variant.core_purchase_items
         )
-    return result
+        + "".join(
+            f" Conditional core: {alternative.when} {alternative.swap}. {alternative.why} {alternative.skip}"
+            for alternative in variant.core_alternatives
+        )
+        for index, variant in enumerate(guide.variant_guides, 1)
+    ]
 
 
-def _variant_pools(guide: PurchaseGuide) -> list[GuideCategory]:
-    result: list[GuideCategory] = []
-    for tier in range(1, 5):
-        members: dict[tuple[int, int | None], tuple[GuideItem, list[str]]] = {}
-        for index, variant in enumerate(guide.variant_guides, 1):
-            for item in variant.tiers[tier]:
-                key = item.item_id, item.imbue_target_ability_id
-                members.setdefault(key, (item, []))[1].append(str(index))
-        items = tuple(
+def _scoped_items(
+    members: list[tuple[GuideItem, str]],
+) -> tuple[GuideItem, ...]:
+    grouped: dict[int, list[tuple[GuideItem, str]]] = {}
+    for item, scope in members:
+        grouped.setdefault(item.item_id, []).append((item, scope))
+    result = []
+    for rows in grouped.values():
+        item = rows[0][0]
+        scopes = ", ".join(dict.fromkeys(scope for _, scope in rows))
+        targets = {value.imbue_target_ability_id for value, _ in rows}
+        text = f"{scopes}. Stats: {rows[0][1]}.\n{item.annotation}"
+        if len(targets) > 1:
+            text = f"{scopes}. Imbue varies; use the selected variant's target."
+        if len(text.encode()) > MAX_ITEM_ANNOTATION_BYTES:
+            text = "Multiple variants; check the selected variant's full guide for scope, timing, and imbue target."
+        result.append(
             replace(
                 item,
-                annotation_text="Pool for variants "
-                + ", ".join(indices)
-                + ". Use that variant's timing and cost details.",
+                annotation_text=text,
+                imbue_target_ability_id=item.imbue_target_ability_id
+                if len(targets) == 1
+                else None,
             )
-            for item, indices in members.values()
         )
+    return tuple(result)
+
+
+def _optional_core(guide: PurchaseGuide) -> tuple[GuideItem, ...]:
+    core_ids = {item.item_id for item in guide.core_purchase_items or guide.core_items}
+    members = [
+        (item, f"V{index}")
+        for index, variant in enumerate(guide.variant_guides, 1)
+        for item in variant.core_purchase_items or variant.core_items
+        if item.item_id not in core_ids
+    ]
+    members.extend(
+        (item, "Conditional Default" if index == 0 else f"Conditional V{index}")
+        for index, variant in enumerate((guide, *guide.variant_guides))
+        for item in variant.optional_core_items
+        if item.item_id not in core_ids
+    )
+    optional_ids = {item.item_id for item, _ in members}
+    members.extend(
+        (item, "Pool Default" if index == 0 else f"Pool V{index}")
+        for index, variant in enumerate((guide, *guide.variant_guides))
+        for items in variant.tiers.values()
+        for item in items
+        if item.item_id in optional_ids
+    )
+    return _scoped_items(members)
+
+
+def _compact_categories(guide: PurchaseGuide) -> tuple[GuideCategory, ...]:
+    if guide.purchase_guidance is None:
+        return guide.rendered_categories
+    core = tuple(
+        replace(
+            item,
+            annotation_text=f"Step {index}: +{step.incremental_cost:,} souls; total {step.cumulative_cost:,}.\n{item.annotation}",
+        )
+        for index, (item, step) in enumerate(
+            zip(
+                guide.core_purchase_items or guide.core_items,
+                guide.purchase_guidance.default_path.actions,
+                strict=True,
+            ),
+            1,
+        )
+    )
+    optional = _optional_core(guide)
+    covered = {item.item_id for item in (*core, *optional)}
+    result = [GuideCategory("CORE", core, compact=True)]
+    if optional:
+        result.append(
+            GuideCategory("CORE OPTIONAL", optional, optional=True, compact=True)
+        )
+    for tier in range(1, 5):
+        members = [
+            (item, "Default" if index == 0 else f"V{index}")
+            for index, variant in enumerate((guide, *guide.variant_guides))
+            for item in variant.tiers[tier]
+            if item.item_id not in covered
+        ]
+        items = _scoped_items(members)
         result.append(
             GuideCategory(
-                f"VARIANT POOLS | TIER {tier}",
+                f"TIER {tier}",
                 items,
-                "Options are scoped to the listed variants. Each exact core keeps its own supported pool."
-                if items
-                else "No supported options are available.",
+                "" if items else "No supported options.",
                 optional=True,
+                compact=True,
             )
         )
-    return result
+    return tuple(result)
 
 
 def group_guides(
@@ -146,7 +204,7 @@ def group_guides(
         if default is None:
             raise ArtifactError("Guide group has no supported default")
         if len(members) == 1:
-            result.append(default)
+            result.append(replace(default, categories=_compact_categories(default)))
             continue
         result.append(_combine_guides(default, members))
     return result
@@ -170,11 +228,4 @@ def _combine_guides(
     combined = replace(
         default, variant_guides=variants, path_label=label, build_archetype=label
     )
-    return replace(
-        combined,
-        categories=(
-            *default.rendered_categories,
-            *_variant_rows(combined),
-            *_variant_pools(combined),
-        ),
-    )
+    return replace(combined, categories=_compact_categories(combined))

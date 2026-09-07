@@ -162,9 +162,15 @@ component costs and rebuys, and the full tiered item pool. `PICK ONE` means the
 next purchase for one need. It does not limit the number of choices in a match.
 Steam, Markdown, JSON, recommendations, and artifact installation use the same
 typed guide and purchase planner.
-The main guide lists changes from its default core. The details file and
-`guides.json` keep every variant's full purchase path, costs, support, and pool.
-Steam shows optional variant rows and pool items marked with their variant numbers.
+The main guide has CORE, CORE OPTIONAL when needed, and TIER 1–4. CORE OPTIONAL
+contains the additional items from all supported variants, with no duplicates.
+Items already shown in either core section are not repeated in the tier sections.
+Small sections use smaller widths; empty tiers use a short text panel.
+The details file and `guides.json` keep every variant's full purchase path, costs,
+support, and pool.
+Steam item notes identify variant scope. Full paths and purchase instructions
+appear in the build description and detailed Markdown. `guides.json` also records
+the exact Steam categories and dimensions.
 Choose a complete variant before purchase. A manual variant is not evidence for
 an automatic core substitution during a match.
 

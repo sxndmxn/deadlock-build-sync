@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from .guide_groups import variant_descriptions
+from .purchase_categories import choice_instruction
 from .purchase_guide import (
     MAX_CATEGORY_DESCRIPTION_BYTES,
     MAX_ITEM_ANNOTATION_BYTES,
@@ -191,8 +193,11 @@ def build_presentation(
         ])
     if guide.variant_guides:
         lines.append(
-            f"{len(guide.variant_guides) + 1} supported variants. Queue: default only. Choose one complete variant before purchase; see VARIANT rows."
+            f"{len(guide.variant_guides) + 1} supported variants. Queue: default only. CORE OPTIONAL lists additional variant items once. V numbers identify the full paths below."
         )
+        lines.extend(variant_descriptions(guide))
+    if any(category.compact for category in guide.rendered_categories):
+        lines.extend(_purchase_details(guide))
     ability_summary = _ability_summary(guide)
     if ability_summary is not None:
         lines.append(ability_summary)
@@ -225,3 +230,24 @@ def build_presentation(
         categories=guide.rendered_categories,
         ability_path=guide.ability_path,
     )
+
+
+def _purchase_details(guide: PurchaseGuide) -> list[str]:
+    guidance = guide.purchase_guidance
+    if guidance is None:
+        return []
+    return [
+        "CORE buys left to right. All other sections are optional. Tier numbers show item prices, not purchase order. Keep the selected variant's core and pool together.",
+        *(
+            f"{step.name}: +{step.incremental_cost:,} souls; total {step.cumulative_cost:,}."
+            for step in guidance.default_path.actions
+        ),
+        *(
+            f"{card.name}: {choice_instruction(guidance, card)}"
+            for card in guidance.choices
+        ),
+        *(
+            f"{alternative.when} {alternative.swap}. {alternative.why} {alternative.skip}"
+            for alternative in guide.core_alternatives
+        ),
+    ]
