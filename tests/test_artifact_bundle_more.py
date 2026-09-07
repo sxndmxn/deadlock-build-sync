@@ -53,7 +53,7 @@ def test_loads_exact_reviewed_bundle_without_analytics_refetch(
 
     normalized = json.loads(json.dumps(asdict(bundle), default=_json_default))
     assert sha256_json(normalized) == (
-        "bea5633131602958fd0f89873de0eafb0eac32cad4071a16f3dea3a6125d1bf2"
+        "6df5a14a39cf1fed1af1dc2432f3e7922b307ae9b1dadd5e3e7309cb4ccb4628"
     )
     assert len(bundle.guides) == 1
     guide = bundle.guides[0]
@@ -100,11 +100,19 @@ def test_rejects_edited_projection_even_when_other_artifacts_are_unchanged(
         )
 
 
-def test_rejects_projection_with_stale_category_dimensions(tmp_path: Path) -> None:
+@pytest.mark.parametrize("change", ["dimensions", "schema", "cohort"])
+def test_rejects_projection_with_stale_canonical_contract(
+    tmp_path: Path, change: str
+) -> None:
     context_path, policy_path, narrative_path, evidence_path = _write_bundle(tmp_path)
     context = json.loads(context_path.read_text(encoding="utf-8"))
     hero = context["heroes"][0]
-    hero["projection"]["categories"][0]["height"] = 999.0
+    if change == "dimensions":
+        hero["projection"]["categories"][0]["height"] = 999.0
+    elif change == "schema":
+        hero["projection"]["guide_version"] = 2
+    else:
+        hero["purchase_guidance"]["cohort"]["minimum_badge"] = 61
     hero["narrative_basis_sha256"] = calculate_narrative_basis_sha256(hero)
     hero["context_sha256"] = calculate_context_sha256(hero)
     context["source_context_sha256"] = calculate_source_context_sha256(context)
@@ -116,7 +124,7 @@ def test_rejects_projection_with_stale_category_dimensions(tmp_path: Path) -> No
     narratives["heroes"][0]["narrative_basis_sha256"] = hero["narrative_basis_sha256"]
     narrative_path.write_text(json.dumps(narratives), encoding="utf-8")
 
-    with pytest.raises(ValueError, match="canonical purchase guide"):
+    with pytest.raises(ValueError, match=r"canonical purchase guide.*refresh-evidence"):
         load_artifact_guide_bundle(
             context_path,
             policy_path,

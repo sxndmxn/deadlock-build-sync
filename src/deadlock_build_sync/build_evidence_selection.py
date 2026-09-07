@@ -80,10 +80,6 @@ def _select_core_candidate(
         joint_matches=evidence.core_policy.default_matches,
     )
     cost = sum(graph.require(item_id).cost for item_id in candidate.item_ids)
-    if cost > evidence.median_final_net_worth:
-        raise ArtifactError(
-            f"hero {evidence.hero_id} default core exceeds cohort wealth"
-        )
     try:
         candidate_path = _expand_component_path(graph, selected_order, by_id)
         state = _replay_component_path(graph, by_id, candidate_path)
@@ -107,8 +103,11 @@ def _validate_item_assets(
             or str(asset.get("name") or "") != item.item
             or _required_int(asset.get("item_tier"), "asset tier") != item.tier
             or _required_int(asset.get("cost"), "asset cost") != item.cost
-            or str(asset.get("item_slot_type") or "unknown").casefold() != item.slot
-            or bool(asset.get("is_active_item")) != item.active
+            or (
+                str(asset.get("item_slot_type") or "unknown").casefold(),
+                bool(asset.get("is_active_item")),
+            )
+            != (item.slot, item.active)
         ):
             raise ArtifactError(
                 f"hero {evidence.hero_id} item {item.item_id} conflicts with assets"
@@ -135,7 +134,10 @@ def _replay_selected_path(
     frozen = object_dict(evidence.discovery.get("frozen_guide"))
     if frozen is not None:
         window_bounds = frozen_windows(frozen)
-    if nondecreasing_window_schedule(path_ids, window_bounds) is None:
+    if (
+        frozen is None
+        and nondecreasing_window_schedule(path_ids, window_bounds) is None
+    ):
         raise ArtifactError(
             f"hero {evidence.hero_id} component-expanded path violates first-ownership soul windows"
         )
@@ -155,8 +157,7 @@ def _replay_selected_path(
 def _tier_selection(
     evidence: HeroBuildEvidence,
     tier: int,
-    core_ids: set[int],
-    optional_core_ids: set[int],
+    unavailable_ids: set[int],
     *,
     graph: ItemGraph,
     visible_higher_tier_ids: set[int],
@@ -170,8 +171,7 @@ def _tier_selection(
         by_id[item_id] for item_id in evidence.tier_policy.item_ids_by_tier[tier]
     )
     if any(
-        item.item_id in core_ids
-        or item.item_id in optional_core_ids
+        item.item_id in unavailable_ids
         or (not evidence.tier_policy.discovery_pool and not has_visible_upgrade(item))
         for item in membership
     ):
@@ -256,8 +256,7 @@ def _selected_tiers(
         tiers[tier] = _tier_selection(
             evidence,
             tier,
-            core_ids,
-            optional_core_ids,
+            core_ids | optional_core_ids,
             graph=graph,
             visible_higher_tier_ids=visible_higher_tier_ids,
         )
@@ -301,6 +300,21 @@ def select_hero_build(
     validate_substitution_routes(graph, evidence.automatic_branches, selected_order)
     return SelectedHeroBuild(
         hero_id=evidence.hero_id,
+        cohort=evidence.cohort,
+        evidence_summary={
+            "status": evidence.discovery.get("evidence_status", "observed"),
+            "limitations": evidence.discovery.get("evidence_limitations", []),
+            "discovery_owners": evidence.discovery.get("discovery_support"),
+            "selection_owners": (
+                object_dict(evidence.discovery.get("selection")) or {}
+            ).get("owners"),
+            "validation_owners": (
+                object_dict(evidence.discovery.get("validation")) or {}
+            ).get("owners"),
+            "timing_status": (
+                object_dict(evidence.discovery.get("frozen_guide")) or {}
+            ).get("timing_status", "uncertain"),
+        },
         path_id=evidence.path_id,
         path_label=evidence.path_label,
         signature_item_ids=evidence.signature_item_ids,

@@ -35,7 +35,11 @@ def freeze_substitutions(
 def validated_candidates(
     base: Nomination, reviewed: list[Nomination]
 ) -> list[dict[str, object]]:
-    admitted = {row["identity_id"]: row for row in reviewed if not row["rejections"]}
+    admitted = {
+        row["identity_id"]: row
+        for row in reviewed
+        if not row["rejections"] and row["evidence_status"] == "outcome_supported"
+    }
     result = []
     for candidate in base["branch_candidates"]:
         substitution = object_dict(candidate.get("substitution"))

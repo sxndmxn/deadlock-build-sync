@@ -10,10 +10,11 @@ if TYPE_CHECKING:
     import duckdb
 
 from collections import Counter, defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 
+from deadlock_build_sync.build_support import SUPPORT
 from deadlock_build_sync.mechanics import ItemGraph
 
 from .late_game import reconstruct_final_inventory
@@ -41,6 +42,19 @@ class HeroData:
 
 
 def prepare_partitions(con: duckdb.DuckDBPyConnection) -> None:
+    if con.execute(
+        "SELECT count(*) FROM information_schema.tables WHERE table_name='split_boundaries'"
+    ).fetchone() == (1,):
+        con.execute("""
+            CREATE OR REPLACE TEMP TABLE discovery_partitions AS
+            SELECT p.match_id,
+                   CASE WHEN epoch(min(p.start_time)) <= b.discovery_end THEN 'discovery'
+                        WHEN f.fold='train' THEN 'selection' ELSE f.fold END AS partition
+            FROM player_matches p JOIN match_folds f USING(match_id), split_boundaries b
+            WHERE f.fold!='test'
+            GROUP BY p.match_id, f.fold, b.discovery_end
+        """)
+        return
     con.execute("""
         CREATE OR REPLACE TEMP TABLE discovery_partitions AS
         WITH matches AS (
@@ -83,16 +97,23 @@ def landmark_rows(con: duckdb.DuckDBPyConnection, hero: int) -> list[LandmarkRow
             ON p.match_id=t.match_id AND (1-p.team_id)=t.team_id
                AND p.checkpoint>=t.stat_time
         )
-        SELECT p.match_id, p.player_slot, p.partition, p.won, p.wealth,
-               (p.own_wealth-p.enemy_wealth)/(p.own_wealth+p.enemy_wealth),
-               p.average_badge, p.wealth*12/(p.own_wealth+p.enemy_wealth), c.hero_ids
-        FROM both_teams p JOIN compositions c
+        SELECT p.match_id, p.player_slot, p.partition, p.won,
+               CASE WHEN p.wealth>0 AND 1200-p.observed BETWEEN 1 AND 300 THEN p.wealth END,
+               CASE WHEN p.own_count=6 AND p.enemy_count=6
+                    AND 1200-p.own_observed BETWEEN 1 AND 300
+                    AND 1200-p.enemy_observed BETWEEN 1 AND 300
+                    AND p.own_wealth+p.enemy_wealth>0
+                    THEN (p.own_wealth-p.enemy_wealth)/(p.own_wealth+p.enemy_wealth) END,
+               p.average_badge,
+               CASE WHEN p.wealth>0 AND p.own_count=6 AND p.enemy_count=6
+                    AND 1200-p.observed BETWEEN 1 AND 300
+                    AND 1200-p.own_observed BETWEEN 1 AND 300
+                    AND 1200-p.enemy_observed BETWEEN 1 AND 300
+                    AND p.own_wealth+p.enemy_wealth>0
+                    THEN p.wealth*12/(p.own_wealth+p.enemy_wealth) END,
+               c.hero_ids
+        FROM both_teams p LEFT JOIN compositions c
           ON p.match_id=c.match_id AND (1-p.team_id)=c.team_id
-        WHERE p.wealth>0 AND p.own_wealth+p.enemy_wealth>0
-          AND p.own_count=6 AND p.enemy_count=6 AND len(c.hero_ids)=6
-          AND 1200-p.observed BETWEEN 1 AND 300
-          AND 1200-p.own_observed BETWEEN 1 AND 300
-          AND 1200-p.enemy_observed BETWEEN 1 AND 300
         ORDER BY p.start_time, p.match_id, p.player_slot
     """,
         [hero],
@@ -140,7 +161,10 @@ def from_rows(
     for row, owned in zip(rows, inventories, strict=True):
         if row[2] == "discovery":
             support.update(set(owned))
-    minimum = max(100, int(np.ceil(sum(row[2] == "discovery" for row in rows) * 0.01)))
+    minimum = max(
+        SUPPORT.core_owners,
+        int(np.ceil(sum(row[2] == "discovery" for row in rows) * 0.01)),
+    )
     items = tuple(
         sorted(
             item
@@ -154,7 +178,9 @@ def from_rows(
         for item, bought, _ in histories.get(actor, []):
             if item in index and item in owned:
                 times[offset, index[item]] = max(times[offset, index[item]], bought)
-    return _hero_arrays(hero, items, rows, times, actors, inventories)
+    return replace(
+        _hero_arrays(hero, items, rows, times), actors=actors, inventories=inventories
+    )
 
 
 def _hero_arrays(
@@ -162,8 +188,6 @@ def _hero_arrays(
     items: tuple[int, ...],
     rows: list[LandmarkRow],
     times: np.ndarray,
-    actors: tuple[tuple[int, int], ...],
-    inventories: tuple[tuple[int, ...], ...],
 ) -> HeroData:
     return HeroData(
         hero,
@@ -177,18 +201,31 @@ def _hero_arrays(
         np.asarray([row[5] for row in rows], dtype=float),
         np.asarray([row[6] for row in rows], dtype=int),
         np.asarray([row[7] for row in rows], dtype=float),
-        np.asarray([row[8] for row in rows], dtype=np.int64).reshape(-1, 6),
-        actors,
-        inventories,
+        np.asarray(
+            [
+                row[8] if row[8] is not None and len(row[8]) == 6 else [0] * 6
+                for row in rows
+            ],
+            dtype=np.int64,
+        ).reshape(-1, 6),
     )
 
 
-def load_data(con: duckdb.DuckDBPyConnection, hero: int, graph: ItemGraph) -> HeroData:
+def load_data(
+    con: duckdb.DuckDBPyConnection,
+    hero: int,
+    graph: ItemGraph,
+    minimum: int = 11,
+    maximum: int = 116,
+) -> HeroData:
     count = con.execute(
         "SELECT count(*) FROM player_matches WHERE hero_id=?", [hero]
     ).fetchone()
     if count is None or count[0] == 0:
         raise ValueError(f"Hero {hero} has no source data; run refresh-evidence again")
     return from_rows(
-        hero, landmark_rows(con, hero), purchase_histories(con, hero), graph
+        hero,
+        [row for row in landmark_rows(con, hero) if minimum <= row[6] <= maximum],
+        purchase_histories(con, hero),
+        graph,
     )

@@ -184,6 +184,11 @@ def build_presentation(
             f"{guide.client_version or 'UNRESOLVED'}."
         ),
     ]
+    if guide.evidence_summary:
+        lines.extend([
+            f"Evidence: {guide.evidence_summary['status']}. Timing: {guide.evidence_summary['timing_status']}.",
+            f"Evidence limits: {guide.evidence_summary['limitations']}.",
+        ])
     ability_summary = _ability_summary(guide)
     if ability_summary is not None:
         lines.append(ability_summary)

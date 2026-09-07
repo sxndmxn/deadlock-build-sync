@@ -1,3 +1,9 @@
+from dataclasses import replace
+
+import pytest
+
+from deadlock_build_sync.api import HeroDurationStat
+from deadlock_build_sync.hero_cohort import HeroCohort
 from deadlock_build_sync.policy import BuildPolicy
 from deadlock_build_sync.service import generate_guides
 from deadlock_build_sync.strategy_context import (
@@ -10,6 +16,57 @@ from deadlock_build_sync.value_validation import (
 )
 from tests.service_evidence_fixtures import build_evidence
 from tests.service_fake_api import FakeApi, ability_rows, duration_points
+from tests.test_hero_support_contract import _cohort
+
+
+def test_all_hero_queries_and_claims_use_effective_ranks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    api = FakeApi(ability_rows=ability_rows(), duration_points=duration_points())
+    evidence = build_evidence(api)
+    cohort = HeroCohort.parse(_cohort())
+    hero = replace(evidence.heroes[12], cohort=cohort)
+    evidence = replace(evidence, heroes={12: hero}, hero_builds={12: (hero,)})
+    queries: list[tuple[str, int]] = []
+
+    def abilities(client: FakeApi, **_kwargs: object) -> list[dict[str, object]]:
+        queries.append(("ability", client.rank_range.minimum.badge_id))
+        return ability_rows()
+
+    def durations(
+        client: FakeApi, **_kwargs: object
+    ) -> dict[int, tuple[HeroDurationStat, ...]]:
+        queries.append(("duration", client.rank_range.minimum.badge_id))
+        return {12: duration_points()}
+
+    def matchups(client: FakeApi, **_kwargs: object) -> list[dict[str, object]]:
+        queries.append(("matchup", client.rank_range.minimum.badge_id))
+        return []
+
+    monkeypatch.setattr(FakeApi, "ability_order_stats", abilities)
+    monkeypatch.setattr(FakeApi, "hero_stats_by_duration", durations)
+    monkeypatch.setattr(FakeApi, "hero_counter_stats", matchups)
+    generated = generate_guides(
+        api,
+        build_evidence=evidence,
+        account_id=0,
+        hero_query="Kelvin",
+        all_heroes=False,
+    )
+    assert [(name, rank) for name, rank in queries if name == "ability"] == [
+        ("ability", 61)
+    ] * 2
+    assert ("duration", 61) in queries and queries.count(("matchup", 61)) == 2
+    assert api.rank_range.minimum.badge_id == 71
+    guide = generated.guides[0]
+    assert guide.rank_identity == cohort.rank_range.label
+    assert guide.cohort == cohort
+    assert guide.purchase_guidance is not None
+    assert guide.purchase_guidance.cohort == cohort.as_dict()
+    assert all(
+        claim.cohort["rank_range"] == cohort.rank_range.as_dict()
+        for claim in generated.policies[0].evidence
+    )
 
 
 def test_required_components_join_core_queue_and_leave_optional_rows() -> None:

@@ -6,6 +6,8 @@ import math
 
 from .artifacts import ArtifactError
 from .build_evidence_values import _required_int
+from .build_support import SUPPORT, OutcomeEvidence, outcome_limitations
+from .build_support import numeric as _numeric
 from .value_validation import object_dict, object_list
 
 DISCOVERY_METHOD = "eclat_leiden_pairwise"
@@ -45,7 +47,7 @@ def validate_discovery(
     ):
         raise ArtifactError(f"Unsupported discovery evidence. {REFRESH_INSTRUCTION}")
     discovery_rank(discovery)
-    if sorted(core) != discovery.get("items") or not 4 <= len(core) <= 6:
+    if sorted(core) != discovery.get("items") or not 3 <= len(core) <= 6:
         raise ArtifactError("Discovery identity differs from the exact core")
     selection = object_dict(discovery.get("selection"))
     validation = object_dict(discovery.get("validation"))
@@ -55,42 +57,61 @@ def validate_discovery(
         raise ArtifactError("Discovery is missing frozen admission evidence")
     if discovery.get("selection_rejections") != [] or discovery.get("rejections") != []:
         raise ArtifactError("A rejected discovery identity cannot be installed")
+    outcome_supported = _validate_outcome_status(discovery, selection, validation)
+    _validate_order(order, core, path, frozen)
+    _order_record(discovery.get("order_validation"), required=outcome_supported)
+
+
+def _validate_outcome_status(
+    discovery: dict[str, object],
+    selection: dict[str, object],
+    validation: dict[str, object],
+) -> bool:
     hypotheses = _required_int(
         discovery.get("hypotheses"), "discovery hypotheses", minimum=1
     )
-    for record in (selection, validation):
-        _validate_outcome(record, hypotheses if record is validation else None)
-    _validate_order(order, discovery.get("order_validation"), core, path, frozen)
+    discovery_support = _required_int(
+        discovery.get("discovery_support"), "discovery core owners"
+    )
+    selection_outcome = OutcomeEvidence.parse(selection)
+    validation_outcome = OutcomeEvidence.parse(validation)
+    if SUPPORT.core_reasons(discovery_support, selection_outcome.owners):
+        raise ArtifactError("Discovery core lacks discovery or selection support")
+    limitations = discovery.get("evidence_limitations")
+    status = discovery.get("evidence_status")
+    if status not in {"observed", "outcome_supported"} or not isinstance(
+        limitations, list
+    ):
+        raise ArtifactError("Discovery has no evidence status or limitations")
+    if status == "outcome_supported":
+        if (
+            limitations
+            or outcome_limitations(selection_outcome)
+            or outcome_limitations(validation_outcome, hypotheses)
+        ):
+            raise ArtifactError(
+                "Discovery core does not pass its outcome and overlap gates"
+            )
+        if _numeric(validation, "adjusted_lower_family") <= 0:
+            raise ArtifactError("Discovery outcome fails family correction")
+    elif not limitations or any(
+        not isinstance(reason, str) or not reason for reason in limitations
+    ):
+        raise ArtifactError("Observed discovery lacks evidence limitations")
+    return status == "outcome_supported"
 
 
 def _validate_order(
     order: dict[str, object],
-    validation: object,
     core: tuple[int, ...],
     path: tuple[int, ...],
     frozen: dict[str, object],
 ) -> None:
-    for record in (
-        order.get("discovery"),
-        order.get("selection"),
-        validation,
-    ):
-        if not isinstance(record, dict):
-            raise ArtifactError("Discovery lacks purchase-order evidence")
-        owners = _required_int(record.get("owners"), "order owners", minimum=100)
-        support = _required_int(
-            record.get("ordered_owners"), "ordered owners", minimum=20
-        )
-        if (
-            support > owners
-            or support / owners < 0.1
-            or record.get("passes") is not True
-        ):
-            raise ArtifactError("Discovery purchase order lacks support")
+    for record in (order.get("discovery"), order.get("selection")):
+        _order_record(record, required=True)
     if (
         order.get("order") != list(core)
-        or order.get("method") != "pairwise"
-        or order.get("legal") is not True
+        or (order.get("method"), order.get("legal")) != ("pairwise", True)
         or order.get("admitted_before_validation") is not True
         or frozen.get("ready") is not True
         or frozen.get("path") != list(path)
@@ -98,50 +119,19 @@ def _validate_order(
         raise ArtifactError("Frozen discovery path differs from the admitted path")
 
 
-def _numeric(row: dict[str, object], key: str) -> float:
-    value = row.get(key)
-    if (
-        isinstance(value, bool)
-        or not isinstance(value, (int, float))
-        or not math.isfinite(value)
+def _order_record(value: object, *, required: bool) -> None:
+    record = object_dict(value)
+    if record is None:
+        raise ArtifactError("Discovery lacks purchase-order evidence")
+    owners = _required_int(record.get("owners"), "order owners")
+    support = _required_int(record.get("ordered_owners"), "ordered owners")
+    passes = SUPPORT.order_supported(owners, support)
+    if support > owners or not math.isclose(
+        _numeric(record, "share"), support / max(1, owners)
     ):
-        raise ArtifactError(f"Discovery has invalid {key}")
-    return float(value)
-
-
-def _validate_outcome(row: dict[str, object], hypotheses: int | None) -> None:
-    owners = _required_int(row.get("owners"), "core owners", minimum=100)
-    wins = _required_int(row.get("wins"), "core wins")
-    adjusted = object_dict(row.get("adjusted"))
-    if (
-        adjusted is None
-        or wins > owners
-        or not math.isclose(_numeric(row, "win_rate"), wins / owners)
-    ):
-        raise ArtifactError("Discovery has inconsistent core outcomes")
-    valid = (
-        wins / owners >= 0.52
-        and _numeric(row, "joint_lift") >= 1.1
-        and 100
-        <= _required_int(adjusted.get("core_overlap"), "comparable core owners")
-        <= owners
-        and 0.8 <= _numeric(adjusted, "overlap_share") <= 1
-    )
-    if hypotheses is None:
-        valid &= (
-            _numeric(row, "win_lower_95") > 0.5 and _numeric(adjusted, "lower_95") > 0
-        )
-    else:
-        threshold = 0.025 / hypotheses
-        valid &= (
-            0 <= _numeric(row, "win_p_greater_half") <= threshold
-            and 0 <= _numeric(adjusted, "p_greater") <= threshold
-            and _numeric(row, "adjusted_lower_family") > 0
-        )
-    if not valid:
-        raise ArtifactError(
-            "Discovery core does not pass its outcome and overlap gates"
-        )
+        raise ArtifactError("Discovery purchase order has inconsistent counts")
+    if record.get("passes") is not passes or (required and not passes):
+        raise ArtifactError("Discovery purchase order lacks support")
 
 
 def frozen_windows(frozen: dict[str, object]) -> dict[int, tuple[float, float]]:

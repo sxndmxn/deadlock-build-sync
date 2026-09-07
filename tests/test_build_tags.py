@@ -70,7 +70,7 @@ def guide_item(
     )
 
 
-def test_selects_first_maxed_ability_best_tier_three_core_and_function() -> None:
+def test_selects_first_maxed_ability_stable_core_item_and_function() -> None:
     catalog = BuildTagCatalog.from_assets(tag_assets())
     assets: list[dict[str, object]] = [
         {
@@ -124,16 +124,16 @@ def test_selects_first_maxed_ability_best_tier_three_core_and_function() -> None
 
     assert selected.class_names == (
         "ability_20",
-        "item_tier_3_spirit",
+        "item_tier_3_weapon",
         "citadel_build_tag_debuff",
     )
-    assert selected.labels == ("Ability 20", "Tier 3 Spirit", "Debuff")
-    assert selected.tag_ids[:2] == (20, 2)
+    assert selected.labels == ("Ability 20", "Tier 3 Weapon", "Debuff")
+    assert selected.tag_ids[:2] == (20, 1)
     assert selected.archetype == "Debuff / Spirit"
     assert len(set(selected.tag_ids)) == 3
 
 
-def test_core_icon_falls_back_to_best_tier_four_item() -> None:
+def test_core_icon_falls_back_to_stable_tier_four_item() -> None:
     catalog = BuildTagCatalog.from_assets(tag_assets())
     assets: list[dict[str, object]] = [
         {
@@ -165,10 +165,11 @@ def test_core_icon_falls_back_to_best_tier_four_item() -> None:
         catalog,
     )
 
-    assert selected.tag_ids[:2] == (10, 3)
+    assert selected.tag_ids[:2] == (10, 2)
 
 
-def test_rejects_incomplete_ability_path_and_core_without_late_tier() -> None:
+@pytest.mark.parametrize("tier", [1, 2])
+def test_rejects_incomplete_ability_path_but_accepts_early_core(tier: int) -> None:
     catalog = BuildTagCatalog.from_assets(tag_assets())
     assets: list[dict[str, object]] = [
         {
@@ -189,9 +190,11 @@ def test_rejects_incomplete_ability_path_and_core_without_late_tier() -> None:
             for ability_id in (10, 20, 30, 40)
         ])
     )
-    core = (guide_item(1, tier=2, win_rate=0.50),)
+    core = (guide_item(1, tier=tier, win_rate=0.50),)
 
     with pytest.raises(BuildTagError, match="complete four-ability"):
         select_build_tags((10, 20, 30, 40), core, assets, catalog)
-    with pytest.raises(BuildTagError, match="no Tier 3 or Tier 4"):
-        select_build_tags((10, 20, 30, 40) * 4, core, assets, catalog)
+    selected = select_build_tags((10, 20, 30, 40) * 4, core, assets, catalog)
+    assert selected.tag_ids[:2] == (10, 1)
+    changed = (guide_item(1, tier=tier, win_rate=0.0, adopter_matches=0),)
+    assert select_build_tags((10, 20, 30, 40) * 4, changed, assets, catalog) == selected

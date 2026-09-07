@@ -11,35 +11,57 @@ supplies the core order. Components are added with their required purchase and
 consumption order. Normal generation has no old clustering or core-completion
 fallback. PrefixSpan and the old methods remain in `tools/comparisons`.
 
-The discovery rules remain fixed: cores have four to six items, at least 100
-owners, and a maximum catalog cost of 19,200 souls. Selection needs at least 52%
-observed wins, joint ownership lift of 1.1, at least 100 comparable owners, and
-80% comparable-state coverage. Selection lower bounds must pass. Validation uses
-family correction across all frozen nominees. The purchase order needs at least
-20 ordered owners and 10% order share in discovery, selection, and validation.
-Documented hero mechanics and legal component execution must also pass.
+The first search uses four-to-six-item cores with a maximum catalog cost of
+19,200 souls. If none has a supported legal path, it uses existing three-item
+seeds. It does not add guessed items. Each core needs at least 100 exact owners in
+discovery and 100 in selection. Purchase orders are tried by pairwise score until
+one is legal and has 20 followers and 10% share in both folds. Complete component
+purchase records, costs, ownership, slots, and active-item limits are mandatory.
 
-Whole matches are split by time. The original training split is divided into
-discovery and selection. Candidates, identity ranking, core order, component path,
+Availability is separate from evidence of a win advantage. `outcome_supported`
+requires at least 52% observed wins, joint ownership lift of 1.1, 100 comparable
+owners, 80% comparable-state coverage, and the positive selection lower bounds.
+Validation uses correction across the frozen comparison family and checks order
+support. Other supported builds receive `observed` status with evidence limits.
+A missing mechanic text match adds a limit; it does not reject a legal build.
+
+`--rank-expansion auto|off` is available on refresh and generation commands.
+The default is `auto`, starting at Emissary I through Eternus V. `--min-rank`
+sets the starting cutoff. One shared loop lowers the cutoff one tier at a time
+only for a hero without a supported legal build. It stops when a build is
+available, including when only one identity is available. It never expands to
+improve outcomes. Exhaustion of all ranked data is an explicit error. The hero's
+effective range, support counts, and each attempted range are stored in evidence.
+
+The source snapshot, patch, mechanics, and requested time range stay fixed.
+Whole matches are admitted without duplicates. Time boundaries come from the
+starting range before expansion. Matches never move between splits. The original
+training split is divided into discovery and selection. Candidates, identity ranking, core order, component path,
 item pools, and possible branch conditions are frozen before validation. The
 reserved test split remains outside selection and admission. A frozen nomination
 file records the complete comparison family before validation starts.
 
-Each hero can have up to three distinct admitted identities. The default is the
-admitted identity with the lowest frozen selection rank. Validation does not
-reorder candidates. Every requested hero must have admitted builds or an explicit
-exclusion with observations and rejection reasons. Missing hero data and malformed
-artifacts are errors. If no builds pass, the producer writes an exclusion report
-and preserves the existing evidence file. Generation also checks coverage before
-it writes the review bundle. Installation preserves builds for excluded heroes.
+Candidates with an adjusted selection estimate come first, ordered by lower bound,
+owner count, then item IDs. Candidates without an estimate follow, ordered by owner
+count and item IDs. The search continues until up to three distinct usable
+identities are found. A failed candidate does not use an identity slot.
+The first usable identity is the default. Validation changes evidence status; it
+does not change frozen identities, order, paths, pools, or branch candidates.
+Missing requested heroes and malformed artifacts cause generation to fail. The
+producer records reasons and preserves the existing evidence file. Generation
+stages the complete review bundle and preserves the current bundle on failure.
 
 Each pool uses discovery buyers who owned that exact core. Pool items need at
 least 20 buyers, with up to ten items per tier. All matching options are shown.
-There is no second shortlist. All four pool tiers follow the purchase path.
+There is no second shortlist. All four pool tiers follow the purchase path. Empty
+tiers explicitly show that no supported options are available. Conflicting timing
+estimates are uncertain and retain the legal order. Missing economy and enemy
+observations disable affected estimates and choices, while complete purchase
+histories remain available.
 
 ## One purchase guide
 
-Evidence schema 10, purchase-guide schema 2, and decision-state schema 3 are
+Evidence schema 11, purchase-guide schema 3, and decision-state schema 3 are
 required. Old or incompatible evidence must be refreshed and rebuilt:
 
 ```bash
@@ -121,7 +143,9 @@ static conditional instructions. This work adds no live game-state capture.
 
 ## Verification records
 
-See [the September 6 integration run](default-build-verification-2026-09-06.md) for
-fresh admissions, exclusions, package checks, and temporary-cache results.
+See [the September 7 full-roster run](full-hero-verification-2026-09-07.md) for
+112 builds across all 38 heroes, package checks, and temporary-cache results.
+The [September 6 run](default-build-verification-2026-09-06.md) records the earlier
+admission rules and their exclusions.
 Historical comparison reports retain their original source references. The
 `experiments` paths in those reports refer to commit `56debec` and earlier code.

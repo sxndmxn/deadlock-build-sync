@@ -102,6 +102,16 @@ def test_branch_estimator_uses_corrected_predecision_cohorts_without_test_rows()
     )
 
 
+def test_missing_optional_observations_disable_affected_automatic_choices() -> None:
+    _, graph = guidance_fixture()
+    rows = decisions()
+    without_economy = [{**row, "relative_wealth": None} for row in rows]
+    assert not branches.freeze_candidates(without_economy, nominee(), graph)
+    without_enemies = [{**row, "enemy_heroes": [], "enemy_items": []} for row in rows]
+    candidates = branches.freeze_candidates(without_enemies, nominee(), graph)
+    assert {row["condition"] for row in candidates} == {"relative_wealth"}
+
+
 def test_failed_branch_estimation_keeps_manual_choices(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -152,7 +162,9 @@ def test_strict_team_snapshot_and_no_future_enemy_item_enter_branch_state() -> N
     con.execute(
         "INSERT INTO team_snapshots VALUES(1,0,590,60000,6),(1,1,590,60000,6),(1,0,600,999999,6)"
     )
-    con.execute("CREATE TABLE player_matches AS SELECT 1 AS match_id, 12 AS hero_id")
+    con.execute(
+        "CREATE TABLE player_matches AS SELECT 1 AS match_id, 12 AS hero_id, 71 AS average_badge"
+    )
     con.execute(
         "CREATE TABLE purchases(match_id INT,player_slot INT,team_id INT,item_id INT,buy_time INT,sold_time INT,event_order INT)"
     )
@@ -160,7 +172,7 @@ def test_strict_team_snapshot_and_no_future_enemy_item_enter_branch_state() -> N
         "INSERT INTO purchases VALUES(1,0,0,1,100,0,0),(1,0,0,3,200,0,1),(1,1,1,7,500,0,0),(1,1,1,8,595,0,1),(1,1,1,9,600,0,2)"
     )
     con.execute(
-        "CREATE TABLE decision_opportunities AS SELECT 1 AS match_id,0 AS player_slot,0 AS team_id,12 AS hero_id,7 AS item_id,600 AS buy_time,590 AS state_observed_at_s,8000 AS own_net_worth_at_buy,999999 AS own_team_net_worth,60000 AS enemy_team_net_worth,6 AS own_team_observed_players,6 AS enemy_team_observed_players,999999 AS team_net_worth_lead"
+        "CREATE TABLE decision_opportunities AS SELECT 1 AS match_id,0 AS player_slot,0 AS team_id,12 AS hero_id,71 AS average_badge,7 AS item_id,600 AS buy_time,590 AS state_observed_at_s,8000 AS own_net_worth_at_buy,999999 AS own_team_net_worth,60000 AS enemy_team_net_worth,6 AS own_team_observed_players,6 AS enemy_team_observed_players,999999 AS team_net_worth_lead"
     )
     _, graph = guidance_fixture()
     row = branches.checkpoint_rows(con, 12, graph)[0]

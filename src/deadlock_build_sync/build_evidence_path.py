@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 from .artifacts import ArtifactError
 from .build_evidence_core import _core_policy, _hero_items, _tier_policy
 from .build_evidence_discovery import exclusion_reason, validate_discovery
@@ -9,6 +11,7 @@ from .build_evidence_sequence import _sequence_policy, _situational_policy
 from .build_evidence_timing import purchase_timing
 from .build_evidence_types import HeroBuildEvidence, ItemEvidence
 from .build_evidence_values import _required_int
+from .hero_cohort import HeroCohort
 from .match_choices import parse_automatic_branches
 from .value_validation import object_dict, object_list
 
@@ -52,7 +55,7 @@ def _path_cohort(
         fold: _required_int(
             raw_folds.get(fold),
             f"{fold} eligible player matches",
-            minimum=0 if fold == "test" else 1,
+            minimum=1 if fold == "train" else 0,
         )
         for fold in ("train", "validation", "test")
     }
@@ -133,7 +136,9 @@ def _build_path(
             document.get("median_final_net_worth"),
             "median final net worth",
             minimum=1,
-        ),
+        )
+        if document.get("median_final_net_worth") is not None
+        else None,
         items=items,
         core_policy=core_policy,
         tier_policy=tier_policy,
@@ -170,8 +175,11 @@ def _hero_builds(value: object) -> tuple[int, tuple[HeroBuildEvidence, ...]]:
         return hero_id, ()
     if len(raw_builds) > 3 or document.get("exclusion") is not None:
         raise ArtifactError(f"hero {hero_id} has conflicting build admission")
+    cohort = HeroCohort.parse(document.get("cohort"))
     builds = tuple(
-        _build_path(build, hero_id=hero_id, hero_name=name.strip())
+        replace(
+            _build_path(build, hero_id=hero_id, hero_name=name.strip()), cohort=cohort
+        )
         for build in raw_builds
     )
     path_ids = [build.path_id for build in builds]

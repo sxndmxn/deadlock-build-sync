@@ -3,10 +3,13 @@ from __future__ import annotations
 import json
 import shutil
 import time
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 
 import duckdb
+
+from deadlock_build_sync.hero_cohort import ranked_cutoffs
 
 from .config import DUCKLAKE_URL, Cohort, RunPaths
 
@@ -75,6 +78,14 @@ def _connect(paths: RunPaths) -> duckdb.DuckDBPyConnection:
         """
     )
     con.execute(f"ATTACH '{DUCKLAKE_URL}' AS remote (READ_ONLY)")
+    version = _count(con, "SELECT id FROM remote.current_snapshot()")
+    con.execute("DETACH remote")
+    con.execute(
+        f"ATTACH '{DUCKLAKE_URL}' AS remote (READ_ONLY, SNAPSHOT_VERSION {version})"
+    )
+    con.execute(
+        f"CREATE OR REPLACE TABLE source_snapshot AS SELECT {version}::BIGINT AS version"
+    )
     return con
 
 
@@ -149,14 +160,56 @@ def _execute_remote_query(
             attempt += 1
 
 
-def extract_cohort(paths: RunPaths, cohort: Cohort) -> dict[str, object]:
+def _freeze_splits(con: duckdb.DuckDBPyConnection, cohort: Cohort) -> None:
+    # Determine all cutoffs from the starting cohort before any per-hero search.
+    con.execute(
+        """
+        CREATE OR REPLACE TABLE split_boundaries AS
+        WITH matches AS (
+            SELECT match_id, min(start_time) AS started FROM player_matches
+            WHERE average_badge BETWEEN ? AND ? GROUP BY match_id
+        )
+        SELECT quantile_cont(epoch(started), 0.45) AS discovery_end,
+               quantile_cont(epoch(started), 0.6) AS train_end,
+               quantile_cont(epoch(started), 0.8) AS validation_end
+        FROM matches
+    """,
+        [cohort.minimum_badge, cohort.maximum_badge],
+    )
+    # An empty starting range uses fixed time fractions, never expanded outcomes.
+    start, end = cohort.since.timestamp(), cohort.resolved_as_of().timestamp()
+    con.execute(
+        """
+        UPDATE split_boundaries SET
+            discovery_end=coalesce(discovery_end, ?),
+            train_end=coalesce(train_end, ?), validation_end=coalesce(validation_end, ?)
+    """,
+        [start + (end - start) * share for share in (0.45, 0.6, 0.8)],
+    )
+    con.execute("""
+        CREATE OR REPLACE TABLE match_folds AS
+        SELECT match_id,
+               CASE WHEN epoch(min(start_time)) <= train_end THEN 'train'
+                    WHEN epoch(min(start_time)) <= validation_end THEN 'validation'
+                    ELSE 'test' END AS fold
+        FROM player_matches, split_boundaries
+        GROUP BY match_id, train_end, validation_end
+    """)
+
+
+def extract_cohort(
+    paths: RunPaths, cohort: Cohort, *, rank_expansion: str = "off"
+) -> dict[str, object]:
     cohort.validate()
+    cutoffs = ranked_cutoffs(cohort.minimum_badge, cohort.maximum_badge, rank_expansion)
+    extraction = replace(cohort, minimum_badge=cutoffs[-1])
     con = _connect(paths)
     try:
         _load_item_assets(con, paths.raw / "items.json")
         con.execute("DROP TABLE IF EXISTS eligible_matches")
         _execute_remote_query(
-            con, "CREATE TABLE eligible_matches AS " + _eligible_matches_query(cohort)
+            con,
+            "CREATE TABLE eligible_matches AS " + _eligible_matches_query(extraction),
         )
         print("Extracting deidentified player-match cohort…", flush=True)
         con.execute("DROP TABLE IF EXISTS player_matches")
@@ -193,26 +246,7 @@ def extract_cohort(paths: RunPaths, cohort: Cohort) -> dict[str, object]:
             GROUP BY hero_id
             """,
         )
-        con.execute(
-            """
-            CREATE OR REPLACE TABLE match_folds AS
-            WITH matches AS (
-                SELECT match_id, min(start_time) AS start_time
-                FROM player_matches GROUP BY match_id
-            ), boundaries AS (
-                SELECT quantile_cont(epoch(start_time), 0.6) AS train_end,
-                       quantile_cont(epoch(start_time), 0.8) AS validation_end
-                FROM matches
-            )
-            SELECT match_id,
-                   CASE
-                       WHEN epoch(start_time) <= train_end THEN 'train'
-                       WHEN epoch(start_time) <= validation_end THEN 'validation'
-                       ELSE 'test'
-                   END AS fold
-            FROM matches, boundaries
-            """
-        )
+        _freeze_splits(con, cohort)
         con.execute(
             """
             CREATE OR REPLACE TABLE compositions AS
@@ -415,6 +449,7 @@ def extract_cohort(paths: RunPaths, cohort: Cohort) -> dict[str, object]:
             "player_matches",
             "hero_account_counts",
             "match_folds",
+            "split_boundaries",
             "compositions",
             "team_snapshots",
             "player_snapshots",
@@ -434,6 +469,10 @@ def extract_cohort(paths: RunPaths, cohort: Cohort) -> dict[str, object]:
                 "decision_opportunities",
             )
         }
+        counts["source_snapshot_version"] = _count(
+            con, "SELECT version FROM source_snapshot"
+        )
+        counts["extracted_minimum_badge"] = extraction.minimum_badge
         counts["heroes"] = _count(
             con, "SELECT count(DISTINCT hero_id) FROM player_matches"
         )

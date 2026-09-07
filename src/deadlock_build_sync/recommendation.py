@@ -64,6 +64,10 @@ def _validate_evidence_identity(
         raise RecommendationError("decision state uses another game mode")
     minimum_badge = catalog.cohort.get("minimum_badge")
     maximum_badge = catalog.cohort.get("maximum_badge")
+    hero = catalog.heroes.get(state.hero_id)
+    if hero is not None and hero.cohort is not None:
+        minimum_badge = hero.cohort.minimum_badge
+        maximum_badge = hero.cohort.maximum_badge
     if (
         not isinstance(minimum_badge, int)
         or not isinstance(maximum_badge, int)

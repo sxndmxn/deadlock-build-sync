@@ -9,6 +9,7 @@ if TYPE_CHECKING:
     from .build_evidence import (
         CoreAlternativeEvidence,
     )
+    from .hero_cohort import HeroCohort
     from .match_choices import AutomaticBranch
     from .purchase_guidance_types import PurchaseGuidance, PurchaseTiming
 
@@ -170,7 +171,7 @@ class PurchaseGuide:
     backbone_share: float = 0.0
     core_joint_matches: int = 0
     core_joint_share: float = 0.0
-    median_final_net_worth: int = 0
+    median_final_net_worth: int | None = 0
     core_target_cost: int = 0
     build_tag_ids: tuple[int, ...] = ()
     build_tag_classes: tuple[str, ...] = ()
@@ -179,6 +180,8 @@ class PurchaseGuide:
     build_archetype: str = "Evidence Default"
     analysis_start_timestamp: int = 0
     as_of_timestamp: int = 0
+    cohort: HeroCohort | None = None
+    evidence_summary: dict[str, object] = field(default_factory=dict)
     purchase_timing: tuple[PurchaseTiming, ...] = ()
     purchase_guidance: PurchaseGuidance | None = None
     automatic_branches: tuple[AutomaticBranch, ...] = ()
@@ -191,7 +194,9 @@ class PurchaseGuide:
 
     @property
     def has_complete_item_coverage(self) -> bool:
-        return all(self.tiers.get(tier) for tier in range(1, 5))
+        return (bool(self.core_items) and set(self.tiers) == {1, 2, 3, 4}) or all(
+            self.tiers.get(tier) for tier in range(1, 5)
+        )
 
     @property
     def rendered_categories(self) -> tuple[GuideCategory, ...]:

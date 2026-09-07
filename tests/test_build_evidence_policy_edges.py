@@ -78,7 +78,7 @@ def test_core_policy_rejects_an_unsupported_version(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("field", "value"),
     [
-        ("backbone_item_ids", [101, 102, 201]),
+        ("backbone_item_ids", [101, 102]),
         ("backbone_item_ids", [101, 101, 201, 202]),
         ("default_item_ids", [101, 102, 201]),
         ("default_item_ids", [101, 102, 201, 202, 202]),
@@ -168,7 +168,7 @@ def test_tier_policy_rejects_missing_malformed_and_duplicate_membership(
     empty = _document()
     membership = require_object_dict(_tier_policy(empty)["item_ids_by_tier"])
     membership["1"] = []
-    _expect_load_error(path, empty, "invalid Tier 1 membership")
+    _expect_load_error(path, empty, "Item pool differs")
 
     duplicate = _document()
     membership = require_object_dict(_tier_policy(duplicate)["item_ids_by_tier"])

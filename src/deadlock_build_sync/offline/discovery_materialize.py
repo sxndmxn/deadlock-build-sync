@@ -17,6 +17,7 @@ from deadlock_build_sync.build_evidence import (
     TIER_POLICY_VERSION,
 )
 from deadlock_build_sync.build_evidence_types import nondecreasing_window_schedule
+from deadlock_build_sync.build_support import SUPPORT
 from deadlock_build_sync.mechanics import (
     ItemGraph,
     MechanicsError,
@@ -81,13 +82,17 @@ def item_pool(
         (
             item
             for item, stats in evidence["items"].items()
-            if item in graph.nodes and item not in path and stats["buyers"] >= 20
+            if item in graph.nodes
+            and item not in path
+            and stats["buyers"] >= SUPPORT.pool_buyers
         ),
         key=lambda item: (-evidence["items"][item]["buyers"], item),
     )
     return {
         str(tier): sorted(
-            [item for item in ranked if graph.require(item).tier == tier][:10],
+            [item for item in ranked if graph.require(item).tier == tier][
+                : SUPPORT.pool_limit
+            ],
             key=lambda item: (
                 evidence["items"][item]["time_seconds_q25_q50_q75"][1],
                 item,
@@ -115,20 +120,22 @@ def freeze_guide(
             "ready": False,
             "reason": "Component planner differs from the frozen route",
         }
-    if nondecreasing_window_schedule(path, bounds) is None:
-        return {
-            "ready": False,
-            "reason": "Core order conflicts with observed component wealth windows",
-        }
+    uncertain = nondecreasing_window_schedule(path, bounds) is None
     pool = item_pool(graph, evidence, path)
-    if any(not items for items in pool.values()):
+    missing = {
+        item
+        for item in path
+        if evidence["items"].get(item, {}).get("buyers", 0) < SUPPORT.pool_buyers
+    }
+    if missing:
         return {
             "ready": False,
-            "reason": "At least one item tier has fewer than 20 discovery buyers for every option",
+            "reason": f"Incomplete component purchase records: {sorted(missing)}",
         }
     return {
         "ready": True,
         "reason": None,
+        "timing_status": "uncertain" if uncertain else "observed",
         "path": list(path),
         "pool": pool,
         "discovery_buyers": evidence["population"],

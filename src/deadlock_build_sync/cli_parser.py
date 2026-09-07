@@ -85,6 +85,12 @@ def _narrative_argument(parser: argparse.ArgumentParser) -> None:
 
 def _rank_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
+        "--rank-expansion",
+        choices=("auto", "off"),
+        default="auto",
+        help="expand each hero only when build support is insufficient",
+    )
+    parser.add_argument(
         "--min-rank",
         type=Rank.parse,
         default=DEFAULT_RANK_RANGE.minimum,
@@ -223,8 +229,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     refresh.add_argument("--artifacts", type=Path, help="artifact output directory")
     refresh.add_argument("--run-id", help="stable offline run identifier")
-    refresh.add_argument("--min-badge", type=positive_int, default=71)
-    refresh.add_argument("--max-badge", type=positive_int, default=115)
+    _rank_arguments(refresh)
+    refresh.add_argument("--min-badge", type=positive_int)
+    refresh.add_argument("--max-badge", type=positive_int)
     refresh.add_argument("--since", help="cohort lower timestamp in ISO-8601 form")
     refresh.add_argument("--as-of", help="frozen upper timestamp in ISO-8601 form")
     recommendation = subparsers.add_parser(

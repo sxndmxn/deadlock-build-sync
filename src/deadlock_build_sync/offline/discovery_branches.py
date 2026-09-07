@@ -32,7 +32,9 @@ from .discovery_types import Nomination
 from .late_game import reconstruct_final_inventory
 
 
-def decision_rows(con: duckdb.DuckDBPyConnection, hero: int) -> list[dict[str, object]]:
+def decision_rows(
+    con: duckdb.DuckDBPyConnection, hero: int, minimum: int = 11, maximum: int = 116
+) -> list[dict[str, object]]:
     cursor = con.execute(
         """
         SELECT p.* EXCLUDE(own_team_net_worth, enemy_team_net_worth,
@@ -53,28 +55,28 @@ def decision_rows(con: duckdb.DuckDBPyConnection, hero: int) -> list[dict[str, o
         ASOF LEFT JOIN team_snapshots enemy_state
           ON p.match_id=enemy_state.match_id AND (1-p.team_id)=enemy_state.team_id
              AND p.buy_time>enemy_state.stat_time
-        WHERE p.hero_id=? AND d.partition IN ('discovery','validation')
+        WHERE p.hero_id=? AND p.average_badge BETWEEN ? AND ? AND d.partition IN ('discovery','validation')
           AND p.buy_time-p.state_observed_at_s BETWEEN 1 AND 300
         ORDER BY p.match_id,p.player_slot,p.buy_time
     """,
-        [hero],
+        [hero, minimum, maximum],
     )
     names = [column[0] for column in cursor.description]
     return [dict(zip(names, values, strict=True)) for values in cursor.fetchall()]
 
 
 def event_histories(
-    con: duckdb.DuckDBPyConnection, hero: int
+    con: duckdb.DuckDBPyConnection, hero: int, minimum: int = 11, maximum: int = 116
 ) -> dict[tuple[int, int], list[tuple[int, int, int, int]]]:
     rows = con.execute(
         """
         SELECT p.match_id,p.player_slot,p.team_id,p.item_id,p.buy_time,p.sold_time
         FROM purchases p JOIN discovery_partitions d USING(match_id)
         WHERE d.partition IN ('discovery','validation') AND p.match_id IN (
-            SELECT match_id FROM player_matches WHERE hero_id=?
+            SELECT match_id FROM player_matches WHERE hero_id=? AND average_badge BETWEEN ? AND ?
         ) ORDER BY p.match_id,p.player_slot,p.buy_time,p.event_order
     """,
-        [hero],
+        [hero, minimum, maximum],
     ).fetchall()
     result: dict[tuple[int, int], list[tuple[int, int, int, int]]] = {}
     for match, slot, team, item, bought, sold in rows:
@@ -101,10 +103,14 @@ def inventory_before(
 
 
 def checkpoint_rows(
-    con: duckdb.DuckDBPyConnection, hero: int, graph: ItemGraph
+    con: duckdb.DuckDBPyConnection,
+    hero: int,
+    graph: ItemGraph,
+    minimum: int = 11,
+    maximum: int = 116,
 ) -> list[dict[str, object]]:
-    decisions = decision_rows(con, hero)
-    histories = event_histories(con, hero)
+    decisions = decision_rows(con, hero, minimum, maximum)
+    histories = event_histories(con, hero, minimum, maximum)
     by_match: dict[int, list[list[tuple[int, int, int, int]]]] = {}
     for (match, _), events in histories.items():
         by_match.setdefault(match, []).append(events)
@@ -240,6 +246,7 @@ def freeze_choice(
         row
         for row in rows
         if row["fold"] == "train"
+        and row.get("relative_wealth") is not None
         and row["item_id"] in {item, comparator}
         and legal_at(row, nominee, item, checkpoint, graph)
     ]
@@ -383,6 +390,7 @@ def comparison_frame(
         row
         for row in rows
         if row["item_id"] in {item, comparator}
+        and row.get("relative_wealth") is not None
         and (str(candidate["condition"]), candidate["value"]) in conditions(row)
         and legal_at(row, nominee, item, checkpoint, graph)
         and substitution_legal(row, candidate, graph)

@@ -157,7 +157,7 @@ def _fold_adoption(
         eligible = _required_int(
             document.get(f"{fold}_eligible_player_matches"),
             f"{fold} eligible player matches",
-            minimum=0 if fold == "test" else 1,
+            minimum=1 if fold == "training" else 0,
         )
         rate = _required_float(
             document.get(f"{fold}_adoption"), f"{fold} adoption", maximum=1.0

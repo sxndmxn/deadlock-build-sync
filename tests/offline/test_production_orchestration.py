@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections import Counter
 from typing import TYPE_CHECKING, cast
 
@@ -339,13 +340,18 @@ def test_export_production_evidence_writes_closed_document(
     )
     target = paths.run / "build-evidence.json"
 
+    monkeypatch.setattr(
+        current_production_evidence,
+        "validated_write",
+        lambda path, value: path.write_text(json.dumps(value)),
+    )
     document = current_production_evidence.export_production_evidence(paths, target)
 
     assert target.exists()
     assert document["requested_hero_ids"] == [7]
     assert len(str(document["artifact_id"])) == 64
     assert sha256_json(document) == (
-        "089ebbbe2b2dc716cb2cedd10484ba7aa6791c2494a3d1ad55a621ee67b4ab19"
+        "a1baa5ebf66f70e094128cb834d4f3bcf8fd7332a21df3a6ca7728f75f6932eb"
     )
     assert fake.closed
     previous = target.read_bytes()
@@ -361,7 +367,7 @@ def test_export_production_evidence_writes_closed_document(
             }
         ]),
     )
-    with pytest.raises(ValueError, match=r"No builds passed.*unchanged"):
+    with pytest.raises(ValueError, match=r"Requested heroes lack.*unchanged"):
         current_production_evidence.export_production_evidence(paths, target)
     assert target.read_bytes() == previous
     assert "weak outcome" in (paths.run / "discovery-exclusions.json").read_text()

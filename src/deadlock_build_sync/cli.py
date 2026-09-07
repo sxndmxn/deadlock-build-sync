@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import json
+import shutil
 import sys
+import tempfile
 from contextlib import redirect_stdout
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from scripts.generate_narratives import main as generate_narratives_main
 
 from .api import ApiError, DeadlockApi
 from .artifact_bundle import load_artifact_guide_bundle
+from .artifacts import atomic_write_json
 from .build_evidence import load_build_evidence
 from .cache import (
     CacheError,
@@ -59,7 +63,6 @@ from .tracing import (
 
 if TYPE_CHECKING:
     import argparse
-    from pathlib import Path
 
     from .build_evidence import BuildEvidenceCatalog
     from .purchase_guide import PurchaseGuide
@@ -86,9 +89,9 @@ def _current_evidence(args: argparse.Namespace) -> tuple[Path, BuildEvidenceCata
 def _require_complete(generated: GeneratedGuides) -> None:
     if not generated.guides:
         raise GuideError("no heroes had complete reliable analytics")
-    covered = {guide.hero_id for guide in generated.guides} | {
-        hero for hero, _ in generated.exclusions
-    }
+    covered = {guide.hero_id for guide in generated.guides}
+    if generated.exclusions:
+        raise GuideError("Requested heroes have no supported builds")
     if not generated.subset_selected and covered != generated.eligible_hero_ids:
         raise GuideError("Build evidence does not cover every requested hero")
 
@@ -122,6 +125,43 @@ def _run_build(args: argparse.Namespace) -> int:
 
 
 def _write_build_artifacts(
+    generated: GeneratedGuides, artifact_directory: Path
+) -> list[PurchaseGuide]:
+    artifact_directory.parent.mkdir(parents=True, exist_ok=True)
+    temporary = Path(
+        tempfile.mkdtemp(
+            prefix=f".{artifact_directory.name}.", dir=artifact_directory.parent
+        )
+    )
+    staged, previous = temporary / "new", temporary / "previous"
+    committed = False
+    try:
+        if artifact_directory.exists():
+            shutil.copytree(artifact_directory, staged)
+        else:
+            staged.mkdir()
+        guides = _render_build_artifacts(generated, staged)
+        index = json.loads((staged / "builds.json").read_text(encoding="utf-8"))
+        index["directory"] = str(
+            artifact_directory / "builds" / generated.manifest.snapshot_id
+        )
+        atomic_write_json(staged / "builds.json", index)
+        if artifact_directory.exists():
+            artifact_directory.rename(previous)
+        try:
+            staged.rename(artifact_directory)
+        except OSError:
+            if previous.exists():
+                previous.rename(artifact_directory)
+            raise
+        committed = True
+        return guides
+    finally:
+        if committed or not previous.exists():
+            shutil.rmtree(temporary)
+
+
+def _render_build_artifacts(
     generated: GeneratedGuides, artifact_directory: Path
 ) -> list[PurchaseGuide]:
     context_path = artifact_directory / "strategy-context.json"
@@ -196,10 +236,12 @@ def _run_refresh_evidence(args: argparse.Namespace) -> int:
         ) from error
     output = _sync_artifact_directory(args.artifacts) / _BUILD_EVIDENCE_FILENAME
     forwarded = [
+        "--rank-expansion",
+        args.rank_expansion,
         "--min-rank",
-        str(args.min_badge),
+        str(args.min_badge or args.min_rank.badge_id),
         "--max-rank",
-        str(args.max_badge),
+        str(args.max_badge or args.max_rank.badge_id),
         "--output",
         str(output),
     ]

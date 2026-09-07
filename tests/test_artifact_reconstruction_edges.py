@@ -72,8 +72,8 @@ def test_reconstruction_requires_a_nonempty_hero_class(tmp_path: Path) -> None:
         ("joint_share", 0.0, "invalid core evidence"),
         ("joint_share", 1.1, "invalid core evidence"),
         ("median_final_net_worth", 0, "invalid core evidence"),
+        ("core_target_cost", 0.5, "invalid core evidence"),
         ("core_target_cost", 0, "invalid core evidence"),
-        ("core_target_cost", 40_000, "invalid core evidence"),
     ],
 )
 def test_reconstruction_rejects_invalid_core_summary(

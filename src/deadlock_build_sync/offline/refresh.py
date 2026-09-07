@@ -25,6 +25,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--as-of")
     parser.add_argument("--min-rank", type=int, default=71)
     parser.add_argument("--max-rank", type=int, default=115)
+    parser.add_argument("--rank-expansion", choices=("auto", "off"), default="auto")
     args = parser.parse_args(argv)
     state = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state"))
     paths = RunPaths.create(state / "deadlock-build-sync/offline", args.run_id)
@@ -44,13 +45,16 @@ def main(argv: list[str] | None = None) -> int:
     cohort.validate()
     manifest = {
         "schema_version": 2,
+        "rank_expansion": args.rank_expansion,
         "cohort": cohort.as_dict(),
         "sources": sources,
         "production_method": "eclat_leiden_pairwise",
         "test_usage": "reserved",
     }
     write_json(paths.run / "manifest.json", manifest)
-    manifest["extraction"] = extract_cohort(paths, cohort)
+    manifest["extraction"] = extract_cohort(
+        paths, cohort, rank_expansion=args.rank_expansion
+    )
     write_json(paths.run / "manifest.json", manifest)
     document = export_production_evidence(paths, args.output)
     print(f"Evidence: {args.output} ({document['artifact_id']})")

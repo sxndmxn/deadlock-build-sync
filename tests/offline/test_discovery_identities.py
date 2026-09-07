@@ -182,7 +182,7 @@ def test_component_rebuy_credit_and_active_inventory_limits() -> None:
         expanded_path(list(range(12)), graph_fixture())
 
 
-def test_selection_rejects_losing_core_and_ignores_validation_outcomes() -> None:
+def test_selection_keeps_losing_core_and_ignores_validation_outcomes() -> None:
     data = planted_data()
     original = discover_hero(data, catalog_fixture(13))
     flipped = data.won.copy()
@@ -192,8 +192,8 @@ def test_selection_rejects_losing_core_and_ignores_validation_outcomes() -> None
     assert original["selected"] == changed["selected"]
     for indices in original["selected"].values():
         assert indices
-        assert all(
-            not {8, 9, 10, 11} <= set(original["candidates"][index]["items"])
+        assert any(
+            {8, 9, 10, 11} <= set(original["candidates"][index]["items"])
             for index in indices
         )
 
@@ -207,7 +207,7 @@ def test_group_selection_returns_existing_representatives_only() -> None:
         }
         for item, score in ((3, 0.04), (4, 0.02), (5, 0.03))
     ]
-    assert select(candidates, [[0, 1], [2]]) == [0, 2]
+    assert select(candidates) == [0, 2, 1]
 
 
 def test_tactical_explanation_requires_two_items_and_kit_source() -> None:

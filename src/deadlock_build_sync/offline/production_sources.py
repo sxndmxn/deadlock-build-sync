@@ -62,6 +62,9 @@ class _HeroExportContext:
     item_costs: dict[int, int]
     target_core_cost: int
     enemy_threat_evidence: dict[int, dict[str, tuple[str, ...]]]
+    minimum_badge: int = 71
+    maximum_badge: int = 115
+    rank_expansion: str = "auto"
 
 
 def _hero_threat_refs(

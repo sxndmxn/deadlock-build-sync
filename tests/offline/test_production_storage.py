@@ -7,10 +7,12 @@ import duckdb
 import polars as pl
 import pytest
 
+from deadlock_build_sync.artifacts import ArtifactError
 from deadlock_build_sync.offline import core_policy_dr
 from deadlock_build_sync.offline import production_storage as storage
 from deadlock_build_sync.offline.config import sha256_json
 from deadlock_build_sync.value_validation import integer
+from tests.build_evidence_fixtures import _document, _refingerprint
 from tests.mechanics_fixtures import item
 from tests.offline.production_evidence_fixtures import _item_graph
 from tools.comparisons.legacy import production_storage as legacy_storage
@@ -39,6 +41,21 @@ def test_atomic_write_replaces_document_and_cleans_failed_temp(
 
 def _fail_fsync(_descriptor: int) -> None:
     raise OSError("sync failed")
+
+
+def test_invalid_replacement_evidence_preserves_current_artifact(
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "build-evidence.json"
+    document = _document()
+    storage.validated_write(target, document)
+    previous = target.read_bytes()
+    document["schema_version"] = 10
+    _refingerprint(document)
+    with pytest.raises(ArtifactError, match="refresh-evidence"):
+        storage.validated_write(target, document)
+    assert target.read_bytes() == previous
+    assert list(tmp_path.iterdir()) == [target]
 
 
 def test_fold_and_decision_queries_return_typed_data() -> None:

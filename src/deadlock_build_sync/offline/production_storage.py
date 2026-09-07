@@ -6,6 +6,8 @@ import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from deadlock_build_sync.build_evidence import load_build_evidence, select_hero_build
+
 if TYPE_CHECKING:
     import duckdb
 
@@ -43,3 +45,15 @@ def _folds_by_match(con: duckdb.DuckDBPyConnection) -> dict[int, str]:
             "SELECT match_id, fold FROM match_folds"
         ).fetchall()
     }
+
+
+def validated_write(path: Path, document: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".evidence-", dir=path.parent) as directory:
+        candidate = Path(directory) / path.name
+        _atomic_write(candidate, document)
+        catalog = load_build_evidence(candidate)
+        for builds in catalog.hero_builds.values():
+            for build in builds:
+                select_hero_build(build, list(catalog.assets))
+        _atomic_write(path, document)

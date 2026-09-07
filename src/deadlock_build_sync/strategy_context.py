@@ -275,7 +275,7 @@ def build_hero_strategy_context(
             "tag_labels": list(projected.build_tag_labels),
             "tag_catalog_sha256": projected.build_tag_catalog_sha256,
         },
-        "guide_version": 2,
+        "guide_version": 3,
         "categories": category_records(projected.rendered_categories),
         "semantics": (
             "CORE steps are the validated component path in automatic Queue. "

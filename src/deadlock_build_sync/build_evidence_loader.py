@@ -17,7 +17,6 @@ from .build_evidence_types import (
     MAXIMUM_TIER_ADOPTION_DRIFT,
     METHOD_VERSION,
     MINIMUM_BACKBONE_ITEM_COUNT,
-    MINIMUM_CORE_SUPPORT,
     MINIMUM_IMBUE_SHARE,
     MINIMUM_IMBUE_SUPPORT,
     MINIMUM_PURCHASE_WINDOW_COVERAGE,
@@ -29,6 +28,7 @@ from .build_evidence_types import (
     HeroBuildEvidence,
 )
 from .build_evidence_values import _required_int, _required_sha256
+from .build_support import SUPPORT
 from .snapshot import EpochBoundary, EpochSet, MatchMode, sha256_json
 from .value_validation import object_dict, object_list, object_rows
 
@@ -41,7 +41,7 @@ _EXPECTED_METHOD: dict[str, object] = {
     "version": METHOD_VERSION,
     "minimum_core_item_count": MINIMUM_BACKBONE_ITEM_COUNT,
     "maximum_core_item_count": MAXIMUM_CORE_ITEM_COUNT,
-    "minimum_core_support": MINIMUM_CORE_SUPPORT,
+    "minimum_core_support": SUPPORT.core_owners,
     "minimum_tier_support": MINIMUM_TIER_SUPPORT,
     "minimum_tier_adoption": MINIMUM_TIER_ADOPTION,
     "maximum_tier_adoption_drift": MAXIMUM_TIER_ADOPTION_DRIFT,
@@ -147,6 +147,14 @@ def _catalog_heroes(
 
 def _validate_catalog(catalog: BuildEvidenceCatalog) -> None:
     _required_sha256(catalog.patch.get("identity"), "patch fingerprint")
+    for hero in catalog.heroes.values():
+        cohort = hero.cohort
+        if cohort is not None and (
+            cohort.maximum_badge != catalog.cohort.get("maximum_badge")
+            or cohort.expansion_history[0]["minimum_badge"]
+            != catalog.cohort.get("minimum_badge")
+        ):
+            raise ArtifactError("Hero ranks differ from the starting cohort")
     _ = catalog.as_of_timestamp
     if catalog.as_of_timestamp < catalog.epochs.analysis_start_timestamp:
         raise ArtifactError("build evidence as-of cutoff precedes an epoch boundary")
@@ -199,36 +207,39 @@ def load_build_evidence(path: Path) -> BuildEvidenceCatalog:
     return replace(catalog, assets=tuple(assets))
 
 
+@dataclass(frozen=True)
+class BuildEvidenceIdentity:
+    patch_identity: str
+    client_version: int
+    as_of_timestamp: int
+    match_mode: MatchMode
+    rank_range: RankRange
+    rank_catalog: RankCatalog
+    heroes: list[dict[str, object]]
+    assets: list[dict[str, object]]
+    epochs: EpochSet
+
+
 def assert_build_evidence_compatible(
-    catalog: BuildEvidenceCatalog,
-    *,
-    patch_identity: str,
-    client_version: int,
-    as_of_timestamp: int,
-    match_mode: MatchMode,
-    rank_range: RankRange,
-    rank_catalog: RankCatalog,
-    heroes: list[dict[str, object]],
-    assets: list[dict[str, object]],
-    epochs: EpochSet,
+    catalog: BuildEvidenceCatalog, expected: BuildEvidenceIdentity
 ) -> None:
     cohort_mode = str(catalog.cohort.get("match_mode") or "").casefold()
     cohort_game = str(catalog.cohort.get("game_mode") or "").casefold()
     differences = []
     checks = {
-        "patch": catalog.patch.get("identity") == patch_identity,
-        "client_version": catalog.client_version == client_version,
-        "as_of_timestamp": catalog.as_of_timestamp == as_of_timestamp,
-        "match_mode": cohort_mode == match_mode.value,
+        "patch": catalog.patch.get("identity") == expected.patch_identity,
+        "client_version": catalog.client_version == expected.client_version,
+        "as_of_timestamp": catalog.as_of_timestamp == expected.as_of_timestamp,
+        "match_mode": cohort_mode == expected.match_mode.value,
         "game_mode": cohort_game == "normal",
         "minimum_badge": catalog.cohort.get("minimum_badge")
-        == rank_range.minimum.badge_id,
+        == expected.rank_range.minimum.badge_id,
         "maximum_badge": catalog.cohort.get("maximum_badge")
-        == rank_range.maximum.badge_id,
-        "rank_labels": catalog.rank_labels_sha256 == rank_catalog.sha256,
-        "heroes": catalog.heroes_sha256 == sha256_json(heroes),
-        "items": catalog.items_sha256 == sha256_json(assets),
-        "epochs": catalog.epochs == epochs,
+        == expected.rank_range.maximum.badge_id,
+        "rank_labels": catalog.rank_labels_sha256 == expected.rank_catalog.sha256,
+        "heroes": catalog.heroes_sha256 == sha256_json(expected.heroes),
+        "items": catalog.items_sha256 == sha256_json(expected.assets),
+        "epochs": catalog.epochs == expected.epochs,
     }
     differences.extend(key for key, compatible in checks.items() if not compatible)
     if differences:

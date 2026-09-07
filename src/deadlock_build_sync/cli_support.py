@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .api import DeadlockApi
-from .artifacts import atomic_write_json, build_policy_artifact
+from .artifacts import ArtifactError, atomic_write_json, build_policy_artifact
 from .build_evidence import BuildEvidenceCatalog, load_build_evidence
 from .cache import (
     CacheLocation,
@@ -80,6 +80,13 @@ def _epochs(args: argparse.Namespace) -> EpochSet | None:
 
 
 def _api(args: argparse.Namespace, evidence: BuildEvidenceCatalog) -> DeadlockApi:
+    if args.rank_expansion == "off" and any(
+        build.cohort is not None and build.cohort.minimum_badge < args.min_rank.badge_id
+        for build in evidence.heroes.values()
+    ):
+        raise ArtifactError(
+            "Evidence uses expanded ranks. Run deadlock-build-sync refresh-evidence --rank-expansion off, then build again."
+        )
     return DeadlockApi(
         args.api_base_url,
         rank_range=_rank_range(args),

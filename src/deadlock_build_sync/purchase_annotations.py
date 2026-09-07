@@ -143,4 +143,6 @@ def build_purchase_guide_from_evidence(
         core_joint_share=selected.core_joint_share,
         median_final_net_worth=selected.median_final_net_worth,
         core_target_cost=selected.core_target_cost,
+        cohort=selected.cohort,
+        evidence_summary=selected.evidence_summary,
     )

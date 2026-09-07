@@ -158,7 +158,7 @@ def test_exact_core_pool_uses_only_discovery_owners(
         "ready"
     ]
     row["path"]["order"] = [0, 1, 2, 3]
-    assert "tier" in str(
+    assert "Incomplete component purchase records" in str(
         discovery_materialize.freeze_guide(con, data, row, graph_fixture())["reason"]
     )
     con.close()

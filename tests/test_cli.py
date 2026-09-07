@@ -69,7 +69,7 @@ def test_refresh_evidence_handoff_exports_and_admits_one_artifact(
     ])
 
     assert cli_module._run_refresh_evidence(args) == 0
-    assert forwarded[0] == "--min-rank"
+    assert forwarded[:3] == ["--rank-expansion", "auto", "--min-rank"]
     assert forwarded[forwarded.index("--output") + 1] == str(
         tmp_path / "build-evidence.json"
     )
@@ -343,7 +343,10 @@ def test_sync_generates_artifacts_and_installs_without_extra_flags(
     monkeypatch.setattr(
         cli_module,
         "write_build_guides",
-        lambda *_args: calls.update({"build_files": True}),
+        lambda directory, *_args: (
+            calls.update({"build_files": True}),
+            (directory / "builds.json").write_text("{}"),
+        ),
     )
 
     def fake_narratives(argv: list[str] | None = None) -> int:
@@ -409,12 +412,13 @@ def test_sync_generates_artifacts_and_installs_without_extra_flags(
     assert (tmp_path / "artifacts/strategy-context.json").is_file()
     assert (tmp_path / "artifacts/policies.json").is_file()
     generation_args = calls["generation_args"]
-    assert generation_args == [
-        "--input",
-        str(tmp_path / "artifacts/strategy-context.json"),
-        "--output",
-        str(tmp_path / "artifacts/narratives.json"),
+    assert isinstance(generation_args, list)
+    assert generation_args[::2] == ["--input", "--output"]
+    assert [Path(str(value)).name for value in generation_args[1::2]] == [
+        "strategy-context.json",
+        "narratives.json",
     ]
+    assert Path(str(generation_args[1])).parent.name == "new"
 
 
 @pytest.mark.parametrize("command", ["preview", "install"])

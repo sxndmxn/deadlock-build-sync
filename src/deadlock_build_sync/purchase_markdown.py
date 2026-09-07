@@ -133,6 +133,7 @@ def build_markdown(guide: PurchaseGuide, *, details: bool = False) -> str:
         f"# {guide.hero_name} — {guide.build_archetype}",
         "",
         f"Build: `{guide.path_id}`. Core: {guidance.default_path.remaining_cost:,} souls.",
+        f"Ranks: {guide.rank_identity}. Evidence: {guidance.evidence.get('status', 'observed')}. Timing: {guidance.evidence.get('timing_status', 'uncertain')}. Limits: {guidance.evidence.get('limitations', [])}.",
         "",
         "Follow the core unless you need an optional effect. PICK ONE means the next purchase for that need. You can make other choices later.",
         "",
@@ -167,7 +168,10 @@ def build_markdown(guide: PurchaseGuide, *, details: bool = False) -> str:
     ])
     lines.extend(
         f"- **Tier {tier}:** "
-        + ", ".join(item.name for item in guide.tiers.get(tier, ()))
+        + (
+            ", ".join(item.name for item in guide.tiers.get(tier, ()))
+            or "No supported options are available"
+        )
         + "."
         for tier in range(1, 5)
     )

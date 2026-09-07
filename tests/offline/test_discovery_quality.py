@@ -69,6 +69,7 @@ def test_state_adjustment_removes_mixture_selection_and_sparse_overlap_abstains(
 def test_high_raw_win_rate_cannot_bypass_quality_or_multiple_testing() -> None:
     result: CoreEvaluation = {
         "owners": 500,
+        "wins": 350,
         "win_rate": 0.7,
         "joint_lift": 2,
         "win_lower_95": wilson_lower(350, 500),
@@ -76,6 +77,8 @@ def test_high_raw_win_rate_cannot_bypass_quality_or_multiple_testing() -> None:
         "adjusted": {
             "core_overlap": 450,
             "overlap_share": 0.9,
+            "difference": 0.02,
+            "standard_error": 0.005,
             "lower_95": 0.01,
             "p_greater": 0.02,
         },

@@ -109,7 +109,6 @@ def _policy(snapshot_id: str) -> BuildPolicy:
         ),
         PolicyNode("end", NodeKind.END),
     )
-    ability_ids = (10, 20, 30, 40) * 4
     ability_plan = tuple(
         PolicyNode(
             f"ability-{index}",
@@ -118,7 +117,7 @@ def _policy(snapshot_id: str) -> BuildPolicy:
             level=index,
             evidence_ref="fixture",
         )
-        for index, ability_id in enumerate(ability_ids, start=1)
+        for index, ability_id in enumerate((10, 20, 30, 40) * 4, start=1)
     )
     return BuildPolicy(
         schema_version=5,
@@ -362,8 +361,7 @@ def _write_bundle(root: Path) -> tuple[Path, Path, Path, Path]:
     evidence_path.write_bytes(raw_evidence)
     manifest = _manifest(evidence, raw_evidence)
     policy = _policy(manifest.snapshot_id)
-    categories, cost = canonical_projection(evidence_path, policy)
-    ability_ids = (10, 20, 30, 40) * 4
+    categories, cost, guidance = canonical_projection(evidence_path, policy)
     hero: dict[str, object] = {
         "hero_id": 12,
         "path_id": "default",
@@ -377,7 +375,7 @@ def _write_bundle(root: Path) -> tuple[Path, Path, Path, Path]:
         "ability_policy": {
             "selection": "MOST_SUPPORTED_LEGAL_STATE",
             "quality": AbilityPath(
-                ability_ids, 235, 135, 100, 250
+                (10, 20, 30, 40) * 4, 235, 135, 100, 250
             ).quality_assessment(),
             "all_valid_telemetry_appearances": 250,
             "complete_path_appearances": 150,
@@ -388,7 +386,7 @@ def _write_bundle(root: Path) -> tuple[Path, Path, Path, Path]:
                     "ability_id": ability_id,
                     "decision_reached_support": 250 - index,
                 }
-                for index, ability_id in enumerate(ability_ids)
+                for index, ability_id in enumerate((10, 20, 30, 40) * 4)
             ],
         },
         "core": {
@@ -397,7 +395,8 @@ def _write_bundle(root: Path) -> tuple[Path, Path, Path, Path]:
             "median_final_net_worth": 38_000,
             "core_target_cost": cost,
         },
-        "projection": {**_projection(), "guide_version": 2, "categories": categories},
+        "projection": {**_projection(), "guide_version": 3, "categories": categories},
+        "purchase_guidance": guidance,
         "explainable_actions": [
             {
                 "node_id": f"core-{index}",

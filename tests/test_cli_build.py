@@ -7,6 +7,7 @@ import pytest
 from deadlock_build_sync import cli, cli_support
 from deadlock_build_sync.cli_build import write_build_guides
 from deadlock_build_sync.purchase_guidance_types import PurchaseTiming
+from deadlock_build_sync.purchase_guide import PurchaseGuide
 from deadlock_build_sync.service import generate_guides
 from deadlock_build_sync.value_validation import (
     require_object_dict,
@@ -110,3 +111,43 @@ def test_build_alias_and_reject_missing_guidance(
         write_build_guides(
             tmp_path, [replace(generated.guides[0], purchase_guidance=None)], generated
         )
+
+
+@pytest.mark.parametrize("failure", ["render", "replace"])
+def test_failed_build_preserves_complete_current_bundle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    api = FakeApi(ability_rows=ability_rows(), duration_points=duration_points())
+    generated = generate_guides(
+        api,
+        build_evidence=build_evidence(api),
+        account_id=0,
+        hero_query="Kelvin",
+        all_heroes=False,
+    )
+    artifact = tmp_path / "artifacts"
+    artifact.mkdir()
+    for name in ("build-evidence.json", "builds.json", "narratives.json", "user-file"):
+        (artifact / name).write_text(f"previous {name}")
+    previous = {path.name: path.read_bytes() for path in artifact.iterdir()}
+
+    def render(_generated: object, staged: Path) -> list[PurchaseGuide]:
+        (staged / "builds.json").write_text("{}")
+        (staged / "narratives.json").write_text("new narrative")
+        if failure == "render":
+            raise cli.NarrativeError("description failed")
+        return generated.guides
+
+    rename = Path.rename
+
+    def fail_replace(path: Path, target: Path) -> Path:
+        if path.name == "new":
+            raise OSError("replacement failed")
+        return rename(path, target)
+
+    monkeypatch.setattr(cli, "_render_build_artifacts", render)
+    monkeypatch.setattr(Path, "rename", fail_replace)
+    with pytest.raises((OSError, cli.NarrativeError), match="failed"):
+        cli._write_build_artifacts(generated, artifact)
+    assert {path.name: path.read_bytes() for path in artifact.iterdir()} == previous
+    assert list(tmp_path.iterdir()) == [artifact]

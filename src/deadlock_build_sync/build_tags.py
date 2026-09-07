@@ -176,20 +176,11 @@ def _first_maxed_ability_id(ability_path_ids: tuple[int, ...]) -> int:
 
 
 def _core_icon_item(core_items: tuple[GuideItem, ...]) -> GuideItem:
-    candidates = tuple(item for item in core_items if item.tier == 3)
+    priority = {3: 0, 4: 1, 2: 2, 1: 3}
+    candidates = tuple(item for item in core_items if item.tier in priority)
     if not candidates:
-        candidates = tuple(item for item in core_items if item.tier == 4)
-    if not candidates:
-        raise BuildTagError("CORE has no Tier 3 or Tier 4 item for its item icon")
-    return min(
-        candidates,
-        key=lambda item: (
-            -item.observed_outcome_rate,
-            -item.adopter_matches,
-            -item.purchase_events,
-            item.item_id,
-        ),
-    )
+        raise BuildTagError("CORE has no supported item tier for its item icon")
+    return min(candidates, key=lambda item: (priority[item.tier], item.item_id))
 
 
 def _asset_identity(asset: dict[str, object], *, kind: str) -> tuple[str, str]:
@@ -243,7 +234,7 @@ def select_build_tags(
     assets: list[dict[str, object]],
     catalog: BuildTagCatalog,
 ) -> BuildTagSelection:
-    """Select the first-maxed ability, best CORE item, and build function icons.
+    """Select automatic ability, stable CORE item, and build function icons.
 
     Returns:
         The selected tag identities and player-facing archetype.

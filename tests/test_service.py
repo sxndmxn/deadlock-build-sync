@@ -61,13 +61,13 @@ def _assert_policy_projection(generated: GeneratedGuides) -> None:
         for item in row.items
     ] == [item.item_id for item in guide.core_purchase_items]
     assert not guide.categories[0].optional
-    assert guide.build_tag_ids == (10, 301, 4)
+    assert guide.build_tag_ids == (10, 300, 4)
     assert guide.build_tag_classes == (
         "ability_1",
-        "item_3_1",
+        "item_3_0",
         "citadel_build_tag_damage",
     )
-    assert guide.build_tag_labels == ("Ability 1", "Tier 3 Item 1", "Damage")
+    assert guide.build_tag_labels == ("Ability 1", "Tier 3 Item 0", "Damage")
 
 
 def _assert_strategy_context(generated: GeneratedGuides) -> None:
@@ -77,7 +77,7 @@ def _assert_strategy_context(generated: GeneratedGuides) -> None:
     ending = require_object_dict(context["ending_duration_profile"])
     ability_policy = require_object_dict(context["ability_policy"])
     ability_steps = require_object_rows(ability_policy["steps"])
-    assert build["tag_ids"] == [10, 301, 4]
+    assert build["tag_ids"] == [10, 300, 4]
     assert ending["estimand"] == "ending_duration_profile"
     assert ability_steps[0]["earliest_legal_level"] == 1
 
@@ -174,7 +174,7 @@ def test_generated_guide_is_snapshot_bound_policy_projection(
 
     normalized = json.loads(json.dumps(asdict(generated), default=_json_default))
     assert sha256_json(normalized) == (
-        "3092bea459dbaeda02a0b6bafea276a9f5a2bb1826d1dd0806a10c0c331c0514"
+        "b0d48f70e5d667eaea397e1ae8a4526f75d2741d0e61db91fec1d880838b6e75"
     )
     assert len(generated.guides) == len(generated.policies) == 1
     assert api.counter_stat_calls == [True, False]

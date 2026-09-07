@@ -64,4 +64,6 @@ def parse_substitution(
     ):
         raise ArtifactError("Core substitution differs from its admitted purchase path")
     validate_discovery(discovery, core, route)
+    if discovery.get("evidence_status") != "outcome_supported":
+        raise ArtifactError("Core substitution lacks supported outcome evidence")
     return core, route

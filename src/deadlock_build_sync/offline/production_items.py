@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 def _path_cohort_summary(
     con: duckdb.DuckDBPyConnection,
     member_ids: frozenset[tuple[int, int]],
-) -> tuple[int, int]:
+) -> tuple[int, int | None]:
     members = pl.DataFrame({
         "match_id": [identity[0] for identity in member_ids],
         "player_slot": [identity[1] for identity in member_ids],
@@ -40,9 +40,9 @@ def _path_cohort_summary(
         ).fetchone()
     finally:
         con.unregister("_build_path_members")
-    if row is None or row[1] is None:
+    if row is None:
         raise RuntimeError("build path has no cohort summary")
-    return int(row[0]), int(row[1])
+    return int(row[0]), int(row[1]) if row[1] is not None else None
 
 
 def _optional_float(value: object) -> float | None:
@@ -55,11 +55,11 @@ def _item_payload(
     fold_eligible_matches: dict[str, int],
 ) -> dict[str, object]:
     target_id = row.get("imbued_ability_id")
-    resolved_target_id = integer(target_id) if target_id is not None else None
+    target_id = integer(target_id) if target_id is not None else None
     target_matches = integer(row.get("target_matches"), default=0)
     observations = integer(row.get("imbue_observations"), default=0)
     target_share = number(row.get("target_share") or 0.0)
-    target = assets_by_id.get(resolved_target_id, {}) if resolved_target_id else {}
+    target = assets_by_id.get(target_id, {}) if target_id else {}
     target_name = target.get("name")
     target_supported = (
         isinstance(target_name, str)
@@ -75,7 +75,6 @@ def _item_payload(
     validation_adopters = integer(row["validation_adopter_matches"])
     test_adopters = integer(row["test_adopter_matches"])
     selection_adopters = integer(row["selection_adopter_matches"])
-    selection_valid_observations = integer(row["selection_valid_buy_nw_observations"])
     return {
         "item_id": integer(row["item_id"]),
         "item": str(row["item_name"]),
@@ -106,7 +105,9 @@ def _item_payload(
         "test_eligible_player_matches": test_eligible,
         "selection_adoption": selection_adopters / selection_eligible,
         "training_adoption": training_adopters / training_eligible,
-        "validation_adoption": validation_adopters / validation_eligible,
+        "validation_adoption": validation_adopters / validation_eligible
+        if validation_eligible
+        else 0.0,
         "test_adoption": test_adopters / test_eligible if test_eligible else 0.0,
         "selection_median_buy_time_s": _optional_float(
             row["selection_median_buy_time_s"]
@@ -117,11 +118,13 @@ def _item_payload(
         "selection_buy_net_worth_q25": _optional_float(row["selection_buy_nw_q25"]),
         "selection_buy_net_worth_q75": _optional_float(row["selection_buy_nw_q75"]),
         "selection_valid_buy_net_worth_share": (
-            selection_valid_observations / selection_adopters
+            integer(row["selection_valid_buy_nw_observations"]) / selection_adopters
             if selection_adopters
             else 0.0
         ),
-        "selection_valid_buy_net_worth_observations": (selection_valid_observations),
+        "selection_valid_buy_net_worth_observations": (
+            integer(row["selection_valid_buy_nw_observations"])
+        ),
         "training_valid_buy_net_worth_observations": integer(
             row["training_valid_buy_nw_observations"]
         ),
@@ -132,7 +135,7 @@ def _item_payload(
         "training_buy_net_worth_q75": _optional_float(row["training_buy_nw_q75"]),
         "validation_buy_net_worth_q25": _optional_float(row["validation_buy_nw_q25"]),
         "validation_buy_net_worth_q75": _optional_float(row["validation_buy_nw_q75"]),
-        "imbue_target_ability_id": resolved_target_id if target_supported else None,
+        "imbue_target_ability_id": target_id if target_supported else None,
         "imbue_target_ability": target_name.strip() if target_supported else None,
         "imbue_target_matches": target_matches if target_supported else 0,
         "imbue_observations": observations if target_supported else 0,

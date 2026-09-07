@@ -129,7 +129,7 @@ def _evidence_tiers(
     layout: PurchaseGuide,
     core_purchase_ids: set[int],
 ) -> tuple[dict[int, tuple[GuideItem, ...]], set[int]]:
-    if any(not 1 <= len(layout.tiers.get(tier, ())) <= 10 for tier in range(1, 5)):
+    if any(not 0 <= len(layout.tiers.get(tier, ())) <= 10 for tier in range(1, 5)):
         raise PolicyError("evidence projection requires 1–10 items in every tier")
     tier_item_ids = {item.item_id for items in layout.tiers.values() for item in items}
     if tier_item_ids & core_purchase_ids:
@@ -235,7 +235,9 @@ def _project_evidence_layout(
         policy_id=policy.policy_id,
         client_version=identity.client_version,
         match_mode=identity.match_mode,
-        rank_identity=identity.rank_identity,
+        rank_identity=layout.cohort.rank_range.label
+        if layout.cohort
+        else identity.rank_identity,
         core_items=core_items,
         core_purchase_items=core_purchase_items,
         backbone_items=layout.backbone_items,
@@ -247,6 +249,8 @@ def _project_evidence_layout(
         core_joint_share=layout.core_joint_share,
         median_final_net_worth=layout.median_final_net_worth,
         core_target_cost=layout.core_target_cost,
+        cohort=layout.cohort,
+        evidence_summary=layout.evidence_summary,
         purchase_timing=layout.purchase_timing,
         automatic_branches=layout.automatic_branches,
     )

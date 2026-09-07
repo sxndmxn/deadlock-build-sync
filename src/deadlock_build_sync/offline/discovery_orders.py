@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from deadlock_build_sync.build_support import SUPPORT
 from deadlock_build_sync.mechanics import (
     InventoryState,
     ItemGraph,
@@ -19,7 +20,7 @@ from deadlock_build_sync.offline.purchase_order import (
     _ranked_agreement_orders,
 )
 
-from .discovery_config import ORDER_MINIMUM, ORDER_SHARE
+from .discovery_config import ORDER_MINIMUM
 from .discovery_ownership import ownership
 from .discovery_patterns import prefixspan
 
@@ -48,7 +49,7 @@ def order_evidence(
         "owners": len(times),
         "ordered_owners": count,
         "share": share,
-        "passes": count >= ORDER_MINIMUM and share >= ORDER_SHARE,
+        "passes": SUPPORT.order_supported(len(times), count),
     }
 
 
@@ -113,6 +114,7 @@ def choose_order(
     times = core_times(data, items, "discovery")
     ranked = ranked_orders(times, items, method)
     illegal = 0
+    unsupported = 0
     for score, order in ranked:
         try:
             actions = expanded_path(order, graph)
@@ -121,6 +123,9 @@ def choose_order(
             continue
         discovery = order_evidence(times, items, order)
         selection = order_evidence(core_times(data, items, "selection"), items, order)
+        if not discovery["passes"] or not selection["passes"]:
+            unsupported += 1
+            continue
         return {
             "method": method,
             "order": order,
@@ -144,5 +149,5 @@ def choose_order(
         "illegal_orders_skipped": illegal,
         "reason": "No observed full order"
         if not ranked
-        else "No mechanically legal order",
+        else f"No supported legal order ({illegal} illegal, {unsupported} unsupported)",
     }

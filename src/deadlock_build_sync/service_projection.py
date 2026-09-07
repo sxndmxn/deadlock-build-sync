@@ -40,12 +40,28 @@ def _project_hero_guide(
         environment.assets,
         environment.manifest,
     )
+    if inputs.analytic_guide.cohort is not None:
+        policy = replace(
+            policy,
+            evidence=tuple(
+                replace(
+                    claim,
+                    cohort={
+                        **claim.cohort,
+                        "rank_range": inputs.analytic_guide.cohort.rank_range.as_dict(),
+                    },
+                )
+                for claim in policy.evidence
+            ),
+        )
     identity = ProjectionIdentity(
         hero_name=inputs.analytic_guide.hero_name,
         hero_class_name=inputs.analytic_guide.hero_class_name,
         client_version=environment.manifest.client_version,
         match_mode=environment.manifest.match_mode.value,
-        rank_identity=environment.rank_identity,
+        rank_identity=inputs.analytic_guide.cohort.rank_range.label
+        if inputs.analytic_guide.cohort
+        else environment.rank_identity,
     )
     projected = project_policy_to_guide(
         policy,
@@ -85,7 +101,9 @@ def _project_hero_guide(
         policy_id=policy.policy_id,
         client_version=environment.manifest.client_version,
         match_mode=environment.manifest.match_mode.value,
-        rank_identity=environment.rank_identity,
+        rank_identity=inputs.analytic_guide.cohort.rank_range.label
+        if inputs.analytic_guide.cohort
+        else environment.rank_identity,
         analysis_start_timestamp=environment.manifest.epochs.analysis_start_timestamp,
         as_of_timestamp=environment.manifest.as_of_timestamp,
     )
@@ -94,7 +112,7 @@ def _project_hero_guide(
         inputs.hero,
         environment.assets,
         inputs.duration_curve,
-        environment.duration_distribution,
+        inputs.duration_distribution or environment.duration_distribution,
         kit=inputs.kit,
         ability_timeline=inputs.ability_timeline,
         policy=policy,

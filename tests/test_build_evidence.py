@@ -27,14 +27,17 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-def test_rejects_previous_build_evidence_schema(tmp_path: Path) -> None:
+@pytest.mark.parametrize("schema", [6, 10])
+def test_rejects_previous_build_evidence_schema(tmp_path: Path, schema: int) -> None:
     path = tmp_path / "build-evidence.json"
     document = _document()
-    document["schema_version"] = 6
+    document["schema_version"] = schema
     _refingerprint(document)
     _write(path, document)
 
-    with pytest.raises(ArtifactError, match="unsupported build-evidence schema"):
+    with pytest.raises(
+        ArtifactError, match=r"unsupported build-evidence schema.*refresh-evidence"
+    ):
         load_build_evidence(path)
 
 
@@ -139,7 +142,7 @@ def test_loads_supported_observed_imbue_target(tmp_path: Path) -> None:
     assert loaded.imbue_target_share == 0.75
 
 
-def test_selection_rejects_policy_core_above_median_final_net_worth(
+def test_selection_keeps_supported_core_when_median_wealth_is_lower(
     tmp_path: Path,
 ) -> None:
     path = tmp_path / "build-evidence.json"
@@ -148,8 +151,8 @@ def test_selection_rejects_policy_core_above_median_final_net_worth(
     catalog = load_build_evidence(path)
     hero = catalog.heroes[13]
     assets = _assets()
-    with pytest.raises(ArtifactError, match="exceeds cohort wealth"):
-        select_hero_build(hero, assets)
+    selected = select_hero_build(hero, assets)
+    assert selected.core_target_cost > 10_000
 
 
 def test_sparse_supported_tiers_do_not_require_filler(tmp_path: Path) -> None:

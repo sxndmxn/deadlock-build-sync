@@ -6,6 +6,7 @@ import math
 
 from .artifacts import ArtifactError
 from .build_evidence_values import _required_int
+from .build_support import SUPPORT
 from .value_validation import object_dict, object_list
 
 
@@ -27,19 +28,21 @@ def validate_frozen_pool(
     ):
         raise ArtifactError("Item pool differs from frozen discovery evidence")
     population = _required_int(
-        frozen.get("discovery_buyers"), "discovery buyers", minimum=100
+        frozen.get("discovery_buyers"), "discovery buyers", minimum=SUPPORT.core_owners
     )
     seen: set[int] = set()
     path = object_list(frozen.get("path")) or []
     for raw in pool.values():
         items = object_list(raw)
-        if items is None or not 1 <= len(items) <= 10:
+        if items is None or len(items) > SUPPORT.pool_limit:
             raise ArtifactError("Frozen discovery pool exceeds its tier limits")
         for value in items:
             item = _required_int(value, "pool item", minimum=1)
             stats = object_dict(statistics.get(str(item))) or {}
             buyers = _required_int(
-                stats.get("buyers"), "discovery item buyers", minimum=20
+                stats.get("buyers"),
+                "discovery item buyers",
+                minimum=SUPPORT.pool_buyers,
             )
             adoption = stats.get("adoption")
             if (

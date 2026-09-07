@@ -331,7 +331,9 @@ def _reconstruct_guides(
             policies[build_key],
             evidence,
             manifest=context.manifest,
-            rank_identity=context.rank_identity,
+            rank_identity=evidence.cohort.rank_range.label
+            if evidence.cohort
+            else context.rank_identity,
             assets=list(build_evidence.assets),
         )
         guides.append(

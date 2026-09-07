@@ -1,4 +1,4 @@
-"""Common observational outcome gate; raw win rates alone cannot admit a core."""
+"""Measure observational outcomes without using them to reject supported cores."""
 
 from __future__ import annotations
 
@@ -8,12 +8,16 @@ from typing import TYPE_CHECKING
 import numpy as np
 from scipy.stats import binomtest, norm
 
+from deadlock_build_sync.build_support import outcome_limitations as rejection_reasons
+
 from .discovery_ownership import joint_lift, ownership
 
 if TYPE_CHECKING:
     from .discovery_data import HeroData
 
 from .discovery_types import Adjusted, CoreEvaluation
+
+__all__ = ["evaluate_core", "rejection_reasons", "standardized", "wilson_lower"]
 
 
 def wilson_lower(wins: int, count: int, z: float = 1.96) -> float:
@@ -46,8 +50,7 @@ def standardized(core: np.ndarray, won: np.ndarray, strata: np.ndarray) -> Adjus
     if overlap < 100:
         return result
     weights = common_counts[:, 1] / overlap
-    rates = common_wins / common_counts
-    adjusted = weights @ rates
+    adjusted = weights @ (common_wins / common_counts)
     smoothed = (common_wins + 0.5) / (common_counts + 1)
     variance = float(
         (weights[:, None] ** 2 * smoothed * (1 - smoothed) / common_counts).sum()
@@ -80,6 +83,13 @@ def evaluate_core(data: HeroData, items: tuple[int, ...], fold: str) -> CoreEval
     matrix, won = data.matrix[rows], data.won[rows]
     owned = ownership(matrix, columns)
     count, wins = int(owned.sum()), int(won[owned].sum())
+    observed = np.isfinite(data.wealth[rows]) & np.isfinite(data.lead[rows])
+    adjusted = standardized(
+        owned[observed],
+        won[observed],
+        state_strata(data, rows & np.isfinite(data.wealth) & np.isfinite(data.lead)),
+    )
+    adjusted["overlap_share"] = adjusted["core_overlap"] / max(1, count)
     return {
         "fold": fold,
         "rows": len(won),
@@ -95,32 +105,5 @@ def evaluate_core(data: HeroData, items: tuple[int, ...], fold: str) -> CoreEval
         )
         if count
         else 1.0,
-        "adjusted": standardized(owned, won, state_strata(data, rows)),
+        "adjusted": adjusted,
     }
-
-
-def rejection_reasons(
-    result: CoreEvaluation, hypotheses: int | None = None
-) -> list[str]:
-    adjusted = result["adjusted"]
-    reasons = []
-    if result["owners"] < 100:
-        reasons.append("fewer than 100 core owners")
-    if result["win_rate"] is None or result["win_rate"] < 0.52:
-        reasons.append("observed win rate below 52%")
-    if result["joint_lift"] < 1.1:
-        reasons.append("joint ownership lift below 1.1")
-    if adjusted["core_overlap"] < 100 or adjusted["overlap_share"] < 0.8:
-        reasons.append("insufficient comparable-state overlap")
-    if hypotheses is None:
-        if result["win_lower_95"] <= 0.5:
-            reasons.append("win lower bound does not exceed 50%")
-        if adjusted["lower_95"] is None or adjusted["lower_95"] <= 0:
-            reasons.append("adjusted lower bound does not exceed zero")
-    else:
-        threshold = 0.025 / max(1, hypotheses)
-        if result["win_p_greater_half"] > threshold:
-            reasons.append("win evidence fails family correction")
-        if adjusted["p_greater"] > threshold:
-            reasons.append("adjusted evidence fails family correction")
-    return reasons

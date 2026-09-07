@@ -28,7 +28,7 @@ class _FakeConnection:
         self.inserted: Sequence[Sequence[object]] = ()
         self.closed = False
 
-    def execute(self, query: str) -> _FakeConnection:
+    def execute(self, query: str, _parameters: object = None) -> _FakeConnection:
         self.queries.append(query)
         if self.failures:
             raise self.failures.pop(0)
@@ -108,6 +108,8 @@ def test_extract_cohort_runs_all_stages_exports_and_cleanup(
     counts = extract_module.extract_cohort(paths, _cohort())
 
     assert counts == {
+        "extracted_minimum_badge": 71,
+        "source_snapshot_version": 7,
         "player_matches": 7,
         "match_folds": 7,
         "purchases": 7,
@@ -121,7 +123,7 @@ def test_extract_cohort_runs_all_stages_exports_and_cleanup(
     assert fake.closed
     assert not temporary.exists()
     assert len(fake.inserted) == 1
-    assert sum("COPY" in query for query in fake.queries) == 11
+    assert sum("COPY" in query for query in fake.queries) == 12
     assert any("decision_opportunities" in query for query in fake.queries)
 
 

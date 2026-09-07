@@ -20,6 +20,7 @@ from .purchase_guide import (
     guide_item_from_evidence,
 )
 from .renderer import ProjectionIdentity, project_policy_to_guide
+from .snapshot import sha256_json
 from .value_validation import integer, object_dict
 
 if TYPE_CHECKING:
@@ -52,7 +53,7 @@ def _hero_identity(hero: dict[str, object], policy: BuildPolicy) -> tuple[str, s
 
 def _core_evidence(
     hero: dict[str, object], policy: BuildPolicy
-) -> tuple[int, float, int, int]:
+) -> tuple[int, float, int | None, int]:
     core = hero.get("core")
     if not isinstance(core, dict):
         raise ArtifactBundleError(f"hero {policy.hero_id} has no core evidence")
@@ -64,13 +65,13 @@ def _core_evidence(
         raise ArtifactBundleError(f"hero {policy.hero_id} has invalid core evidence")
     if not isinstance(joint_share, (int, float)) or not 0.0 < float(joint_share) <= 1.0:
         raise ArtifactBundleError(f"hero {policy.hero_id} has invalid core evidence")
-    if not isinstance(median_net_worth, int) or median_net_worth <= 0:
-        raise ArtifactBundleError(f"hero {policy.hero_id} has invalid core evidence")
-    if (
-        not isinstance(target_cost, int)
-        or target_cost <= 0
-        or target_cost > median_net_worth
+    if median_net_worth is not None and (
+        not isinstance(median_net_worth, int)
+        or isinstance(median_net_worth, bool)
+        or median_net_worth <= 0
     ):
+        raise ArtifactBundleError(f"hero {policy.hero_id} has invalid core evidence")
+    if not isinstance(target_cost, int) or target_cost <= 0:
         raise ArtifactBundleError(f"hero {policy.hero_id} has invalid core evidence")
     return joint_matches, float(joint_share), median_net_worth, target_cost
 
@@ -274,11 +275,15 @@ def _canonical_guide(
     raw = object_dict(hero.get("projection"))
     if (
         raw is None
-        or raw.get("guide_version") != 2
+        or raw.get("guide_version") != 3
         or raw.get("categories") != category_records(guide.rendered_categories)
+        or sha256_json(hero.get("purchase_guidance"))
+        != sha256_json(
+            guide.purchase_guidance.as_dict() if guide.purchase_guidance else None
+        )
     ):
         raise ArtifactBundleError(
-            "Artifact categories differ from the canonical purchase guide; run build again"
+            "Artifact categories differ from the canonical purchase guide; run deadlock-build-sync refresh-evidence, then build again"
         )
     _, _, _, target_cost = _core_evidence(hero, policy)
     if target_cost != guide.core_target_cost:

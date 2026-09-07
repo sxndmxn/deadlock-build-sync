@@ -37,6 +37,9 @@ def discovery_record(core: list[int], path: list[int]) -> dict[str, object]:
         "method": "eclat_leiden_pairwise",
         "items": sorted(core),
         "selection_rank": 0,
+        "discovery_support": 200,
+        "evidence_status": "outcome_supported",
+        "evidence_limitations": [],
         "test_evaluated": False,
         "selection": outcome,
         "validation": outcome,
@@ -59,11 +62,32 @@ def discovery_record(core: list[int], path: list[int]) -> dict[str, object]:
 def current_document(
     document: dict[str, object], assets: list[dict[str, object]]
 ) -> dict[str, object]:
-    document["schema_version"] = 10
+    document["schema_version"] = 11
     require_object_dict(document["method"])["version"] = "eclat-leiden-pairwise-v1"
+    require_object_dict(document["method"])["minimum_core_item_count"] = 3
+    require_object_dict(document["method"])["minimum_core_support"] = 100
     document["mechanics_assets"] = assets
     document["items_sha256"] = sha256_json(assets)
+    cohort = require_object_dict(document["cohort"])
     for hero in require_object_rows(document["heroes"]):
+        hero["cohort"] = {
+            "minimum_badge": cohort["minimum_badge"],
+            "maximum_badge": cohort["maximum_badge"],
+            "rank_expansion": "auto",
+            "expansion_history": [
+                {
+                    "minimum_badge": cohort["minimum_badge"],
+                    "maximum_badge": cohort["maximum_badge"],
+                    "discovery_rows": 600,
+                    "selection_rows": 200,
+                    "candidate_count": 3,
+                    "discovery_owners": 200,
+                    "selection_owners": 200,
+                    "supported_builds": len(require_object_rows(hero["builds"])),
+                    "reason": "supported build available",
+                }
+            ],
+        }
         for build in require_object_rows(hero["builds"]):
             core = [
                 integer(item)

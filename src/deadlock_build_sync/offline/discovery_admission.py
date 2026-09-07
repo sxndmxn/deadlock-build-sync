@@ -12,7 +12,13 @@ def admit_core(
     values: HeroData, row: Nomination, family: int, frozen_hash: str
 ) -> Nomination:
     validation = evaluate_core(values, tuple(row["items"]), "validation")
-    reasons = rejection_reasons(validation, family)
+    limitations = [
+        f"selection: {reason}" for reason in rejection_reasons(row["selection"])
+    ]
+    limitations.extend(
+        f"validation: {reason}" for reason in rejection_reasons(validation, family)
+    )
+    reasons = list(row["selection_rejections"])
     adjusted = validation["adjusted"]
     validation["adjusted_lower_family"] = (
         adjusted["difference"]
@@ -25,14 +31,20 @@ def admit_core(
         row["items"],
         row["path"]["order"],
     )
-    if not row["path"]["admitted_before_validation"] or not ordered["passes"]:
-        reasons.append("Frozen order lacks discovery, selection, or validation support")
+    if not ordered["passes"]:
+        limitations.append("validation: frozen order lacks support")
+    if not row["path"]["admitted_before_validation"]:
+        reasons.append("Frozen order lacks discovery or selection support")
     if not row["tactics"]["supported_focus"]:
-        reasons.append(row["tactics"]["reason"] or "Unsupported mechanics")
+        limitations.append(
+            row["tactics"]["reason"] or "Mechanic text match is unavailable"
+        )
     if not row["guide"]["ready"]:
         reasons.append(row["guide"]["reason"] or "Unsupported guide")
     return {
         **row,
+        "evidence_status": "observed" if limitations else "outcome_supported",
+        "evidence_limitations": limitations,
         "validation": validation,
         "order_validation": ordered,
         "hypotheses": family,

@@ -5,7 +5,9 @@ from __future__ import annotations
 from typing import TypedDict
 
 type PatternCounts = dict[tuple[int, ...], int]
-type LandmarkRow = tuple[int, int, str, bool, float, float, int, float, list[int]]
+type LandmarkRow = tuple[
+    int, int, str, bool, float | None, float | None, int, float | None, list[int] | None
+]
 type PurchaseRow = tuple[int, int, int, int, float | None, int | None]
 
 
@@ -126,6 +128,7 @@ class Placement(TypedDict):
 
 
 class FrozenGuide(TypedDict, total=False):
+    timing_status: str
     ready: bool
     reason: str | None
     path: list[int]
@@ -145,6 +148,8 @@ class Tactics(TypedDict):
 
 
 class Nomination(Candidate, total=False):
+    evidence_status: str
+    evidence_limitations: list[str]
     hero_id: int
     selection_rank: int
     path: Order
@@ -160,6 +165,7 @@ class Nomination(Candidate, total=False):
 
 
 class FrozenHero(TypedDict):
+    cohort: dict[str, object]
     rows: list[Nomination]
     candidate_count: int
     grouping: Grouping

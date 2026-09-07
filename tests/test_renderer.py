@@ -194,7 +194,7 @@ def test_projection_separates_default_queue_from_optional_branch() -> None:
     guide = projected_guide()
 
     assert sha256_json(asdict(guide)) == (
-        "a3da4b95a6e934a5429bb9032a9907861b5f9b811a36496c7abc435cb6588165"
+        "f89e4d7ed74a0f4d4111a9646b4aecb333a181aa66d24cef43c68b0f4144cef0"
     )
     assert [category.optional for category in guide.categories] == [False, True]
     assert [item.item_id for item in guide.categories[0].items] == [1]

@@ -10,6 +10,7 @@ from deadlock_build_sync.build_evidence import (
     load_build_evidence,
     select_hero_build,
 )
+from deadlock_build_sync.build_evidence_loader import BuildEvidenceIdentity
 from deadlock_build_sync.ranks import DEFAULT_RANK_RANGE
 from deadlock_build_sync.snapshot import (
     MatchMode,
@@ -72,7 +73,9 @@ def test_loader_rejects_repeated_default_path_item(tmp_path: Path) -> None:
         load_build_evidence(path)
 
 
-def test_selection_rejects_default_path_outside_soul_windows(tmp_path: Path) -> None:
+def test_selection_preserves_legal_order_with_uncertain_soul_windows(
+    tmp_path: Path,
+) -> None:
     path = tmp_path / "build-evidence.json"
     document = _document()
     build = require_object_rows(require_object_rows(document["heroes"])[0]["builds"])[0]
@@ -85,8 +88,12 @@ def test_selection_rejects_default_path_outside_soul_windows(tmp_path: Path) -> 
     catalog = load_build_evidence(path)
     hero = catalog.heroes[13]
     assets = _assets()
-    with pytest.raises(ArtifactError, match="first-ownership soul windows"):
-        select_hero_build(hero, assets)
+    selected = select_hero_build(hero, assets)
+    assert hero.sequence_policy is not None
+    assert (
+        tuple(item.item_id for item in selected.core_purchase_path)
+        == hero.sequence_policy.default_path
+    )
 
 
 def test_compatibility_rejects_identity_drift(tmp_path: Path) -> None:
@@ -101,28 +108,32 @@ def test_compatibility_rejects_identity_drift(tmp_path: Path) -> None:
     with pytest.raises(ArtifactError, match="patch"):
         assert_build_evidence_compatible(
             catalog,
-            patch_identity="new-patch",
-            client_version=6_673,
-            as_of_timestamp=catalog.as_of_timestamp,
-            match_mode=MatchMode.RANKED,
-            rank_range=DEFAULT_RANK_RANGE,
-            rank_catalog=rank_catalog,
-            heroes=heroes,
-            assets=assets,
-            epochs=epochs,
+            BuildEvidenceIdentity(
+                patch_identity="new-patch",
+                client_version=6_673,
+                as_of_timestamp=catalog.as_of_timestamp,
+                match_mode=MatchMode.RANKED,
+                rank_range=DEFAULT_RANK_RANGE,
+                rank_catalog=rank_catalog,
+                heroes=heroes,
+                assets=assets,
+                epochs=epochs,
+            ),
         )
 
     assert_build_evidence_compatible(
         catalog,
-        patch_identity=PATCH_IDENTITY,
-        client_version=6_673,
-        as_of_timestamp=catalog.as_of_timestamp,
-        match_mode=MatchMode.RANKED,
-        rank_range=DEFAULT_RANK_RANGE,
-        rank_catalog=_rank_catalog(),
-        heroes=heroes,
-        assets=_assets(),
-        epochs=_epochs(),
+        BuildEvidenceIdentity(
+            patch_identity=PATCH_IDENTITY,
+            client_version=6_673,
+            as_of_timestamp=catalog.as_of_timestamp,
+            match_mode=MatchMode.RANKED,
+            rank_range=DEFAULT_RANK_RANGE,
+            rank_catalog=_rank_catalog(),
+            heroes=heroes,
+            assets=_assets(),
+            epochs=_epochs(),
+        ),
     )
 
 

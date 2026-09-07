@@ -253,6 +253,7 @@ def test_support_decodes_location_catalog_epochs_and_api(
 
     monkeypatch.setattr(cli_support, "DeadlockApi", api_factory)
     api_args = Namespace(
+        rank_expansion="auto",
         api_base_url="https://example.invalid",
         min_rank=DEFAULT_RANK_RANGE.minimum,
         max_rank=DEFAULT_RANK_RANGE.maximum,

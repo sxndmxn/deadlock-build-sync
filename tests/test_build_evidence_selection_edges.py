@@ -175,7 +175,6 @@ def test_tier_selection_checks_core_overlap_and_order(tmp_path: Path) -> None:
             hero,
             1,
             {first},
-            set(),
             graph=graph,
             visible_higher_tier_ids=set(graph.nodes),
         )
@@ -187,7 +186,6 @@ def test_tier_selection_checks_core_overlap_and_order(tmp_path: Path) -> None:
         build_evidence_selection._tier_selection(
             reordered,
             1,
-            set(),
             set(),
             graph=graph,
             visible_higher_tier_ids=set(graph.nodes),

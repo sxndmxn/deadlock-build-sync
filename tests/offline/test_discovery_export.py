@@ -12,6 +12,7 @@ from deadlock_build_sync.offline import discovery_export as producer
 from deadlock_build_sync.offline import discovery_materialize as materialize
 from deadlock_build_sync.offline.config import RunPaths
 from deadlock_build_sync.offline.discovery_admission import admit_core, discovery_record
+from deadlock_build_sync.offline.discovery_quality import evaluate_core
 from deadlock_build_sync.value_validation import (
     integer,
     require_object_dict,
@@ -91,25 +92,26 @@ def test_roster_freezes_selection_before_validation_and_reports_exclusions(
         lambda _con, _values, row, _assets: {
             "path_id": row["identity_id"],
             "rank": row["selection_rank"],
+            "evidence_status": row["evidence_status"],
         },
     )
     result = producer.discover_roster([{"id": 6, "name": "Test Hero"}], context)[0]
+    builds = require_object_rows(result["builds"])
+    assert 1 <= len(builds) <= 3
+    assert [row["rank"] for row in builds] == sorted(
+        integer(row["rank"]) for row in builds
+    )
+    assert result["exclusion"] is None
     if losing_validation:
-        assert result["builds"] == []
-        assert require_object_dict(result["exclusion"])["candidate_rejections"]
-    else:
-        builds = require_object_rows(result["builds"])
-        assert 1 <= len(builds) <= 3
-        assert [row["rank"] for row in builds] == sorted(
-            integer(row["rank"]) for row in builds
-        )
-        assert result["exclusion"] is None
+        assert all(row["evidence_status"] == "observed" for row in builds)
 
 
 def test_admission_cannot_bypass_order_mechanics_or_pool_failures() -> None:
     values = planted_data()
     row: Nomination = {
         "items": [0, 1, 2, 3],
+        "selection": evaluate_core(values, (0, 1, 2, 3), "selection"),
+        "selection_rejections": [],
         "path": {"order": [0, 1, 2, 3], "admitted_before_validation": False},
         "tactics": {
             **supported_tactics(),
@@ -119,7 +121,8 @@ def test_admission_cannot_bypass_order_mechanics_or_pool_failures() -> None:
         "guide": {"ready": False, "reason": "Empty pool"},
     }
     result = admit_core(values, row, 10, "frozen")
-    assert len(result["rejections"]) == 3
+    assert len(result["rejections"]) == 2
+    assert "Unsupported mechanics" in result["evidence_limitations"]
     record = discovery_record(result)
     assert record["test_evaluated"] is False
     assert "automatic_choices" not in record

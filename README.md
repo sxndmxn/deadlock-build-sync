@@ -24,13 +24,16 @@ The rich output is a typed, snapshot-bound policy graph:
 - A mechanically legal level/AP ability timeline selected from equivalent reached
   legal states, with support reported at each decision. Price tiers are never treated
   as equal “quarters” of that timeline.
-- Eclat discovers exact four-to-six-item cores. Leiden groups related cores.
+- Eclat first discovers exact four-to-six-item cores, then uses existing three-item
+  seeds if no supported legal path is available. Leiden groups related cores.
   Pairwise purchase ordering supplies the component path. Whole matches are split
   by time. Candidates, ranking, paths, pools, and branch conditions are frozen
   before validation. The reserved test split is not used for admission.
-- Up to three distinct identities per hero can pass the fixed support, outcome,
-  overlap, corrected uncertainty, order, and mechanics checks. The first admitted
-  identity in the frozen selection ranking is the default.
+- Up to three distinct identities per hero can pass support, purchase-order, and
+  mechanics checks. Each core needs 100 owners in discovery and 100 in selection.
+  The first usable identity in the frozen selection ranking is the default.
+  Separate outcome checks set `outcome_supported` or `observed` evidence status.
+  Weak or negative outcome estimates do not remove a supported legal build.
 - Four item pools use discovery buyers who owned that exact core. Each item needs
   at least 20 buyers. Each tier has up to ten items. Every matching option stays
   visible. Buyer win rates describe the data; they do not rank pool items.
@@ -157,8 +160,8 @@ typed guide and purchase planner.
 
 `refresh-evidence` records strict adjacent purchase counts from the discovery
 buyers of each exact core. A position needs at least 20 buyers and 10% of the
-item's buyers. Missing or weak timing stays unknown. Evidence schema 10 and guide
-schema 2 are required. Older artifacts must be refreshed and rebuilt.
+item's buyers. Missing or weak timing stays unknown. Evidence schema 11 and guide
+schema 3 are required. Older artifacts must be refreshed and rebuilt.
 See [the default build contract](docs/default-build-system.md).
 
 ```bash
@@ -400,10 +403,15 @@ validation still apply.
 
 ## Rank cohorts
 
-Every analytics endpoint uses one validated rank range. Following the current
-Ranked calibration reset, the default is `emissary-i` through `eternus-v`.
-Override either boundary with symbolic
-rank names only when the build-evidence artifact was exported for the same range:
+Each hero uses its recorded effective rank range in analytics, guides, and
+recommendations. The starting range is `emissary-i` through `eternus-v`.
+`refresh-evidence` and generation commands accept `--rank-expansion auto|off`.
+The default is `auto`. `--min-rank` sets the starting cutoff. If a hero has no
+supported legal build, the producer lowers that hero's cutoff one tier at a time
+through Initiate. The upper cutoff, source snapshot, patch, and time range stay
+fixed. Expansion stops at the first range with a supported build. It does not
+seek better wins or more identities. `off` uses only the requested range.
+Use the same starting boundaries for refresh and generation:
 
 ```bash
 uv run deadlock-build-sync preview --all \
@@ -432,12 +440,14 @@ in-game description.
 - Layered mechanics, analytics, policy, description, projection, and whole-document
   fingerprints bound to the complete source manifest.
 
-Every hero requires a supported, mechanically legal four-to-nine-item core at or below
-its median final net worth, at least one adequately supported non-CORE option in each
-price tier, complete current mechanics, a complete ability projection, a duration
-estimate or explicit duration abstention, and policy validation. Every omission
-receives a structured exclusion; all-hero installation fails on any exclusion rather
-than silently shipping a partial roster.
+Every hero requires a supported legal core, complete purchase records, current
+mechanics, a complete ability projection, a duration estimate or explicit duration
+abstention, and policy validation. Optional pool tiers can be empty. The guide
+then shows that no supported options are available. Conflicting timing estimates
+are uncertain; the legal purchase order stays fixed. Missing optional economy or
+enemy observations disable the affected estimates and choices.
+Missing requested heroes cause generation to fail. A failed refresh or build
+preserves the current artifact bundle.
 
 Installation rejects an artifact when patch identity, snapshot, client version,
 match mode, rank labels, policy, context, narrative basis, generator version, hero

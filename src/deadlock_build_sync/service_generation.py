@@ -7,6 +7,7 @@ from .build_evidence import (
     METHOD_VERSION,
     assert_build_evidence_compatible,
 )
+from .build_evidence_loader import BuildEvidenceIdentity
 from .build_tags import BuildTagCatalog, BuildTagError
 from .mechanics import (
     ItemGraph,
@@ -65,15 +66,17 @@ def generate_guides(
     try:
         assert_build_evidence_compatible(
             build_evidence,
-            patch_identity=patch.identity,
-            client_version=client_version,
-            as_of_timestamp=api.as_of_timestamp,
-            match_mode=api.match_mode,
-            rank_range=api.rank_range,
-            rank_catalog=rank_catalog,
-            heroes=heroes,
-            assets=assets,
-            epochs=api.epochs_for_patch(patch),
+            BuildEvidenceIdentity(
+                patch_identity=patch.identity,
+                client_version=client_version,
+                as_of_timestamp=api.as_of_timestamp,
+                match_mode=api.match_mode,
+                rank_range=api.rank_range,
+                rank_catalog=rank_catalog,
+                heroes=heroes,
+                assets=assets,
+                epochs=api.epochs_for_patch(patch),
+            ),
         )
     except ArtifactError as error:
         raise GuideError(str(error)) from error

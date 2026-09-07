@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from deadlock_build_sync import recommendation, recommendation_state
+from deadlock_build_sync.hero_cohort import HeroCohort
 from deadlock_build_sync.mechanics import InventoryState, ItemGraph
 from deadlock_build_sync.policy import NodeKind, PolicyDecision, PolicyNode
 from deadlock_build_sync.recommendation import (
@@ -21,6 +22,22 @@ from tests.recommendation_fixtures import (
     expanded_assets,
     state,
 )
+from tests.test_hero_support_contract import _cohort
+
+
+def test_recommendation_uses_effective_hero_rank_range() -> None:
+    evidence = catalog()
+    hero = replace(evidence.heroes[12], cohort=HeroCohort.parse(_cohort()))
+    expanded = replace(evidence, heroes={12: hero})
+    for badge in (61, 71, 115):
+        recommendation._validate_evidence_identity(expanded, state(average_badge=badge))
+    for badge in (60, 116):
+        with pytest.raises(RecommendationError, match="outside the evidence cohort"):
+            recommendation._validate_evidence_identity(
+                expanded, state(average_badge=badge)
+            )
+    with pytest.raises(RecommendationError, match="outside the evidence cohort"):
+        recommendation._validate_evidence_identity(evidence, state(average_badge=61))
 
 
 def _state_document() -> dict[str, object]:

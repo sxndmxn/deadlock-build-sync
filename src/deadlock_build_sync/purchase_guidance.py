@@ -108,6 +108,8 @@ def attach_purchase_guidance(
         choices,
         decisions,
         {item: node.name for item, node in graph.nodes.items()},
+        cohort=guide.cohort.as_dict() if guide.cohort else {},
+        evidence=guide.evidence_summary,
         automatic_branches=tuple(
             replace(
                 branch,

@@ -108,15 +108,7 @@ def purchase_categories(guide: PurchaseGuide) -> tuple[GuideCategory, ...]:
         if card.after_step is None:
             result.extend(_choice_rows(guidance, card, items[card.item_id]))
     result.extend(_core_alternatives(guide))
-    result.extend(
-        GuideCategory(
-            f"ITEM POOL | TIER {tier}",
-            guide.tiers.get(tier, ()),
-            "Optional items. These tiers are not a purchase order.",
-            optional=True,
-        )
-        for tier in range(1, 5)
-    )
+    result.extend(_pool_rows(guide))
     queued = tuple(
         item.item_id
         for category in result
@@ -218,3 +210,17 @@ def _conditional_rows(
             for part in split_guidance(instruction)
         )
     return result
+
+
+def _pool_rows(guide: PurchaseGuide) -> list[GuideCategory]:
+    return [
+        GuideCategory(
+            f"ITEM POOL | TIER {tier}",
+            guide.tiers.get(tier, ()),
+            "Optional items. These tiers are not a purchase order."
+            if guide.tiers.get(tier)
+            else "No supported options are available.",
+            optional=True,
+        )
+        for tier in range(1, 5)
+    ]

@@ -115,7 +115,7 @@ def _policy_support(
         fold: _required_int(
             raw_folds.get(fold),
             f"{fold} {label} support",
-            minimum=0 if fold == "test" else MINIMUM_CORE_SUPPORT,
+            minimum=MINIMUM_CORE_SUPPORT if fold == "train" else 0,
         )
         for fold in ("train", "validation", "test")
     }
@@ -221,9 +221,9 @@ def _tier_policy(
             _required_int(item_id, "tier policy item id", minimum=1)
             for item_id in raw_item_ids
         )
-        if not 1 <= len(item_ids) <= TIER_ITEM_COUNT or len(item_ids) != len(
-            set(item_ids)
-        ):
+        if not (0 if discovery_pool else 1) <= len(item_ids) <= TIER_ITEM_COUNT or len(
+            item_ids
+        ) != len(set(item_ids)):
             raise ArtifactError(f"hero {hero_id} has invalid Tier {tier} membership")
         for item_id in item_ids:
             item = by_id.get(item_id)

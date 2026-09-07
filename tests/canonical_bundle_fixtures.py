@@ -24,7 +24,7 @@ def fixture_kit() -> dict[str, object]:
 
 def canonical_projection(
     path: Path, policy: BuildPolicy
-) -> tuple[list[dict[str, object]], int]:
+) -> tuple[list[dict[str, object]], int, dict[str, object]]:
     catalog = load_build_evidence(path)
     assets = list(catalog.assets)
     kit = fixture_kit()
@@ -44,4 +44,9 @@ def canonical_projection(
         layout_source=layout,
     )
     guide = attach_purchase_guidance(guide, assets)
-    return category_records(guide.rendered_categories), guide.core_target_cost
+    assert guide.purchase_guidance is not None
+    return (
+        category_records(guide.rendered_categories),
+        guide.core_target_cost,
+        guide.purchase_guidance.as_dict(),
+    )

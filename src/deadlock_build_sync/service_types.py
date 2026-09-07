@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from .power_curve import (
@@ -50,6 +50,9 @@ class _HeroInputs:
     duration_curve: tuple[HeroDurationStat, ...]
     matchups: dict[str, list[dict[str, object]]]
     situational_policy: SituationalPolicy | None
+    duration_distribution: dict[str, dict[str, float | int]] = field(
+        default_factory=dict
+    )
 
 
 def _duration_distribution(
