@@ -32,6 +32,10 @@ data.
 
 ## Architecture boundaries
 
+- Follow the dependency layers and public interfaces in `tach.toml` and
+  [docs/architecture.md](docs/architecture.md). Do not add a dependency only to
+  silence a Tach error. Review the owner and dependency direction first.
+
 - `api.py`, `purchase_guide.py`, `ability_order.py`, and `power_curve.py` own
   deterministic analytics.
 - `strategy_context.py` owns exported evidence and fingerprints.

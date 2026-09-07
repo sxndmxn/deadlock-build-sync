@@ -61,9 +61,12 @@ inside the product dependency check. Arrow conversion and timezone support
 load `pyarrow` and `pytz` indirectly; these are the only unused-import exceptions.
 
 [Tach](https://docs.gauge.sh/usage/configuration/) checks imports within `src`,
-including type-only imports, against `tach.toml`. Only the main CLI may invoke
-the offline producer. The producer may use shared runtime modules. Unused
-dependency declarations and circular module dependencies fail the check.
+including type-only imports, against the [module boundaries](architecture.md)
+in `tach.toml`. Six ordered layers require explicit dependencies. Only the main
+CLI may invoke the offline producer. Runtime guide code cannot import Steam
+storage or CLI code. Cache interfaces limit installation and restore access to
+their command owners. Unused dependency declarations, upward imports, circular
+module dependencies, unused ignores, and ignores without reasons fail the check.
 Deptry also scans the packaged narrative script. Comparison dependency manifests
 remain separate from these product checks.
 Do not run `tach sync` to admit an unintended import. Review boundary changes.
