@@ -8,7 +8,8 @@ if TYPE_CHECKING:
     import duckdb
 
 import math
-from dataclasses import asdict
+from collections import Counter
+from dataclasses import asdict, dataclass
 from statistics import NormalDist
 
 import polars as pl
@@ -30,6 +31,12 @@ from deadlock_build_sync.value_validation import (
 from .core_policy_dr import cross_fitted_dr_contrast
 from .discovery_types import Nomination
 from .late_game import reconstruct_final_inventory
+
+
+@dataclass(frozen=True)
+class ChoiceObservation:
+    row: dict[str, object]
+    conditions: set[tuple[str, str | int]]
 
 
 def decision_rows(
@@ -250,14 +257,15 @@ def freeze_choice(
         and row["item_id"] in {item, comparator}
         and legal_at(row, nominee, item, checkpoint, graph)
     ]
-    triggers = set().union(*(conditions(row) for row in discovery))
+    counts = Counter(
+        (condition, trigger, integer(row["item_id"]))
+        for row in discovery
+        for condition, trigger in conditions(row)
+    )
+    triggers = {(condition, trigger) for condition, trigger, _action in counts}
     for condition, trigger in sorted(triggers, key=str):
-        selected = [row for row in discovery if (condition, trigger) in conditions(row)]
         if (
-            min(
-                sum(row["item_id"] == action for row in selected)
-                for action in (item, comparator)
-            )
+            min(counts[condition, trigger, action] for action in (item, comparator))
             >= 20
         ):
             result.append({
@@ -279,10 +287,11 @@ def evaluate_candidates(
 ) -> dict[str, object]:
     admitted, audit = [], []
     critical = NormalDist().inv_cdf(1 - 0.025 / max(1, hypotheses))
+    choice_rows: dict[tuple[int, int, int], list[ChoiceObservation]] = {}
     for candidate in candidates:
         item = integer(candidate["item_id"])
         comparator = integer(candidate["comparator_item_id"])
-        frame = comparison_frame(rows, nominee, candidate, graph)
+        frame = comparison_frame(rows, nominee, candidate, graph, choice_rows)
         if any(
             sum(
                 row["fold"] == fold and row["item_id"] == action
@@ -380,20 +389,27 @@ def comparison_frame(
     nominee: Nomination,
     candidate: dict[str, object],
     graph: ItemGraph,
+    choice_rows: dict[tuple[int, int, int], list[ChoiceObservation]],
 ) -> pl.DataFrame:
     item, checkpoint, comparator = (
         integer(candidate["item_id"]),
         integer(candidate["after_step"]),
         integer(candidate["comparator_item_id"]),
     )
+    key = item, checkpoint, comparator
+    if key not in choice_rows:
+        choice_rows[key] = [
+            ChoiceObservation(row, conditions(row))
+            for row in rows
+            if row["item_id"] in {item, comparator}
+            and row.get("relative_wealth") is not None
+            and legal_at(row, nominee, item, checkpoint, graph)
+        ]
     selected = [
-        row
-        for row in rows
-        if row["item_id"] in {item, comparator}
-        and row.get("relative_wealth") is not None
-        and (str(candidate["condition"]), candidate["value"]) in conditions(row)
-        and legal_at(row, nominee, item, checkpoint, graph)
-        and substitution_legal(row, candidate, graph)
+        observation.row
+        for observation in choice_rows[key]
+        if (str(candidate["condition"]), candidate["value"]) in observation.conditions
+        and substitution_legal(observation.row, candidate, graph)
     ]
     if not selected:
         return pl.DataFrame(

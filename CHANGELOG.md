@@ -3,13 +3,14 @@
 ## Unreleased
 
 - Make Eclat, Leiden, and pairwise purchase ordering the normal build producer.
-  Use exact-core discovery buyers for all item pools. Keep up to three admitted
-  identities per hero and preserve installed builds for excluded heroes.
+  Use exact-core discovery buyers for all item pools. Keep every supported,
+  legal discovered identity, with no build-count limit per hero. The v2 selection
+  method requires a refresh of evidence from the former capped method.
 - Use one purchase guide for Steam rows, Markdown, JSON, recommendations, and
   installation checks. Keep only the validated component path in automatic Queue.
 - Add selected optional items, placement overrides, actual inventory planning,
   wealth and enemy conditions, and separately admitted core substitutions.
-- Require evidence schema 10, guide schema 2, state schema 3, and context schema 16.
+- Require evidence schema 11, guide schema 3, state schema 3, and context schema 16.
   Old evidence must be refreshed and rebuilt.
 - Move comparison code and historical reports to `tools/comparisons`. Normal
   commands and the installed wheel do not require that directory.

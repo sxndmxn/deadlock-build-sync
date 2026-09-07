@@ -63,7 +63,7 @@ def current_document(
     document: dict[str, object], assets: list[dict[str, object]]
 ) -> dict[str, object]:
     document["schema_version"] = 11
-    require_object_dict(document["method"])["version"] = "eclat-leiden-pairwise-v1"
+    require_object_dict(document["method"])["version"] = "eclat-leiden-pairwise-v2"
     require_object_dict(document["method"])["minimum_core_item_count"] = 3
     require_object_dict(document["method"])["minimum_core_support"] = 100
     document["mechanics_assets"] = assets

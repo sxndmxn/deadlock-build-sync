@@ -43,8 +43,9 @@ file records the complete comparison family before validation starts.
 
 Candidates with an adjusted selection estimate come first, ordered by lower bound,
 owner count, then item IDs. Candidates without an estimate follow, ordered by owner
-count and item IDs. The search continues until up to three distinct usable
-identities are found. A failed candidate does not use an identity slot.
+count and item IDs. The search checks every candidate and keeps the first usable
+build from each identity group. There is no build-count limit per hero. Failed
+candidates do not prevent later candidates in the same group from being checked.
 The first usable identity is the default. Validation changes evidence status; it
 does not change frozen identities, order, paths, pools, or branch candidates.
 Missing requested heroes and malformed artifacts cause generation to fail. The
@@ -62,7 +63,9 @@ histories remain available.
 ## One purchase guide
 
 Evidence schema 11, purchase-guide schema 3, and decision-state schema 3 are
-required. Old or incompatible evidence must be refreshed and rebuilt:
+required. Selection method `eclat-leiden-pairwise-v2` removes the former three-build
+limit. Evidence from the capped method is rejected with a refresh instruction.
+Old or incompatible evidence must be refreshed and rebuilt:
 
 ```bash
 deadlock-build-sync refresh-evidence

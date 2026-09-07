@@ -57,7 +57,7 @@ def supported_tactics(*_args: object) -> Tactics:
 
 
 @pytest.mark.parametrize("losing_validation", [False, True])
-def test_roster_freezes_selection_before_validation_and_reports_exclusions(
+def test_roster_freezes_all_identities_before_validation_and_reports_exclusions(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, losing_validation: bool
 ) -> None:
     paths = RunPaths.create(tmp_path, "frozen")
@@ -79,10 +79,9 @@ def test_roster_freezes_selection_before_validation_and_reports_exclusions(
         frozen = list(paths.run.glob("discovery-nominations-*.json"))
         assert len(frozen) == 1
         document = require_object_dict(json.loads(frozen[0].read_text()))
-        assert (
-            "validation"
-            not in require_object_rows(require_object_dict(document["6"])["rows"])[0]
-        )
+        rows = require_object_rows(require_object_dict(document["6"])["rows"])
+        assert family == len(rows) == 6
+        assert all("validation" not in candidate for candidate in rows)
         return original(data, row, family, digest)
 
     monkeypatch.setattr(producer, "admit_core", checked)
@@ -97,7 +96,8 @@ def test_roster_freezes_selection_before_validation_and_reports_exclusions(
     )
     result = producer.discover_roster([{"id": 6, "name": "Test Hero"}], context)[0]
     builds = require_object_rows(result["builds"])
-    assert 1 <= len(builds) <= 3
+    assert len(builds) == 6
+    assert len({row["path_id"] for row in builds}) == 6
     assert [row["rank"] for row in builds] == sorted(
         integer(row["rank"]) for row in builds
     )

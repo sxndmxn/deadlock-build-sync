@@ -84,7 +84,7 @@ def _validate_attempt(
     ):
         _required_int(attempt.get(key), key)
     builds = _required_int(attempt.get("supported_builds"), "supported builds")
-    if not 0 <= builds <= 3 or (bool(builds) != last):
+    if bool(builds) != last:
         raise ArtifactError("Hero expanded after support or has no supported build")
     if attempt.get("reason") != (
         "supported build available" if last else "no supported legal path"

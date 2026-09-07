@@ -173,7 +173,7 @@ def _hero_builds(value: object) -> tuple[int, tuple[HeroBuildEvidence, ...]]:
     if not raw_builds:
         exclusion_reason(document.get("exclusion"))
         return hero_id, ()
-    if len(raw_builds) > 3 or document.get("exclusion") is not None:
+    if document.get("exclusion") is not None:
         raise ArtifactError(f"hero {hero_id} has conflicting build admission")
     cohort = HeroCohort.parse(document.get("cohort"))
     builds = tuple(

@@ -191,8 +191,6 @@ def _usable_identities(
         row["tactics"] = explain(hero, row["items"], context.normal_assets)
         rows.append(row)
         used.add(membership[index])
-        if len(rows) == 3:
-            break
     return rows
 
 

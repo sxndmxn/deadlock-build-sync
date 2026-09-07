@@ -112,6 +112,34 @@ def test_missing_optional_observations_disable_affected_automatic_choices() -> N
     assert {row["condition"] for row in candidates} == {"relative_wealth"}
 
 
+def test_branch_support_counts_each_action_and_discovery_condition_once() -> None:
+    _, graph = guidance_fixture()
+    base = decisions()[0]
+    rows = [
+        {
+            **base,
+            "fold": fold,
+            "item_id": item,
+            "enemy_heroes": [42, 42],
+            "enemy_items": [8, 8],
+        }
+        for fold, item, count in (
+            ("train", 7, 20),
+            ("train", 2, 19),
+            ("validation", 2, 100),
+        )
+        for _ in range(count)
+    ]
+    assert not branches.freeze_candidates(rows, nominee(), graph)
+    rows.append({**base, "fold": "train", "item_id": 2})
+    candidates = branches.freeze_candidates(rows, nominee(), graph)
+    assert [(row["condition"], row["value"]) for row in candidates] == [
+        ("enemy_hero", 42),
+        ("enemy_item", 8),
+        ("relative_wealth", "behind"),
+    ]
+
+
 def test_failed_branch_estimation_keeps_manual_choices(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -133,6 +161,39 @@ def test_failed_branch_estimation_keeps_manual_choices(
         "bad": float("inf"),
         "values": (1, float("nan")),
     }) == {"bad": None, "values": [1, None]}
+
+
+def test_branch_comparisons_keep_conditions_checkpoints_and_substitutions_separate() -> (
+    None
+):
+    _, graph = guidance_fixture()
+    base = decisions()[0]
+    rows = [
+        {**base, "match_id": match, "item_id": item, "enemy_heroes": [enemy]}
+        for match, item, enemy in ((1, 7, 42), (2, 2, 43), (3, 7, 43), (4, 2, 42))
+    ]
+    rows.extend(
+        {**base, "match_id": match, "item_id": item, "owned_before": []}
+        for match, item in ((5, 7), (6, 1))
+    )
+    candidate = {
+        "item_id": 7,
+        "after_step": 2,
+        "comparator_item_id": 2,
+        "condition": "enemy_hero",
+        "value": 42,
+    }
+    cache: dict[tuple[int, int, int], list[branches.ChoiceObservation]] = {}
+    for changes, expected in (
+        ({}, [1, 4]),
+        ({"value": 43}, [2, 3]),
+        ({"after_step": 0, "comparator_item_id": 1}, [5, 6]),
+        ({"substitution": {"core": [99], "path": [99]}}, []),
+    ):
+        frame = branches.comparison_frame(
+            rows, nominee(), {**candidate, **changes}, graph, cache
+        )
+        assert frame["match_id"].to_list() == expected
 
 
 def test_context_indicators_and_constant_group_imbalance_are_checked() -> None:
