@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from .purchase_guidance_types import PurchaseTiming
     from .snapshot import EpochSet
 
-BUILD_EVIDENCE_SCHEMA_VERSION = 11
+BUILD_EVIDENCE_SCHEMA_VERSION = 12
 MAXIMUM_CORE_ITEM_COUNT = 9
 TIER_ITEM_COUNT = SUPPORT.pool_limit
 MINIMUM_TIER_SUPPORT = SUPPORT.pool_buyers
@@ -26,7 +26,7 @@ MAXIMUM_TIER_ADOPTION_DRIFT = 0.10
 MINIMUM_PURCHASE_WINDOW_COVERAGE = 0.50
 MINIMUM_PURCHASE_WINDOW_OBSERVATIONS = 20
 MINIMUM_CORE_SUPPORT = 20
-METHOD_VERSION = "eclat-leiden-pairwise-v2"
+METHOD_VERSION = "eclat-leiden-pairwise-v3"
 SEQUENCE_POLICY_VERSION = 3
 SITUATIONAL_POLICY_VERSION = 2
 CORE_POLICY_VERSION = 3
@@ -257,6 +257,7 @@ class HeroBuildEvidence:
     purchase_timing: tuple[PurchaseTiming, ...] = ()
     automatic_branches: tuple[AutomaticBranch, ...] = ()
     cohort: HeroCohort | None = None
+    guide_group_id: str = ""
 
 
 @dataclass(frozen=True)

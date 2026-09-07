@@ -6,14 +6,13 @@ import pytest
 
 from deadlock_build_sync import cli, cli_support
 from deadlock_build_sync.cli_build import write_build_guides
-from deadlock_build_sync.purchase_guidance_types import PurchaseTiming
 from deadlock_build_sync.purchase_guide import PurchaseGuide
 from deadlock_build_sync.service import generate_guides
 from deadlock_build_sync.value_validation import (
     require_object_dict,
     require_object_rows,
 )
-from tests.service_evidence_fixtures import build_evidence
+from tests.service_evidence_fixtures import build_evidence, grouped_build_evidence
 from tests.service_fake_api import FakeApi, ability_rows, duration_points
 
 
@@ -28,15 +27,7 @@ def test_normal_build_generates_full_files_without_steam(
     for asset in api._assets:
         if asset["id"] in {102, 104}:
             asset["description"] = "Grants bullet resist."
-    evidence = build_evidence(api)
-    hero = evidence.heroes[12]
-    timing = tuple(
-        PurchaseTiming(item, 35, (25, *(0 for _ in hero.core_policy.default_item_ids)))
-        for values in hero.tier_policy.item_ids_by_tier.values()
-        for item in values
-    )
-    hero = replace(hero, purchase_timing=timing)
-    evidence = replace(evidence, heroes={12: hero}, hero_builds={12: (hero,)})
+    evidence = grouped_build_evidence(api)
     monkeypatch.setattr(
         cli,
         "_current_evidence",

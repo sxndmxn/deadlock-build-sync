@@ -62,8 +62,8 @@ def discovery_record(core: list[int], path: list[int]) -> dict[str, object]:
 def current_document(
     document: dict[str, object], assets: list[dict[str, object]]
 ) -> dict[str, object]:
-    document["schema_version"] = 11
-    require_object_dict(document["method"])["version"] = "eclat-leiden-pairwise-v2"
+    document["schema_version"] = 12
+    require_object_dict(document["method"])["version"] = "eclat-leiden-pairwise-v3"
     require_object_dict(document["method"])["minimum_core_item_count"] = 3
     require_object_dict(document["method"])["minimum_core_support"] = 100
     document["mechanics_assets"] = assets
@@ -89,6 +89,7 @@ def current_document(
             ],
         }
         for build in require_object_rows(hero["builds"]):
+            build["guide_group_id"] = build["path_id"]
             core = [
                 integer(item)
                 for item in require_object_list(

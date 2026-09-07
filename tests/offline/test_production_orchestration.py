@@ -351,7 +351,7 @@ def test_export_production_evidence_writes_closed_document(
     assert document["requested_hero_ids"] == [7]
     assert len(str(document["artifact_id"])) == 64
     assert sha256_json(document) == (
-        "7fd753a4f4633d50bd295fb255e59ae847ea18e50830c22ceec8fdc1100ad5db"
+        "f0bbf318ef4846b248a9cad9b69782baa7e77573fdb82a8eaa75fb82f5a2c0be"
     )
     assert fake.closed
     previous = target.read_bytes()

@@ -170,4 +170,9 @@ def generate_guides(
         persona=persona,
         patch=patch,
         manifest=manifest,
+        guide_groups={
+            (hero_id, build.path_id): build.guide_group_id or build.path_id
+            for hero_id, builds in build_evidence.hero_builds.items()
+            for build in builds
+        },
     )

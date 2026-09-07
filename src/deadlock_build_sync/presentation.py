@@ -189,6 +189,10 @@ def build_presentation(
             f"Evidence: {guide.evidence_summary['status']}. Timing: {guide.evidence_summary['timing_status']}.",
             f"Evidence limits: {guide.evidence_summary['limitations']}.",
         ])
+    if guide.variant_guides:
+        lines.append(
+            f"{len(guide.variant_guides) + 1} supported variants. Queue: default only. Choose one complete variant before purchase; see VARIANT rows."
+        )
     ability_summary = _ability_summary(guide)
     if ability_summary is not None:
         lines.append(ability_summary)

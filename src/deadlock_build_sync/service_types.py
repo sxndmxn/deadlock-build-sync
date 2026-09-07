@@ -39,6 +39,7 @@ class GeneratedGuides:
     persona: str
     patch: Patch
     manifest: SnapshotManifest
+    guide_groups: dict[tuple[int, str], str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

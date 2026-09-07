@@ -158,6 +158,14 @@ def _validate_catalog(catalog: BuildEvidenceCatalog) -> None:
     _ = catalog.as_of_timestamp
     if catalog.as_of_timestamp < catalog.epochs.analysis_start_timestamp:
         raise ArtifactError("build evidence as-of cutoff precedes an epoch boundary")
+    for builds in catalog.hero_builds.values():
+        groups: dict[str, list[HeroBuildEvidence]] = {}
+        for build in builds:
+            groups.setdefault(build.guide_group_id, []).append(build)
+        for group_id, members in groups.items():
+            default = min(members, key=lambda build: discovery_rank(build.discovery))
+            if group_id != default.path_id:
+                raise ArtifactError("Guide group differs from its frozen default")
 
 
 def load_build_evidence(path: Path) -> BuildEvidenceCatalog:

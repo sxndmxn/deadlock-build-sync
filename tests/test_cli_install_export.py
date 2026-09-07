@@ -372,6 +372,7 @@ def test_support_preview_uses_the_install_serializer(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     guide = cast("PurchaseGuide", SimpleNamespace(purchase_guidance=None))
+    monkeypatch.setattr(cli_support, "group_record", lambda _guide: {"variants": []})
     generated = cast(
         "GeneratedGuides",
         SimpleNamespace(
@@ -405,6 +406,7 @@ def test_support_preview_uses_the_install_serializer(
     assert cli_support._describe_preview_guide(guide, generated, account_id=7) == {
         "guide": True,
         "purchase_guidance": None,
+        "guide_group": {"variants": []},
     }
     assert calls == [
         (

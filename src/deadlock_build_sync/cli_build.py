@@ -6,6 +6,7 @@ from hashlib import sha256
 from typing import TYPE_CHECKING
 
 from .artifacts import atomic_write_bytes, atomic_write_json
+from .guide_groups import group_record
 from .purchase_markdown import build_markdown
 
 if TYPE_CHECKING:
@@ -39,6 +40,10 @@ def write_build_guides(
             "policy_id": guide.policy_id,
             "markdown": f"{stem}.md",
             "purchase_guidance": guide.purchase_guidance.as_dict(),
+            "guide_group": group_record(guide),
+            "variant_path_ids": [
+                member.path_id for member in (guide, *guide.variant_guides)
+            ],
             "item_pool": {
                 str(tier): [item.item_id for item in items]
                 for tier, items in guide.tiers.items()
@@ -49,7 +54,7 @@ def write_build_guides(
     atomic_write_json(
         output / "guides.json",
         {
-            "schema_version": 1,
+            "schema_version": 2,
             "snapshot_manifest": generated.manifest.as_dict(),
             "guides": entries,
         },
@@ -58,13 +63,14 @@ def write_build_guides(
     atomic_write_json(
         directory / "builds.json",
         {
+            "schema_version": 2,
             "snapshot_id": generated.manifest.snapshot_id,
             "directory": str(output),
             "guides": [
                 {
                     key: value
                     for key, value in entry.items()
-                    if key != "purchase_guidance"
+                    if key not in {"purchase_guidance", "guide_group"}
                 }
                 for entry in entries
             ],

@@ -10,6 +10,7 @@ from .build_evidence import (
     evidence_record_sha256,
     load_build_evidence,
 )
+from .guide_groups import group_guides
 from .narratives import apply_narrative, load_narrative_catalog
 from .policy import BuildPolicy
 from .ranks import Rank, RankDivision, RankRange, RankTier
@@ -402,7 +403,14 @@ def load_artifact_guide_bundle(
         _GuideReconstructionContext(manifest, rank_identity, patch, catalog),
     )
     return ArtifactGuideBundle(
-        guides=guides,
+        guides=group_guides(
+            guides,
+            {
+                (hero_id, build.path_id): build.guide_group_id
+                for hero_id, builds in build_evidence.hero_builds.items()
+                for build in builds
+            },
+        ),
         snapshot_manifest=manifest,
         patch=patch,
         rank_range=rank_range,

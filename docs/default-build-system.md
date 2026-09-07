@@ -60,11 +60,36 @@ estimates are uncertain and retain the legal order. Missing economy and enemy
 observations disable affected estimates and choices, while complete purchase
 histories remain available.
 
-## One purchase guide
+## Guide groups and variants
 
-Evidence schema 11, purchase-guide schema 3, and decision-state schema 3 are
-required. Selection method `eclat-leiden-pairwise-v2` removes the former three-build
-limit. Evidence from the capped method is rejected with a refresh instruction.
+Publication groups the frozen exact-core nominations using their shared item IDs.
+An edge requires at least two common items and an item Jaccard score of at least
+0.5. The existing Leiden routine uses that score as its edge weight, resolution 1,
+ten iterations, and seeds 42, 43, and 44. Deterministic complete-link merging
+requires agreement from at least two seeds for every pair in a group. Members do
+not need a direct item edge between every pair. Canonical item ordering keeps the
+result stable when input rows change order.
+
+The member with the best frozen selection rank supplies the default Queue and
+group ID. Group names use the two most common core items, with item IDs breaking
+ties. Grouping does not read validation results or combine support counts.
+The producer saves the groups before validation. No group or variant count limit
+applies. Each exact core retains its original path, costs, support, evidence
+status, ability order, and discovery-buyer pools.
+
+Markdown lists compact changes from the default. Detailed Markdown and JSON
+contain every complete variant. Steam keeps one default Queue, optional variant
+rows, and the complete union of variant pools. Pool notes identify the applicable
+variant numbers. Each source pool still has at most ten items per tier; its
+displayed union can contain more. Empty tiers remain explicit. Select one full
+variant before purchase. Automatic changes during a match still require the
+existing branch and core-substitution evidence.
+
+Evidence schema 12, purchase-guide schema 3, and decision-state schema 3 are
+required. Method `eclat-leiden-pairwise-v3` adds frozen publication groups.
+Guide indexes use schema 2 and contain group records with schema 1. Each group
+record retains all canonical purchase guides. Evidence from earlier methods is
+rejected with a refresh instruction.
 Old or incompatible evidence must be refreshed and rebuilt:
 
 ```bash
@@ -78,7 +103,8 @@ steps, in their validated order. Optional instructions appear between these step
 with `OPTIONAL`, `PICK ONE`, or `UPGRADE` labels. Instructions give the trigger,
 checkpoint, route, extra cost, core resume point, and any required component rebuy.
 Rows are split at the 240-byte UTF-8 limit without removing text or options. The
-item hover remains the two-line statistics card.
+default pool item hover remains the two-line statistics card. Variant pool notes
+give the variant scope and refer to that variant's timing and cost details.
 
 Timing requires 20 adjacent first-purchase observations and 10% of that item's
 discovery buyers. Unsupported timing remains explicit. The item stays in the pool

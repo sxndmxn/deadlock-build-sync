@@ -16,6 +16,7 @@ from .cache import (
     discover_cache,
     install_guides,
 )
+from .guide_groups import group_guides, group_record
 from .narratives import (
     NarrativeCatalog,
     load_narrative_catalog,
@@ -203,6 +204,7 @@ def _install_generated_guides(
     guides: list[PurchaseGuide],
     generated: GeneratedGuides,
 ) -> InstallResult:
+    guides = group_guides(guides, generated.guide_groups)
     return _install_and_record(
         location,
         guides,
@@ -302,4 +304,5 @@ def _describe_preview_guide(
     described["purchase_guidance"] = (
         guide.purchase_guidance.as_dict() if guide.purchase_guidance else None
     )
+    described["guide_group"] = group_record(guide)
     return described

@@ -35,6 +35,10 @@ The rich output is a typed, snapshot-bound policy graph:
   The first usable identity in the frozen selection ranking is the default.
   Separate outcome checks set `outcome_supported` or `observed` evidence status.
   Weak or negative outcome estimates do not remove a supported legal build.
+- Related exact cores appear in one guide group with a default Queue and compact
+  variant choices. Shared core items determine the groups. Item mechanics explain
+  their names. Each variant keeps its own complete path, evidence, and item pool.
+  There is no fixed limit on groups or variants.
 - Four item pools use discovery buyers who owned that exact core. Each item needs
   at least 20 buyers. Each tier has up to ten items. Every matching option stays
   visible. Buyer win rates describe the data; they do not rank pool items.
@@ -152,18 +156,26 @@ Use `--format json` for structured output. `uv sync` installs dependencies;
 it does not create hero builds.
 
 Both `build` and `sync` write `builds.json` in the artifact directory. It points
-to `builds/<snapshot-id>/INDEX.md`, one Markdown guide per build, detailed guides,
+to `builds/<snapshot-id>/INDEX.md`, one Markdown guide per group, detailed guides,
 and `guides.json`. Each guide shows the core purchase path, all eligible choices,
 component costs and rebuys, and the full tiered item pool. `PICK ONE` means the
 next purchase for one need. It does not limit the number of choices in a match.
 Steam, Markdown, JSON, recommendations, and artifact installation use the same
 typed guide and purchase planner.
+The main guide lists changes from its default core. The details file and
+`guides.json` keep every variant's full purchase path, costs, support, and pool.
+Steam shows optional variant rows and pool items marked with their variant numbers.
+Choose a complete variant before purchase. A manual variant is not evidence for
+an automatic core substitution during a match.
 
 `refresh-evidence` records strict adjacent purchase counts from the discovery
 buyers of each exact core. A position needs at least 20 buyers and 10% of the
-item's buyers. Missing or weak timing stays unknown. Evidence schema 11 and guide
-schema 3 are required. Older artifacts must be refreshed and rebuilt.
+item's buyers. Missing or weak timing stays unknown. Evidence schema 12 and
+purchase-guide schema 3 are required. Guide indexes use schema 2; their group
+records use schema 1. Older evidence must be refreshed and rebuilt.
 See [the default build contract](docs/default-build-system.md).
+The [current verification report](docs/consolidated-hero-verification-2026-09-07.md)
+records 140 guide groups, all 761 supported variants, and complete coverage of 38 heroes.
 
 ```bash
 uv run deadlock-build-sync refresh-evidence

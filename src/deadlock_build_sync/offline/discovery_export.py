@@ -10,12 +10,13 @@ from threadpoolctl import threadpool_limits
 
 from deadlock_build_sync.hero_cohort import HeroCohort, ranked_cutoffs
 from deadlock_build_sync.snapshot import sha256_json
-from deadlock_build_sync.value_validation import integer
+from deadlock_build_sync.value_validation import integer, require_object_rows
 
 from .discovery_admission import admit_core
 from .discovery_branches import checkpoint_rows, evaluate_candidates, freeze_candidates
 from .discovery_data import HeroData, load_data, prepare_partitions
 from .discovery_fit import discover_hero
+from .discovery_guide_groups import guide_group_ids
 from .discovery_materialize import build_payload, freeze_guide
 from .discovery_orders import choose_order
 from .discovery_substitutions import freeze_substitutions, validated_candidates
@@ -46,6 +47,7 @@ def discover_roster(
         for item, node in graph.nodes.items()
     }
     frozen: dict[int, FrozenHero] = {}
+    guide_groups: dict[int, dict[str, str]] = {}
     data: dict[int, HeroData] = {}
     try:
         prepare_partitions(con)
@@ -55,11 +57,18 @@ def discover_roster(
                 data[hero_id], frozen[hero_id] = _freeze_hero(
                     con, hero, context, catalog
                 )
+                guide_groups[hero_id] = guide_group_ids(frozen[hero_id]["rows"])
         # Save the entire family before accessing any validation outcome.
         frozen_path = (
             context.paths.run / f"discovery-nominations-{sha256_json(frozen)[:16]}.json"
         )
         frozen_path.write_text(json.dumps(frozen, allow_nan=False), encoding="utf-8")
+        frozen_path.with_name(
+            f"guide-groups-{sha256_json(frozen)[:16]}.json"
+        ).write_text(
+            json.dumps({"frozen_sha256": sha256_json(frozen), "groups": guide_groups}),
+            encoding="utf-8",
+        )
         family = max(1, sum(len(value["rows"]) for value in frozen.values()))
         branch_family = max(
             1,
@@ -79,6 +88,8 @@ def discover_roster(
                 context,
                 ValidationFamily(family, branch_family, sha256_json(frozen)),
             )
+            for build in require_object_rows(result["builds"]):
+                build["guide_group_id"] = guide_groups[hero_id][str(build["path_id"])]
             output.append(result)
             print(f"Validated {hero['name']}", flush=True)
         return output

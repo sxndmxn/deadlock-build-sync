@@ -126,9 +126,13 @@ def _build_path(
         discovery, core_policy.default_item_ids, sequence_policy.default_path
     )
     validate_frozen_pool(document, discovery)
+    group_id = document.get("guide_group_id")
+    if not isinstance(group_id, str) or not group_id:
+        raise ArtifactError("Build has no guide group; run refresh-evidence")
     return HeroBuildEvidence(
         hero_id=hero_id,
         hero=hero_name,
+        guide_group_id=group_id,
         eligible_player_matches=eligible,
         selection_eligible_player_matches=selection,
         fold_eligible_player_matches=folds,

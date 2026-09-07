@@ -54,9 +54,15 @@ def merge_complete(weights: np.ndarray, eligible: np.ndarray) -> list[list[int]]
 
 
 def consolidate(
-    candidates: list[Candidate], matrix: np.ndarray, items: tuple[int, ...]
+    candidates: list[Candidate],
+    matrix: np.ndarray | None = None,
+    items: tuple[int, ...] = (),
 ) -> Grouping:
-    weights = similarities(candidates, matrix, items)
+    weights = (
+        item_similarities(candidates)
+        if matrix is None
+        else similarities(candidates, matrix, items)
+    )
     first, second = np.nonzero(np.triu(weights > 0, 1))
     graph = igraph.Graph(
         n=len(candidates), edges=list(zip(first.tolist(), second.tolist(), strict=True))
@@ -80,7 +86,10 @@ def consolidate(
     for assignment in assignments:
         labels = np.asarray(assignment["membership"])
         votes += labels[:, None] == labels[None, :]
-    groups = merge_complete(weights, (weights > 0) & (votes >= 2))
+    eligible = votes >= 2
+    if matrix is not None:
+        eligible &= weights > 0
+    groups = merge_complete(weights, eligible)
     return {
         "groups": groups,
         "seeds": assignments,
@@ -95,3 +104,14 @@ def consolidate(
         ],
         "candidate_order": [row["items"] for row in candidates],
     }
+
+
+def item_similarities(candidates: list[Candidate]) -> np.ndarray:
+    cores = [set(row["items"]) for row in candidates]
+    weights = np.eye(len(cores))
+    for first, second in combinations(range(len(cores)), 2):
+        shared = len(cores[first] & cores[second])
+        score = shared / len(cores[first] | cores[second])
+        if shared >= 2 and score >= 0.5:
+            weights[first, second] = weights[second, first] = score
+    return weights

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from .guide_groups import VARIANT_RULE, variant_changes
 from .purchase_categories import choice_instruction, conditional_instruction
 
 if TYPE_CHECKING:
@@ -139,9 +140,9 @@ def build_markdown(guide: PurchaseGuide, *, details: bool = False) -> str:
         "",
         "Core prices are incremental. Optional +cost includes components and rebuys. An upgrade consumes its component and credits its cost.",
         "",
-        "## Purchase path and choices",
-        "",
     ]
+    lines.extend(_variant_markdown(guide))
+    lines.extend(["## Purchase path and choices", ""])
     for index in range(len(guidance.default_path.actions) + 1):
         if index:
             step = guidance.default_path.actions[index - 1]
@@ -185,4 +186,25 @@ def build_markdown(guide: PurchaseGuide, *, details: bool = False) -> str:
         + ". Automatic choices require admitted branch evidence.",
         "",
     ])
+    if details:
+        lines.extend(
+            build_markdown(variant, details=True) for variant in guide.variant_guides
+        )
     return "\n".join(lines)
+
+
+def _variant_markdown(guide: PurchaseGuide) -> list[str]:
+    if not guide.variant_guides:
+        return []
+    return [
+        "",
+        "## Core variants",
+        "",
+        VARIANT_RULE,
+        "",
+        *(
+            f"- **Variant {index}:** {variant_changes(guide, variant)}. {variant.core_target_cost:,} souls; {variant.evidence_summary.get('status', 'observed')}."
+            for index, variant in enumerate(guide.variant_guides, 1)
+        ),
+        "",
+    ]

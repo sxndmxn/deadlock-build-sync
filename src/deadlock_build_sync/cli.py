@@ -47,6 +47,7 @@ from .freshness import (
     FreshnessError,
     require_current_build_evidence,
 )
+from .guide_groups import group_guides
 from .narratives import (
     NarrativeError,
     apply_narrative,
@@ -188,6 +189,7 @@ def _render_build_artifacts(
         apply_narrative(guide, context, generated.patch, catalog)
         for guide, context in zip(generated.guides, generated.contexts, strict=True)
     ]
+    guides = group_guides(guides, generated.guide_groups)
     write_build_guides(artifact_directory, guides, generated)
     return guides
 

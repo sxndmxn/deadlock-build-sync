@@ -42,6 +42,7 @@ def _multiple_builds(count: int = 5) -> dict[str, object]:
             _document(default_item_ids=[101, 102, 201, 202, 301, 302 + rank])
         )
         build["path_id"] = f"core-{rank}"
+        build["guide_group_id"] = f"core-{rank}"
         require_object_dict(build["discovery"])["selection_rank"] = rank
         builds.append(build)
     hero["builds"] = builds

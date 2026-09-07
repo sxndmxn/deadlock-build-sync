@@ -19,6 +19,7 @@ from .cli_support import (
 from .freshness import (
     require_current_build_evidence,
 )
+from .guide_groups import group_guides
 from .purchase_markdown import build_markdown
 from .recommendation import DecisionState, RecommendationError, recommend
 from .recommendation_plan import recommendation_markdown
@@ -90,6 +91,7 @@ def _run_preview(args: argparse.Namespace) -> int:
         location.account_id,
         narrative_catalog=_catalog(args),
     )
+    guides = group_guides(generated.guides, generated.guide_groups)
     payload = {
         "account_id": location.account_id,
         "persona": generated.persona,
@@ -114,7 +116,7 @@ def _run_preview(args: argparse.Namespace) -> int:
                 generated,
                 account_id=location.account_id,
             )
-            for guide in generated.guides
+            for guide in guides
         ],
     }
     record_stage_facts(
@@ -124,10 +126,7 @@ def _run_preview(args: argparse.Namespace) -> int:
     )
     if args.format == "markdown":
         print(
-            "\n".join(
-                build_markdown(guide, details=args.details)
-                for guide in generated.guides
-            )
+            "\n".join(build_markdown(guide, details=args.details) for guide in guides)
         )
     else:
         print(json.dumps(payload, indent=2, ensure_ascii=False))

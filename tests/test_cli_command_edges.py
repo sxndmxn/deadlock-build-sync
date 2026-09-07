@@ -135,8 +135,10 @@ def test_run_preview_emits_generated_guides(
         exclusions=((13, "missing evidence"),),
         policies=(SimpleNamespace(as_dict=lambda: {"policy_id": "policy"}),),
         guides=("guide",),
+        guide_groups={},
     )
     location = SimpleNamespace(account_id=7)
+    monkeypatch.setattr(cli_recommend, "group_guides", lambda guides, _groups: guides)
     api = object()
     catalog = object()
     monkeypatch.setattr(

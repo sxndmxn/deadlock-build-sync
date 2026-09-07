@@ -105,9 +105,12 @@ class GuideItem:
     imbue_target_matches: int = 0
     imbue_observations: int = 0
     imbue_target_share: float = 0.0
+    annotation_text: str = ""
 
     @property
     def annotation(self) -> str:
+        if self.annotation_text:
+            return self.annotation_text
         if self.eligible_player_matches:
             return item_stat_context(self)
         timing = (
@@ -185,6 +188,7 @@ class PurchaseGuide:
     purchase_timing: tuple[PurchaseTiming, ...] = ()
     purchase_guidance: PurchaseGuidance | None = None
     automatic_branches: tuple[AutomaticBranch, ...] = ()
+    variant_guides: tuple[PurchaseGuide, ...] = ()
 
     @property
     def item_count(self) -> int:
