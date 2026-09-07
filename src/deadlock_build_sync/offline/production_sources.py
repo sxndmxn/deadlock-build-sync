@@ -260,16 +260,20 @@ def _path_item_metrics(
     try:
         return con.sql(
             f"""
-            WITH events AS (
+            WITH firsts AS (
+                SELECT p.* FROM first_purchases p
+                JOIN _build_path_members m USING (match_id, player_slot)
+                WHERE p.buy_time <= p.duration_s
+            ), events AS (
                 SELECT p.item_id, count(*) AS purchase_events
                 FROM purchases p
                 JOIN _build_path_members m USING (match_id, player_slot)
+                WHERE p.buy_time <= p.duration_s
                 GROUP BY p.item_id
             ), imbue_counts AS (
                 SELECT p.item_id, p.imbued_ability_id,
                        count(*) AS target_matches
-                FROM first_purchases p
-                JOIN _build_path_members m USING (match_id, player_slot)
+                FROM firsts p
                 WHERE p.imbued_ability_id > 0
                   AND p.fold IN ('train', 'validation')
                 GROUP BY p.item_id, p.imbued_ability_id
@@ -340,8 +344,7 @@ def _path_item_metrics(
                     quantile_cont(p.own_net_worth_at_buy, 0.75) FILTER (
                         WHERE p.fold = 'validation'
                     ) AS validation_buy_nw_q75
-                FROM first_purchases p
-                JOIN _build_path_members m USING (match_id, player_slot)
+                FROM firsts p
                 GROUP BY p.hero_id, p.item_id
                 HAVING count(*) >= {MINIMUM_CORE_SUPPORT}
             )

@@ -18,7 +18,8 @@ def test_test_period_cannot_change_imbues_or_alternative_shortlist() -> None:
             false AS active,
             CASE WHEN i<=25 THEN 'train' WHEN i<=50 THEN 'validation'
                  ELSE 'test' END AS fold,
-            i%2=0 AS won, 600+j AS buy_time, 10000+j AS own_net_worth_at_buy,
+            i%2=0 AS won, 600+j AS buy_time, 1800 AS duration_s,
+            10000+j AS own_net_worth_at_buy,
             CASE WHEN i<=15 OR i BETWEEN 26 AND 40 THEN 40 ELSE 41 END
                 AS imbued_ability_id
         FROM range(1,71) actors(i) CROSS JOIN range(1,8) items(j)

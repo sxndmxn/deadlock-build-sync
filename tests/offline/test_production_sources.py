@@ -152,13 +152,21 @@ def test_path_item_metrics_aggregate_fold_and_imbue_support() -> None:
             "fold": "train" if match_id <= 10 else "validation",
             "won": match_id % 2 == 0,
             "buy_time": 600 + match_id,
+            "duration_s": 1200,
             "own_net_worth_at_buy": 10_000 + match_id,
             "imbued_ability_id": 40 if match_id <= 15 else 0,
         }
         for match_id in range(1, 21)
     ]
     purchases = pl.DataFrame([
-        {"match_id": row["match_id"], "player_slot": 0, "item_id": 10} for row in rows
+        {
+            "match_id": row["match_id"],
+            "player_slot": 0,
+            "item_id": 10,
+            "buy_time": row["buy_time"],
+            "duration_s": row["duration_s"],
+        }
+        for row in rows
     ])
     con = duckdb.connect()
     try:

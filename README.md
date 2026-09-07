@@ -29,8 +29,9 @@ The rich output is a typed, snapshot-bound policy graph:
   Pairwise purchase ordering supplies the component path. Whole matches are split
   by time. Candidates, ranking, paths, pools, and branch conditions are frozen
   before validation. The reserved test split is not used for admission.
-- Up to three distinct identities per hero can pass support, purchase-order, and
-  mechanics checks. Each core needs 100 owners in discovery and 100 in selection.
+- Each distinct identity group can supply a build that passes support,
+  purchase-order, and mechanics checks. There is no fixed build-count limit per
+  hero. Each core needs 100 owners in discovery and 100 in selection.
   The first usable identity in the frozen selection ranking is the default.
   Separate outcome checks set `outcome_supported` or `observed` evidence status.
   Weak or negative outcome estimates do not remove a supported legal build.
