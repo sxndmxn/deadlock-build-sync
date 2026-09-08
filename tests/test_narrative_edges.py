@@ -10,7 +10,7 @@ import pytest
 from deadlock_build_sync import narratives
 from deadlock_build_sync.narratives import NarrativeError
 from deadlock_build_sync.value_validation import object_dict, require_object_rows
-from tests.test_narratives import (
+from tests.narrative_fixtures import (
     BASIS_ID,
     CONTEXT_ID,
     PATCH,

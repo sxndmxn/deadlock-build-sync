@@ -24,7 +24,7 @@ from deadlock_build_sync.policy import (
     PolicyNode,
     SpikeCard,
 )
-from tests.test_policy import SNAPSHOT_ID, branching_policy, context
+from tests.policy_fixtures import SNAPSHOT_ID, branching_policy, context
 
 if TYPE_CHECKING:
     from collections.abc import Callable

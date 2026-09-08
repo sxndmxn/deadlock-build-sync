@@ -14,7 +14,7 @@ from deadlock_build_sync.purchase_purposes import purpose
 from deadlock_build_sync.snapshot import sha256_json
 from tests.match_choice_fixtures import branch_document
 from tests.purchase_guidance_fixtures import guidance_assets, guidance_fixture
-from tests.test_renderer import _build_details
+from tests.rendering_fixtures import build_details
 
 if TYPE_CHECKING:
     from deadlock_build_sync.purchase_types import PurchaseGuide
@@ -58,7 +58,7 @@ def test_guidance_split_preserves_every_character(text: str) -> None:
 def _decoded_items(guide: PurchaseGuide) -> tuple[list[int | bytes], set[int | bytes]]:
     encoded = [
         field.value
-        for field in _build_details(guide)
+        for field in build_details(guide)
         if field.number == 1 and isinstance(field.value, bytes)
     ]
     queued, optional = [], set()

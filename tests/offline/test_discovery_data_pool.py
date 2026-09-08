@@ -17,7 +17,7 @@ from deadlock_build_sync.offline.discovery_pool import (
     timing_policy,
 )
 from tests.build_evidence_fixtures import _assets
-from tests.offline.test_discovery_identities import (
+from tests.offline.discovery_fixtures import (
     catalog_fixture,
     graph_fixture,
     planted_data,

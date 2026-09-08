@@ -124,3 +124,27 @@ def current_document(
     document.pop("artifact_id", None)
     document["artifact_id"] = sha256_json(document)
     return document
+
+
+def hero_cohort() -> dict[str, object]:
+    return {
+        "minimum_badge": 61,
+        "maximum_badge": 115,
+        "rank_expansion": "auto",
+        "expansion_history": [
+            {
+                "minimum_badge": minimum,
+                "maximum_badge": 115,
+                "discovery_rows": 500,
+                "selection_rows": 200,
+                "candidate_count": 3,
+                "discovery_owners": 100,
+                "selection_owners": 90 if minimum == 71 else 100,
+                "supported_builds": 0 if minimum == 71 else 1,
+                "reason": "no supported legal path"
+                if minimum == 71
+                else "supported build available",
+            }
+            for minimum in (71, 61)
+        ],
+    }

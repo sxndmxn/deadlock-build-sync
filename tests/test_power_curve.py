@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import pytest
 
 from deadlock_build_sync.api import HeroDurationStat
@@ -57,14 +59,7 @@ def test_duration_distribution_exposes_rare_tail() -> None:
     points = curve(50, 51, 52, 53, 54, 55, 56)
     curves = {
         1: tuple(
-            HeroDurationStat(
-                point.label,
-                point.min_duration_s,
-                point.max_duration_s,
-                point.wins,
-                point.losses,
-                10 if point.label == "50m+" else 100,
-            )
+            replace(point, matches=10 if point.label == "50m+" else 100)
             for point in points
         )
     }

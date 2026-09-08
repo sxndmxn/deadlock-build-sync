@@ -14,9 +14,9 @@ from deadlock_build_sync.value_validation import (
     require_object_dict,
     require_object_rows,
 )
+from tests.discovery_fixtures import hero_cohort
 from tests.service_evidence_fixtures import build_evidence
 from tests.service_fake_api import FakeApi, ability_rows, duration_points
-from tests.test_hero_support_contract import _cohort
 
 
 def test_all_hero_queries_and_claims_use_effective_ranks(
@@ -24,7 +24,7 @@ def test_all_hero_queries_and_claims_use_effective_ranks(
 ) -> None:
     api = FakeApi(ability_rows=ability_rows(), duration_points=duration_points())
     evidence = build_evidence(api)
-    cohort = HeroCohort.parse(_cohort())
+    cohort = HeroCohort.parse(hero_cohort())
     hero = replace(evidence.heroes[12], cohort=cohort)
     evidence = replace(evidence, heroes={12: hero}, hero_builds={12: (hero,)})
     queries: list[tuple[str, int]] = []

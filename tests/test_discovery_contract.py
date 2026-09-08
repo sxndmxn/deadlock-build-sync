@@ -15,8 +15,7 @@ from deadlock_build_sync.value_validation import (
 from tests.build_evidence_fixtures import (
     _document,
     _first_build,
-    _refingerprint,
-    _write,
+    write_fingerprinted_evidence,
 )
 
 if TYPE_CHECKING:
@@ -57,8 +56,7 @@ def _multiple_builds(count: int = 5) -> dict[str, object]:
 def test_catalog_loads_every_supported_identity(tmp_path: Path, count: int) -> None:
     document = _multiple_builds(count)
     path = tmp_path / "evidence.json"
-    _refingerprint(document)
-    _write(path, document)
+    write_fingerprinted_evidence(path, document)
     catalog = load_build_evidence(path)
     builds = catalog.hero_builds[13]
     assert len(builds) == count
@@ -97,8 +95,7 @@ def test_uncapped_catalog_keeps_identity_and_admission_checks(
         hero["exclusion"] = exclusion()
     hero["builds"] = builds
     path = tmp_path / "evidence.json"
-    _refingerprint(document)
-    _write(path, document)
+    write_fingerprinted_evidence(path, document)
     with pytest.raises(ArtifactError, match=error):
         load_build_evidence(path)
 
@@ -107,8 +104,7 @@ def test_capped_method_requires_refresh(tmp_path: Path) -> None:
     document = _document()
     require_object_dict(document["method"])["version"] = "eclat-leiden-pairwise-v1"
     path = tmp_path / "evidence.json"
-    _refingerprint(document)
-    _write(path, document)
+    write_fingerprinted_evidence(path, document)
     with pytest.raises(
         ArtifactError, match=r"unsupported selection method.*refresh-evidence"
     ):
@@ -147,14 +143,12 @@ def test_catalog_preserves_excluded_heroes_and_rejects_missing_disposition(
     document["heroes"] = [hero, skipped]
     document["requested_hero_ids"] = [13, 12]
     path = tmp_path / "evidence.json"
-    _refingerprint(document)
-    _write(path, document)
+    write_fingerprinted_evidence(path, document)
     catalog = load_build_evidence(path)
     assert 13 in catalog.heroes
     assert catalog.exclusions == {12: "Insufficient comparable outcomes"}
     malformed = deepcopy(document)
     require_object_rows(malformed["heroes"])[1].pop("exclusion")
-    _refingerprint(malformed)
-    _write(path, malformed)
+    write_fingerprinted_evidence(path, malformed)
     with pytest.raises(ArtifactError, match="supported exclusion"):
         load_build_evidence(path)

@@ -18,42 +18,21 @@ from deadlock_build_sync.value_validation import (
     require_object_dict,
     require_object_rows,
 )
+from tests.offline.discovery_fixtures import (
+    frozen_guide,
+    graph_fixture,
+    planted_data,
+    supported_tactics,
+)
 from tests.offline.production_evidence_fixtures import _context
-from tests.offline.test_discovery_identities import graph_fixture, planted_data
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from deadlock_build_sync.mechanics import ItemGraph
     from deadlock_build_sync.offline.discovery_data import HeroData
     from deadlock_build_sync.offline.discovery_types import (
-        FrozenGuide,
         Nomination,
-        Tactics,
     )
-
-
-def frozen_guide(
-    _con: duckdb.DuckDBPyConnection, _data: HeroData, row: Nomination, _graph: ItemGraph
-) -> FrozenGuide:
-    return {
-        "ready": True,
-        "path": row["path"]["order"],
-        "pool": {"1": [], "2": [], "3": [], "4": []},
-        "bounds": {},
-        "purchase_timing": {"items": []},
-        "pool_statistics": {},
-    }
-
-
-def supported_tactics(*_args: object) -> Tactics:
-    return {
-        "supported_focus": True,
-        "focuses": [],
-        "item_evidence": {},
-        "reason": None,
-        "limitation": "observational",
-    }
 
 
 @pytest.mark.parametrize("losing_validation", [False, True])

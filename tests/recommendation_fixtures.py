@@ -286,3 +286,33 @@ def state(**changes: object) -> DecisionState:
         learned_abilities=(),
     )
     return replace(base, **changes)
+
+
+def decision_state_document() -> dict[str, object]:
+    return {
+        "schema_version": 3,
+        "build_evidence_id": "a" * 64,
+        "client_version": 123,
+        "patch_identity": "b" * 64,
+        "match_mode": "Ranked",
+        "game_mode": "Normal",
+        "hero_id": 12,
+        "clock_s": 300,
+        "average_badge": 90,
+        "liquid_souls": 500,
+        "purchases": [],
+        "inventory": {
+            "items": [],
+            "components": [],
+            "open_slots": 9,
+            "flex_slots": 0,
+            "active_bindings": 0,
+        },
+        "learned_abilities": [],
+        "enemy_hero_ids": [7],
+        "lane_enemy_hero_ids": [7],
+        "enemy_item_ids": [],
+        "allied_hero_ids": [],
+        "objectives": [],
+        "threats": [],
+    }

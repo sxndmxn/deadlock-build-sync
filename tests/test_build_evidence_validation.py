@@ -28,11 +28,12 @@ from tests.build_evidence_fixtures import (
     _epochs,
     _first_item,
     _rank_catalog,
-    _refingerprint,
     _sequence_policy,
     _situational_policy,
     _write,
+    write_fingerprinted_evidence,
 )
+from tests.build_evidence_policy_fixtures import situational_branch
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -52,8 +53,7 @@ def test_loader_rejects_duplicate_permitting_sequence_policy(tmp_path: Path) -> 
     path = tmp_path / "build-evidence.json"
     document = _document()
     _sequence_policy(document)["version"] = 2
-    _refingerprint(document)
-    _write(path, document)
+    write_fingerprinted_evidence(path, document)
 
     with pytest.raises(ArtifactError, match="sequence policy"):
         load_build_evidence(path)
@@ -66,8 +66,7 @@ def test_loader_rejects_repeated_default_path_item(tmp_path: Path) -> None:
         _sequence_policy(document)["component_expanded_default_path"]
     )
     path_items[1] = 101
-    _refingerprint(document)
-    _write(path, document)
+    write_fingerprinted_evidence(path, document)
 
     with pytest.raises(ArtifactError, match="repeats an item"):
         load_build_evidence(path)
@@ -82,8 +81,7 @@ def test_selection_preserves_legal_order_with_uncertain_soul_windows(
     discovery = require_object_dict(build["discovery"])
     frozen = require_object_dict(discovery["frozen_guide"])
     frozen["bounds"] = {"101": [20_000, 30_000], "102": [1_000, 2_000]}
-    _refingerprint(document)
-    _write(path, document)
+    write_fingerprinted_evidence(path, document)
 
     catalog = load_build_evidence(path)
     hero = catalog.heroes[13]
@@ -137,52 +135,21 @@ def test_compatibility_rejects_identity_drift(tmp_path: Path) -> None:
     )
 
 
-def test_situational_branch_requires_every_comparative_gate(tmp_path: Path) -> None:
+def test_loader_accepts_supported_situational_branch(tmp_path: Path) -> None:
     path = tmp_path / "build-evidence.json"
     document = _document()
-    branch: dict[str, object] = {
-        "threat": "healing",
-        "item_id": 103,
-        "enemy_hero_id": 7,
-        "enemy_scope": "whole_enemy_team",
-        "phase": 1,
-        "tier": 1,
-        "mechanic_ref": "item/103/healing-reduction",
-        "enemy_mechanics_refs": ["asset:ability:7:description"],
-        "comparator": "same-tier default continuation or save",
-        "comparator_item_id": 101,
-        "comparison_support": 20,
-        "same_opportunity": True,
-        "support": 20,
-        "effective_support": 20.0,
-        "overlap": 0.5,
-        "stable": True,
-        "comparative_interval": [0.01, 0.06],
-        "fold_comparative_estimates": {
-            "train": 0.03,
-            "validation": 0.04,
-            "test": 0.02,
-        },
-        "fold_support": {
-            "train": {"item": 20, "comparator": 20},
-            "validation": {"item": 20, "comparator": 20},
-            "test": {"item": 20, "comparator": 20},
-        },
-        "trigger": "Enemy healing is observed.",
-        "replacement": "Replace the next optional purchase.",
-        "execution": "Apply healing reduction after contact.",
-        "failure_condition": "Skip when healing is not material.",
-    }
+    branch = situational_branch()
     _situational_policy(document)["branches"] = [branch]
-    _refingerprint(document)
-    _write(path, document)
+    write_fingerprinted_evidence(path, document)
 
     catalog = load_build_evidence(path)
     assert catalog.heroes[13].situational_policy is not None
     assert catalog.heroes[13].situational_policy.branches[0].threat == "healing"
 
-    baseline = dict(branch)
-    for changes, error in (
+
+@pytest.mark.parametrize(
+    ("changes", "error"),
+    [
         ({"overlap": 0.49}, "unqualified situational branch"),
         ({"same_opportunity": False}, "unqualified situational branch"),
         ({"stable": False}, "unqualified situational branch"),
@@ -212,14 +179,39 @@ def test_situational_branch_requires_every_comparative_gate(tmp_path: Path) -> N
         ({"comparative_interval": [-0.01, 0.06]}, "interval"),
         ({"comparative_interval": [0.01, 0.12]}, "interval"),
         ({"mechanic_ref": "item/999/healing"}, "mechanic reference"),
-    ):
-        branch.clear()
-        branch.update(baseline, **changes)
-        _refingerprint(document)
-        _write(path, document)
-        with pytest.raises(ArtifactError, match=error):
-            load_build_evidence(path)
+    ],
+    ids=[
+        "overlap",
+        "opportunity",
+        "stability",
+        "support",
+        "effective-support",
+        "comparison-support",
+        "fold-estimates",
+        "fold-support",
+        "negative-interval",
+        "wide-interval",
+        "mechanic-reference",
+    ],
+)
+def test_situational_branch_requires_every_comparative_gate(
+    tmp_path: Path, changes: dict[str, object], error: str
+) -> None:
+    path = tmp_path / "build-evidence.json"
+    document = _document()
+    branch = situational_branch()
+    branch.update(changes)
+    _situational_policy(document)["branches"] = [branch]
+    write_fingerprinted_evidence(path, document)
 
+    with pytest.raises(ArtifactError, match=error):
+        load_build_evidence(path)
+
+
+def test_selection_rejects_a_branch_that_exceeds_active_item_slots(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "build-evidence.json"
     active_assets = [
         {
             **asset,
@@ -228,9 +220,8 @@ def test_situational_branch_requires_every_comparative_gate(tmp_path: Path) -> N
         for asset in _assets()
     ]
     active_document = _document(assets=active_assets)
-    _situational_policy(active_document)["branches"] = [baseline]
-    _refingerprint(active_document)
-    _write(path, active_document)
+    _situational_policy(active_document)["branches"] = [situational_branch()]
+    write_fingerprinted_evidence(path, active_document)
     active_catalog = load_build_evidence(path)
 
     with pytest.raises(ArtifactError, match="illegal situational replacement"):

@@ -13,10 +13,10 @@ from deadlock_build_sync.value_validation import (
 from tests.build_evidence_fixtures import (
     _document,
     _first_build,
-    _refingerprint,
     _sequence_policy,
     _situational_policy,
     _write,
+    write_fingerprinted_evidence,
 )
 
 
@@ -33,8 +33,7 @@ def _expect_load_error(
     document: dict[str, object],
     message: str,
 ) -> None:
-    _refingerprint(document)
-    _write(path, document)
+    write_fingerprinted_evidence(path, document)
     with pytest.raises(ArtifactError, match=message):
         load_build_evidence(path)
 

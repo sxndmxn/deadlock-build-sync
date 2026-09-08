@@ -18,12 +18,7 @@ from deadlock_build_sync.strategy_context import (
 from tests.artifact_bundle_fixtures import (
     _write_bundle,
 )
-
-
-def _json_default(value: object) -> object:
-    if isinstance(value, (set, frozenset)):
-        return sorted(value, key=repr)
-    raise TypeError(f"cannot normalize {type(value).__name__}")
+from tests.serialization_fixtures import json_default
 
 
 def test_loads_exact_reviewed_bundle_without_analytics_refetch(
@@ -51,7 +46,7 @@ def test_loads_exact_reviewed_bundle_without_analytics_refetch(
         evidence_path,
     )
 
-    normalized = json.loads(json.dumps(asdict(bundle), default=_json_default))
+    normalized = json.loads(json.dumps(asdict(bundle), default=json_default))
     assert sha256_json(normalized) == (
         "de80951a48a38f25041bf77b3f7b67f1ad7617235ab02dce1ee0616415c1ac61"
     )

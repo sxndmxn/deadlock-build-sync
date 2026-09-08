@@ -15,19 +15,20 @@ from deadlock_build_sync.recommendation import (
     recommend,
 )
 from deadlock_build_sync.value_validation import require_object_dict
+from tests.discovery_fixtures import hero_cohort
 from tests.recommendation_fixtures import (
     assets,
     build_policy,
     catalog,
+    decision_state_document,
     expanded_assets,
     state,
 )
-from tests.test_hero_support_contract import _cohort
 
 
 def test_recommendation_uses_effective_hero_rank_range() -> None:
     evidence = catalog()
-    hero = replace(evidence.heroes[12], cohort=HeroCohort.parse(_cohort()))
+    hero = replace(evidence.heroes[12], cohort=HeroCohort.parse(hero_cohort()))
     expanded = replace(evidence, heroes={12: hero})
     for badge in (61, 71, 115):
         recommendation._validate_evidence_identity(expanded, state(average_badge=badge))
@@ -38,36 +39,6 @@ def test_recommendation_uses_effective_hero_rank_range() -> None:
             )
     with pytest.raises(RecommendationError, match="outside the evidence cohort"):
         recommendation._validate_evidence_identity(evidence, state(average_badge=61))
-
-
-def _state_document() -> dict[str, object]:
-    return {
-        "schema_version": 3,
-        "build_evidence_id": "a" * 64,
-        "client_version": 123,
-        "patch_identity": "b" * 64,
-        "match_mode": "Ranked",
-        "game_mode": "Normal",
-        "hero_id": 12,
-        "clock_s": 300,
-        "average_badge": 90,
-        "liquid_souls": 500,
-        "purchases": [],
-        "inventory": {
-            "items": [],
-            "components": [],
-            "open_slots": 9,
-            "flex_slots": 0,
-            "active_bindings": 0,
-        },
-        "learned_abilities": [],
-        "enemy_hero_ids": [7],
-        "lane_enemy_hero_ids": [7],
-        "enemy_item_ids": [],
-        "allied_hero_ids": [],
-        "objectives": [],
-        "threats": [],
-    }
 
 
 def _validate_scalar(function: str, value: object) -> None:
@@ -102,13 +73,13 @@ def test_decision_state_loader_rejects_schema_and_inventory_extensions(
     tmp_path: Path,
 ) -> None:
     path = tmp_path / "state.json"
-    document = _state_document()
+    document = decision_state_document()
     document["schema_version"] = 1
     path.write_text(json.dumps(document), encoding="utf-8")
     with pytest.raises(RecommendationError, match="unsupported decision-state schema"):
         DecisionState.from_file(path)
 
-    document = _state_document()
+    document = decision_state_document()
     inventory = require_object_dict(document["inventory"])
     inventory["account_id"] = 7
     path.write_text(json.dumps(document), encoding="utf-8")
@@ -118,13 +89,13 @@ def test_decision_state_loader_rejects_schema_and_inventory_extensions(
 
 def test_decision_state_loader_requires_lane_membership(tmp_path: Path) -> None:
     path = tmp_path / "state.json"
-    missing = _state_document()
+    missing = decision_state_document()
     missing.pop("lane_enemy_hero_ids")
     path.write_text(json.dumps(missing), encoding="utf-8")
     with pytest.raises(RecommendationError, match="lacks lane enemy heroes"):
         DecisionState.from_file(path)
 
-    outside = _state_document()
+    outside = decision_state_document()
     outside["lane_enemy_hero_ids"] = [8]
     path.write_text(json.dumps(outside), encoding="utf-8")
     with pytest.raises(RecommendationError, match="not on the enemy team"):

@@ -19,13 +19,14 @@ from deadlock_build_sync.offline.discovery_fit import select
 from deadlock_build_sync.offline.discovery_pool import summarize
 from deadlock_build_sync.offline.discovery_quality import evaluate_core
 from deadlock_build_sync.value_validation import require_object_rows
-from tests.offline.production_evidence_fixtures import _context
-from tests.offline.test_discovery_export import frozen_guide, supported_tactics
-from tests.offline.test_discovery_identities import (
+from tests.offline.discovery_fixtures import (
     catalog_fixture,
+    frozen_guide,
     graph_fixture,
     planted_data,
+    supported_tactics,
 )
+from tests.offline.production_evidence_fixtures import _context
 
 if TYPE_CHECKING:
     from pathlib import Path

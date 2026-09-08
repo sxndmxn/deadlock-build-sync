@@ -4,7 +4,7 @@ import pytest
 
 from deadlock_build_sync import policy_codec
 from deadlock_build_sync.policy import Branch, Guard, GuardOperator, PolicyError
-from tests.test_policy import branching_policy
+from tests.policy_fixtures import branching_policy
 
 
 def test_codec_primitive_and_json_structure_is_strict() -> None:

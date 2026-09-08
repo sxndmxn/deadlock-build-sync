@@ -11,7 +11,7 @@ from deadlock_build_sync.build_evidence_discovery import validate_discovery
 from deadlock_build_sync.build_support import OutcomeEvidence, outcome_limitations
 from deadlock_build_sync.hero_cohort import HeroCohort, ranked_cutoffs
 from deadlock_build_sync.value_validation import require_object_dict
-from tests.discovery_fixtures import discovery_record
+from tests.discovery_fixtures import discovery_record, hero_cohort
 
 
 @pytest.mark.parametrize(
@@ -38,32 +38,8 @@ def test_invalid_rank_ranges_fail(minimum: int, maximum: int, mode: str) -> None
         ranked_cutoffs(minimum, maximum, mode)
 
 
-def _cohort() -> dict[str, object]:
-    return {
-        "minimum_badge": 61,
-        "maximum_badge": 115,
-        "rank_expansion": "auto",
-        "expansion_history": [
-            {
-                "minimum_badge": minimum,
-                "maximum_badge": 115,
-                "discovery_rows": 500,
-                "selection_rows": 200,
-                "candidate_count": 3,
-                "discovery_owners": 100,
-                "selection_owners": 90 if minimum == 71 else 100,
-                "supported_builds": 0 if minimum == 71 else 1,
-                "reason": "no supported legal path"
-                if minimum == 71
-                else "supported build available",
-            }
-            for minimum in (71, 61)
-        ],
-    }
-
-
 def test_hero_cohort_round_trip_preserves_effective_range() -> None:
-    row = _cohort()
+    row = hero_cohort()
     cohort = HeroCohort.parse(row)
     assert cohort.as_dict() == row
     assert cohort.rank_range.minimum.badge_id == 61
@@ -82,7 +58,7 @@ def test_hero_cohort_round_trip_preserves_effective_range() -> None:
 )
 def test_hero_cohort_rejects_inconsistent_ranges(key: str, value: object) -> None:
     with pytest.raises(ArtifactError):
-        HeroCohort.parse({**_cohort(), key: value})
+        HeroCohort.parse({**hero_cohort(), key: value})
 
 
 @pytest.mark.parametrize(
@@ -98,7 +74,7 @@ def test_hero_cohort_rejects_inconsistent_ranges(key: str, value: object) -> Non
 def test_hero_history_cannot_change_bounds_or_expand_after_support(
     key: str, value: object
 ) -> None:
-    row = _cohort()
+    row = hero_cohort()
     history = HeroCohort.parse(row).expansion_history
     history[0][key] = value
     with pytest.raises(ArtifactError):

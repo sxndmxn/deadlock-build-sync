@@ -23,7 +23,7 @@ from deadlock_build_sync.evaluation import (
     patch_forward_group_split,
     select_abstention_threshold,
 )
-from tests.test_evaluation import (
+from tests.evaluation_fixtures import (
     event,
     layers,
     monitor,

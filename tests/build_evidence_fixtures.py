@@ -338,6 +338,12 @@ def _refingerprint(document: dict[str, object]) -> None:
     document["artifact_id"] = sha256_json(document)
 
 
+def write_fingerprinted_evidence(path: Path, document: dict[str, object]) -> None:
+    """Write an edited fixture with a matching fingerprint for validation tests."""
+    _refingerprint(document)
+    _write(path, document)
+
+
 def _first_build(document: dict[str, object]) -> dict[str, object]:
     heroes = require_object_rows(document["heroes"])
     return require_object_rows(heroes[0]["builds"])[0]

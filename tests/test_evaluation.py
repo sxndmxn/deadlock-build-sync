@@ -9,15 +9,10 @@ from deadlock_build_sync.evaluation import (
     REQUIRED_EVALUATION_LAYERS,
     CalibrationReport,
     EvaluationError,
-    EvaluationLayer,
     EvaluationReport,
     Fold,
-    LoggedDecision,
     MonitorAction,
-    MonitoringSnapshot,
-    PredictionRecord,
     RecommendationEvent,
-    TargetTrialSpec,
     TemporalExample,
     calibration_report,
     evaluate_monitoring,
@@ -26,18 +21,15 @@ from deadlock_build_sync.evaluation import (
     select_abstention_threshold,
 )
 from deadlock_build_sync.offline.config import sha256_json
-
-
-def layers(*, failed: str | None = None) -> tuple[EvaluationLayer, ...]:
-    return tuple(
-        EvaluationLayer(
-            name,
-            passed=name != failed,
-            score=0.99 if name != failed else 0.0,
-            support=100,
-        )
-        for name in REQUIRED_EVALUATION_LAYERS
-    )
+from tests.evaluation_fixtures import (
+    event,
+    layers,
+    logged,
+    monitor,
+    prediction,
+    target_trial,
+    temporal_examples,
+)
 
 
 def test_evaluation_report_keeps_hard_gates_separate() -> None:
@@ -57,15 +49,6 @@ def test_evaluation_report_keeps_hard_gates_separate() -> None:
     assert not failed.passed
     assert not failed.hard_gates_passed
     assert failed.as_dict()["non_authoritative_minimum_score"] == 0.0
-
-
-def temporal_examples() -> list[TemporalExample]:
-    return [
-        TemporalExample(1, 100, 90, "m1", "p1", "core"),
-        TemporalExample(1, 100, 90, "m2", "p2", "core"),
-        TemporalExample(2, 200, 190, "m3", "p3", "counter"),
-        TemporalExample(3, 300, 290, "m4", "p4", "core"),
-    ]
 
 
 def test_patch_forward_split_is_chronological_group_safe_and_has_baseline() -> None:
@@ -96,24 +79,6 @@ def test_temporal_example_rejects_future_features() -> None:
         TemporalExample(1, 100, 101, "m", "p", "core")
 
 
-def prediction(
-    probability: float,
-    outcome: int,
-    *,
-    fold: Fold = Fold.VALIDATION,
-    hero_id: int = 12,
-) -> PredictionRecord:
-    return PredictionRecord(
-        probability,
-        outcome,
-        fold,
-        "ranked",
-        "Mystic",
-        hero_id,
-        "patch-1",
-    )
-
-
 def test_calibration_reports_brier_logloss_segments_and_selective_risk() -> None:
     report: CalibrationReport = calibration_report(
         [prediction(0.9, 1), prediction(0.1, 0), prediction(0.8, 0, hero_id=13)],
@@ -141,22 +106,6 @@ def test_abstention_threshold_uses_validation_only() -> None:
         select_abstention_threshold(test_records, maximum_risk=0.1)
 
 
-def target_trial() -> TargetTrialSpec:
-    return TargetTrialSpec(
-        name="first Tier II decision",
-        eligibility="eligible ranked player-match at the decision landmark",
-        time_zero="first legal Tier II shop decision",
-        treatments=("core", "counter", "save"),
-        assignment_model="multinomial propensity over the candidate slate",
-        follow_up="until match end",
-        outcome="predeclared objective conversion and final outcome",
-        censoring="disconnect, invalid outcome, or telemetry loss",
-        estimand="eligible-decision average treatment effect",
-        sensitivity_analyses=("unmeasured confounding", "propensity clipping"),
-        minimum_overlap=0.2,
-    )
-
-
 def test_target_trial_requires_save_sensitivity_and_overlap() -> None:
     trial = target_trial()
     assert trial.permits_causal_claim(0.25)
@@ -164,17 +113,6 @@ def test_target_trial_requires_save_sensitivity_and_overlap() -> None:
 
     with pytest.raises(EvaluationError, match="save action"):
         replace(trial, treatments=("core", "counter"))
-
-
-def logged(action: str, outcome: float) -> LoggedDecision:
-    return LoggedDecision(
-        candidate_slate=("core", "counter"),
-        action=action,
-        behavior_propensity=0.5,
-        target_propensities={"core": 0.5, "counter": 0.5},
-        outcome=outcome,
-        outcome_predictions={"core": 1.0, "counter": 0.0},
-    )
 
 
 def test_off_policy_evaluation_recovers_known_policy_with_diagnostics() -> None:
@@ -200,26 +138,6 @@ def test_off_policy_evaluation_abstains_outside_logged_support() -> None:
     assert "counter" in report.reason
 
 
-def event() -> RecommendationEvent:
-    return RecommendationEvent(
-        decision_id="decision-1",
-        snapshot_id="snapshot",
-        policy_id="policy",
-        recommendation_timestamp=200,
-        feature_as_of_timestamp=199,
-        candidate_order=("core", "counter", "save"),
-        exposed=True,
-        recommendation="core",
-        adopted_action="counter",
-        deviation_reason="observed threat",
-        recalculation_node="counter-check",
-        behavior_propensity=0.5,
-        experiment_assignment=None,
-        intermediate_outcomes={"objective_conversion": 1.0},
-        final_outcome=1.0,
-    )
-
-
 def test_decision_log_round_trips_without_personal_fields() -> None:
     encoded = event().as_dict()
 
@@ -243,28 +161,6 @@ def test_decision_log_rejects_personal_fields_and_future_leakage() -> None:
     source = event()
     with pytest.raises(EvaluationError, match="future feature leakage"):
         replace(source, feature_as_of_timestamp=201)
-
-
-def monitor() -> MonitoringSnapshot:
-    return MonitoringSnapshot(
-        snapshot_age_s=100,
-        invalid_state_rate=0.0,
-        exposures=100,
-        adoptions=80,
-        deviations=10,
-        unhandled_branches=0,
-        calibration_error=0.02,
-        recommendation_concentration=0.5,
-        path_rejections=0,
-        render_rejections=0,
-        artifact_reuses=90,
-        artifact_requests=100,
-        install_failures=0,
-        restore_failures=0,
-        mechanics_match=True,
-        schema_decode_ok=True,
-        preservation_unchanged=True,
-    )
 
 
 @pytest.mark.parametrize(

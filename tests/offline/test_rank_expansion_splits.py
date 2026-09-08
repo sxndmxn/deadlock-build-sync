@@ -12,7 +12,7 @@ from deadlock_build_sync.offline.discovery_data import (
     prepare_partitions,
 )
 from deadlock_build_sync.offline.extract import _freeze_splits
-from tests.offline.test_discovery_identities import graph_fixture
+from tests.offline.discovery_fixtures import graph_fixture
 
 
 def test_expanded_matches_keep_original_splits_without_duplicates_or_test_data() -> (

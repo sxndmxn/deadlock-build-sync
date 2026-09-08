@@ -16,14 +16,9 @@ from deadlock_build_sync.value_validation import (
     require_object_dict,
     require_object_rows,
 )
+from tests.serialization_fixtures import json_default
 from tests.service_evidence_fixtures import build_evidence
 from tests.service_fake_api import FakeApi, ability_rows, duration_points
-
-
-def _json_default(value: object) -> object:
-    if isinstance(value, (set, frozenset)):
-        return sorted(value, key=repr)
-    raise TypeError(f"cannot normalize {type(value).__name__}")
 
 
 def _assert_matchup_context(generated: GeneratedGuides) -> None:
@@ -172,7 +167,7 @@ def test_generated_guide_is_snapshot_bound_policy_projection(
         all_heroes=False,
     )
 
-    normalized = json.loads(json.dumps(asdict(generated), default=_json_default))
+    normalized = json.loads(json.dumps(asdict(generated), default=json_default))
     assert sha256_json(normalized) == (
         "bb8163e77d03681668e7cc47e626d8ea6906a9db15774d1531a1419f942c2736"
     )

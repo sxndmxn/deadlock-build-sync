@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from dataclasses import replace
 
 import pytest
 
@@ -119,22 +120,10 @@ def test_sparse_cohort_stops_on_support_and_regime_change() -> None:
         match_mode=MatchMode.UNRANKED,
     )
     assert telemetry_analysis.widen_sparse_cohort(
-        (replace_support(first, 1), changed),
+        (replace(first, support=1), changed),
         minimum_support=10,
-    ) == (replace_support(first, 1),)
+    ) == (replace(first, support=1),)
     assert telemetry_analysis.widen_sparse_cohort((), minimum_support=10) == ()
-
-
-def replace_support(window: CohortWindow, support: int) -> CohortWindow:
-    return CohortWindow(
-        window.minimum_badge,
-        window.maximum_badge,
-        window.start_timestamp,
-        window.end_timestamp,
-        support,
-        window.match_mode,
-        window.epoch_identity,
-    )
 
 
 @pytest.mark.parametrize(

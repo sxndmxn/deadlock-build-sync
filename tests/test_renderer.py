@@ -16,7 +16,7 @@ from deadlock_build_sync.policy import (
     ValidationContext,
 )
 from deadlock_build_sync.presentation import build_presentation
-from deadlock_build_sync.protobuf import ProtoField, encode_hero_build, parse_fields
+from deadlock_build_sync.protobuf import encode_hero_build, parse_fields
 from deadlock_build_sync.purchase_guide import GuideItem, PurchaseGuide
 from deadlock_build_sync.renderer import (
     ProjectionIdentity,
@@ -26,6 +26,7 @@ from deadlock_build_sync.renderer import (
 )
 from deadlock_build_sync.renderer_items import guide_item
 from deadlock_build_sync.snapshot import EvidenceUnit, sha256_json
+from tests.rendering_fixtures import build_details
 
 SNAPSHOT = "b" * 64
 
@@ -165,31 +166,6 @@ def test_policy_item_projection_keeps_all_claim_and_node_fields() -> None:
     )
 
 
-def _build_details(guide: PurchaseGuide) -> list[ProtoField]:
-    build = encode_hero_build(
-        build_presentation(
-            replace(
-                guide,
-                build_tag_ids=(1, 2, 3),
-                build_archetype="Spirit Damage",
-                as_of_timestamp=1_767_225_600,
-            ),
-            persona="Player",
-            patch_title="Patch",
-            patch_published_at="2026-08-08T00:00:00Z",
-        ),
-        build_id=2,
-        account_id=3,
-        timestamp=4,
-    )
-    details = next(
-        field.value
-        for field in parse_fields(build)
-        if field.number == 10 and isinstance(field.value, bytes)
-    )
-    return list(parse_fields(details))
-
-
 def test_projection_separates_default_queue_from_optional_branch() -> None:
     guide = projected_guide()
 
@@ -211,7 +187,7 @@ def test_projection_separates_default_queue_from_optional_branch() -> None:
 def test_protobuf_preserves_optional_sell_flex_and_omission_semantics() -> None:
     categories = [
         field.value
-        for field in _build_details(projected_guide())
+        for field in build_details(projected_guide())
         if field.number == 1 and isinstance(field.value, bytes)
     ]
     core_fields = {field.number: field.value for field in parse_fields(categories[0])}

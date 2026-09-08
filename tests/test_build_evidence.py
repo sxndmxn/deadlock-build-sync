@@ -19,9 +19,10 @@ from tests.build_evidence_fixtures import (
     _assets,
     _document,
     _first_item,
-    _refingerprint,
     _write,
+    write_fingerprinted_evidence,
 )
+from tests.build_evidence_policy_fixtures import core_alternative
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -32,8 +33,7 @@ def test_rejects_previous_build_evidence_schema(tmp_path: Path, schema: int) -> 
     path = tmp_path / "build-evidence.json"
     document = _document()
     document["schema_version"] = schema
-    _refingerprint(document)
-    _write(path, document)
+    write_fingerprinted_evidence(path, document)
 
     with pytest.raises(
         ArtifactError, match=r"unsupported build-evidence schema.*refresh-evidence"
@@ -133,9 +133,8 @@ def test_loads_supported_observed_imbue_target(tmp_path: Path) -> None:
         "imbue_observations": 100,
         "imbue_target_share": 0.75,
     })
-    _refingerprint(document)
     path = tmp_path / "build-evidence.json"
-    _write(path, document)
+    write_fingerprinted_evidence(path, document)
 
     loaded = load_build_evidence(path).heroes[13].items[0]
 
@@ -210,42 +209,7 @@ def test_admitted_core_alternative_moves_out_of_its_tier_row(
     tmp_path: Path,
 ) -> None:
     path = tmp_path / "build-evidence.json"
-    alternative: dict[str, object] = {
-        "item_id": 303,
-        "comparator_item_id": 302,
-        "stage": 6,
-        "support": 40,
-        "comparison_support": 50,
-        "effective_support": 30.0,
-        "overlap": 0.8,
-        "stable": True,
-        "dr_estimate": 0.03,
-        "comparative_interval": [0.01, 0.05],
-        "vs": "Heavy Spirit damage",
-        "why": "Spirit Resist",
-        "swap": "Replaces Tier 3 Item 2",
-        "when": "Before the next Spirit-heavy fight",
-        "skip": "Keep default when control matters more",
-        "mechanics_refs": ["asset:item:303:description"],
-        "comparator_mechanics_refs": ["asset:item:302:description"],
-        "fold_estimates": {
-            "train": 0.03,
-            "validation": 0.04,
-            "test": -0.03,
-        },
-        "fold_diagnostics": {
-            fold: {
-                "support": 40,
-                "comparison_support": 50,
-                "effective_support": 30.0,
-                "overlap": 0.8,
-                "maximum_standardized_mean_difference": 0.05,
-                "estimate": estimate,
-                "interval": [0.01, 0.05],
-            }
-            for fold, estimate in (("train", 0.03), ("validation", 0.04))
-        },
-    }
+    alternative = core_alternative()
     _write(path, _document(core_alternatives=[alternative]))
 
     selected = select_hero_build(load_build_evidence(path).heroes[13], _assets())
