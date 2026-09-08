@@ -82,6 +82,8 @@ def test_load_and_select_exact_build_layout(tmp_path: Path) -> None:
     catalog = load_build_evidence(path)
     selected = select_hero_build(catalog.heroes[13], _assets())
 
+    assert catalog.heroes[13].core_policy.candidate_audit == ()
+
     assert [item.item_id for item in selected.core] == [
         101,
         102,

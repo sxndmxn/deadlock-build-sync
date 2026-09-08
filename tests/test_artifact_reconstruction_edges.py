@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from deadlock_build_sync import artifact_reconstruction
+from deadlock_build_sync.artifact_bundle import load_artifact_guide_bundle
 from deadlock_build_sync.artifact_bundle_types import ArtifactBundleError
 from deadlock_build_sync.artifacts import load_policy_artifact
 from deadlock_build_sync.build_evidence import HeroBuildEvidence, load_build_evidence
@@ -157,14 +158,9 @@ def test_reconstruction_rejects_invalid_snapshot_cohort(
     field: str,
     value: object,
 ) -> None:
-    hero, policy, evidence, manifest = _inputs(tmp_path)
-    manifest[field] = value
-
-    with pytest.raises(ArtifactBundleError, match="invalid cohort"):
-        artifact_reconstruction._guide(
-            hero,
-            policy,
-            evidence,
-            manifest=manifest,
-            rank_identity="Rank 7–11",
-        )
+    paths = _write_bundle(tmp_path)
+    document = json.loads(paths[1].read_text())
+    document["snapshot_manifest"][field] = value
+    paths[1].write_text(json.dumps(document))
+    with pytest.raises(ArtifactBundleError, match="snapshot manifests differ"):
+        load_artifact_guide_bundle(*paths)

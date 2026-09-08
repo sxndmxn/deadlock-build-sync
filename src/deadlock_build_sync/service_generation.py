@@ -122,7 +122,7 @@ def generate_guides(
         same_lane_matchups,
         whole_team_matchups,
     )
-    inputs_by_hero, skipped_heroes, exclusions = _collect_hero_inputs(
+    inputs_by_hero = _collect_hero_inputs(
         api,
         selected,
         generation_evidence,
@@ -161,8 +161,8 @@ def generate_guides(
                 if isinstance(item_id, int)
             },
         ),
-        skipped_heroes=tuple(skipped_heroes),
-        exclusions=tuple(exclusions),
+        skipped_heroes=(),
+        exclusions=(),
         eligible_hero_ids=frozenset(integer(hero["id"]) for hero in heroes),
         subset_selected=not all_heroes,
         rank_range=api.rank_range,

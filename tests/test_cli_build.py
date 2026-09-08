@@ -1,5 +1,6 @@
 import json
 from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -8,10 +9,13 @@ from deadlock_build_sync import cli, cli_support
 from deadlock_build_sync.cli_build import write_build_guides
 from deadlock_build_sync.purchase_guide import PurchaseGuide
 from deadlock_build_sync.service import generate_guides
+from deadlock_build_sync.snapshot import sha256_json
 from deadlock_build_sync.value_validation import (
     require_object_dict,
     require_object_rows,
 )
+from scripts import generate_narratives
+from tests import service_fake_api
 from tests.service_evidence_fixtures import build_evidence, grouped_build_evidence
 from tests.service_fake_api import FakeApi, ability_rows, duration_points
 
@@ -23,6 +27,13 @@ def test_normal_build_generates_full_files_without_steam(
     capsys: pytest.CaptureFixture[str],
     output_format: str,
 ) -> None:
+    class FixedDatetime:
+        @staticmethod
+        def now(_timezone: object) -> datetime:
+            return datetime(2026, 9, 7, tzinfo=UTC)
+
+    monkeypatch.setattr(service_fake_api, "datetime", FixedDatetime)
+    monkeypatch.setattr(generate_narratives, "datetime", FixedDatetime)
     api = FakeApi(ability_rows=ability_rows(), duration_points=duration_points())
     for asset in api._assets:
         if asset["id"] in {102, 104}:
@@ -51,6 +62,17 @@ def test_normal_build_generates_full_files_without_steam(
         str(tmp_path),
     ])
     assert result == 0
+    files = {
+        str(path.relative_to(tmp_path)): path.read_text().replace(
+            str(tmp_path), "<artifacts>"
+        )
+        for path in tmp_path.rglob("*")
+        if path.is_file()
+    }
+    # Captured from PR #26 at 80b9afc before the code cleanup.
+    assert sha256_json(files) == (
+        "709b2be7f7122ca300801ea5374420acbce994dd3c621ee7641d638ed37e2a6a"
+    )
     output = capsys.readouterr()
     if output_format == "json":
         emitted = require_object_dict(json.loads(output.out))

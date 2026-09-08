@@ -12,7 +12,6 @@ from .discovery_types import Placement, PoolEvidence, PoolStat, PurchaseRow
 from .production_timing import _item_counts
 
 MIN_BUYERS = 20
-MAX_PER_TIER = 10
 
 
 def summarize(rows: list[PurchaseRow], population: int) -> PoolEvidence:

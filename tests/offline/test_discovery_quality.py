@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pytest
 
-from deadlock_build_sync.offline.discovery_patterns import eclat, prefixspan
+from deadlock_build_sync.offline.discovery_patterns import eclat
 from deadlock_build_sync.offline.discovery_quality import (
     rejection_reasons,
     standardized,
@@ -25,24 +25,6 @@ def test_eclat_matches_exhaustive_triples_and_unique_transaction_support() -> No
         if matrix[:, core].all(axis=1).sum() >= 10
     }
     assert eclat(matrix, minimum=10) == expected
-
-
-def test_prefixspan_matches_strict_time_order_and_does_not_order_ties() -> None:
-    times = np.array([[10, 10, 20], [10, 15, 20], [30, 20, 10], [1, -1, 2]])
-    assert prefixspan(times, minimum=1) == {(0, 1, 2): 1, (2, 1, 0): 1}
-    assert prefixspan(times, minimum=2) == {}
-
-
-def test_prefixspan_counts_same_sequence_once_and_agrees_with_brute_force() -> None:
-    rng = np.random.default_rng(17)
-    times = rng.integers(-1, 5, size=(40, 5))
-    patterns = prefixspan(times, minimum=1)
-    for pattern, count in patterns.items():
-        selected = times[:, pattern]
-        expected = int(
-            ((selected[:, 0] >= 0) & (np.diff(selected, axis=1) > 0).all(axis=1)).sum()
-        )
-        assert count == expected
 
 
 def test_state_adjustment_removes_mixture_selection_and_sparse_overlap_abstains() -> (

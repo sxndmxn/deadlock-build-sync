@@ -137,11 +137,6 @@ EFFECT_RULES = (
         "Bullet resistance reduction",
         "Your team needs more bullet damage against a target",
     ),
-    (
-        r"light or heavy melee.*spirit",
-        "Spirit damage on melee",
-        "You can land melee attacks to apply Spirit damage and resistance reduction",
-    ),
     (r"melee.*heal", "Melee healing", "You can land melee attacks to restore health"),
     (
         r"heavy melee|melee damage will",

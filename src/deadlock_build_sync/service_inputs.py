@@ -221,12 +221,10 @@ def _collect_hero_inputs(
     evidence: _GenerationEvidence,
     *,
     all_heroes: bool,
-) -> tuple[list[_HeroInputs], list[str], list[tuple[int, str]]]:
+) -> list[_HeroInputs]:
     if not all_heroes and len(selected) > 1:
         raise GuideError("A single-hero request cannot include multiple heroes")
     inputs_by_hero: list[_HeroInputs] = []
-    skipped_heroes: list[str] = []
-    exclusions: list[tuple[int, str]] = []
     for hero in selected:
         hero_id = integer(hero["id"])
         exclusion = evidence.build_evidence.exclusions.get(hero_id)
@@ -265,4 +263,4 @@ def _collect_hero_inputs(
                 f"Hero {hero_id} has incomplete generation data: {prepared}"
             )
         inputs_by_hero.extend(prepared)
-    return inputs_by_hero, skipped_heroes, exclusions
+    return inputs_by_hero

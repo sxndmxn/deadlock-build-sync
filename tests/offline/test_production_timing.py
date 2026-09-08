@@ -1,47 +1,24 @@
 from dataclasses import replace
 
-import duckdb
 import pytest
 
 from deadlock_build_sync.artifacts import ArtifactError
 from deadlock_build_sync.build_evidence_timing import purchase_timing
 from deadlock_build_sync.build_evidence_types import SequencePolicy, TierPolicyEvidence
-from deadlock_build_sync.offline.production_timing import timing_payload
+from deadlock_build_sync.offline.production_timing import _interval_counts
 from tests.service_evidence_fixtures import build_evidence
 from tests.service_fake_api import FakeApi, ability_rows, duration_points
 
 
-def test_timing_counts_use_training_cohort_and_strict_adjacent_anchors() -> None:
-    con = duckdb.connect()
-    con.execute(
-        "CREATE TABLE first_purchases (match_id BIGINT, player_slot INTEGER, hero_id INTEGER, item_id BIGINT, buy_time DOUBLE, fold VARCHAR)"
-    )
-    rows = [
-        (key, 0, 12, item, time, fold)
-        for key, fold in ((1, "train"), (2, "validation"), (3, "test"), (4, "train"))
-        for item, time in ((10, 10), (20, 20), (30, 15), (40, 10))
+def test_timing_counts_require_strict_adjacent_anchors() -> None:
+    assert _interval_counts(
+        [30, 40, 50, 60], (10, 20), {(1, 0): {10: 10, 20: 20, 30: 15, 40: 10, 50: 50}}
+    ) == [
+        {"item_id": 30, "buyers": 1, "counts_by_checkpoint": [0, 1, 0]},
+        {"item_id": 40, "buyers": 1, "counts_by_checkpoint": [0, 0, 0]},
+        {"item_id": 50, "buyers": 1, "counts_by_checkpoint": [0, 0, 1]},
+        {"item_id": 60, "buyers": 0, "counts_by_checkpoint": [0, 0, 0]},
     ]
-    rows.extend([(1, 0, 12, 30, 50, "train"), (1, 0, 12, 50, 50, "train")])
-    con.executemany("INSERT INTO first_purchases VALUES (?, ?, ?, ?, ?, ?)", rows)
-    result = timing_payload(
-        con,
-        12,
-        frozenset({(1, 0), (2, 0), (3, 0)}),
-        (10, 20),
-        {"item_ids_by_tier": {"1": [30, 40, 50, 60]}},
-    )
-    con.close()
-    assert result == {
-        "version": 1,
-        "fold": "train",
-        "core_path": [10, 20],
-        "items": [
-            {"item_id": 30, "buyers": 1, "counts_by_checkpoint": [0, 1, 0]},
-            {"item_id": 40, "buyers": 1, "counts_by_checkpoint": [0, 0, 0]},
-            {"item_id": 50, "buyers": 1, "counts_by_checkpoint": [0, 0, 1]},
-            {"item_id": 60, "buyers": 0, "counts_by_checkpoint": [0, 0, 0]},
-        ],
-    }
 
 
 @pytest.mark.parametrize(

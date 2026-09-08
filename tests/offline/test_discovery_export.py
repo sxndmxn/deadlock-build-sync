@@ -18,8 +18,8 @@ from deadlock_build_sync.value_validation import (
     require_object_dict,
     require_object_rows,
 )
+from tests.offline.production_evidence_fixtures import _context
 from tests.offline.test_discovery_identities import graph_fixture, planted_data
-from tests.offline.test_production_orchestration import _context
 
 if TYPE_CHECKING:
     from pathlib import Path

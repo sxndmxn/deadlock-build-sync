@@ -2,14 +2,11 @@ from __future__ import annotations
 
 import duckdb
 
-from deadlock_build_sync.mechanics import ItemGraph
+from deadlock_build_sync.offline.production_items import _item_payload
 from deadlock_build_sync.offline.production_sources import _path_item_metrics
-from tests.mechanics_fixtures import item
-from tools.comparisons.legacy.production_policy import _item_payload
-from tools.comparisons.legacy.production_storage import _core_alternative_candidates
 
 
-def test_test_period_cannot_change_imbues_or_alternative_shortlist() -> None:
+def test_test_period_cannot_change_imbue_selection() -> None:
     con = duckdb.connect()
     con.execute("""
         CREATE TABLE first_purchases AS SELECT
@@ -27,7 +24,6 @@ def test_test_period_cannot_change_imbues_or_alternative_shortlist() -> None:
     """)
     con.execute("CREATE TABLE purchases AS SELECT * FROM first_purchases")
     members = frozenset((match_id, 0) for match_id in range(1, 71))
-    graph = ItemGraph.from_assets([item(i, f"item_{i}") for i in range(1, 8)])
     try:
         before = _path_item_metrics(con, members)
         con.execute("""
@@ -46,18 +42,6 @@ def test_test_period_cannot_change_imbues_or_alternative_shortlist() -> None:
             {40: {"name": "First"}, 41: {"name": "Second"}},
             {"train": 25, "validation": 25, "test": 20},
         )
-        candidates = _core_alternative_candidates(
-            metrics,
-            (1, 5, 6, 7),
-            {1, 5, 6, 7},
-            5,
-            metrics[5],
-            graph,
-            {},
-        )
-        outputs.append((
-            payload["imbue_target_ability_id"],
-            [row["item_id"] for row in candidates],
-        ))
-    assert outputs == [(40, [2, 3]), (40, [2, 3])]
+        outputs.append(payload["imbue_target_ability_id"])
+    assert outputs == [40, 40]
     assert before["raw_outcome_rate"].to_list() != after["raw_outcome_rate"].to_list()

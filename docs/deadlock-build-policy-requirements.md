@@ -721,7 +721,7 @@ remaining path. A core-only experiment report or a tier-only listing does not
 satisfy that presentation contract. Core admission, legal branch execution and
 conditional outcome validation remain separate; rendering a candidate never
 upgrades its evidence status. The local discovery-to-guide implementation and
-verification command are recorded in [the assembly contract](../tools/comparisons/build_guides/README.md).
+verification command are recorded in [the archived assembly contract](https://github.com/sxndmxn/deadlock-build-sync/blob/80b9afcc8a94831b5fbae5a2a291ec4127e241c7/tools/comparisons/build_guides/README.md).
 
 **Purchase decisions:** Show every matching option for a specific need. Do not
 apply a shortlist limit. Use **OPTIONAL** for one item and **PICK ONE** for

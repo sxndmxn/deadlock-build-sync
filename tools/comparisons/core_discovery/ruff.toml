@@ -1,4 +1,0 @@
-extend = "../qdfm/ruff.toml"
-
-[lint.extend-per-file-ignores]
-"data.py" = ["hardcoded-sql-expression"] # Local fixed SQL with bound file arguments.

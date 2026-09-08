@@ -20,9 +20,7 @@ from deadlock_build_sync.offline.purchase_order import (
     _ranked_agreement_orders,
 )
 
-from .discovery_config import ORDER_MINIMUM
 from .discovery_ownership import ownership
-from .discovery_patterns import prefixspan
 
 if TYPE_CHECKING:
     from .discovery_data import HeroData
@@ -83,15 +81,6 @@ def expanded_path(order: list[int], graph: ItemGraph) -> list[dict[str, object]]
 def ranked_orders(
     times: np.ndarray, items: list[int], method: str
 ) -> list[tuple[int, list[int]]]:
-    if method == "prefixspan":
-        patterns = prefixspan(times, minimum=ORDER_MINIMUM, length=len(items))
-        return sorted(
-            (
-                (count, [items[column] for column in order])
-                for order, count in patterns.items()
-            ),
-            key=lambda row: (-row[0], row[1]),
-        )
     if method != "pairwise":
         raise ValueError(f"Unknown order method: {method}")
     precedence = Counter()

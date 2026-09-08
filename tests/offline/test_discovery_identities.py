@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from itertools import combinations, permutations
+from itertools import combinations
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -136,25 +136,6 @@ def test_leiden_merges_variants_and_retains_distinct_identities() -> None:
     result = consolidate(candidates, matrix, tuple(range(9)))
     assert result["groups"] == [[0, 1], [2]]
     assert len(result["seeds"]) == 3
-
-
-def test_full_prefixspan_support_matches_brute_force_with_ties() -> None:
-    times = np.asarray(
-        [[10, 20, 30, 40]] * 30 + [[20, 10, 30, 40]] * 25 + [[10, 10, 30, 40]] * 40
-    )
-    actual = {
-        tuple(order): count
-        for count, order in ranked_orders(times, [0, 1, 2, 3], "prefixspan")
-    }
-    expected = {}
-    for order in permutations(range(4)):
-        count = int((np.diff(times[:, order], axis=1) > 0).all(axis=1).sum())
-        if count >= 20:
-            expected[order] = count
-    assert actual == expected == {(0, 1, 2, 3): 30, (1, 0, 2, 3): 25}
-    assert not order_evidence(
-        np.asarray([[10, 10, 20, 30]] * 100), [0, 1, 2, 3], [0, 1, 2, 3]
-    )["passes"]
 
 
 def test_pairwise_ranking_does_not_bypass_full_order_support() -> None:

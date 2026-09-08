@@ -6,7 +6,7 @@ import duckdb
 import pytest
 
 from deadlock_build_sync.offline import extract
-from deadlock_build_sync.offline.config import Cohort
+from deadlock_build_sync.offline.config import Cohort, parse_timestamp
 from deadlock_build_sync.offline.extract import (
     _eligible_matches_query,
     _execute_remote_query,
@@ -20,6 +20,25 @@ class _Match:
     start_time: str = "2026-08-16 23:00:00+00"
     duration_s: int = 1_800
     eligible: bool = True
+
+
+@pytest.mark.parametrize(
+    "timestamp",
+    ["2026-08-17T00:00:00", "2026-08-17T00:00:00Z", "2026-08-16T17:00:00-07:00"],
+)
+def test_frozen_cohort_metadata_preserves_utc_boundaries(timestamp: str) -> None:
+    assert parse_timestamp(None) is None
+    cohort = Cohort(
+        since=datetime(2026, 8, 16, tzinfo=UTC), as_of=parse_timestamp(timestamp)
+    )
+    assert cohort.as_dict() == {
+        "minimum_badge": 71,
+        "maximum_badge": 115,
+        "since": "2026-08-16T00:00:00+00:00",
+        "as_of": "2026-08-17T00:00:00+00:00",
+        "match_mode": "Ranked",
+        "game_mode": "Normal",
+    }
 
 
 def _insert_match(

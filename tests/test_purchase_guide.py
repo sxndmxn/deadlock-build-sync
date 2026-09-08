@@ -11,8 +11,22 @@ from deadlock_build_sync.purchase_guide import (
     choose_adaptive_bucket_increment,
     conditional_item_annotation,
     format_purchase_window,
+    standard_category_description,
     wilson_score_interval,
 )
+from deadlock_build_sync.snapshot import sha256_json
+
+
+def test_standard_category_copy_keeps_the_public_description_contract() -> None:
+    names = [
+        "CORE ITEMS",
+        "OPTIONAL CORE",
+        *[f"TIER {tier}" for tier in range(1, 5)],
+        "CUSTOM",
+    ]
+    assert sha256_json({
+        name: standard_category_description(name) for name in names
+    }) == ("79cf24aec347383c5a9004bd937bdb14bafbbaa7c620d368d6d53583e41d5aa4")
 
 
 def evidence_item(

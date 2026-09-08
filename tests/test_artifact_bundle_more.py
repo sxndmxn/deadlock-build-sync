@@ -100,7 +100,21 @@ def test_rejects_edited_projection_even_when_other_artifacts_are_unchanged(
         )
 
 
-@pytest.mark.parametrize("change", ["dimensions", "schema", "cohort"])
+@pytest.mark.parametrize(
+    "change",
+    [
+        "dimensions",
+        "schema",
+        "cohort",
+        "missing row",
+        "duplicate item",
+        "wrong item",
+        "annotation",
+        "optional flag",
+        "row order",
+        "item field",
+    ],
+)
 def test_rejects_projection_with_stale_canonical_contract(
     tmp_path: Path, change: str
 ) -> None:
@@ -111,8 +125,25 @@ def test_rejects_projection_with_stale_canonical_contract(
         hero["projection"]["categories"][0]["height"] = 999.0
     elif change == "schema":
         hero["projection"]["guide_version"] = 2
-    else:
+    elif change == "cohort":
         hero["purchase_guidance"]["cohort"]["minimum_badge"] = 61
+    else:
+        categories = hero["projection"]["categories"]
+        row = categories[0]
+        if change == "missing row":
+            categories.pop()
+        elif change == "duplicate item":
+            row["items"].append(row["items"][0])
+        elif change == "wrong item":
+            row["items"][0]["item_id"] = 999
+        elif change == "annotation":
+            row["items"][0]["annotation"] = "stale text"
+        elif change == "optional flag":
+            row["optional"] = True
+        elif change == "row order":
+            categories[0], categories[1] = categories[1], categories[0]
+        else:
+            row["items"][0]["required_flex_slots"] = True
     hero["narrative_basis_sha256"] = calculate_narrative_basis_sha256(hero)
     hero["context_sha256"] = calculate_context_sha256(hero)
     context["source_context_sha256"] = calculate_source_context_sha256(context)

@@ -1,16 +1,26 @@
-import duckdb
-import polars as pl
-
 from deadlock_build_sync.mechanics import ItemGraph
-from deadlock_build_sync.value_validation import (
-    require_object_dict,
-    require_object_rows,
-)
+from deadlock_build_sync.offline.config import RunPaths
+from deadlock_build_sync.offline.production_sources import _HeroExportContext
+from tests.mechanics_fixtures import item
 
 
-def _candidate_sample(policy: dict[str, object]) -> list[dict[str, object]]:
-    audit = require_object_dict(policy["candidate_audit"])
-    return require_object_rows(audit["sample"])
+def _context(paths: RunPaths) -> _HeroExportContext:
+    graph = ItemGraph.from_assets([
+        {
+            **item(item_id, f"item_{item_id}"),
+            "cost": item_id * 500,
+            "item_tier": item_id,
+        }
+        for item_id in (1, 2, 3, 4)
+    ])
+    assets = {item_id: item(item_id, f"item_{item_id}") for item_id in graph.nodes}
+    return _HeroExportContext(
+        paths=paths,
+        normal_assets=list(assets.values()),
+        item_graph=graph,
+        mechanics_assets_by_id=assets,
+        target_core_cost=3_000,
+    )
 
 
 def _item_metric_row() -> dict[str, object]:
@@ -76,68 +86,3 @@ def _contrast_rows(*, positive: bool) -> list[dict[str, object]]:
         }
         for index in range(2_400)
     ]
-
-
-def _item_graph(components: dict[int, tuple[int, ...]]) -> ItemGraph:
-    return ItemGraph.from_assets([
-        {
-            "id": item_id,
-            "class_name": f"item_{item_id}",
-            "name": f"Item {item_id}",
-            "cost": 800,
-            "item_slot_type": "weapon",
-            "item_tier": 1,
-            "component_items": [
-                f"item_{component_id}" for component_id in components.get(item_id, ())
-            ],
-            "shopable": True,
-            "disabled": False,
-            "is_active_item": False,
-            "is_unique": True,
-        }
-        for item_id in range(1, 10)
-    ])
-
-
-def _register_situational_tables(con: duckdb.DuckDBPyConnection) -> None:
-    decisions: list[dict[str, object]] = []
-    enemies: list[dict[str, object]] = []
-    compositions: list[dict[str, object]] = []
-    match_id = 1
-    for fold in ("train", "validation", "test"):
-        for item_id in (3, 4):
-            for offset in range(200):
-                target = item_id == 3
-                won = offset < (180 if target else 40)
-                decisions.append({
-                    "match_id": match_id,
-                    "player_slot": 0,
-                    "hero_id": 12,
-                    "phase": 1,
-                    "tier": 2,
-                    "item_id": item_id,
-                    "won": won,
-                    "team_id": 0,
-                    "assigned_lane": 1,
-                    "fold": fold,
-                    "own_net_worth_at_buy": 10_000,
-                    "team_net_worth_lead": 0,
-                })
-                enemies.append({
-                    "match_id": match_id,
-                    "team_id": 1,
-                    "assigned_lane": 1,
-                    "hero_id": 7,
-                })
-                compositions.append({
-                    "match_id": match_id,
-                    "team_id": 1,
-                    "hero_ids": [7],
-                })
-                match_id += 1
-    con.register("decisions_source", pl.DataFrame(decisions))
-    con.register("enemies_source", pl.DataFrame(enemies))
-    con.register("compositions_source", pl.DataFrame(compositions))
-    con.execute("CREATE TABLE decision_opportunities AS SELECT * FROM decisions_source")
-    con.execute("CREATE TABLE player_matches AS SELECT * FROM enemies_source")
-    con.execute("CREATE TABLE compositions AS SELECT * FROM compositions_source")

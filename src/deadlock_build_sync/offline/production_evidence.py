@@ -3,8 +3,6 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
-import duckdb
-
 from deadlock_build_sync.build_evidence import (
     MAXIMUM_TIER_ADOPTION_DRIFT,
     METHOD_VERSION,
@@ -34,12 +32,11 @@ from .production_sources import (
     SCHEMA_VERSION,
     SEQUENCE_MINIMUM_SUPPORT,
     UnsupportedBuildPathError,
-    _enemy_threat_evidence,
     _HeroExportContext,
     _patch_at,
     _rank_labels_sha256,
 )
-from .production_storage import _folds_by_match, validated_write
+from .production_storage import validated_write
 
 
 def export_production_evidence(paths: RunPaths, output: Path) -> dict[str, object]:
@@ -54,7 +51,7 @@ def export_production_evidence(paths: RunPaths, output: Path) -> dict[str, objec
     heroes = object_rows(read_json(paths.raw / "heroes.json"))
     if heroes is None:
         raise RuntimeError("hero and item assets must be lists of dictionaries")
-    export_context = _export_context(paths, heroes, cohort, manifest)
+    export_context = _export_context(paths, cohort, manifest)
     patch = _patch_at(paths, as_of)
     core_economy_reference = {
         "target_core_cost": export_context.target_core_cost,
@@ -132,7 +129,6 @@ def export_production_evidence(paths: RunPaths, output: Path) -> dict[str, objec
 
 def _export_context(
     paths: RunPaths,
-    heroes: list[dict[str, object]],
     cohort: dict[str, object],
     manifest: dict[str, object],
 ) -> _HeroExportContext:
@@ -145,35 +141,20 @@ def _export_context(
         if isinstance(item, dict)
         and str(item.get("game_mode") or "normal").casefold() == "normal"
     ]
-    item_assets, components = load_item_asset_maps(paths.raw / "items.json")
+    item_assets, _ = load_item_asset_maps(paths.raw / "items.json")
     item_graph = ItemGraph.from_assets(list(item_assets.values()))
     mechanics_assets_by_id = {
         integer(asset["id"]): asset
         for asset in normal_assets
         if isinstance(asset.get("id"), int)
     }
-    item_costs = {
-        item_id: integer(asset.get("cost"), default=0)
-        for item_id, asset in item_assets.items()
-    }
-    con = duckdb.connect(str(paths.raw / "analysis.duckdb"), read_only=True)
-    try:
-        folds_by_match = _folds_by_match(con)
-    finally:
-        con.close()
-
     return _HeroExportContext(
         paths=paths,
         minimum_badge=integer(cohort["minimum_badge"]),
         maximum_badge=integer(cohort["maximum_badge"]),
         rank_expansion=str(manifest.get("rank_expansion", "auto")),
-        hero_count=len(heroes),
-        components=components,
-        folds_by_match=folds_by_match,
         normal_assets=normal_assets,
         item_graph=item_graph,
         mechanics_assets_by_id=mechanics_assets_by_id,
-        item_costs=item_costs,
         target_core_cost=19200,
-        enemy_threat_evidence=_enemy_threat_evidence(heroes, normal_assets),
     )

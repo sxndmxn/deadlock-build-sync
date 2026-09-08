@@ -296,8 +296,9 @@ uv run deadlock-build-sync refresh-evidence
 
 The evidence producer reconstructs inventory from purchases, sales, and component
 consumption. It uses Eclat, Leiden, and pairwise ordering. The old clustering and
-core-completion fallback are development comparisons only. Analysis dependencies
-are optional; rendering and installation do not load them.
+core-completion fallback are archived in
+[Git history](tools/comparisons/README.md). Analysis dependencies are optional;
+rendering and installation do not load them.
 
 The normal installation workflow remains one command. Close Deadlock, then run:
 

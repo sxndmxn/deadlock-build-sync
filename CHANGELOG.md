@@ -18,8 +18,9 @@
 - Require evidence schema 12, purchase-guide schema 3, state schema 3, and context
   schema 16. Guide indexes use schema 2 and group records use schema 1.
   Old evidence must be refreshed and rebuilt.
-- Move comparison code and historical reports to `tools/comparisons`. Normal
-  commands and the installed wheel do not require that directory.
+- Archive comparison code and its tests in Git history. Keep tests for shared
+  production code in the current suite. Remove unused reconstruction and producer
+  paths, and reuse the durable byte writer with unchanged JSON serialization.
 - Verify exact backup filename casing and JSON-stable guide fingerprints.
 
 All notable changes to this project are documented in this file.

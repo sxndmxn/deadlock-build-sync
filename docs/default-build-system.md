@@ -9,7 +9,7 @@ the full current hero roster. It does not access Steam files.
 Eclat finds exact cores. Leiden groups related cores. Pairwise purchase ordering
 supplies the core order. Components are added with their required purchase and
 consumption order. Normal generation has no old clustering or core-completion
-fallback. PrefixSpan and the old methods remain in `tools/comparisons`.
+fallback. PrefixSpan and the old methods are [archived in Git history](../tools/comparisons/README.md).
 
 The first search uses four-to-six-item cores with a maximum catalog cost of
 19,200 souls. If none has a supported legal path, it uses existing three-item

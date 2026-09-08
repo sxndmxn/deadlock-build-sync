@@ -15,10 +15,6 @@ from deadlock_build_sync.build_evidence import (
 )
 from deadlock_build_sync.mechanics import (
     ItemGraph,
-    classify_observed_item_threats,
-)
-from deadlock_build_sync.mechanics_compatibility import (
-    asset_mechanics_refs,
 )
 from deadlock_build_sync.value_validation import (
     integer,
@@ -28,7 +24,6 @@ from deadlock_build_sync.value_validation import (
 
 from .api import read_json
 from .config import RunPaths, sha256_json
-from .late_game import reconstruct_final_inventory
 from .sql_fragments import ITEM_OUTCOME_AGGREGATES_SQL
 
 if TYPE_CHECKING:
@@ -36,10 +31,7 @@ if TYPE_CHECKING:
 
 SCHEMA_VERSION = BUILD_EVIDENCE_SCHEMA_VERSION
 MINIMUM_CORE_SUPPORT = 20
-HERO_EXPORT_WORKERS = 8
 SEQUENCE_MINIMUM_SUPPORT = 20
-CORE_ECONOMY_REFERENCE_MINIMUM_BADGE = 81
-DEFAULT_BUILD_PATH_LABEL = "Evidence Default"
 _STEAM_CDN_HOST_PATTERN = re.compile(
     r"(?<=://)(clan|shared)\.(?:akamai|fastly)\.steamstatic\.com",
     re.IGNORECASE,
@@ -53,62 +45,13 @@ class UnsupportedBuildPathError(ValueError):
 @dataclass(frozen=True)
 class _HeroExportContext:
     paths: RunPaths
-    hero_count: int
-    components: dict[int, tuple[int, ...]]
-    folds_by_match: dict[int, str]
     normal_assets: list[dict[str, object]]
     item_graph: ItemGraph
     mechanics_assets_by_id: dict[int, dict[str, object]]
-    item_costs: dict[int, int]
     target_core_cost: int
-    enemy_threat_evidence: dict[int, dict[str, tuple[str, ...]]]
     minimum_badge: int = 71
     maximum_badge: int = 115
     rank_expansion: str = "auto"
-
-
-def _hero_threat_refs(
-    hero: dict[str, object],
-    assets_by_class: dict[str, dict[str, object]],
-) -> tuple[int, dict[str, tuple[str, ...]]] | None:
-    hero_id = hero.get("id")
-    signatures = object_dict(hero.get("items"))
-    if not isinstance(hero_id, int) or signatures is None:
-        return None
-    refs_by_threat: dict[str, set[str]] = {}
-    for class_name in signatures.values():
-        if not isinstance(class_name, str):
-            continue
-        asset = assets_by_class.get(class_name)
-        if asset is None:
-            continue
-        refs = asset_mechanics_refs(asset)
-        for threat in classify_observed_item_threats(asset):
-            refs_by_threat.setdefault(threat, set()).update(refs)
-    refs = {
-        threat: tuple(sorted(values))
-        for threat, values in refs_by_threat.items()
-        if values
-    }
-    return (hero_id, refs) if refs else None
-
-
-def _enemy_threat_evidence(
-    heroes: list[dict[str, object]],
-    assets: list[dict[str, object]],
-) -> dict[int, dict[str, tuple[str, ...]]]:
-    by_class = {
-        str(asset["class_name"]): asset
-        for asset in assets
-        if isinstance(asset.get("class_name"), str)
-    }
-    result: dict[int, dict[str, tuple[str, ...]]] = {}
-    for hero in heroes:
-        row = _hero_threat_refs(hero, by_class)
-        if row is not None:
-            hero_id, refs = row
-            result[hero_id] = refs
-    return result
 
 
 def _patch_guid(value: object) -> str:
@@ -196,56 +139,6 @@ def _rank_labels_sha256(paths: RunPaths) -> str:
         and str(row["name"]).strip()
     }
     return sha256_json(labels)
-
-
-def _inventories_for_hero(
-    con: duckdb.DuckDBPyConnection,
-    hero_id: int,
-    components: dict[int, tuple[int, ...]],
-) -> dict[tuple[int, int], tuple[int, ...]]:
-    cursor = con.execute(
-        f"""
-        SELECT match_id, player_slot, item_id, buy_time, sold_time
-        FROM purchases
-        WHERE hero_id = {hero_id}
-        ORDER BY match_id, player_slot, buy_time, event_order
-        """
-    )
-    inventories: dict[tuple[int, int], tuple[int, ...]] = {}
-    current: tuple[int, int] | None = None
-    purchases: list[tuple[int, int, int]] = []
-    while rows := cursor.fetchmany(100_000):
-        for match_id, player_slot, item_id, buy_time, sold_time in rows:
-            identity = int(match_id), int(player_slot)
-            if current is not None and identity != current:
-                inventories[current] = reconstruct_final_inventory(
-                    purchases, components
-                )
-                purchases = []
-            current = identity
-            purchases.append((int(item_id), int(buy_time), int(sold_time)))
-    if current is not None:
-        inventories[current] = reconstruct_final_inventory(purchases, components)
-    return inventories
-
-
-def _early_inventories_for_hero(
-    con: duckdb.DuckDBPyConnection,
-    hero_id: int,
-) -> dict[tuple[int, int], tuple[int, ...]]:
-    rows = con.execute(
-        """
-        SELECT match_id, player_slot, item_id
-        FROM first_purchases
-        WHERE hero_id = ? AND own_net_worth_at_buy <= 12000
-        ORDER BY match_id, player_slot, buy_time, item_id
-        """,
-        [hero_id],
-    ).fetchall()
-    result: dict[tuple[int, int], list[int]] = {}
-    for match_id, player_slot, item_id in rows:
-        result.setdefault((int(match_id), int(player_slot)), []).append(int(item_id))
-    return {identity: tuple(item_ids) for identity, item_ids in result.items()}
 
 
 def _path_item_metrics(

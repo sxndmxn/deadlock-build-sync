@@ -32,14 +32,12 @@ from .artifact_bundle_types import (
     ArtifactGuideBundle,
     _GuideReconstructionContext,
 )
-from .artifact_projection import _policy_core
 from .artifact_reconstruction import _guide
 
 __all__ = [
     "ArtifactBuildIdentity",
     "ArtifactBundleError",
     "ArtifactGuideBundle",
-    "_policy_core",
     "load_artifact_guide_bundle",
 ]
 

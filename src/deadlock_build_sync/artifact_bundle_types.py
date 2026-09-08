@@ -15,7 +15,6 @@ class ArtifactBundleError(ValueError):
 
 
 _COVERAGE_MISMATCH = "artifact bundle coverage differs across files"
-_CORE_CATEGORY_NAME = "CORE ITEMS"
 
 
 @dataclass(frozen=True)

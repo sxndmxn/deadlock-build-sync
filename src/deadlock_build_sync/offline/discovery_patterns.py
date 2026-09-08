@@ -1,8 +1,6 @@
-"""Independent bounded Eclat and singleton-step PrefixSpan implementations."""
+"""Bounded Eclat mining for observed item sets."""
 
 from __future__ import annotations
-
-from collections import defaultdict
 
 import numpy as np
 
@@ -42,65 +40,3 @@ def extend_itemset(
             if (tids & remaining).bit_count() >= minimum
         ]
         extend_itemset(following, suffix, minimum, length, result)
-
-
-def sequences(times: np.ndarray) -> list[tuple[tuple[int, ...], ...]]:
-    result = []
-    for row in times:
-        present = np.flatnonzero(row >= 0)
-        batches = tuple(
-            tuple(present[row[present] == time].tolist())
-            for time in sorted(set(row[present]))
-        )
-        result.append(batches)
-    return result
-
-
-def project(
-    database: list[tuple[tuple[int, ...], ...]],
-    projected: list[tuple[int, int]],
-    prefix: tuple[int, ...],
-) -> dict[int, list[tuple[int, int]]]:
-    extensions = defaultdict(list)
-    for identity, start in projected:
-        seen = set(prefix)
-        for offset in range(start, len(database[identity])):
-            for item in database[identity][offset]:
-                if item not in seen:
-                    extensions[item].append((identity, offset + 1))
-                    seen.add(item)
-    return dict(extensions)
-
-
-def extend_sequence(
-    database: list[tuple[tuple[int, ...], ...]],
-    projected: list[tuple[int, int]],
-    prefix: tuple[int, ...],
-    minimum: int,
-    length: int,
-    result: PatternCounts,
-) -> None:
-    for item, following in sorted(project(database, projected, prefix).items()):
-        if len(following) < minimum:
-            continue
-        pattern = (*prefix, item)
-        if len(pattern) == length:
-            result[pattern] = len(following)
-        else:
-            extend_sequence(database, following, pattern, minimum, length, result)
-
-
-def prefixspan(
-    times: np.ndarray, minimum: int = 100, length: int = 3
-) -> dict[tuple[int, ...], int]:
-    database = sequences(times)
-    result = {}
-    extend_sequence(
-        database,
-        [(index, 0) for index in range(len(database))],
-        (),
-        minimum,
-        length,
-        result,
-    )
-    return result

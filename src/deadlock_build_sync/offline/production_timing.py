@@ -2,59 +2,6 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-import polars as pl
-
-from deadlock_build_sync.value_validation import (
-    integer,
-    number,
-    object_dict,
-    object_list,
-)
-
-if TYPE_CHECKING:
-    import duckdb
-
-
-def timing_payload(
-    con: duckdb.DuckDBPyConnection,
-    hero_id: int,
-    members: frozenset[tuple[int, int]],
-    path: tuple[int, ...],
-    tier_policy: dict[str, object],
-) -> dict[str, object]:
-    pool = object_dict(tier_policy["item_ids_by_tier"]) or {}
-    item_ids = sorted({
-        integer(item) for values in pool.values() for item in object_list(values) or []
-    })
-    con.register(
-        "_timing_members",
-        pl.DataFrame({
-            "match_id": [row[0] for row in members],
-            "player_slot": [row[1] for row in members],
-        }),
-    )
-    try:
-        rows = con.execute(
-            """
-            SELECT p.match_id, p.player_slot, p.item_id, min(p.buy_time)
-            FROM first_purchases p JOIN _timing_members m USING (match_id, player_slot)
-            WHERE p.hero_id = ? AND p.fold = 'train'
-            GROUP BY p.match_id, p.player_slot, p.item_id
-        """,
-            [hero_id],
-        ).fetchall()
-    finally:
-        con.unregister("_timing_members")
-    histories: dict[tuple[int, int], dict[int, float]] = {}
-    for match_id, player_slot, item, bought in rows:
-        histories.setdefault((integer(match_id), integer(player_slot)), {})[
-            integer(item)
-        ] = number(bought)
-    results = _interval_counts(item_ids, path, histories)
-    return {"version": 1, "fold": "train", "core_path": list(path), "items": results}
-
 
 def _interval_counts(
     item_ids: list[int],

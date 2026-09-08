@@ -185,6 +185,7 @@ def test_off_policy_evaluation_recovers_known_policy_with_diagnostics() -> None:
     assert report.self_normalized_ips == pytest.approx(0.5)
     assert report.doubly_robust == pytest.approx(0.5)
     assert report.effective_sample_size == pytest.approx(100)
+    assert report.maximum_weight == pytest.approx(1)
     assert set(report.clipped_sensitivity) == {"clip=5", "clip=10", "clip=20"}
     assert sha256_json(asdict(report)) == (
         "a030c0af52696c89cadcf2f55149993e37a3a2f42ad79c96c1067bc7baeb006d"

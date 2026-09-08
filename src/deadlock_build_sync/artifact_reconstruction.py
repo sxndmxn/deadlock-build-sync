@@ -7,7 +7,7 @@ from .artifact_bundle_types import (
     ArtifactBuildIdentity,
     ArtifactBundleError,
 )
-from .artifact_projection import _ability_path, _categories
+from .artifact_projection import _ability_path
 from .build_evidence import select_hero_build
 from .build_tags import FUNCTION_CLASSES
 from .mechanics import ItemGraph, ability_definitions_from_kit
@@ -17,7 +17,6 @@ from .purchase_guidance import attach_purchase_guidance
 from .purchase_guide import (
     PurchaseGuide,
     build_purchase_guide_from_evidence,
-    guide_item_from_evidence,
 )
 from .renderer import ProjectionIdentity, project_policy_to_guide
 from .snapshot import sha256_json
@@ -153,80 +152,6 @@ def _guide(
     policy: BuildPolicy,
     evidence: HeroBuildEvidence,
     *,
-    manifest: dict[str, object],
-    rank_identity: str,
-    assets: list[dict[str, object]] | None = None,
-) -> PurchaseGuide:
-    if assets is not None:
-        return _canonical_guide(hero, policy, evidence, manifest, rank_identity, assets)
-    hero_name, class_name = _hero_identity(hero, policy)
-    categories, core_items, optional_core_items, tiers = _categories(
-        hero, policy, evidence
-    )
-    joint_matches, joint_share, median_net_worth, target_cost = _core_evidence(
-        hero, policy
-    )
-    build_identity = _build_identity(
-        hero,
-        policy,
-        manifest,
-    )
-    client_version = manifest.get("client_version")
-    match_mode = manifest.get("match_mode")
-    as_of_timestamp = manifest.get("as_of_timestamp")
-    if (
-        not isinstance(client_version, int)
-        or not isinstance(match_mode, str)
-        or not isinstance(as_of_timestamp, int)
-    ):
-        raise ArtifactBundleError("artifact snapshot has an invalid cohort")
-    return PurchaseGuide(
-        hero_id=policy.hero_id,
-        hero_name=hero_name,
-        hero_class_name=class_name,
-        tiers=tiers,
-        path_id=policy.path_id,
-        path_label=policy.path_label,
-        signature_item_ids=evidence.signature_item_ids,
-        ability_path=_ability_path(hero, policy),
-        categories=categories,
-        snapshot_id=policy.snapshot_id,
-        policy_id=policy.policy_id,
-        client_version=client_version,
-        match_mode=match_mode,
-        rank_identity=rank_identity,
-        core_items=core_items,
-        core_purchase_items=categories[0].items,
-        backbone_items=tuple(
-            guide_item_from_evidence(
-                next(item for item in evidence.items if item.item_id == item_id)
-            )
-            for item_id in evidence.core_policy.backbone_item_ids
-        ),
-        optional_core_items=optional_core_items,
-        core_alternatives=evidence.core_policy.alternatives,
-        backbone_matches=evidence.core_policy.backbone_matches,
-        backbone_share=(
-            evidence.core_policy.backbone_matches / evidence.eligible_player_matches
-        ),
-        core_joint_matches=joint_matches,
-        core_joint_share=joint_share,
-        median_final_net_worth=median_net_worth,
-        core_target_cost=target_cost,
-        build_tag_ids=build_identity.tag_ids,
-        build_tag_classes=build_identity.tag_classes,
-        build_tag_labels=build_identity.tag_labels,
-        build_tag_catalog_sha256=build_identity.catalog_sha256,
-        build_archetype=build_identity.archetype,
-        analysis_start_timestamp=_analysis_start_timestamp(manifest),
-        as_of_timestamp=as_of_timestamp,
-    )
-
-
-def _canonical_guide(
-    hero: dict[str, object],
-    policy: BuildPolicy,
-    evidence: HeroBuildEvidence,
     manifest: dict[str, object],
     rank_identity: str,
     assets: list[dict[str, object]],

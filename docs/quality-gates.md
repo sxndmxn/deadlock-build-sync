@@ -24,9 +24,9 @@ scheduled or manual workflow runs the slower mutation gate.
 
 The numeric gate checks all tracked Python files for file size, cyclomatic
 complexity, Halstead difficulty, and forbidden type names. Coverage and CRAP
-apply to `src/` and `scripts/`, including the new discovery code. Historical
-analysis, clustering, model, and report runners are in `tools/comparisons/legacy`. Complexipy checks `scripts/`, `src/`, `tests/`, and
-`tools/`.
+apply to `src/` and `scripts/`, including discovery code. Historical comparison
+runners and their tests are [archived in Git history](../tools/comparisons/README.md).
+Complexipy checks `scripts/`, `src/`, `tests/`, and `tools/`.
 
 ## Fast local gate
 
@@ -56,7 +56,8 @@ repository coverage and per-function data for the CRAP calculation.
 
 [Deptry](https://deptry.com/usage/) checks the installed product code, including
 the optional offline producer and packaged narrative script. The `test` extra
-is a development group. Comparison tools have separate dependency manifests. Active discovery code is
+is a development group. Archived comparison tools retain their dependency manifests
+at the archived revision. Active discovery code is
 inside the product dependency check. Arrow conversion and timezone support
 load `pyarrow` and `pytz` indirectly; these are the only unused-import exceptions.
 
@@ -68,7 +69,7 @@ storage or CLI code. Cache interfaces limit installation and restore access to
 their command owners. Unused dependency declarations, upward imports, circular
 module dependencies, unused ignores, and ignores without reasons fail the check.
 Deptry also scans the packaged narrative script. Comparison dependency manifests
-remain separate from these product checks.
+are available with the archived tools.
 Do not run `tach sync` to admit an unintended import. Review boundary changes.
 The Tach pytest plugin is disabled so the full coverage gate always runs the
 complete test suite.

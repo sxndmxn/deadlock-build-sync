@@ -10,27 +10,9 @@ import pytest
 from deadlock_build_sync.offline import production_sources as sources
 from deadlock_build_sync.offline.api import write_json
 from deadlock_build_sync.offline.config import RunPaths, sha256_json
-from tests.mechanics_fixtures import item
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-
-def test_enemy_threat_evidence_uses_resolved_signature_mechanics() -> None:
-    ability = item(10, "ability")
-    ability["class_name"] = "ability_one"
-    ability["description"] = {"desc": "Gain Weapon Damage."}
-    heroes: list[dict[str, object]] = [
-        {"id": 1, "items": {"signature1": "ability_one", "other": 2}},
-        {"id": "bad", "items": {}},
-        {"id": 2},
-    ]
-
-    assets: list[dict[str, object]] = [ability, {"id": 11}]
-    result = sources._enemy_threat_evidence(heroes, assets)
-
-    assert "bullet_pressure" in result[1]
-    assert 2 not in result
 
 
 def test_patch_helpers_normalize_guids_content_and_cutoff(tmp_path: Path) -> None:
@@ -100,41 +82,6 @@ def test_patch_and_rank_sources_reject_invalid_or_future_data(tmp_path: Path) ->
         ],
     )
     assert len(sources._rank_labels_sha256(paths)) == 64
-
-
-def test_inventory_queries_reconstruct_final_and_early_items() -> None:
-    con = duckdb.connect()
-    try:
-        con.execute(
-            "CREATE TABLE purchases(match_id INTEGER, player_slot INTEGER, "
-            "hero_id INTEGER, item_id INTEGER, buy_time INTEGER, sold_time INTEGER, "
-            "event_order INTEGER)"
-        )
-        con.executemany(
-            "INSERT INTO purchases VALUES (?, ?, ?, ?, ?, ?, ?)",
-            [
-                (1, 0, 7, 1, 100, 0, 1),
-                (1, 0, 7, 2, 200, 0, 2),
-                (2, 1, 7, 3, 100, 0, 1),
-            ],
-        )
-        con.execute(
-            "CREATE TABLE first_purchases(match_id INTEGER, player_slot INTEGER, "
-            "hero_id INTEGER, item_id INTEGER, own_net_worth_at_buy INTEGER, "
-            "buy_time INTEGER)"
-        )
-        con.executemany(
-            "INSERT INTO first_purchases VALUES (?, ?, ?, ?, ?, ?)",
-            [(1, 0, 7, 1, 10_000, 100), (1, 0, 7, 2, 13_000, 200)],
-        )
-
-        inventories = sources._inventories_for_hero(con, 7, {2: (1,)})
-        early = sources._early_inventories_for_hero(con, 7)
-    finally:
-        con.close()
-
-    assert inventories == {(1, 0): (2,), (2, 1): (3,)}
-    assert early == {(1, 0): (1,)}
 
 
 def test_path_item_metrics_aggregate_fold_and_imbue_support() -> None:
