@@ -27,7 +27,7 @@ from deadlock_build_sync.recommendation import (
 from deadlock_build_sync.snapshot import EpochBoundary, EpochSet, EvidenceUnit
 
 
-def assets() -> list[dict[str, object]]:
+def make_recommendation_assets() -> list[dict[str, object]]:
     return [
         {
             "id": 1,
@@ -65,10 +65,10 @@ def assets() -> list[dict[str, object]]:
     ]
 
 
-def expanded_assets(
+def make_expanded_assets(
     *, active_ids: frozenset[int] = frozenset()
 ) -> list[dict[str, object]]:
-    rows = assets()
+    rows = make_recommendation_assets()
     for row in rows:
         row["is_active_item"] = row["id"] in active_ids
     rows.extend(
@@ -89,7 +89,7 @@ def expanded_assets(
     return rows
 
 
-def catalog(*, branch: bool = False) -> BuildEvidenceCatalog:
+def make_build_catalog(*, branch: bool = False) -> BuildEvidenceCatalog:
     boundary = EpochBoundary("patch", 1)
     situational = SituationalPolicy(
         (
@@ -166,7 +166,7 @@ def catalog(*, branch: bool = False) -> BuildEvidenceCatalog:
     )
 
 
-def build_policy(*, branch: bool = False) -> BuildPolicy:
+def make_recommendation_policy(*, branch: bool = False) -> BuildPolicy:
     snapshot_id = "e" * 64
     core_claim = EvidenceClaim(
         "hero/12/core",
@@ -266,7 +266,7 @@ def build_policy(*, branch: bool = False) -> BuildPolicy:
     )
 
 
-def state(**changes: object) -> DecisionState:
+def make_decision_state(**changes: object) -> DecisionState:
     base = DecisionState(
         build_evidence_id="a" * 64,
         client_version=123,
@@ -288,7 +288,7 @@ def state(**changes: object) -> DecisionState:
     return replace(base, **changes)
 
 
-def decision_state_document() -> dict[str, object]:
+def make_decision_state_document() -> dict[str, object]:
     return {
         "schema_version": 3,
         "build_evidence_id": "a" * 64,

@@ -43,9 +43,14 @@ def test_status_is_read_only_and_supports_json() -> None:
     assert args.json
 
 
+@pytest.mark.parametrize(
+    ("worker_arguments", "workers"), [([], 8), (["--workers", "3"], 3)]
+)
 def test_refresh_evidence_handoff_exports_and_admits_one_artifact(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    worker_arguments: list[str],
+    workers: int,
 ) -> None:
     forwarded: list[str] = []
     loaded: list[Path] = []
@@ -66,6 +71,7 @@ def test_refresh_evidence_handoff_exports_and_admits_one_artifact(
         str(tmp_path),
         "--run-id",
         "frozen",
+        *worker_arguments,
     ])
 
     assert cli_module._run_refresh_evidence(args) == 0
@@ -74,7 +80,12 @@ def test_refresh_evidence_handoff_exports_and_admits_one_artifact(
         tmp_path / "build-evidence.json"
     )
     assert "--run-id" in forwarded
+    assert forwarded[forwarded.index("--workers") + 1] == str(workers)
     assert loaded == [tmp_path / "build-evidence.json"]
+    forwarded.clear()
+    args.resume = True
+    assert cli_module._run_refresh_evidence(args) == 0
+    assert "--resume" in forwarded
 
 
 def test_recommend_parser_requires_a_decision_state() -> None:
@@ -100,7 +111,7 @@ def test_stale_sync_stops_before_cache_discovery(
     )
     monkeypatch.setattr(
         cli_module,
-        "_location",
+        "_discover_cache_location",
         lambda _args: calls.append("cache"),
     )
     args = build_parser().parse_args([
@@ -128,7 +139,7 @@ def test_install_artifacts_refuses_before_loading_when_deadlock_is_running(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     location = CacheLocation(123, tmp_path / "cached_hero_builds.kv3", tmp_path)
-    monkeypatch.setattr(cli_module, "_location", lambda _args: location)
+    monkeypatch.setattr(cli_module, "_discover_cache_location", lambda _args: location)
     monkeypatch.setattr(cli_module, "deadlock_is_running", lambda: True)
     monkeypatch.setattr(
         cli_module,
@@ -160,7 +171,7 @@ def test_install_artifacts_loads_frozen_build_evidence_from_the_bundle(
     location = CacheLocation(123, cache_path, tmp_path)
     patch = Patch("Patch", 123, "2026-01-01T00:00:00Z")
     seen: dict[str, object] = {}
-    monkeypatch.setattr(cli_module, "_location", lambda _args: location)
+    monkeypatch.setattr(cli_module, "_discover_cache_location", lambda _args: location)
     monkeypatch.setattr(cli_module, "deadlock_is_running", lambda: False)
     monkeypatch.setattr(
         cli_module,
@@ -306,14 +317,14 @@ def test_sync_generates_artifacts_and_installs_without_extra_flags(
     evidence = SimpleNamespace(artifact_id="e" * 64, heroes={})
     api = object()
 
-    monkeypatch.setattr(cli_module, "_location", lambda _args: location)
+    monkeypatch.setattr(cli_module, "_discover_cache_location", lambda _args: location)
     monkeypatch.setattr(cli_module, "deadlock_is_running", lambda: False)
     monkeypatch.setattr(
         cli_module,
         "require_current_build_evidence",
         lambda *_args: evidence,
     )
-    monkeypatch.setattr(cli_support, "_api", lambda *_args: api)
+    monkeypatch.setattr(cli_support, "_create_evidence_api", lambda *_args: api)
 
     def fake_generate(*args: object, **kwargs: object) -> GeneratedGuides:
         assert args == (api,)

@@ -6,11 +6,11 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pytest
 
-from deadlock_build_sync.offline.discovery_patterns import eclat
+from deadlock_build_sync.offline.discovery_patterns import mine_eclat_itemsets
 from deadlock_build_sync.offline.discovery_quality import (
+    calculate_wilson_lower_bound,
+    estimate_standardized_outcome_difference,
     rejection_reasons,
-    standardized,
-    wilson_lower,
 )
 
 if TYPE_CHECKING:
@@ -24,7 +24,7 @@ def test_eclat_matches_exhaustive_triples_and_unique_transaction_support() -> No
         for core in combinations(range(8), 3)
         if matrix[:, core].all(axis=1).sum() >= 10
     }
-    assert eclat(matrix, minimum=10) == expected
+    assert mine_eclat_itemsets(matrix, minimum=10) == expected
 
 
 def test_state_adjustment_removes_mixture_selection_and_sparse_overlap_abstains() -> (
@@ -37,11 +37,13 @@ def test_state_adjustment_removes_mixture_selection_and_sparse_overlap_abstains(
             core.extend([arm == 1] * count)
             strata.extend([stratum] * count)
             won.extend(np.arange(count) < (0.2 if stratum == 0 else 0.8) * count)
-    result = standardized(np.asarray(core), np.asarray(won), np.asarray(strata))
+    result = estimate_standardized_outcome_difference(
+        np.asarray(core), np.asarray(won), np.asarray(strata)
+    )
     assert result["difference"] == pytest.approx(0, abs=1e-12)
     assert result["lower_95"] is not None
     assert result["lower_95"] < 0
-    sparse = standardized(
+    sparse = estimate_standardized_outcome_difference(
         np.ones(100, dtype=bool), np.ones(100), np.zeros(100, dtype=int)
     )
     assert sparse["difference"] is None
@@ -54,7 +56,7 @@ def test_high_raw_win_rate_cannot_bypass_quality_or_multiple_testing() -> None:
         "wins": 350,
         "win_rate": 0.7,
         "joint_lift": 2,
-        "win_lower_95": wilson_lower(350, 500),
+        "win_lower_95": calculate_wilson_lower_bound(350, 500),
         "win_p_greater_half": 0.001,
         "adjusted": {
             "core_overlap": 450,

@@ -9,9 +9,9 @@ import pytest
 from deadlock_build_sync.artifacts import ArtifactError
 from deadlock_build_sync.build_evidence_discovery import validate_discovery
 from deadlock_build_sync.build_support import OutcomeEvidence, outcome_limitations
-from deadlock_build_sync.hero_cohort import HeroCohort, ranked_cutoffs
+from deadlock_build_sync.hero_cohort import HeroCohort, calculate_rank_cutoffs
 from deadlock_build_sync.value_validation import require_object_dict
-from tests.discovery_fixtures import discovery_record, hero_cohort
+from tests.discovery_fixtures import make_discovery_record, make_hero_cohort
 
 
 @pytest.mark.parametrize(
@@ -19,8 +19,8 @@ from tests.discovery_fixtures import discovery_record, hero_cohort
     [(11, (11,)), (16, (16, 11)), (21, (21, 11)), (75, (75, 61, 51, 41, 31, 21, 11))],
 )
 def test_rank_expansion_boundaries(minimum: int, expected: tuple[int, ...]) -> None:
-    assert ranked_cutoffs(minimum, 115, "auto") == expected
-    assert ranked_cutoffs(minimum, 115, "off") == (minimum,)
+    assert calculate_rank_cutoffs(minimum, 115, "auto") == expected
+    assert calculate_rank_cutoffs(minimum, 115, "off") == (minimum,)
 
 
 @pytest.mark.parametrize(
@@ -35,11 +35,11 @@ def test_rank_expansion_boundaries(minimum: int, expected: tuple[int, ...]) -> N
 )
 def test_invalid_rank_ranges_fail(minimum: int, maximum: int, mode: str) -> None:
     with pytest.raises(ValueError, match=r"valid|exceed|rank"):
-        ranked_cutoffs(minimum, maximum, mode)
+        calculate_rank_cutoffs(minimum, maximum, mode)
 
 
 def test_hero_cohort_round_trip_preserves_effective_range() -> None:
-    row = hero_cohort()
+    row = make_hero_cohort()
     cohort = HeroCohort.parse(row)
     assert cohort.as_dict() == row
     assert cohort.rank_range.minimum.badge_id == 61
@@ -58,7 +58,7 @@ def test_hero_cohort_round_trip_preserves_effective_range() -> None:
 )
 def test_hero_cohort_rejects_inconsistent_ranges(key: str, value: object) -> None:
     with pytest.raises(ArtifactError):
-        HeroCohort.parse({**hero_cohort(), key: value})
+        HeroCohort.parse({**make_hero_cohort(), key: value})
 
 
 @pytest.mark.parametrize(
@@ -74,7 +74,7 @@ def test_hero_cohort_rejects_inconsistent_ranges(key: str, value: object) -> Non
 def test_hero_history_cannot_change_bounds_or_expand_after_support(
     key: str, value: object
 ) -> None:
-    row = hero_cohort()
+    row = make_hero_cohort()
     history = HeroCohort.parse(row).expansion_history
     history[0][key] = value
     with pytest.raises(ArtifactError):
@@ -96,7 +96,7 @@ def test_hero_history_cannot_change_bounds_or_expand_after_support(
 def test_malformed_outcome_counts_and_probabilities_fail(
     field: str, value: object
 ) -> None:
-    row = require_object_dict(discovery_record([1, 2, 3], [1, 2, 3])["selection"])
+    row = require_object_dict(make_discovery_record([1, 2, 3], [1, 2, 3])["selection"])
     row[field] = value
     with pytest.raises(ArtifactError):
         OutcomeEvidence.parse(row)
@@ -113,14 +113,14 @@ def test_malformed_outcome_counts_and_probabilities_fail(
     ],
 )
 def test_malformed_adjusted_estimates_fail(field: str, value: object) -> None:
-    row = require_object_dict(discovery_record([1, 2, 3], [1, 2, 3])["selection"])
+    row = require_object_dict(make_discovery_record([1, 2, 3], [1, 2, 3])["selection"])
     require_object_dict(row["adjusted"])[field] = value
     with pytest.raises(ArtifactError):
         OutcomeEvidence.parse(row)
 
 
 def test_absent_validation_keeps_supported_frozen_identity() -> None:
-    row = discovery_record([1, 2, 3], [1, 2, 3])
+    row = make_discovery_record([1, 2, 3], [1, 2, 3])
     validation = deepcopy(require_object_dict(row["validation"]))
     validation.update({"owners": 0, "wins": 0, "win_rate": None})
     require_object_dict(validation["adjusted"]).update({
@@ -148,7 +148,7 @@ def test_absent_validation_keeps_supported_frozen_identity() -> None:
 
 @pytest.mark.parametrize("limitations", [[], [None], [""], None])
 def test_observed_status_requires_explicit_limits(limitations: object) -> None:
-    row = discovery_record([1, 2, 3], [1, 2, 3])
+    row = make_discovery_record([1, 2, 3], [1, 2, 3])
     row.update({"evidence_status": "observed", "evidence_limitations": limitations})
     with pytest.raises(ArtifactError, match="limitations"):
         validate_discovery(row, (1, 2, 3), (1, 2, 3))

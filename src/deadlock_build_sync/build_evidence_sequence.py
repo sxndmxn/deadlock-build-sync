@@ -16,7 +16,7 @@ from .build_evidence_types import (
     SituationalPolicy,
 )
 from .build_evidence_values import (
-    _required_int,
+    _require_integer,
 )
 from .value_validation import object_dict
 
@@ -24,26 +24,26 @@ type _SequencePolicyDocument = dict[str, object]
 type _SituationalPolicyDocument = dict[str, object]
 
 
-def _sequence_transition(value: object, hero_id: int) -> SequenceTransition:
+def _parse_sequence_transition(value: object, hero_id: int) -> SequenceTransition:
     if not isinstance(value, dict):
         raise ArtifactError(f"hero {hero_id} has a malformed sequence transition")
     level = value.get("level")
     if level not in SEQUENCE_LEVELS:
         raise ArtifactError(f"hero {hero_id} has an invalid sequence backoff level")
-    support = _required_int(value.get("support"), "transition support", minimum=1)
-    context_support = _required_int(
+    support = _require_integer(value.get("support"), "transition support", minimum=1)
+    context_support = _require_integer(
         value.get("context_support"),
         "transition context support",
         minimum=support,
     )
     return SequenceTransition(
         level=str(level),
-        first_item_id=_required_int(value.get("first_item_id"), "first item id"),
-        previous_item_id=_required_int(
+        first_item_id=_require_integer(value.get("first_item_id"), "first item id"),
+        previous_item_id=_require_integer(
             value.get("previous_item_id"), "previous item id"
         ),
-        position=_required_int(value.get("position"), "purchase position"),
-        next_item_id=_required_int(
+        position=_require_integer(value.get("position"), "purchase position"),
+        next_item_id=_require_integer(
             value.get("next_item_id"), "next item id", minimum=1
         ),
         support=support,
@@ -51,7 +51,7 @@ def _sequence_transition(value: object, hero_id: int) -> SequenceTransition:
     )
 
 
-def _sequence_policy(value: object, hero_id: int) -> SequencePolicy:
+def _parse_sequence_policy(value: object, hero_id: int) -> SequencePolicy:
     if not isinstance(value, dict) or value.get("version") != SEQUENCE_POLICY_VERSION:
         raise ArtifactError(f"hero {hero_id} has no supported sequence policy")
     data = cast("_SequencePolicyDocument", value)
@@ -69,15 +69,17 @@ def _sequence_policy(value: object, hero_id: int) -> SequencePolicy:
     ):
         raise ArtifactError(f"hero {hero_id} has an incomplete sequence policy")
     path = tuple(
-        _required_int(item_id, "default path item id", minimum=1)
+        _require_integer(item_id, "default path item id", minimum=1)
         for item_id in raw_path
     )
     if production_model != "pairwise" and len(path) != len(set(path)):
         raise ArtifactError(f"hero {hero_id} default path repeats an item")
-    minimum_support = _required_int(
+    minimum_support = _require_integer(
         data.get("minimum_support"), "sequence minimum support", minimum=20
     )
-    transitions = tuple(_sequence_transition(row, hero_id) for row in raw_transitions)
+    transitions = tuple(
+        _parse_sequence_transition(row, hero_id) for row in raw_transitions
+    )
     if any(row.support < minimum_support for row in transitions):
         raise ArtifactError(f"hero {hero_id} has a weak sequence transition")
     return SequencePolicy(
@@ -89,11 +91,11 @@ def _sequence_policy(value: object, hero_id: int) -> SequencePolicy:
     )
 
 
-def _situational_branch(value: object, hero_id: int) -> SituationalBranch:
+def _parse_situational_branch(value: object, hero_id: int) -> SituationalBranch:
     return parse_situational_branch(value, hero_id)
 
 
-def _situational_policy(value: object, hero_id: int) -> SituationalPolicy:
+def _parse_situational_policy(value: object, hero_id: int) -> SituationalPolicy:
     if (
         not isinstance(value, dict)
         or value.get("version") != SITUATIONAL_POLICY_VERSION
@@ -113,7 +115,7 @@ def _situational_policy(value: object, hero_id: int) -> SituationalPolicy:
         raise ArtifactError(f"hero {hero_id} has too many situational branches")
     if not all(isinstance(reason, str) and reason.strip() for reason in abstentions):
         raise ArtifactError(f"hero {hero_id} has an invalid situational abstention")
-    admitted = tuple(_situational_branch(row, hero_id) for row in branches)
+    admitted = tuple(_parse_situational_branch(row, hero_id) for row in branches)
     identities = [
         (branch.threat, branch.enemy_hero_id, branch.item_id) for branch in admitted
     ]

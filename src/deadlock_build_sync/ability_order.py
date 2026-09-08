@@ -79,7 +79,7 @@ class AbilityPath:
         )
 
 
-def _valid_path(value: object) -> tuple[int, ...] | None:
+def _parse_ability_path(value: object) -> tuple[int, ...] | None:
     if not isinstance(value, list) or not value or len(value) > 16:
         return None
     path: list[int] = []
@@ -92,7 +92,7 @@ def _valid_path(value: object) -> tuple[int, ...] | None:
     return tuple(path)
 
 
-def _ability_state(path: tuple[int, ...]) -> tuple[tuple[int, int], ...]:
+def _count_ability_ranks(path: tuple[int, ...]) -> tuple[tuple[int, int], ...]:
     return tuple(sorted(Counter(path).items()))
 
 
@@ -103,10 +103,12 @@ type _DecisionCounts = dict[
 ]
 
 
-def _valid_observations(rows: list[dict[str, object]]) -> list[_AbilityObservation]:
+def _filter_valid_ability_observations(
+    rows: list[dict[str, object]],
+) -> list[_AbilityObservation]:
     valid: list[_AbilityObservation] = []
     for row in rows:
-        path = _valid_path(row.get("abilities"))
+        path = _parse_ability_path(row.get("abilities"))
         matches = integer(row.get("matches"), default=0)
         wins = integer(row.get("wins"), default=0)
         losses = integer(row.get("losses"), default=0)
@@ -121,11 +123,13 @@ def _valid_observations(rows: list[dict[str, object]]) -> list[_AbilityObservati
     return valid
 
 
-def _decision_counts(valid: list[_AbilityObservation]) -> _DecisionCounts:
+def _aggregate_ability_decision_counts(
+    valid: list[_AbilityObservation],
+) -> _DecisionCounts:
     decisions: _DecisionCounts = defaultdict(dict)
     for path, matches, wins, losses in valid:
         for index, ability_id in enumerate(path):
-            state = index, _ability_state(path[:index])
+            state = index, _count_ability_ranks(path[:index])
             prior = decisions[state].get(ability_id, (0, 0, 0))
             decisions[state][ability_id] = (
                 prior[0] + matches,
@@ -187,7 +191,7 @@ def select_ability_path(
         A complete legal-count projection using all observations that reached each state.
 
     """
-    valid = _valid_observations(rows)
+    valid = _filter_valid_ability_observations(rows)
     cohort_matches = sum(matches for _, matches, _, _ in valid)
     if cohort_matches == 0:
         return None
@@ -196,7 +200,7 @@ def select_ability_path(
         for path, matches, _, _ in valid
         if len(path) == COMPLETE_ABILITY_PATH_LENGTH
     )
-    composed = _compose_default_path(_decision_counts(valid))
+    composed = _compose_default_path(_aggregate_ability_decision_counts(valid))
     if composed is None:
         return None
     selected, support, final_counts = composed

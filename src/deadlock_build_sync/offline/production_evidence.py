@@ -26,20 +26,22 @@ from deadlock_build_sync.value_validation import (
 
 from .api import read_json, write_json
 from .config import RunPaths, sha256_json
-from .discovery_export import discover_roster
-from .late_game import load_item_asset_maps
+from .discovery_export import discover_hero_roster
+from .inventory_reconstruction import load_item_asset_maps
 from .production_sources import (
     SCHEMA_VERSION,
     SEQUENCE_MINIMUM_SUPPORT,
     UnsupportedBuildPathError,
+    _calculate_rank_labels_sha256,
     _HeroExportContext,
-    _patch_at,
-    _rank_labels_sha256,
+    _select_patch_at_timestamp,
 )
-from .production_storage import validated_write
+from .production_storage import write_validated_evidence
 
 
-def export_production_evidence(paths: RunPaths, output: Path) -> dict[str, object]:
+def export_production_evidence(
+    paths: RunPaths, output: Path, *, workers: int = 8, resume: bool = False
+) -> dict[str, object]:
     manifest = object_dict(read_json(paths.run / "manifest.json"))
     if manifest is None:
         raise RuntimeError("analysis manifest must be a dictionary")
@@ -52,12 +54,14 @@ def export_production_evidence(paths: RunPaths, output: Path) -> dict[str, objec
     if heroes is None:
         raise RuntimeError("hero and item assets must be lists of dictionaries")
     export_context = _export_context(paths, cohort, manifest)
-    patch = _patch_at(paths, as_of)
+    patch = _select_patch_at_timestamp(paths, as_of)
     core_economy_reference = {
         "target_core_cost": export_context.target_core_cost,
         "basis": "frozen discovery maximum",
     }
-    hero_payloads = discover_roster(heroes, export_context)
+    hero_payloads = discover_hero_roster(
+        heroes, export_context, workers=workers, resume=resume
+    )
     if any(not hero["builds"] for hero in hero_payloads):
         report = paths.run / "discovery-exclusions.json"
         write_json(report, hero_payloads)
@@ -112,7 +116,7 @@ def export_production_evidence(paths: RunPaths, output: Path) -> dict[str, objec
         "patch": patch,
         "epochs": epochs,
         "client_version": integer(sources["client_version"]),
-        "rank_labels_sha256": _rank_labels_sha256(paths),
+        "rank_labels_sha256": _calculate_rank_labels_sha256(paths),
         "heroes_sha256": sha256_json(heroes),
         "items_sha256": sha256_json(export_context.normal_assets),
         "mechanics_assets": export_context.normal_assets,
@@ -123,7 +127,7 @@ def export_production_evidence(paths: RunPaths, output: Path) -> dict[str, objec
         "heroes": hero_payloads,
     }
     document = {**payload, "artifact_id": sha256_json(payload)}
-    validated_write(output, document)
+    write_validated_evidence(output, document)
     return document
 
 

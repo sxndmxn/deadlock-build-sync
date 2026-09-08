@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from .artifacts import ArtifactError
-from .build_evidence_values import _required_int
+from .build_evidence_values import _require_integer
 from .value_validation import object_dict
 
 if TYPE_CHECKING:
@@ -65,8 +65,8 @@ class OutcomeEvidence:
 
     @classmethod
     def parse(cls, row: Mapping[str, object]) -> OutcomeEvidence:
-        owners = _required_int(row.get("owners"), "core owners")
-        wins = _required_int(row.get("wins"), "core wins")
+        owners = _require_integer(row.get("owners"), "core owners")
+        wins = _require_integer(row.get("wins"), "core wins")
         adjusted = object_dict(row.get("adjusted"))
         if adjusted is None or wins > owners:
             raise ArtifactError("Discovery has inconsistent core outcomes")
@@ -75,7 +75,9 @@ class OutcomeEvidence:
             not owners and row.get("win_rate") is not None
         ):
             raise ArtifactError("Discovery has inconsistent core win rate")
-        overlap = _required_int(adjusted.get("core_overlap"), "comparable core owners")
+        overlap = _require_integer(
+            adjusted.get("core_overlap"), "comparable core owners"
+        )
         share = numeric(adjusted, "overlap_share")
         if overlap > owners or not math.isclose(share, overlap / max(1, owners)):
             raise ArtifactError("Discovery has inconsistent comparable-state overlap")

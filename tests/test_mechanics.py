@@ -7,10 +7,10 @@ from deadlock_build_sync.mechanics import (
     InventoryState,
     ItemGraph,
     MechanicsError,
-    ability_definitions_from_kit,
     build_hero_mechanics,
     classify_item_threat_responses,
     conditional_item_decision,
+    parse_ability_definitions,
     purchase_item,
     schedule_component_path,
     sell_item,
@@ -21,7 +21,7 @@ from deadlock_build_sync.value_validation import (
     require_object_dict,
     require_object_rows,
 )
-from tests.mechanics_fixtures import item
+from tests.mechanics_fixtures import make_item_asset
 
 
 def test_kit_record_preserves_structured_text_scaling_and_properties() -> None:
@@ -80,9 +80,9 @@ def test_kit_record_preserves_structured_text_scaling_and_properties() -> None:
 
 def test_item_graph_handles_branches_cost_credit_and_component_consumption() -> None:
     graph = ItemGraph.from_assets([
-        item(1, "component", cost=500),
-        item(2, "first_child", cost=1250, components=["component"]),
-        item(3, "second_child", cost=1500, components=["component"]),
+        make_item_asset(1, "component", cost=500),
+        make_item_asset(2, "first_child", cost=1250, components=["component"]),
+        make_item_asset(3, "second_child", cost=1500, components=["component"]),
     ])
 
     assert graph.children[1] == (2, 3)
@@ -94,9 +94,9 @@ def test_item_graph_handles_branches_cost_credit_and_component_consumption() -> 
 
 def test_component_schedule_moves_an_early_component_before_prior_core() -> None:
     graph = ItemGraph.from_assets([
-        item(1, "early_component"),
-        item(2, "first_core"),
-        item(3, "late_upgrade", components=["early_component"]),
+        make_item_asset(1, "early_component"),
+        make_item_asset(2, "first_core"),
+        make_item_asset(3, "late_upgrade", components=["early_component"]),
     ])
 
     path = schedule_component_path(
@@ -114,9 +114,9 @@ def test_component_schedule_moves_an_early_component_before_prior_core() -> None
 
 def test_component_schedule_rebuys_only_after_the_first_copy_is_consumed() -> None:
     graph = ItemGraph.from_assets([
-        item(1, "shared_component"),
-        item(2, "first_upgrade", components=["shared_component"]),
-        item(3, "second_upgrade", components=["shared_component"]),
+        make_item_asset(1, "shared_component"),
+        make_item_asset(2, "first_upgrade", components=["shared_component"]),
+        make_item_asset(3, "second_upgrade", components=["shared_component"]),
     ])
 
     path = schedule_component_path(
@@ -135,10 +135,10 @@ def test_component_schedule_rebuys_only_after_the_first_copy_is_consumed() -> No
 @pytest.mark.parametrize(
     "assets",
     [
-        [item(1, "child", components=["missing"])],
+        [make_item_asset(1, "child", components=["missing"])],
         [
-            item(1, "first", components=["second"]),
-            item(2, "second", components=["first"]),
+            make_item_asset(1, "first", components=["second"]),
+            make_item_asset(2, "second", components=["first"]),
         ],
     ],
 )
@@ -201,7 +201,7 @@ def test_ability_timeline_uses_unlock_levels_and_asset_ap_grants() -> None:
 
 
 def test_ability_definitions_preserve_asset_unlocks_costs_and_qualifiers() -> None:
-    definitions = ability_definitions_from_kit({
+    definitions = parse_ability_definitions({
         "abilities": [
             {
                 "id": ability_id,
@@ -234,7 +234,10 @@ def test_ability_definitions_preserve_asset_unlocks_costs_and_qualifiers() -> No
 
 
 def test_inventory_enforces_slots_actives_sells_and_flex() -> None:
-    assets = [item(index, f"item_{index}", active=index <= 5) for index in range(1, 14)]
+    assets = [
+        make_item_asset(index, f"item_{index}", active=index <= 5)
+        for index in range(1, 14)
+    ]
     graph = ItemGraph.from_assets(assets)
     state = InventoryState(unlocked_flex_slots=3)
     for item_id in range(1, 5):
@@ -288,21 +291,21 @@ def test_threat_classes_require_explicit_item_mechanics(
     description: str,
     expected: str,
 ) -> None:
-    asset = item(99, "response")
+    asset = make_item_asset(99, "response")
     asset["description"] = {"desc": description}
 
     assert expected in classify_item_threat_responses(asset)
 
 
 def test_scourge_decision_uses_both_item_mechanics() -> None:
-    scourge = item(1, "scourge")
+    scourge = make_item_asset(1, "scourge")
     scourge["description"] = {
         "desc": (
             "Apply Spirit Resist, Debuff Resist and an aura on a friendly target. "
             "Can be self cast."
         )
     }
-    phantom = item(2, "phantom_strike")
+    phantom = make_item_asset(2, "phantom_strike")
     phantom["description"] = {
         "desc": "Teleport to an enemy, then ground, slow, and disarm them."
     }
@@ -316,11 +319,11 @@ def test_scourge_decision_uses_both_item_mechanics() -> None:
 
 
 def test_reverse_decision_keeps_scourge_when_survival_matters_more() -> None:
-    phantom = item(2, "phantom_strike")
+    phantom = make_item_asset(2, "phantom_strike")
     phantom["description"] = {
         "desc": "Teleport to an enemy, then ground, slow, and disarm them."
     }
-    scourge = item(1, "scourge")
+    scourge = make_item_asset(1, "scourge")
     scourge["description"] = {
         "desc": "Apply Spirit Resist and Debuff Resist to a friendly target."
     }
@@ -335,7 +338,7 @@ def test_reverse_decision_keeps_scourge_when_survival_matters_more() -> None:
 
 
 def test_unstoppable_immunity_is_control_defense_and_protects_singularity() -> None:
-    unstoppable = item(3357231760, "upgrade_unstoppable", active=True)
+    unstoppable = make_item_asset(3357231760, "upgrade_unstoppable", active=True)
     unstoppable["name"] = "Unstoppable"
     unstoppable["description"] = {
         "desc": (
@@ -351,7 +354,7 @@ def test_unstoppable_immunity_is_control_defense_and_protects_singularity() -> N
             "value": "5.5",
         }
     }
-    weapon = item(100, "weapon_item")
+    weapon = make_item_asset(100, "weapon_item")
     weapon["description"] = {"desc": "Gain Weapon Damage."}
     assert classify_item_threat_responses(unstoppable) == frozenset({"hard_control"})
     assert conditional_item_decision(unstoppable, weapon) == (

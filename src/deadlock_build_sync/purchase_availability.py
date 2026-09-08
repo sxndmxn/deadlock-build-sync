@@ -6,18 +6,18 @@ from dataclasses import asdict
 from typing import TYPE_CHECKING
 
 from .mechanics import MechanicsError
-from .purchase_categories import choice_instruction
+from .purchase_categories import format_choice_instruction
 from .purchase_planner import plan_purchases
 
 if TYPE_CHECKING:
     from .mechanics import ItemGraph
-    from .purchase_branching import ChosenRoute
+    from .purchase_branching import SelectedPurchaseRoute
     from .purchase_guidance_types import PurchaseGuidance, PurchasePlan, PurchaseState
 
 
-def available_choices(
+def evaluate_available_choices(
     guidance: PurchaseGuidance,
-    route: ChosenRoute,
+    route: SelectedPurchaseRoute,
     state: PurchaseState,
     graph: ItemGraph,
     baseline: PurchasePlan,
@@ -26,7 +26,7 @@ def available_choices(
     for card in guidance.choices:
         current: dict[str, object] = {
             **asdict(card),
-            "instruction": choice_instruction(guidance, card),
+            "instruction": format_choice_instruction(guidance, card),
             "current_plan": None,
             "current_blocked_reason": None,
             "extra_remaining_cost": None,

@@ -17,17 +17,17 @@ if TYPE_CHECKING:
     import duckdb
 
 
-def _path_cohort_summary(
-    con: duckdb.DuckDBPyConnection,
+def _query_path_cohort_summary(
+    connection: duckdb.DuckDBPyConnection,
     member_ids: frozenset[tuple[int, int]],
 ) -> tuple[int, int | None]:
     members = pl.DataFrame({
         "match_id": [identity[0] for identity in member_ids],
         "player_slot": [identity[1] for identity in member_ids],
     })
-    con.register("_build_path_members", members)
+    connection.register("_build_path_members", members)
     try:
-        row = con.execute(
+        row = connection.execute(
             """
             SELECT count(*),
                    median(final_net_worth) FILTER (
@@ -39,7 +39,7 @@ def _path_cohort_summary(
             """
         ).fetchone()
     finally:
-        con.unregister("_build_path_members")
+        connection.unregister("_build_path_members")
     if row is None:
         raise RuntimeError("build path has no cohort summary")
     return int(row[0]), int(row[1]) if row[1] is not None else None
@@ -49,7 +49,7 @@ def _optional_float(value: object) -> float | None:
     return number(value) if value is not None else None
 
 
-def _item_payload(
+def _build_item_evidence_payload(
     row: dict[str, object],
     assets_by_id: dict[int, dict[str, object]],
     fold_eligible_matches: dict[str, int],

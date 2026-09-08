@@ -3,11 +3,14 @@ from __future__ import annotations
 import json
 from dataclasses import asdict
 
-from tests.recommendation_fixtures import build_policy, state
+from tests.recommendation_fixtures import (
+    make_decision_state,
+    make_recommendation_policy,
+)
 
 
-def replay_row() -> dict[str, object]:
-    document = asdict(state())
+def make_replay_row() -> dict[str, object]:
+    document = asdict(make_decision_state())
     document["schema_version"] = 3
     document["inventory"] = {
         "items": document.pop("owned_items"),
@@ -17,7 +20,7 @@ def replay_row() -> dict[str, object]:
         "active_bindings": document.pop("active_bindings"),
     }
     return {
-        "policy_id": build_policy().policy_id,
+        "policy_id": make_recommendation_policy().policy_id,
         "match_group": "deidentified-match",
         "match_start_timestamp": 2000,
         "policy_assigned_at": 1990,
@@ -31,7 +34,7 @@ def replay_row() -> dict[str, object]:
     }
 
 
-def replay_document(rows: list[dict[str, object]]) -> dict[str, object]:
+def make_replay_document(rows: list[dict[str, object]]) -> dict[str, object]:
     return {
         "schema_version": 1,
         "cohort_selection": "all_eligible_player_matches",

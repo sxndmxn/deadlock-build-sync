@@ -22,7 +22,7 @@ DESCRIPTION = (
 )
 
 
-def guide() -> PurchaseGuide:
+def make_narrative_guide() -> PurchaseGuide:
     core = GuideItem(101, "Frost Core", 1, 100, 0.5, 0.4, 1.0, ())
     option = GuideItem(102, "Barrier", 1, 80, 0.5, 0.4, 0.8, ())
     return PurchaseGuide(

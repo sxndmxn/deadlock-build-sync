@@ -3,25 +3,27 @@
 from deadlock_build_sync.mechanics import ItemGraph
 from deadlock_build_sync.value_validation import object_dict
 
-from .discovery_admission import discovery_record
-from .discovery_branches import freeze_choice
-from .discovery_types import Nomination
+from .discovery_admission import build_discovery_record
+from .discovery_branches import freeze_choice_conditions
+from .discovery_types import NominatedCoreBuild
 
 
 def freeze_substitutions(
-    rows: list[dict[str, object]], nominees: list[Nomination], graph: ItemGraph
+    rows: list[dict[str, object]], nominees: list[NominatedCoreBuild], graph: ItemGraph
 ) -> None:
     for base in nominees:
         if not base["guide"]["ready"]:
             continue
         pool = {item for items in base["guide"]["pool"].values() for item in items}
         for alternative in nominees:
-            checkpoint = _substitution_checkpoint(base, alternative, pool)
+            checkpoint = _find_substitution_checkpoint(base, alternative, pool)
             if checkpoint is None:
                 continue
             route = alternative["guide"]["path"]
             item = route[checkpoint]
-            for candidate in freeze_choice(rows, base, item, checkpoint, graph):
+            for candidate in freeze_choice_conditions(
+                rows, base, item, checkpoint, graph
+            ):
                 base["branch_candidates"].append({
                     **candidate,
                     "substitution": {
@@ -32,8 +34,8 @@ def freeze_substitutions(
                 })
 
 
-def validated_candidates(
-    base: Nomination, reviewed: list[Nomination]
+def select_validated_branch_candidates(
+    base: NominatedCoreBuild, reviewed: list[NominatedCoreBuild]
 ) -> list[dict[str, object]]:
     admitted = {
         row["identity_id"]: row
@@ -49,13 +51,16 @@ def validated_candidates(
             source = admitted[str(substitution["source_identity_id"])]
             result.append({
                 **candidate,
-                "substitution": {**substitution, "discovery": discovery_record(source)},
+                "substitution": {
+                    **substitution,
+                    "discovery": build_discovery_record(source),
+                },
             })
     return result
 
 
-def _substitution_checkpoint(
-    base: Nomination, alternative: Nomination, pool: set[int]
+def _find_substitution_checkpoint(
+    base: NominatedCoreBuild, alternative: NominatedCoreBuild, pool: set[int]
 ) -> int | None:
     if not alternative["guide"]["ready"] or alternative is base:
         return None

@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from deadlock_build_sync import cli_parser
-from deadlock_build_sync.cli_parser import build_parser, positive_int
+from deadlock_build_sync.cli_parser import build_parser, parse_positive_integer
 from deadlock_build_sync.snapshot import EpochBoundary, sha256_json
 from deadlock_build_sync.tracing import TRACE_ENVIRONMENT_VARIABLE
 
@@ -19,16 +19,16 @@ def _namespace_values(namespace: Namespace) -> dict[str, str]:
 
 
 def test_parser_numeric_and_epoch_values_are_strict() -> None:
-    assert positive_int("7") == 7
-    assert cli_parser._epoch_boundary(" mechanics @123") == EpochBoundary(
+    assert parse_positive_integer("7") == 7
+    assert cli_parser._parse_epoch_boundary(" mechanics @123") == EpochBoundary(
         "mechanics", 123
     )
     for value in ("0", "-1"):
         with pytest.raises(ArgumentTypeError, match="at least 1"):
-            positive_int(value)
+            parse_positive_integer(value)
     for value in ("mechanics", "@123", "mechanics@bad"):
         with pytest.raises(ArgumentTypeError, match="IDENTITY@UNIX_TIMESTAMP"):
-            cli_parser._epoch_boundary(value)
+            cli_parser._parse_epoch_boundary(value)
 
 
 def test_public_parser_help_is_stable(
@@ -58,7 +58,7 @@ def test_public_parser_help_is_stable(
         help_text[command or "root"] = capsys.readouterr().out
 
     assert sha256_json(help_text) == (
-        "3890f6d08a1938ca39bd3c932445f9f4d349e28be6fe1b6e768eb685dd7f88e5"
+        "f533480790ce3981487cb6b0b18e43314fc4190352149c24070dee7da9de8d9c"
     )
 
 
@@ -82,5 +82,5 @@ def test_public_parser_defaults_are_stable(monkeypatch: pytest.MonkeyPatch) -> N
     ]
 
     assert sha256_json(values) == (
-        "1e7091039229f15c8b34d359073ac2641abe065f703f26ccb8e8611f1921d34e"
+        "ced6323a3a25ae12c28f566c2480e83ce3e5b5e7e5351f00732f4da687ae9dff"
     )

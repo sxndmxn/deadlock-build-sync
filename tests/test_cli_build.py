@@ -16,8 +16,11 @@ from deadlock_build_sync.value_validation import (
 )
 from scripts import generate_narratives
 from tests import service_fake_api
-from tests.service_evidence_fixtures import build_evidence, grouped_build_evidence
-from tests.service_fake_api import FakeApi, ability_rows, duration_points
+from tests.service_evidence_fixtures import (
+    make_grouped_build_evidence,
+    make_service_build_evidence,
+)
+from tests.service_fake_api import FakeApi, make_ability_rows, make_duration_statistics
 
 
 @pytest.mark.parametrize("output_format", ["markdown", "json"])
@@ -34,22 +37,24 @@ def test_normal_build_generates_full_files_without_steam(
 
     monkeypatch.setattr(service_fake_api, "datetime", FixedDatetime)
     monkeypatch.setattr(generate_narratives, "datetime", FixedDatetime)
-    api = FakeApi(ability_rows=ability_rows(), duration_points=duration_points())
+    api = FakeApi(
+        ability_rows=make_ability_rows(), duration_points=make_duration_statistics()
+    )
     for asset in api._assets:
         if asset["id"] in {102, 104}:
             asset["description"] = "Grants bullet resist."
-    evidence = grouped_build_evidence(api)
+    evidence = make_grouped_build_evidence(api)
     monkeypatch.setattr(
         cli,
         "_current_evidence",
         lambda _args: (tmp_path / "build-evidence.json", evidence),
     )
-    monkeypatch.setattr(cli_support, "_api", lambda *_args: api)
+    monkeypatch.setattr(cli_support, "_create_evidence_api", lambda *_args: api)
 
     def forbidden(*_args: object, **_kwargs: object) -> None:
         pytest.fail("build accessed Steam")
 
-    monkeypatch.setattr(cli, "_location", forbidden)
+    monkeypatch.setattr(cli, "_discover_cache_location", forbidden)
     monkeypatch.setattr(cli_support, "install_guides", forbidden)
     monkeypatch.setattr(api, "steam_persona", forbidden)
     result = cli.main([
@@ -112,10 +117,12 @@ def test_build_alias_and_reject_missing_guidance(
     monkeypatch.setattr(cli, "main", lambda args: seen.append(args) or 0)
     assert cli.build_main() == 0
     assert seen == [["build", "--hero", "Kelvin"]]
-    api = FakeApi(ability_rows=ability_rows(), duration_points=duration_points())
+    api = FakeApi(
+        ability_rows=make_ability_rows(), duration_points=make_duration_statistics()
+    )
     generated = generate_guides(
         api,
-        build_evidence=build_evidence(api),
+        build_evidence=make_service_build_evidence(api),
         account_id=0,
         hero_query="Kelvin",
         all_heroes=False,
@@ -130,10 +137,12 @@ def test_build_alias_and_reject_missing_guidance(
 def test_failed_build_preserves_complete_current_bundle(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
 ) -> None:
-    api = FakeApi(ability_rows=ability_rows(), duration_points=duration_points())
+    api = FakeApi(
+        ability_rows=make_ability_rows(), duration_points=make_duration_statistics()
+    )
     generated = generate_guides(
         api,
-        build_evidence=build_evidence(api),
+        build_evidence=make_service_build_evidence(api),
         account_id=0,
         hero_query="Kelvin",
         all_heroes=False,

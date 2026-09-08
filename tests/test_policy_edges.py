@@ -24,7 +24,11 @@ from deadlock_build_sync.policy import (
     PolicyNode,
     SpikeCard,
 )
-from tests.policy_fixtures import SNAPSHOT_ID, branching_policy, context
+from tests.policy_fixtures import (
+    SNAPSHOT_ID,
+    make_branching_policy,
+    make_validation_context,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -151,7 +155,7 @@ def test_abstention_and_policy_identity_validation_fail_closed() -> None:
     with pytest.raises(PolicyError, match="detail"):
         Abstention(AbstentionReason.ILLEGAL_PATH, " ")
 
-    policy = branching_policy()
+    policy = make_branching_policy()
     mutations = (
         {"schema_version": 0},
         {"hero_id": 0},
@@ -164,7 +168,7 @@ def test_abstention_and_policy_identity_validation_fail_closed() -> None:
 
 
 def test_policy_rejects_duplicate_nodes_claims_bad_ability_and_stale_claim() -> None:
-    policy = branching_policy()
+    policy = make_branching_policy()
     with pytest.raises(PolicyError, match="node IDs"):
         replace(policy, nodes=(*policy.nodes, policy.nodes[0]))
     with pytest.raises(PolicyError, match="ability plan"):
@@ -177,7 +181,7 @@ def test_policy_rejects_duplicate_nodes_claims_bad_ability_and_stale_claim() -> 
 
 
 def test_counter_card_policy_links_are_unique_and_exact() -> None:
-    policy = branching_policy()
+    policy = make_branching_policy()
     card = _counter()
     with pytest.raises(PolicyError, match="distinct items"):
         replace(policy, counter_cards=(card, card))
@@ -189,7 +193,7 @@ def test_counter_card_policy_links_are_unique_and_exact() -> None:
 
 
 def test_core_alternative_policy_links_and_schema_are_strict() -> None:
-    policy = branching_policy()
+    policy = make_branching_policy()
     card = _alternative()
     with pytest.raises(PolicyError, match="distinct items"):
         replace(policy, schema_version=5, core_alternatives=(card, card))
@@ -257,7 +261,7 @@ def test_choice_validation_rejects_default_and_priority_errors() -> None:
 def test_apply_nodes_cover_imbue_sell_priority_and_objective_unlock(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    validation_context = context()
+    validation_context = make_validation_context()
     state = policy_runtime._PathState()
     calls: list[str] = []
     monkeypatch.setattr(
@@ -293,7 +297,9 @@ def test_apply_node_wraps_mechanics_errors(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setattr(policy_runtime, "purchase_item", fail)
     node = PolicyNode("buy", NodeKind.PURCHASE, item_id=1)
     with pytest.raises(PolicyError, match="node buy"):
-        policy_runtime._apply_node(node, policy_runtime._PathState(), context())
+        policy_runtime._apply_node(
+            node, policy_runtime._PathState(), make_validation_context()
+        )
 
 
 def test_runtime_defensive_action_checks_reject_corrupt_nodes() -> None:
@@ -305,11 +311,11 @@ def test_runtime_defensive_action_checks_reject_corrupt_nodes() -> None:
     vars(ability)["level"] = None
     state = policy_runtime._PathState()
     with pytest.raises(PolicyError, match="has no item"):
-        policy_runtime._apply_purchase_node(buy, state, context())
+        policy_runtime._apply_purchase_node(buy, state, make_validation_context())
     with pytest.raises(PolicyError, match="has no item"):
-        policy_runtime._apply_sell_node(sell, state, context())
+        policy_runtime._apply_sell_node(sell, state, make_validation_context())
     with pytest.raises(PolicyError, match="incomplete"):
-        policy_runtime._apply_ability_node(ability, state, context())
+        policy_runtime._apply_ability_node(ability, state, make_validation_context())
 
 
 def test_policy_node_validation_checks_evidence_and_optional_successors() -> None:
@@ -361,7 +367,7 @@ def test_graph_validation_rejects_cycle_nonterminal_and_unreachable() -> None:
             (),
         )
         with pytest.raises(PolicyError, match=message):
-            policy_runtime.validate_policy(policy, context())
+            policy_runtime.validate_policy(policy, make_validation_context())
 
 
 def test_choice_step_handles_owned_ambiguous_prioritized_and_default_paths() -> None:

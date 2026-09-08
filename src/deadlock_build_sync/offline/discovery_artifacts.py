@@ -1,4 +1,4 @@
-"""Freeze a pool and component path from discovery buyers of one exact core."""
+"""Build item pool evidence and purchase artifacts for each exact core."""
 
 from __future__ import annotations
 
@@ -25,34 +25,37 @@ from deadlock_build_sync.mechanics import (
 )
 from deadlock_build_sync.purchase_planner import plan_purchases
 
-from .discovery_admission import discovery_record
-from .discovery_data import HeroData
-from .discovery_ownership import ownership
-from .discovery_pool import summarize, timing_policy
-from .discovery_types import FrozenGuide, Nomination, PoolEvidence
-from .production_items import _item_payload, _path_cohort_summary
-from .production_sources import _path_item_metrics
-from .production_timing import _interval_counts
+from .discovery_admission import build_discovery_record
+from .discovery_data import HeroDiscoveryData
+from .discovery_ownership import calculate_core_ownership_mask
+from .discovery_pool import (
+    calculate_purchase_timing_policy,
+    summarize_purchase_evidence,
+)
+from .discovery_types import FrozenPurchaseGuide, ItemPoolEvidence, NominatedCoreBuild
+from .production_items import _build_item_evidence_payload, _query_path_cohort_summary
+from .production_sources import _query_path_item_metrics
+from .production_timing import _count_purchase_intervals
 
 
-def members_for(
-    data: HeroData, core: list[int], fold: str | None = None
+def select_core_owners(
+    data: HeroDiscoveryData, core: list[int], fold: str | None = None
 ) -> frozenset[tuple[int, int]]:
     columns = tuple(data.items.index(item) for item in core)
-    mask = ownership(data.matrix, columns)
+    mask = calculate_core_ownership_mask(data.matrix, columns)
     if fold is not None:
-        mask &= data.mask(fold)
+        mask &= data.fold_mask(fold)
     else:
-        mask &= data.mask("discovery") | data.mask("validation")
+        mask &= data.fold_mask("discovery") | data.fold_mask("validation")
     return frozenset(
         actor for actor, included in zip(data.actors, mask, strict=True) if included
     )
 
 
-def pool_evidence(
-    con: duckdb.DuckDBPyConnection, members: frozenset[tuple[int, int]]
-) -> PoolEvidence:
-    con.register(
+def load_item_pool_evidence(
+    connection: duckdb.DuckDBPyConnection, members: frozenset[tuple[int, int]]
+) -> ItemPoolEvidence:
+    connection.register(
         "_discovery_buyers",
         pl.DataFrame({
             "match_id": [actor[0] for actor in members],
@@ -60,7 +63,7 @@ def pool_evidence(
         }),
     )
     try:
-        rows = con.execute("""
+        rows = connection.execute("""
             SELECT p.match_id,p.player_slot,p.item_id,p.buy_time,
                    p.own_net_worth_at_buy,p.state_observed_at_s
             FROM purchases p JOIN _discovery_buyers b USING(match_id,player_slot)
@@ -71,12 +74,12 @@ def pool_evidence(
             )=1
         """).fetchall()
     finally:
-        con.unregister("_discovery_buyers")
-    return summarize(rows, len(members))
+        connection.unregister("_discovery_buyers")
+    return summarize_purchase_evidence(rows, len(members))
 
 
-def item_pool(
-    graph: ItemGraph, evidence: PoolEvidence, path: tuple[int, ...]
+def select_tier_item_pool(
+    graph: ItemGraph, evidence: ItemPoolEvidence, path: tuple[int, ...]
 ) -> dict[str, list[int]]:
     ranked = sorted(
         (
@@ -102,14 +105,19 @@ def item_pool(
     }
 
 
-def freeze_guide(
-    con: duckdb.DuckDBPyConnection, data: HeroData, row: Nomination, graph: ItemGraph
-) -> FrozenGuide:
-    evidence = pool_evidence(con, members_for(data, row["items"], "discovery"))
+def freeze_purchase_guide(
+    connection: duckdb.DuckDBPyConnection,
+    data: HeroDiscoveryData,
+    row: NominatedCoreBuild,
+    graph: ItemGraph,
+) -> FrozenPurchaseGuide:
+    evidence = load_item_pool_evidence(
+        connection, select_core_owners(data, row["items"], "discovery")
+    )
     order = tuple(row["path"]["order"])
     if not order:
         return {"ready": False, "reason": "No supported purchase order"}
-    priorities, bounds = timing_policy(evidence["items"])
+    priorities, bounds = calculate_purchase_timing_policy(evidence["items"])
     try:
         path = schedule_component_path(graph, order, priorities)
         plan = plan_purchases(graph, path, tuple(row["items"]), {})
@@ -121,7 +129,7 @@ def freeze_guide(
             "reason": "Component planner differs from the frozen route",
         }
     uncertain = nondecreasing_window_schedule(path, bounds) is None
-    pool = item_pool(graph, evidence, path)
+    pool = select_tier_item_pool(graph, evidence, path)
     missing = {
         item
         for item in path
@@ -149,7 +157,7 @@ def freeze_guide(
             "version": 1,
             "fold": "train",
             "core_path": list(path),
-            "items": _interval_counts(
+            "items": _count_purchase_intervals(
                 sorted(item for items in pool.values() for item in items),
                 path,
                 evidence["histories"],
@@ -158,18 +166,18 @@ def freeze_guide(
     }
 
 
-def build_payload(
-    con: duckdb.DuckDBPyConnection,
-    data: HeroData,
-    row: Nomination,
+def build_evidence_payload(
+    connection: duckdb.DuckDBPyConnection,
+    data: HeroDiscoveryData,
+    row: NominatedCoreBuild,
     assets: dict[int, dict[str, object]],
 ) -> dict[str, object]:
-    members = members_for(data, row["items"])
-    metrics = _path_item_metrics(con, members)
-    eligible, wealth = _path_cohort_summary(con, members)
+    members = select_core_owners(data, row["items"])
+    metrics = _query_path_item_metrics(connection, members)
+    eligible, wealth = _query_path_cohort_summary(connection, members)
     folds = {
-        "train": len(members_for(data, row["items"], "discovery")),
-        "validation": len(members_for(data, row["items"], "validation")),
+        "train": len(select_core_owners(data, row["items"], "discovery")),
+        "validation": len(select_core_owners(data, row["items"], "validation")),
         "test": 0,
     }
     frozen = row["guide"]
@@ -177,7 +185,8 @@ def build_payload(
     pool = frozen["pool"]
     expected = set(frozen["path"]) | {item for items in pool.values() for item in items}
     items = [
-        _item_payload(metric, assets, folds) for metric in metrics.iter_rows(named=True)
+        _build_item_evidence_payload(metric, assets, folds)
+        for metric in metrics.iter_rows(named=True)
     ]
     if not expected <= {item["item_id"] for item in items}:
         raise ValueError(f"Hero {data.hero} has incomplete purchase evidence")
@@ -185,7 +194,7 @@ def build_payload(
         "path_id": row["identity_id"],
         "path_label": " / ".join(row["names"][:2]),
         "signature_item_ids": sorted(core),
-        "discovery": discovery_record(row),
+        "discovery": build_discovery_record(row),
         "eligible_player_matches": eligible,
         "selection_eligible_player_matches": eligible,
         "fold_eligible_player_matches": folds,

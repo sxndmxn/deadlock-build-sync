@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import duckdb
 
-from deadlock_build_sync.offline.production_items import _item_payload
-from deadlock_build_sync.offline.production_sources import _path_item_metrics
+from deadlock_build_sync.offline.production_items import _build_item_evidence_payload
+from deadlock_build_sync.offline.production_sources import _query_path_item_metrics
 
 
 def test_test_period_cannot_change_imbue_selection() -> None:
-    con = duckdb.connect()
-    con.execute("""
+    connection = duckdb.connect()
+    connection.execute("""
         CREATE TABLE first_purchases AS SELECT
             i AS match_id, 0 AS player_slot, 7 AS hero_id, j AS item_id,
             'Item' AS item_name, 1 AS tier, 500 AS cost, 'weapon' AS slot,
@@ -22,22 +22,24 @@ def test_test_period_cannot_change_imbue_selection() -> None:
         FROM range(1,71) actors(i) CROSS JOIN range(1,8) items(j)
         WHERE j NOT IN (2,3,4) OR (i <= 52-j) OR (j=4 AND i>50)
     """)
-    con.execute("CREATE TABLE purchases AS SELECT * FROM first_purchases")
+    connection.execute("CREATE TABLE purchases AS SELECT * FROM first_purchases")
     members = frozenset((match_id, 0) for match_id in range(1, 71))
     try:
-        before = _path_item_metrics(con, members)
-        con.execute("""
+        before = _query_path_item_metrics(connection, members)
+        connection.execute("""
             UPDATE first_purchases SET imbued_ability_id=40, won=true,
                 own_net_worth_at_buy=50000 WHERE fold='test'
         """)
-        con.execute("DELETE FROM first_purchases WHERE fold='test' AND item_id=4")
-        after = _path_item_metrics(con, members)
+        connection.execute(
+            "DELETE FROM first_purchases WHERE fold='test' AND item_id=4"
+        )
+        after = _query_path_item_metrics(connection, members)
     finally:
-        con.close()
+        connection.close()
     outputs = []
     for frame in (before, after):
         metrics = {int(row["item_id"]): row for row in frame.iter_rows(named=True)}
-        payload = _item_payload(
+        payload = _build_item_evidence_payload(
             metrics[1],
             {40: {"name": "First"}, 41: {"name": "Second"}},
             {"train": 25, "validation": 25, "test": 20},

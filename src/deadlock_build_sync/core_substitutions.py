@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from .artifacts import ArtifactError
 from .build_evidence_discovery import validate_discovery
-from .build_evidence_values import _required_int
+from .build_evidence_values import _require_integer
 from .purchase_planner import plan_purchases
 from .value_validation import object_dict, object_list
 
@@ -51,10 +51,12 @@ def parse_substitution(
     if raw_core is None or raw_path is None or discovery is None:
         raise ArtifactError("Core substitution lacks separate admission evidence")
     core = tuple(
-        _required_int(value, "substituted core item", minimum=1) for value in raw_core
+        _require_integer(value, "substituted core item", minimum=1)
+        for value in raw_core
     )
     route = tuple(
-        _required_int(value, "substituted path item", minimum=1) for value in raw_path
+        _require_integer(value, "substituted path item", minimum=1)
+        for value in raw_path
     )
     expected = (*path[:checkpoint], item, *path[checkpoint + 1 :])
     if (

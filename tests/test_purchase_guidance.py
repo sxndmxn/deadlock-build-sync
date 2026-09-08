@@ -5,15 +5,18 @@ import pytest
 from deadlock_build_sync.mechanics import ItemGraph, MechanicsError
 from deadlock_build_sync.purchase_guidance import attach_purchase_guidance
 from deadlock_build_sync.purchase_guidance_types import PurchaseState, PurchaseTiming
-from deadlock_build_sync.purchase_markdown import build_markdown
+from deadlock_build_sync.purchase_markdown import render_purchase_markdown
 from deadlock_build_sync.purchase_planner import plan_purchases
-from deadlock_build_sync.purchase_purposes import purpose
-from tests.mechanics_fixtures import item
-from tests.purchase_guidance_fixtures import guidance_assets, guidance_fixture
+from deadlock_build_sync.purchase_purposes import classify_item_purpose
+from tests.mechanics_fixtures import make_item_asset
+from tests.purchase_guidance_fixtures import (
+    make_guidance_assets,
+    make_purchase_guidance,
+)
 
 
 def test_guidance_groups_all_options_and_retains_the_pool() -> None:
-    guide, _ = guidance_fixture()
+    guide, _ = make_purchase_guidance()
     guidance = guide.purchase_guidance
     assert guidance is not None
     assert [step.item_id for step in guidance.default_path.actions] == [1, 3, 2, 4, 5]
@@ -26,7 +29,7 @@ def test_guidance_groups_all_options_and_retains_the_pool() -> None:
     trophy = next(card for card in guidance.choices if card.item_id == 6)
     assert trophy.extra_path_cost == 3200
     assert trophy.rebought_components == (1,)
-    text = build_markdown(guide, details=True)
+    text = render_purchase_markdown(guide, details=True)
     assert "UPGRADE Sprint → Trophy" in text
     assert "Includes another Sprint" in text
     assert "You can stop at Range (+800 total)" in text
@@ -39,7 +42,7 @@ def test_guidance_groups_all_options_and_retains_the_pool() -> None:
 
 
 def test_purchase_recovery_keeps_lineages_and_rebuys_shared_components() -> None:
-    _, graph = guidance_fixture()
+    _, graph = make_purchase_guidance()
     result = plan_purchases(
         graph, (1, 3, 2, 4, 5), (2, 3, 4, 5), {6: 2}, state=PurchaseState((1, 3), 700)
     )
@@ -70,7 +73,7 @@ def test_purchase_recovery_keeps_lineages_and_rebuys_shared_components() -> None
     ],
 )
 def test_invalid_inventory_and_cash_are_rejected(state: PurchaseState) -> None:
-    _, graph = guidance_fixture()
+    _, graph = make_purchase_guidance()
     with pytest.raises((ValueError, MechanicsError)):
         plan_purchases(graph, (3,), (3,), {}, state=state)
 
@@ -79,21 +82,21 @@ def test_invalid_inventory_and_cash_are_rejected(state: PurchaseState) -> None:
     "positions", [{7: -1}, {7: True}, {7: 6}, {2: 0}, {10: 3, 11: 2}]
 )
 def test_illegal_positions_are_rejected(positions: dict[int, int]) -> None:
-    _, graph = guidance_fixture()
+    _, graph = make_purchase_guidance()
     with pytest.raises(ValueError, match=r"position|precedes"):
         plan_purchases(graph, (1, 3, 2, 4, 5), (2, 3, 4, 5), positions)
 
 
 def test_unknown_and_infeasible_choices_stay_visible() -> None:
-    guide, _ = guidance_fixture()
+    guide, _ = make_purchase_guidance()
     missing = replace(guide, purchase_timing=())
-    result = attach_purchase_guidance(missing, guidance_assets())
+    result = attach_purchase_guidance(missing, make_guidance_assets())
     assert result.purchase_guidance is not None
     assert not result.purchase_guidance.decisions
     assert len(result.purchase_guidance.choices) == 7
     assert PurchaseTiming(6, 1000, (19, 0)).position is None
     assert PurchaseTiming(6, 1000, (20, 0)).position is None
-    assets = guidance_assets()
+    assets = make_guidance_assets()
     for asset in assets:
         if asset["id"] in {2, 3, 4, 5}:
             asset["is_active_item"] = True
@@ -102,12 +105,12 @@ def test_unknown_and_infeasible_choices_stay_visible() -> None:
     card = next(row for row in blocked.purchase_guidance.choices if row.item_id == 8)
     assert card.plan is None
     assert card.blocked_reason == "purchase exceeds four active-item bindings"
-    assert "Bullet Shield** — Blocked" in build_markdown(blocked)
+    assert "Bullet Shield** — Blocked" in render_purchase_markdown(blocked)
 
 
 def test_core_upgrade_cannot_precede_its_core_component() -> None:
-    guide, _ = guidance_fixture()
-    assets = guidance_assets()
+    guide, _ = make_purchase_guidance()
+    assets = make_guidance_assets()
     assets[5] = {**assets[5], "component_items": ["Speed"], "cost": 3200}
     updated = attach_purchase_guidance(guide, assets)
     assert updated.purchase_guidance is not None
@@ -117,19 +120,22 @@ def test_core_upgrade_cannot_precede_its_core_component() -> None:
 
 
 def test_default_mismatch_and_missing_guidance_are_rejected() -> None:
-    guide, graph = guidance_fixture()
+    guide, graph = make_purchase_guidance()
     with pytest.raises(MechanicsError, match="differs"):
         attach_purchase_guidance(
-            replace(guide, core_target_cost=100), guidance_assets()
+            replace(guide, core_target_cost=100), make_guidance_assets()
         )
     with pytest.raises(ValueError, match="no purchase guidance"):
-        build_markdown(replace(guide, purchase_guidance=None))
-    with pytest.raises(MechanicsError, match="abandons"):
+        render_purchase_markdown(replace(guide, purchase_guidance=None))
+    with pytest.raises(
+        MechanicsError,
+        match=r"^The purchase plan does not retain all required core items$",
+    ):
         plan_purchases(graph, (3,), (4,), {})
     with pytest.raises(TypeError, match="Selected"):
         plan_purchases(graph, (3,), (3,), {True: 0})
     actives = ItemGraph.from_assets([
-        item(key, str(key), active=True) for key in range(1, 6)
+        make_item_asset(key, str(key), active=True) for key in range(1, 6)
     ])
     with pytest.raises(MechanicsError, match="active"):
         plan_purchases(actives, (1,), (1,), {}, state=PurchaseState((1, 2, 3, 4, 5)))
@@ -137,11 +143,13 @@ def test_default_mismatch_and_missing_guidance_are_rejected() -> None:
 
 def test_purposes_keep_primary_effect_and_conditional_triggers() -> None:
     assert (
-        purpose({"description": {"desc": ["Heal an ally", "nearby"]}}).label
+        classify_item_purpose({
+            "description": {"desc": ["Heal an ally", "nearby"]}
+        }).label
         == "Ally healing"
     )
     assert (
-        purpose({
+        classify_item_purpose({
             "description": "Apply a stun after 2s. Airborne targets take more."
         }).trigger
         == "You need a delayed stun; airborne targets receive a longer stun"
@@ -153,6 +161,6 @@ def test_purposes_keep_primary_effect_and_conditional_triggers() -> None:
             {"section_attributes": [{"important_properties": ["BonusHealth"]}]}
         ],
     }
-    assert purpose(unknown).basis == "unclassified"
-    assert purpose({**unknown, "description": None}).label == "Health"
-    assert purpose({}).label == "General utility"
+    assert classify_item_purpose(unknown).basis == "unclassified"
+    assert classify_item_purpose({**unknown, "description": None}).label == "Health"
+    assert classify_item_purpose({}).label == "General utility"

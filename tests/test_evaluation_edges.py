@@ -24,11 +24,11 @@ from deadlock_build_sync.evaluation import (
     select_abstention_threshold,
 )
 from tests.evaluation_fixtures import (
-    event,
-    layers,
-    monitor,
-    prediction,
-    target_trial,
+    make_evaluation_layers,
+    make_monitoring_snapshot,
+    make_prediction,
+    make_recommendation_event,
+    make_target_trial,
 )
 
 if TYPE_CHECKING:
@@ -62,11 +62,13 @@ def test_evaluation_layer_rejects_invalid_taxonomy_score_and_support(
 
 def test_evaluation_report_rejects_identity_and_layer_coverage() -> None:
     with pytest.raises(EvaluationError, match="missing identity"):
-        EvaluationReport("", ("policy",), layers(), "split")
+        EvaluationReport("", ("policy",), make_evaluation_layers(), "split")
     with pytest.raises(EvaluationError, match="every layer"):
-        EvaluationReport("snapshot", ("policy",), layers()[:-1], "split")
+        EvaluationReport(
+            "snapshot", ("policy",), make_evaluation_layers()[:-1], "split"
+        )
 
-    no_scores = tuple(replace(layer, score=None) for layer in layers())
+    no_scores = tuple(replace(layer, score=None) for layer in make_evaluation_layers())
     report = EvaluationReport("snapshot", ("policy",), no_scores, "split")
     assert report.as_dict()["non_authoritative_minimum_score"] is None
 
@@ -101,14 +103,14 @@ def test_prediction_record_rejects_invalid_probability_outcome_and_identity(
 
 def test_calibration_rejects_empty_inputs_and_supports_full_abstention() -> None:
     with pytest.raises(EvaluationError, match="slice is empty"):
-        evaluation_core._calibration_slice([], threshold=0.5)
+        evaluation_core._calculate_calibration_slice([], threshold=0.5)
     with pytest.raises(EvaluationError, match=r"between 0.5 and 1"):
-        calibration_report([prediction(0.5, 1)], threshold=0.4)
+        calibration_report([make_prediction(0.5, 1)], threshold=0.4)
     with pytest.raises(EvaluationError, match="requires predictions"):
         calibration_report([], threshold=0.5)
 
-    result = evaluation_core._calibration_slice(
-        [prediction(0.6, 1), prediction(0.4, 0)],
+    result = evaluation_core._calculate_calibration_slice(
+        [make_prediction(0.6, 1), make_prediction(0.4, 0)],
         threshold=1.0,
     )
     assert result.coverage == 0.0
@@ -120,14 +122,14 @@ def test_threshold_selection_rejects_empty_and_unsafe_candidates() -> None:
         select_abstention_threshold([], maximum_risk=0.1)
     with pytest.raises(EvaluationError, match="no validation threshold"):
         select_abstention_threshold(
-            [prediction(0.9, 0)],
+            [make_prediction(0.9, 0)],
             maximum_risk=-1.0,
             candidates=(0.5,),
         )
 
 
 def test_target_trial_rejects_missing_text_sensitivity_and_overlap() -> None:
-    trial = target_trial()
+    trial = make_target_trial()
     with pytest.raises(EvaluationError, match="required declaration"):
         replace(trial, name="")
     with pytest.raises(EvaluationError, match="sensitivity"):
@@ -186,7 +188,7 @@ def test_ope_handles_zero_target_weight_and_empty_population() -> None:
         1.0,
         {"core": 1.0, "save": 0.0},
     )
-    estimates = evaluation_ope._ope_estimates([zero_weight], clip=None)
+    estimates = evaluation_ope._calculate_off_policy_estimates([zero_weight], clip=None)
     assert estimates[1] == 0.0
     with pytest.raises(EvaluationError, match="requires logged decisions"):
         off_policy_evaluation([])
@@ -211,12 +213,12 @@ def test_recommendation_event_rejects_invalid_contract_fields(
     message: str,
 ) -> None:
     with pytest.raises(EvaluationError, match=message):
-        replace(event(), **changes)
+        replace(make_recommendation_event(), **changes)
 
 
 def test_recommendation_event_accepts_experiment_and_absent_optional_values() -> None:
     source = replace(
-        event(),
+        make_recommendation_event(),
         adopted_action=None,
         deviation_reason=None,
         recalculation_node=None,
@@ -240,7 +242,7 @@ def test_recommendation_event_decoder_rejects_bad_shapes(
     change: dict[str, object],
     message: str,
 ) -> None:
-    encoded = event().as_dict()
+    encoded = make_recommendation_event().as_dict()
     encoded.update(change)
     if change == {"decision_id": None}:
         encoded.pop("decision_id")
@@ -261,24 +263,28 @@ def test_monitoring_snapshot_rejects_invalid_rates_counts_and_accounting(
     changes: dict[str, object],
 ) -> None:
     with pytest.raises(EvaluationError):
-        replace(monitor(), **changes)
+        replace(make_monitoring_snapshot(), **changes)
 
 
 def test_monitoring_covers_all_refusal_alert_and_rollback_fallbacks() -> None:
-    rollback = evaluate_monitoring(replace(monitor(), mechanics_match=False))
+    rollback = evaluate_monitoring(
+        replace(make_monitoring_snapshot(), mechanics_match=False)
+    )
     assert rollback.action == MonitorAction.ROLLBACK
     assert "no last compatible" in rollback.reasons[-1]
 
     refused = evaluate_monitoring(
-        replace(monitor(), path_rejections=1, install_failures=1)
+        replace(make_monitoring_snapshot(), path_rejections=1, install_failures=1)
     )
     assert refused.action == MonitorAction.REFUSE
     assert len(refused.reasons) == 2
 
-    alerted = evaluate_monitoring(replace(monitor(), invalid_state_rate=0.2))
+    alerted = evaluate_monitoring(
+        replace(make_monitoring_snapshot(), invalid_state_rate=0.2)
+    )
     assert alerted.action == MonitorAction.ALERT
     no_exposures = replace(
-        monitor(),
+        make_monitoring_snapshot(),
         exposures=0,
         adoptions=0,
         deviations=0,

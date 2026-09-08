@@ -1,4 +1,4 @@
-"""Observed core order and mechanics-required component expansion."""
+"""Select observed core purchase orders and add required components."""
 
 from __future__ import annotations
 
@@ -20,23 +20,25 @@ from deadlock_build_sync.offline.purchase_order import (
     _ranked_agreement_orders,
 )
 
-from .discovery_ownership import ownership
+from .discovery_ownership import calculate_core_ownership_mask
 
 if TYPE_CHECKING:
-    from .discovery_data import HeroData
+    from .discovery_data import HeroDiscoveryData
 
-from .discovery_types import Order, OrderEvidence
+from .discovery_types import OrderEvidence, SelectedPurchaseOrder
 
 
-def core_times(data: HeroData, items: list[int], fold: str) -> np.ndarray:
+def select_core_purchase_times(
+    data: HeroDiscoveryData, items: list[int], fold: str
+) -> np.ndarray:
     index = {item: column for column, item in enumerate(data.items)}
     columns = tuple(index[item] for item in items)
-    matrix = data.matrix[data.mask(fold)]
-    owners = ownership(matrix, columns)
-    return data.times[data.mask(fold)][owners][:, columns]
+    matrix = data.matrix[data.fold_mask(fold)]
+    owners = calculate_core_ownership_mask(matrix, columns)
+    return data.times[data.fold_mask(fold)][owners][:, columns]
 
 
-def order_evidence(
+def calculate_order_evidence(
     times: np.ndarray, items: list[int], order: list[int]
 ) -> OrderEvidence:
     positions = [items.index(item) for item in order]
@@ -51,7 +53,7 @@ def order_evidence(
     }
 
 
-def expanded_path(order: list[int], graph: ItemGraph) -> list[dict[str, object]]:
+def expand_purchase_path(order: list[int], graph: ItemGraph) -> list[dict[str, object]]:
     priorities = {item: (float(index), 0.0, item) for index, item in enumerate(order)}
     path = schedule_component_path(graph, order, priorities)
     state = InventoryState()
@@ -74,11 +76,13 @@ def expanded_path(order: list[int], graph: ItemGraph) -> list[dict[str, object]]
     if set(state.owned) != set(order) or spent != sum(
         graph.require(item).cost for item in order
     ):
-        raise MechanicsError("Path final inventory or component accounting disagrees")
+        raise MechanicsError(
+            "Final inventory or component costs do not match the purchase path"
+        )
     return actions
 
 
-def ranked_orders(
+def rank_purchase_orders(
     times: np.ndarray, items: list[int], method: str
 ) -> list[tuple[int, list[int]]]:
     if method != "pairwise":
@@ -97,21 +101,23 @@ def ranked_orders(
     ]
 
 
-def choose_order(
-    data: HeroData, items: list[int], method: str, graph: ItemGraph
-) -> Order:
-    times = core_times(data, items, "discovery")
-    ranked = ranked_orders(times, items, method)
+def select_purchase_order(
+    data: HeroDiscoveryData, items: list[int], method: str, graph: ItemGraph
+) -> SelectedPurchaseOrder:
+    times = select_core_purchase_times(data, items, "discovery")
+    ranked = rank_purchase_orders(times, items, method)
     illegal = 0
     unsupported = 0
     for score, order in ranked:
         try:
-            actions = expanded_path(order, graph)
+            actions = expand_purchase_path(order, graph)
         except MechanicsError:
             illegal += 1
             continue
-        discovery = order_evidence(times, items, order)
-        selection = order_evidence(core_times(data, items, "selection"), items, order)
+        discovery = calculate_order_evidence(times, items, order)
+        selection = calculate_order_evidence(
+            select_core_purchase_times(data, items, "selection"), items, order
+        )
         if not discovery["passes"] or not selection["passes"]:
             unsupported += 1
             continue

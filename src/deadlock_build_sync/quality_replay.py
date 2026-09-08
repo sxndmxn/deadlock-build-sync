@@ -28,26 +28,32 @@ class ReplayCase:
     ambiguous_purchase: bool
 
 
-def _positive_int(value: object, label: str) -> int:
+def _require_positive_integer(value: object, label: str) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or value < 1:
         raise RecommendationError(f"replay has invalid {label}")
     return value
 
 
-def _boolean(row: dict[str, object], key: str) -> bool:
+def _require_boolean_field(row: dict[str, object], key: str) -> bool:
     value = row.get(key)
     if not isinstance(value, bool):
         raise RecommendationError(f"replay requires boolean {key}")
     return value
 
 
-def _case(row: dict[str, object], policy: BuildPolicy, cutoff: int) -> ReplayCase:
+def _parse_replay_case(
+    row: dict[str, object], policy: BuildPolicy, cutoff: int
+) -> ReplayCase:
     state = DecisionState.from_document(row.get("state"))
     if state.hero_id != policy.hero_id:
         raise RecommendationError("replay hero differs from frozen policy")
-    start = _positive_int(row.get("match_start_timestamp"), "match start")
-    observed_at = _positive_int(row.get("feature_as_of_timestamp"), "feature timestamp")
-    assigned_at = _positive_int(row.get("policy_assigned_at"), "policy assignment")
+    start = _require_positive_integer(row.get("match_start_timestamp"), "match start")
+    observed_at = _require_positive_integer(
+        row.get("feature_as_of_timestamp"), "feature timestamp"
+    )
+    assigned_at = _require_positive_integer(
+        row.get("policy_assigned_at"), "policy assignment"
+    )
     if start <= cutoff:
         raise RecommendationError(
             "independent replay must start after the frozen cutoff"
@@ -67,7 +73,7 @@ def _case(row: dict[str, object], policy: BuildPolicy, cutoff: int) -> ReplayCas
         raise RecommendationError("replay requires observed_item_id, null for non-buys")
     item = row.get("observed_item_id")
     if action == RecommendationAction.BUY:
-        item = _positive_int(item, "observed item")
+        item = _require_positive_integer(item, "observed item")
     elif item is not None:
         raise RecommendationError("only observed buys may name an item")
     return ReplayCase(
@@ -76,9 +82,9 @@ def _case(row: dict[str, object], policy: BuildPolicy, cutoff: int) -> ReplayCas
         state,
         action,
         item,
-        _boolean(row, "core_completed"),
-        _boolean(row, "behind"),
-        _boolean(row, "ambiguous_purchase"),
+        _require_boolean_field(row, "core_completed"),
+        _require_boolean_field(row, "behind"),
+        _require_boolean_field(row, "ambiguous_purchase"),
     )
 
 
@@ -118,7 +124,7 @@ def parse_replay(
         policy = by_id.get(str(row.get("policy_id")))
         if policy is None:
             raise RecommendationError("replay references another frozen policy")
-        case = _case(row, policy, cutoff)
+        case = _parse_replay_case(row, policy, cutoff)
         if case.state.build_evidence_id != evidence_id:
             raise RecommendationError("replay references another evidence artifact")
         key = (case.policy_id, case.match_group, case.state.hero_id, case.state.clock_s)

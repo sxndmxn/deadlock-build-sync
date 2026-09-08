@@ -23,7 +23,7 @@ from deadlock_build_sync.value_validation import (
 from tests.service_fake_api import FakeApi
 
 
-def _item_evidence(asset: dict[str, object], eligible: int) -> ItemEvidence:
+def _make_item_evidence(asset: dict[str, object], eligible: int) -> ItemEvidence:
     item_id = integer(asset["id"])
     adopter_matches = 90 - item_id % 100
     test_adopter_matches = 20 - item_id % 100
@@ -72,7 +72,7 @@ def _item_evidence(asset: dict[str, object], eligible: int) -> ItemEvidence:
     )
 
 
-def build_evidence(
+def make_service_build_evidence(
     api: FakeApi,
     *,
     with_situational_branch: bool = False,
@@ -81,7 +81,7 @@ def build_evidence(
 ) -> BuildEvidenceCatalog:
     eligible = 100
     item_rows = tuple(
-        _item_evidence(asset, eligible)
+        _make_item_evidence(asset, eligible)
         for asset in api.items()
         if asset.get("shopable")
     )
@@ -221,8 +221,8 @@ def build_evidence(
     )
 
 
-def grouped_build_evidence(api: FakeApi) -> BuildEvidenceCatalog:
-    evidence = build_evidence(api)
+def make_grouped_build_evidence(api: FakeApi) -> BuildEvidenceCatalog:
+    evidence = make_service_build_evidence(api)
     hero = evidence.heroes[12]
     timing = tuple(
         PurchaseTiming(item, 35, (25, *(0 for _ in hero.core_policy.default_item_ids)))

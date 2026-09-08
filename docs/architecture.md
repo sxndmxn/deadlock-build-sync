@@ -1,8 +1,7 @@
 # Python module boundaries
 
-This CLI collects evidence, builds purchase guides, and installs reviewed builds
-in Steam. The dependency rules protect those responsibilities without adding
-services, a dependency injection framework, or new Python packages.
+This CLI collects evidence, builds purchase guides, and installs reviewed builds in Steam.
+The dependency rules separate these responsibilities.
 
 The design follows roadmap.sh's guidance on boundaries, coupling, cohesion, and
 keeping code simple. Python modules provide the boundaries; Tach checks their
@@ -13,9 +12,9 @@ See the [design roadmap](https://roadmap.sh/pdfs/roadmaps/software-design-archit
 
 ## Dependency direction
 
-The six layers below are ordered from callers to dependencies. An arrow shows
-an allowed direction, not permission for every possible import. Every dependency
-must also appear in `depends_on`.
+The six layers below run from callers to dependencies.
+An arrow shows an allowed dependency direction.
+Every dependency must also appear in `depends_on`.
 
 ```mermaid
 flowchart TD
@@ -50,13 +49,18 @@ installation or restore functions.
 `restore_latest` is visible only to `cli_export`, which owns the restore call.
 Consumers cannot import cache implementation files to avoid these interfaces.
 
-The offline producer exposes only `refresh.main` to the main CLI. Its internal
-discovery and fitting functions remain private to that component. Runtime code
-does not import optional analysis dependencies through the producer.
+The offline producer exposes only `refresh.main` to the main CLI.
+Its discovery and estimation functions remain private to that component.
+Runtime code does not import optional analysis dependencies through the producer.
 
-These are static import rules. Existing runtime checks still own purchase
-legality, artifact admission, process detection, backups, validation, and atomic
-replacement. Tach does not replace those checks.
+`core_discovery.py` selects supported cores.
+`discovery_artifacts.py` builds item pool evidence and purchase artifacts.
+`doubly_robust_estimation.py` estimates item outcome differences.
+`inventory_reconstruction.py` reconstructs inventory from purchases, sales, and consumed components.
+
+These are static import rules.
+Runtime code checks purchase legality, artifact admission, running processes, backups, validation, and atomic replacement.
+Tach does not replace those checks.
 
 ## Scope and maintenance
 
@@ -75,9 +79,12 @@ The source root remains `src`. Tach 0.35 gives ambiguous module identities with
 overlapping `src` and repository roots. The packaged narrative script therefore
 remains outside this Tach graph; Deptry, typing, lint, and coverage still check it.
 
-Run `uv run tach check` locally. CI runs the same command. Do not use `tach sync`
-to accept an import without review. For an intended dependency change, check the
-owner and direction, update the exact dependency list, then run the check.
+Run `uv run tach check` locally.
+CI runs the same command.
+Do not use `tach sync` to accept an import without review.
+Check the module owner and direction before you change a dependency.
+Update the exact dependency list.
+Run the check again.
 Keep `layers_explicit_depends_on = true`: layers alone would otherwise permit
 undeclared imports into lower layers. See the [Tach layer rules](https://docs.gauge.sh/usage/layers/)
 and [interface rules](https://docs.gauge.sh/usage/interfaces/).

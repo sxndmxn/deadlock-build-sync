@@ -69,8 +69,8 @@ class HeroDurationStat:
         return self.wins / self.matches if self.matches else 0.0
 
 
-# Domain intervals are half-open. The API accepts inclusive integer bounds, so
-# max_duration_s - 1 is sent on the wire.
+# Domain intervals exclude the upper bound. The API includes both integer bounds.
+# Send max_duration_s - 1 as the API upper bound.
 HERO_DURATION_BUCKETS = (
     ("<25m", 0, 1500),
     ("25–30m", 1500, 1800),
@@ -83,7 +83,7 @@ HERO_DURATION_BUCKETS = (
 MIN_HERO_DURATION_MATCHES = 20
 
 
-def duration_stat(
+def parse_duration_statistics(
     row: object,
     label: str,
     minimum: int,
@@ -118,7 +118,7 @@ def parse_datetime(value: str) -> datetime:
     return parsed.replace(tzinfo=parsed.tzinfo or UTC)
 
 
-def patch_guid(value: object) -> str:
+def normalize_patch_guid(value: object) -> str:
     if isinstance(value, str) and value.strip():
         return value.strip()
     if isinstance(value, (dict, list)):
@@ -138,11 +138,11 @@ def normalize_patch_content(value: object) -> object:
     return value
 
 
-def patch_content_sha256(value: object) -> str:
-    """Hash patch content after removing Steam CDN routing volatility.
+def calculate_patch_content_sha256(value: object) -> str:
+    """Hash patch content after normalizing Steam CDN host names.
 
     Returns:
-        A semantic digest that changes when the patch notes change.
+        A digest that changes when the patch notes change.
 
     """
     return hashlib.sha256(canonical_json(normalize_patch_content(value))).hexdigest()

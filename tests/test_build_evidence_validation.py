@@ -23,17 +23,17 @@ from deadlock_build_sync.value_validation import (
 )
 from tests.build_evidence_fixtures import (
     PATCH_IDENTITY,
-    _assets,
-    _document,
-    _epochs,
-    _first_item,
-    _rank_catalog,
-    _sequence_policy,
-    _situational_policy,
-    _write,
+    get_first_item,
+    get_sequence_policy,
+    get_situational_policy,
+    make_epoch_boundaries,
+    make_evidence_document,
+    make_item_assets,
+    make_rank_catalog,
+    write_evidence_document,
     write_fingerprinted_evidence,
 )
-from tests.build_evidence_policy_fixtures import situational_branch
+from tests.build_evidence_policy_fixtures import make_situational_branch
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -41,9 +41,9 @@ if TYPE_CHECKING:
 
 def test_loader_rejects_tampering(tmp_path: Path) -> None:
     path = tmp_path / "build-evidence.json"
-    document = _document()
-    _first_item(document)["wins"] = 999
-    _write(path, document)
+    document = make_evidence_document()
+    get_first_item(document)["wins"] = 999
+    write_evidence_document(path, document)
 
     with pytest.raises(ArtifactError, match="fingerprint"):
         load_build_evidence(path)
@@ -51,8 +51,8 @@ def test_loader_rejects_tampering(tmp_path: Path) -> None:
 
 def test_loader_rejects_duplicate_permitting_sequence_policy(tmp_path: Path) -> None:
     path = tmp_path / "build-evidence.json"
-    document = _document()
-    _sequence_policy(document)["version"] = 2
+    document = make_evidence_document()
+    get_sequence_policy(document)["version"] = 2
     write_fingerprinted_evidence(path, document)
 
     with pytest.raises(ArtifactError, match="sequence policy"):
@@ -61,9 +61,9 @@ def test_loader_rejects_duplicate_permitting_sequence_policy(tmp_path: Path) -> 
 
 def test_loader_rejects_repeated_default_path_item(tmp_path: Path) -> None:
     path = tmp_path / "build-evidence.json"
-    document = _document()
+    document = make_evidence_document()
     path_items = require_object_list(
-        _sequence_policy(document)["component_expanded_default_path"]
+        get_sequence_policy(document)["component_expanded_default_path"]
     )
     path_items[1] = 101
     write_fingerprinted_evidence(path, document)
@@ -76,7 +76,7 @@ def test_selection_preserves_legal_order_with_uncertain_soul_windows(
     tmp_path: Path,
 ) -> None:
     path = tmp_path / "build-evidence.json"
-    document = _document()
+    document = make_evidence_document()
     build = require_object_rows(require_object_rows(document["heroes"])[0]["builds"])[0]
     discovery = require_object_dict(build["discovery"])
     frozen = require_object_dict(discovery["frozen_guide"])
@@ -85,7 +85,7 @@ def test_selection_preserves_legal_order_with_uncertain_soul_windows(
 
     catalog = load_build_evidence(path)
     hero = catalog.heroes[13]
-    assets = _assets()
+    assets = make_item_assets()
     selected = select_hero_build(hero, assets)
     assert hero.sequence_policy is not None
     assert (
@@ -97,11 +97,11 @@ def test_selection_preserves_legal_order_with_uncertain_soul_windows(
 def test_compatibility_rejects_identity_drift(tmp_path: Path) -> None:
     path = tmp_path / "build-evidence.json"
     heroes: list[dict[str, object]] = [{"id": 13, "name": "Haze"}]
-    _write(path, _document())
+    write_evidence_document(path, make_evidence_document())
     catalog = load_build_evidence(path)
-    rank_catalog = _rank_catalog()
-    assets = _assets()
-    epochs = _epochs()
+    rank_catalog = make_rank_catalog()
+    assets = make_item_assets()
+    epochs = make_epoch_boundaries()
 
     with pytest.raises(ArtifactError, match="patch"):
         assert_build_evidence_compatible(
@@ -127,19 +127,19 @@ def test_compatibility_rejects_identity_drift(tmp_path: Path) -> None:
             as_of_timestamp=catalog.as_of_timestamp,
             match_mode=MatchMode.RANKED,
             rank_range=DEFAULT_RANK_RANGE,
-            rank_catalog=_rank_catalog(),
+            rank_catalog=make_rank_catalog(),
             heroes=heroes,
-            assets=_assets(),
-            epochs=_epochs(),
+            assets=make_item_assets(),
+            epochs=make_epoch_boundaries(),
         ),
     )
 
 
 def test_loader_accepts_supported_situational_branch(tmp_path: Path) -> None:
     path = tmp_path / "build-evidence.json"
-    document = _document()
-    branch = situational_branch()
-    _situational_policy(document)["branches"] = [branch]
+    document = make_evidence_document()
+    branch = make_situational_branch()
+    get_situational_policy(document)["branches"] = [branch]
     write_fingerprinted_evidence(path, document)
 
     catalog = load_build_evidence(path)
@@ -198,10 +198,10 @@ def test_situational_branch_requires_every_comparative_gate(
     tmp_path: Path, changes: dict[str, object], error: str
 ) -> None:
     path = tmp_path / "build-evidence.json"
-    document = _document()
-    branch = situational_branch()
+    document = make_evidence_document()
+    branch = make_situational_branch()
     branch.update(changes)
-    _situational_policy(document)["branches"] = [branch]
+    get_situational_policy(document)["branches"] = [branch]
     write_fingerprinted_evidence(path, document)
 
     with pytest.raises(ArtifactError, match=error):
@@ -217,10 +217,10 @@ def test_selection_rejects_a_branch_that_exceeds_active_item_slots(
             **asset,
             "is_active_item": integer(asset["id"]) in {103, 102, 201, 202, 301},
         }
-        for asset in _assets()
+        for asset in make_item_assets()
     ]
-    active_document = _document(assets=active_assets)
-    _situational_policy(active_document)["branches"] = [situational_branch()]
+    active_document = make_evidence_document(assets=active_assets)
+    get_situational_policy(active_document)["branches"] = [make_situational_branch()]
     write_fingerprinted_evidence(path, active_document)
     active_catalog = load_build_evidence(path)
 

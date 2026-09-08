@@ -6,7 +6,7 @@ from .renderer_validation import validate_optional_annotation
 from .value_validation import integer
 
 
-def branch_label(branch: Branch) -> str:
+def format_branch_label(branch: Branch) -> str:
     if not branch.guards:
         return "DEFAULT"
     values = [
@@ -18,7 +18,7 @@ def branch_label(branch: Branch) -> str:
     return label[:48]
 
 
-def guide_item(
+def build_guide_item(
     node: PolicyNode,
     assets: dict[int, dict[str, object]],
     policy: BuildPolicy,

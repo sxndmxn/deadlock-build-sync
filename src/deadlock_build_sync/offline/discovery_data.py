@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from .discovery_types import LandmarkRow
+from .discovery_types import HeroLandmarkRow
 
 if TYPE_CHECKING:
     import duckdb
@@ -17,11 +17,11 @@ import numpy as np
 from deadlock_build_sync.build_support import SUPPORT
 from deadlock_build_sync.mechanics import ItemGraph
 
-from .late_game import reconstruct_final_inventory
+from .inventory_reconstruction import reconstruct_final_inventory
 
 
 @dataclass
-class HeroData:
+class HeroDiscoveryData:
     hero: int
     items: tuple[int, ...]
     matrix: np.ndarray
@@ -37,15 +37,15 @@ class HeroData:
     actors: tuple[tuple[int, int], ...] = ()
     inventories: tuple[tuple[int, ...], ...] = ()
 
-    def mask(self, fold: str) -> np.ndarray:
+    def fold_mask(self, fold: str) -> np.ndarray:
         return self.folds == fold
 
 
-def prepare_partitions(con: duckdb.DuckDBPyConnection) -> None:
-    if con.execute(
+def prepare_discovery_partitions(connection: duckdb.DuckDBPyConnection) -> None:
+    if connection.execute(
         "SELECT count(*) FROM information_schema.tables WHERE table_name='split_boundaries'"
     ).fetchone() == (1,):
-        con.execute("""
+        connection.execute("""
             CREATE OR REPLACE TEMP TABLE discovery_partitions AS
             SELECT p.match_id,
                    CASE WHEN epoch(min(p.start_time)) <= b.discovery_end THEN 'discovery'
@@ -55,7 +55,7 @@ def prepare_partitions(con: duckdb.DuckDBPyConnection) -> None:
             GROUP BY p.match_id, f.fold, b.discovery_end
         """)
         return
-    con.execute("""
+    connection.execute("""
         CREATE OR REPLACE TEMP TABLE discovery_partitions AS
         WITH matches AS (
             SELECT p.match_id, min(p.start_time) AS started
@@ -72,8 +72,10 @@ def prepare_partitions(con: duckdb.DuckDBPyConnection) -> None:
     """)
 
 
-def landmark_rows(con: duckdb.DuckDBPyConnection, hero: int) -> list[LandmarkRow]:
-    return con.execute(
+def load_landmark_rows(
+    connection: duckdb.DuckDBPyConnection, hero: int
+) -> list[HeroLandmarkRow]:
+    return connection.execute(
         """
         WITH actors AS (
             SELECT p.*, d.partition, 1199 AS checkpoint
@@ -120,10 +122,10 @@ def landmark_rows(con: duckdb.DuckDBPyConnection, hero: int) -> list[LandmarkRow
     ).fetchall()
 
 
-def purchase_histories(
-    con: duckdb.DuckDBPyConnection, hero: int
+def load_purchase_histories(
+    connection: duckdb.DuckDBPyConnection, hero: int
 ) -> dict[tuple[int, int], list[tuple[int, int, int]]]:
-    rows = con.execute(
+    rows = connection.execute(
         """
         SELECT p.match_id,p.player_slot,p.item_id,p.buy_time,p.sold_time
         FROM purchases p JOIN discovery_partitions d USING(match_id)
@@ -142,12 +144,12 @@ def purchase_histories(
     return dict(histories)
 
 
-def from_rows(
+def build_hero_discovery_data(
     hero: int,
-    rows: list[LandmarkRow],
+    rows: list[HeroLandmarkRow],
     histories: dict[tuple[int, int], list[tuple[int, int, int]]],
     graph: ItemGraph,
-) -> HeroData:
+) -> HeroDiscoveryData:
     actors = tuple((int(row[0]), int(row[1])) for row in rows)
     if len(set(actors)) != len(actors) or len({row[0] for row in actors}) != len(
         actors
@@ -179,17 +181,19 @@ def from_rows(
             if item in index and item in owned:
                 times[offset, index[item]] = max(times[offset, index[item]], bought)
     return replace(
-        _hero_arrays(hero, items, rows, times), actors=actors, inventories=inventories
+        _build_hero_arrays(hero, items, rows, times),
+        actors=actors,
+        inventories=inventories,
     )
 
 
-def _hero_arrays(
+def _build_hero_arrays(
     hero: int,
     items: tuple[int, ...],
-    rows: list[LandmarkRow],
+    rows: list[HeroLandmarkRow],
     times: np.ndarray,
-) -> HeroData:
-    return HeroData(
+) -> HeroDiscoveryData:
+    return HeroDiscoveryData(
         hero,
         items,
         times >= 0,
@@ -211,21 +215,25 @@ def _hero_arrays(
     )
 
 
-def load_data(
-    con: duckdb.DuckDBPyConnection,
+def load_hero_discovery_data(
+    connection: duckdb.DuckDBPyConnection,
     hero: int,
     graph: ItemGraph,
     minimum: int = 11,
     maximum: int = 116,
-) -> HeroData:
-    count = con.execute(
+) -> HeroDiscoveryData:
+    count = connection.execute(
         "SELECT count(*) FROM player_matches WHERE hero_id=?", [hero]
     ).fetchone()
     if count is None or count[0] == 0:
         raise ValueError(f"Hero {hero} has no source data; run refresh-evidence again")
-    return from_rows(
+    return build_hero_discovery_data(
         hero,
-        [row for row in landmark_rows(con, hero) if minimum <= row[6] <= maximum],
-        purchase_histories(con, hero),
+        [
+            row
+            for row in load_landmark_rows(connection, hero)
+            if minimum <= row[6] <= maximum
+        ],
+        load_purchase_histories(connection, hero),
         graph,
     )

@@ -15,7 +15,7 @@ from .build_evidence_types import (
     nondecreasing_window_schedule,
     reliable_purchase_window,
 )
-from .build_evidence_values import _required_int
+from .build_evidence_values import _require_integer
 from .core_substitutions import validate_substitution_routes
 from .mechanics import (
     InventoryState,
@@ -101,8 +101,8 @@ def _validate_item_assets(
         if (
             asset is None
             or str(asset.get("name") or "") != item.item
-            or _required_int(asset.get("item_tier"), "asset tier") != item.tier
-            or _required_int(asset.get("cost"), "asset cost") != item.cost
+            or _require_integer(asset.get("item_tier"), "asset tier") != item.tier
+            or _require_integer(asset.get("cost"), "asset cost") != item.cost
             or (
                 str(asset.get("item_slot_type") or "unknown").casefold(),
                 bool(asset.get("is_active_item")),

@@ -4,28 +4,28 @@ import pytest
 
 from deadlock_build_sync import build_evidence_item, build_evidence_values
 from deadlock_build_sync.artifacts import ArtifactError
-from tests.build_evidence_fixtures import _document, _first_item
+from tests.build_evidence_fixtures import get_first_item, make_evidence_document
 
 
 def _valid_item() -> dict[str, object]:
-    return dict(_first_item(_document()))
+    return dict(get_first_item(make_evidence_document()))
 
 
 def _validate_scalar(call: str, value: object) -> None:
     if call == "int":
-        build_evidence_values._required_int(value, "value")
+        build_evidence_values._require_integer(value, "value")
     elif call == "int_max":
-        build_evidence_values._required_int(value, "value", maximum=1)
+        build_evidence_values._require_integer(value, "value", maximum=1)
     elif call == "float":
-        build_evidence_values._required_float(value, "value")
+        build_evidence_values._require_float(value, "value")
     elif call == "float_max":
-        build_evidence_values._required_float(value, "value", maximum=1.0)
+        build_evidence_values._require_float(value, "value", maximum=1.0)
     elif call == "finite":
-        build_evidence_values._finite_float(value, "value")
+        build_evidence_values._require_finite_float(value, "value")
     elif call == "bool":
-        build_evidence_values._required_bool(value, "value")
+        build_evidence_values._require_boolean(value, "value")
     else:
-        build_evidence_values._required_sha256(value, "value")
+        build_evidence_values._require_sha256(value, "value")
 
 
 @pytest.mark.parametrize(
@@ -70,7 +70,7 @@ def test_item_parser_rejects_inconsistent_evidence(
     row.update(changes)
 
     with pytest.raises(ArtifactError, match=message):
-        build_evidence_item._item(row, 13)
+        build_evidence_item._parse_item_evidence(row, 13)
 
 
 @pytest.mark.parametrize(
@@ -98,7 +98,7 @@ def test_item_parser_rejects_bad_supported_imbue_values(
     row.update(changes)
 
     with pytest.raises(ArtifactError, match=message):
-        build_evidence_item._item(row, 13)
+        build_evidence_item._parse_item_evidence(row, 13)
 
 
 def test_item_parser_accepts_a_zero_test_fold() -> None:
@@ -114,7 +114,7 @@ def test_item_parser_accepts_a_zero_test_fold() -> None:
         "test_adoption": 0.0,
     })
 
-    parsed = build_evidence_item._item(row, 13)
+    parsed = build_evidence_item._parse_item_evidence(row, 13)
 
     assert parsed.test_eligible_player_matches == 0
 
@@ -147,7 +147,7 @@ def test_scalar_evidence_validators_reject_bad_domains(
 
 
 def test_optional_float_and_document_accept_their_valid_edges() -> None:
-    assert build_evidence_values._optional_float(None, "value") is None
-    assert build_evidence_values._document({}, "bad") == {}
+    assert build_evidence_values._parse_optional_float(None, "value") is None
+    assert build_evidence_values._require_evidence_document({}, "bad") == {}
     with pytest.raises(ArtifactError, match="bad"):
-        build_evidence_values._document([], "bad")
+        build_evidence_values._require_evidence_document([], "bad")

@@ -6,26 +6,32 @@ from typing import TYPE_CHECKING
 import duckdb
 import numpy as np
 import polars as pl
+from threadpoolctl import threadpool_limits
 
 from deadlock_build_sync.offline import discovery_branches as branches
-from deadlock_build_sync.offline.core_policy_dr import (
-    _context_features,
-    _matrix,
-    _weighted_smd,
-    cross_fitted_dr_contrast,
+from deadlock_build_sync.offline.doubly_robust_estimation import (
+    _add_context_features,
+    _build_feature_matrix,
+    _calculate_maximum_weighted_standardized_difference,
+    estimate_cross_fitted_doubly_robust_contrast,
 )
-from deadlock_build_sync.value_validation import require_object_rows
-from tests.offline.production_evidence_fixtures import _contrast_rows
-from tests.purchase_guidance_fixtures import guidance_fixture
+from deadlock_build_sync.value_validation import (
+    require_object_dict,
+    require_object_rows,
+)
+from tests.offline.production_evidence_fixtures import make_contrast_rows
+from tests.purchase_guidance_fixtures import make_purchase_guidance
 
 if TYPE_CHECKING:
     import pytest
 
-    from deadlock_build_sync.offline.core_policy_dr import DrContrast
-    from deadlock_build_sync.offline.discovery_types import Nomination
+    from deadlock_build_sync.offline.discovery_types import NominatedCoreBuild
+    from deadlock_build_sync.offline.doubly_robust_estimation import (
+        DoublyRobustContrast,
+    )
 
 
-def nominee() -> Nomination:
+def nominee() -> NominatedCoreBuild:
     return {
         "items": [2, 3, 4, 5],
         "guide": {
@@ -54,66 +60,104 @@ def decisions() -> list[dict[str, object]]:
             "enemy_items": [8],
             "owned_before": [1, 3],
         }
-        for row in _contrast_rows(positive=True)
+        for row in make_contrast_rows(positive=True)
         if row["fold"] != "test"
     ]
 
 
 def test_choice_cohort_uses_current_inventory_and_all_context_conditions() -> None:
-    _, graph = guidance_fixture()
+    _, graph = make_purchase_guidance()
     rows = decisions()
-    candidates = branches.freeze_candidates(rows, nominee(), graph)
+    candidates = branches.freeze_branch_candidates(rows, nominee(), graph)
     assert {(row["condition"], row["value"]) for row in candidates} == {
         ("relative_wealth", "behind"),
         ("enemy_hero", 42),
         ("enemy_item", 8),
     }
-    assert branches.conditions({"relative_wealth": 1.2}) == {
+    assert branches.extract_branch_conditions({"relative_wealth": 1.2}) == {
         ("relative_wealth", "ahead")
     }
-    assert branches.conditions({"relative_wealth": 1.0}) == {
+    assert branches.extract_branch_conditions({"relative_wealth": 1.0}) == {
         ("relative_wealth", "even")
     }
-    assert not branches.legal_at({"owned_before": [2, 3, 4, 5]}, nominee(), 7, 2, graph)
-    assert not branches.legal_at({"owned_before": [1, 3, 7]}, nominee(), 7, 2, graph)
-    assert not branches.freeze_candidates(rows, {"guide": {"ready": False}}, graph)
-    assert branches.inventory_before(
+    assert not branches.is_purchase_legal_at_checkpoint(
+        {"owned_before": [2, 3, 4, 5]}, nominee(), 7, 2, graph
+    )
+    assert not branches.is_purchase_legal_at_checkpoint(
+        {"owned_before": [1, 3, 7]}, nominee(), 7, 2, graph
+    )
+    assert not branches.freeze_branch_candidates(
+        rows, {"guide": {"ready": False}}, graph
+    )
+    assert branches.reconstruct_inventory_before(
         [(0, 1, 10, 0), (0, 2, 20, 40), (0, 1, 30, 0), (0, 2, 60, 0)], 50, graph
     ) == (1,)
-    assert branches.inventory_before([(0, 1, 50, 0)], 50, graph) == ()
+    assert branches.reconstruct_inventory_before([(0, 1, 50, 0)], 50, graph) == ()
 
 
 def test_branch_estimator_uses_corrected_predecision_cohorts_without_test_rows() -> (
     None
 ):
-    _, graph = guidance_fixture()
+    _, graph = make_purchase_guidance()
     rows = decisions()
-    candidate = branches.freeze_candidates(rows, nominee(), graph)[0]
-    result = branches.evaluate_candidates(rows, nominee(), [candidate], graph, 3)
+    candidate = branches.freeze_branch_candidates(rows, nominee(), graph)[0]
+    result = branches.evaluate_branch_candidates(rows, nominee(), [candidate], graph, 3)
     admitted = require_object_rows(result["branches"])
     assert len(admitted) == 1
     assert result["test_evaluated"] is False
     assert admitted[0]["support"] == 800
     assert (
-        branches.evaluate_candidates(rows[:10], nominee(), [candidate], graph, 3)[
-            "branches"
-        ]
+        branches.evaluate_branch_candidates(
+            rows[:10], nominee(), [candidate], graph, 3
+        )["branches"]
         == []
     )
 
 
+def test_cached_branch_fits_preserve_conditions_and_hypothesis_corrections() -> None:
+    _, graph = make_purchase_guidance()
+    rows = decisions()
+    candidates = branches.freeze_branch_candidates(rows, nominee(), graph)
+    evaluator = branches.BranchCandidateEvaluator(rows, graph, 3)
+    with threadpool_limits(limits=1):
+        separate = [
+            branches.evaluate_branch_candidates(rows, nominee(), [candidate], graph, 3)
+            for candidate in candidates
+        ]
+        result = evaluator.evaluate_candidates(nominee(), candidates)
+        assert result["audit"] == [
+            row for report in separate for row in require_object_rows(report["audit"])
+        ]
+        assert result["branches"] == [
+            row
+            for report in separate
+            for row in require_object_rows(report["branches"])
+        ]
+        evaluator.hypotheses = 300
+        corrected = evaluator.evaluate_candidates(nominee(), candidates)
+        assert corrected == branches.evaluate_branch_candidates(
+            rows, nominee(), candidates, graph, 300
+        )
+    assert evaluator.contrast_cache.calculated_fits == 1
+    assert evaluator.contrast_cache.reused_fits == 5
+    assert all(
+        require_object_dict(row["evidence"])["hypotheses"] == 300
+        for row in require_object_rows(corrected["audit"])
+    )
+
+
 def test_missing_optional_observations_disable_affected_automatic_choices() -> None:
-    _, graph = guidance_fixture()
+    _, graph = make_purchase_guidance()
     rows = decisions()
     without_economy = [{**row, "relative_wealth": None} for row in rows]
-    assert not branches.freeze_candidates(without_economy, nominee(), graph)
+    assert not branches.freeze_branch_candidates(without_economy, nominee(), graph)
     without_enemies = [{**row, "enemy_heroes": [], "enemy_items": []} for row in rows]
-    candidates = branches.freeze_candidates(without_enemies, nominee(), graph)
+    candidates = branches.freeze_branch_candidates(without_enemies, nominee(), graph)
     assert {row["condition"] for row in candidates} == {"relative_wealth"}
 
 
 def test_branch_support_counts_each_action_and_discovery_condition_once() -> None:
-    _, graph = guidance_fixture()
+    _, graph = make_purchase_guidance()
     base = decisions()[0]
     rows = [
         {
@@ -130,9 +174,9 @@ def test_branch_support_counts_each_action_and_discovery_condition_once() -> Non
         )
         for _ in range(count)
     ]
-    assert not branches.freeze_candidates(rows, nominee(), graph)
+    assert not branches.freeze_branch_candidates(rows, nominee(), graph)
     rows.append({**base, "fold": "train", "item_id": 2})
-    candidates = branches.freeze_candidates(rows, nominee(), graph)
+    candidates = branches.freeze_branch_candidates(rows, nominee(), graph)
     assert [(row["condition"], row["value"]) for row in candidates] == [
         ("enemy_hero", 42),
         ("enemy_item", 8),
@@ -143,21 +187,21 @@ def test_branch_support_counts_each_action_and_discovery_condition_once() -> Non
 def test_failed_branch_estimation_keeps_manual_choices(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _, graph = guidance_fixture()
+    _, graph = make_purchase_guidance()
     rows = decisions()
-    candidate = branches.freeze_candidates(rows, nominee(), graph)[0]
+    candidate = branches.freeze_branch_candidates(rows, nominee(), graph)[0]
 
-    def fail(*_args: object) -> DrContrast:
+    def fail(*_args: object) -> DoublyRobustContrast:
         raise ValueError("No comparison overlap")
 
-    monkeypatch.setattr(branches, "cross_fitted_dr_contrast", fail)
-    result = branches.evaluate_candidates(rows, nominee(), [candidate], graph, 1)
+    monkeypatch.setattr(branches, "estimate_cross_fitted_doubly_robust_contrast", fail)
+    result = branches.evaluate_branch_candidates(rows, nominee(), [candidate], graph, 1)
     assert not result["branches"]
     assert "No comparison overlap" in str(result["audit"])
-    assert not branches.substitution_legal(
+    assert not branches.is_substitution_legal(
         {"owned_before": []}, {"substitution": {"core": [99], "path": [99]}}, graph
     )
-    assert branches.finite_values({
+    assert branches.replace_nonfinite_values({
         "bad": float("inf"),
         "values": (1, float("nan")),
     }) == {"bad": None, "values": [1, None]}
@@ -166,7 +210,7 @@ def test_failed_branch_estimation_keeps_manual_choices(
 def test_branch_comparisons_keep_conditions_checkpoints_and_substitutions_separate() -> (
     None
 ):
-    _, graph = guidance_fixture()
+    _, graph = make_purchase_guidance()
     base = decisions()[0]
     rows = [
         {**base, "match_id": match, "item_id": item, "enemy_heroes": [enemy]}
@@ -190,61 +234,72 @@ def test_branch_comparisons_keep_conditions_checkpoints_and_substitutions_separa
         ({"after_step": 0, "comparator_item_id": 1}, [5, 6]),
         ({"substitution": {"core": [99], "path": [99]}}, []),
     ):
-        frame = branches.comparison_frame(
+        frame = branches.build_comparison_frame(
             rows, nominee(), {**candidate, **changes}, graph, cache
         )
         assert frame["match_id"].to_list() == expected
 
 
 def test_context_indicators_and_constant_group_imbalance_are_checked() -> None:
-    frame = _context_features(pl.DataFrame(decisions()))
+    frame = _add_context_features(pl.DataFrame(decisions()))
     assert "context_enemy_heroes_42" in frame.columns
     assert "context_owned_before_1" in frame.columns
-    assert _matrix(frame).shape[0] == frame.height
-    assert _weighted_smd(
+    assert _build_feature_matrix(frame).shape[0] == frame.height
+    assert _calculate_maximum_weighted_standardized_difference(
         np.array([[0.0], [0.0], [1.0], [1.0]]), np.array([0, 0, 1, 1]), np.full(4, 0.5)
     ) == float("inf")
-    contrast = cross_fitted_dr_contrast(pl.DataFrame(decisions()), 7, 2)
+    contrast = estimate_cross_fitted_doubly_robust_contrast(
+        pl.DataFrame(decisions()), 7, 2
+    )
     assert set(contrast.fold_diagnostics) == {"train", "validation"}
     assert not replace(contrast, stable=False).stable
 
 
 def test_strict_team_snapshot_and_no_future_enemy_item_enter_branch_state() -> None:
-    con = duckdb.connect()
-    con.execute(
+    connection = duckdb.connect()
+    connection.execute(
         "CREATE TABLE discovery_partitions AS SELECT 1 AS match_id, 'discovery' AS partition"
     )
-    con.execute(
+    connection.execute(
         "CREATE TABLE compositions AS SELECT 1 AS match_id, 1 AS team_id, [42,43,44,45,46,47] AS hero_ids"
     )
-    con.execute(
+    connection.execute(
         "CREATE TABLE team_snapshots(match_id INT,team_id INT,stat_time INT,team_net_worth INT,observed_players INT)"
     )
-    con.execute(
+    connection.execute(
         "INSERT INTO team_snapshots VALUES(1,0,590,60000,6),(1,1,590,60000,6),(1,0,600,999999,6)"
     )
-    con.execute(
-        "CREATE TABLE player_matches AS SELECT 1 AS match_id, 12 AS hero_id, 71 AS average_badge"
+    connection.execute(
+        "CREATE TABLE player_matches AS SELECT 1 AS match_id, 12 AS hero_id, 71 AS average_badge, 0 AS player_slot, 0 AS team_id"
     )
-    con.execute(
+    connection.execute(
         "CREATE TABLE purchases(match_id INT,player_slot INT,team_id INT,item_id INT,buy_time INT,sold_time INT,event_order INT)"
     )
-    con.execute(
+    connection.execute(
         "INSERT INTO purchases VALUES(1,0,0,1,100,0,0),(1,0,0,3,200,0,1),(1,1,1,7,500,0,0),(1,1,1,8,595,0,1),(1,1,1,9,600,0,2)"
     )
-    con.execute(
+    connection.execute("INSERT INTO purchases VALUES(1,2,0,9,100,0,0)")
+    assert set(branches.load_purchase_event_histories(connection, 12)) == {
+        (1, 0),
+        (1, 1),
+    }
+    assert branches.load_purchase_event_histories(connection, 12, 81, 115) == {}
+    connection.execute(
         "CREATE TABLE decision_opportunities AS SELECT 1 AS match_id,0 AS player_slot,0 AS team_id,12 AS hero_id,71 AS average_badge,7 AS item_id,600 AS buy_time,590 AS state_observed_at_s,8000 AS own_net_worth_at_buy,999999 AS own_team_net_worth,60000 AS enemy_team_net_worth,6 AS own_team_observed_players,6 AS enemy_team_observed_players,999999 AS team_net_worth_lead"
     )
-    _, graph = guidance_fixture()
-    row = branches.checkpoint_rows(con, 12, graph)[0]
+    _, graph = make_purchase_guidance()
+    row = branches.load_checkpoint_rows(connection, 12, graph)[0]
     assert row["relative_wealth"] == 0.8
     assert row["owned_before"] == [1, 3]
     assert row["enemy_items"] == [7]
     assert row["own_team_net_worth"] == 60000
-    con.execute("UPDATE team_snapshots SET observed_players=5 WHERE team_id=1")
-    assert branches.checkpoint_rows(con, 12, graph)[0]["relative_wealth"] is None
-    con.execute("UPDATE team_snapshots SET stat_time=299 WHERE team_id=1")
-    stale = branches.checkpoint_rows(con, 12, graph)[0]
+    connection.execute("UPDATE team_snapshots SET observed_players=5 WHERE team_id=1")
+    assert (
+        branches.load_checkpoint_rows(connection, 12, graph)[0]["relative_wealth"]
+        is None
+    )
+    connection.execute("UPDATE team_snapshots SET stat_time=299 WHERE team_id=1")
+    stale = branches.load_checkpoint_rows(connection, 12, graph)[0]
     assert stale["enemy_items"] == []
     assert stale["enemy_heroes"] == []
-    con.close()
+    connection.close()

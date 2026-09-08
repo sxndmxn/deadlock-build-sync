@@ -24,9 +24,9 @@ from deadlock_build_sync.renderer import (
     projection_fingerprint,
     validate_optional_annotation,
 )
-from deadlock_build_sync.renderer_items import guide_item
+from deadlock_build_sync.renderer_items import build_guide_item
 from deadlock_build_sync.snapshot import EvidenceUnit, sha256_json
-from tests.rendering_fixtures import build_details
+from tests.rendering_fixtures import decode_build_details
 
 SNAPSHOT = "b" * 64
 
@@ -146,7 +146,7 @@ def test_policy_item_projection_keeps_all_claim_and_node_fields() -> None:
     build_policy = policy()
     node = next(node for node in build_policy.nodes if node.node_id == "counter")
 
-    result = guide_item(
+    result = build_guide_item(
         node,
         dict(zip((1, 2), assets(), strict=True)),
         build_policy,
@@ -187,7 +187,7 @@ def test_projection_separates_default_queue_from_optional_branch() -> None:
 def test_protobuf_preserves_optional_sell_flex_and_omission_semantics() -> None:
     categories = [
         field.value
-        for field in build_details(projected_guide())
+        for field in decode_build_details(projected_guide())
         if field.number == 1 and isinstance(field.value, bytes)
     ]
     core_fields = {field.number: field.value for field in parse_fields(categories[0])}

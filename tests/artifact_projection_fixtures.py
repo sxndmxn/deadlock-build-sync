@@ -1,7 +1,7 @@
-from tests.build_evidence_fixtures import _fixture_card
+from tests.build_evidence_fixtures import _make_fixture_core_card
 
 
-def _projection() -> dict[str, object]:
+def make_artifact_projection() -> dict[str, object]:
     rows: list[dict[str, object]] = []
     for row_index, (name, count) in enumerate((
         ("CORE ITEMS", 6),
@@ -28,7 +28,7 @@ def _projection() -> dict[str, object]:
                 {
                     "item_id": start + offset,
                     "item": f"Item {start + offset}",
-                    "annotation": _fixture_card(
+                    "annotation": _make_fixture_core_card(
                         (offset // 2) + 1 if row_index == 0 else row_index,
                         offset,
                     ),

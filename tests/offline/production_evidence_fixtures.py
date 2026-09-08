@@ -1,19 +1,21 @@
 from deadlock_build_sync.mechanics import ItemGraph
 from deadlock_build_sync.offline.config import RunPaths
 from deadlock_build_sync.offline.production_sources import _HeroExportContext
-from tests.mechanics_fixtures import item
+from tests.mechanics_fixtures import make_item_asset
 
 
-def _context(paths: RunPaths) -> _HeroExportContext:
+def make_export_context(paths: RunPaths) -> _HeroExportContext:
     graph = ItemGraph.from_assets([
         {
-            **item(item_id, f"item_{item_id}"),
+            **make_item_asset(item_id, f"item_{item_id}"),
             "cost": item_id * 500,
             "item_tier": item_id,
         }
         for item_id in (1, 2, 3, 4)
     ])
-    assets = {item_id: item(item_id, f"item_{item_id}") for item_id in graph.nodes}
+    assets = {
+        item_id: make_item_asset(item_id, f"item_{item_id}") for item_id in graph.nodes
+    }
     return _HeroExportContext(
         paths=paths,
         normal_assets=list(assets.values()),
@@ -23,7 +25,7 @@ def _context(paths: RunPaths) -> _HeroExportContext:
     )
 
 
-def _item_metric_row() -> dict[str, object]:
+def make_item_metric_row() -> dict[str, object]:
     return {
         "item_id": 101,
         "item_name": "Compress Cooldown",
@@ -64,7 +66,7 @@ def _item_metric_row() -> dict[str, object]:
     }
 
 
-def _contrast_rows(*, positive: bool) -> list[dict[str, object]]:
+def make_contrast_rows(*, positive: bool) -> list[dict[str, object]]:
     return [
         {
             "match_id": index + 1,

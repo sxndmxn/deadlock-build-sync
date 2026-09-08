@@ -13,7 +13,7 @@ from deadlock_build_sync.value_validation import (
 )
 
 
-def discovery_record(core: list[int], path: list[int]) -> dict[str, object]:
+def make_discovery_record(core: list[int], path: list[int]) -> dict[str, object]:
     adjusted = {
         "core_overlap": 200,
         "overlap_share": 1.0,
@@ -59,7 +59,7 @@ def discovery_record(core: list[int], path: list[int]) -> dict[str, object]:
     }
 
 
-def current_document(
+def make_current_evidence_document(
     document: dict[str, object], assets: list[dict[str, object]]
 ) -> dict[str, object]:
     document["schema_version"] = 12
@@ -104,7 +104,7 @@ def current_document(
                     ]
                 )
             ]
-            build["discovery"] = discovery_record(core, path)
+            build["discovery"] = make_discovery_record(core, path)
             tier = require_object_dict(build["tier_policy"])
             pool = require_object_dict(tier["item_ids_by_tier"])
             statistics = {
@@ -126,7 +126,7 @@ def current_document(
     return document
 
 
-def hero_cohort() -> dict[str, object]:
+def make_hero_cohort() -> dict[str, object]:
     return {
         "minimum_badge": 61,
         "maximum_badge": 115,

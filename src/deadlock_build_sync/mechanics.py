@@ -4,7 +4,7 @@ from .mechanics_abilities import (
     AbilityAction,
     AbilityDefinition,
     AbilityTimelineStep,
-    ability_definitions_from_kit,
+    parse_ability_definitions,
     schedule_ability_path,
     validate_ability_timeline,
 )
@@ -29,8 +29,8 @@ from .mechanics_inventory import (
     validate_imbue,
 )
 from .mechanics_item_text import (
-    canonical_mechanics_text,
     classify_observed_item_threats,
+    serialize_mechanics_text,
 )
 from .mechanics_items import CategoryBonus, CategoryBonusTable, ItemGraph, ItemNode
 from .mechanics_threats import (
@@ -53,9 +53,7 @@ __all__ = [
     "ItemGraph",
     "ItemNode",
     "MechanicsError",
-    "ability_definitions_from_kit",
     "build_hero_mechanics",
-    "canonical_mechanics_text",
     "classify_item_threat_responses",
     "classify_observed_item_threats",
     "clean_mechanical_text",
@@ -63,10 +61,12 @@ __all__ = [
     "extract_asset_mechanics",
     "normalize_hero_description",
     "normalize_mechanical_value",
+    "parse_ability_definitions",
     "purchase_item",
     "schedule_ability_path",
     "schedule_component_path",
     "sell_item",
+    "serialize_mechanics_text",
     "validate_ability_timeline",
     "validate_imbue",
 ]

@@ -14,17 +14,20 @@ from deadlock_build_sync.value_validation import (
     require_object_dict,
     require_object_rows,
 )
-from tests.artifact_bundle_fixtures import _projection, _write_bundle
+from tests.artifact_bundle_fixtures import (
+    make_artifact_projection,
+    write_artifact_bundle,
+)
 
 
 def _inputs(
     root: Path,
 ) -> tuple[dict[str, object], BuildPolicy, HeroBuildEvidence, dict[str, object]]:
-    context_path, policy_path, _, evidence_path = _write_bundle(root)
+    context_path, policy_path, _, evidence_path = write_artifact_bundle(root)
     loaded: object = json.loads(context_path.read_text(encoding="utf-8"))
     context = require_object_dict(loaded)
     hero = require_object_rows(context["heroes"])[0]
-    hero["projection"] = _projection()
+    hero["projection"] = make_artifact_projection()
     manifest, policies = load_policy_artifact(policy_path)
     policy = policies[12, "default"]
     evidence = load_build_evidence(evidence_path).heroes[12]
@@ -52,7 +55,7 @@ def test_reconstruction_rejects_inconsistent_hero_identity(
     hero[field] = value
 
     with pytest.raises(ArtifactBundleError, match="inconsistent identity"):
-        artifact_reconstruction._hero_identity(hero, policy)
+        artifact_reconstruction._parse_hero_identity(hero, policy)
 
 
 def test_reconstruction_requires_a_nonempty_hero_class(tmp_path: Path) -> None:
@@ -61,7 +64,7 @@ def test_reconstruction_requires_a_nonempty_hero_class(tmp_path: Path) -> None:
     mechanics["class_name"] = ""
 
     with pytest.raises(ArtifactBundleError, match="inconsistent identity"):
-        artifact_reconstruction._hero_identity(hero, policy)
+        artifact_reconstruction._parse_hero_identity(hero, policy)
 
 
 @pytest.mark.parametrize(
@@ -90,7 +93,7 @@ def test_reconstruction_rejects_invalid_core_summary(
         require_object_dict(hero["core"])[field] = value
 
     with pytest.raises(ArtifactBundleError, match=message):
-        artifact_reconstruction._core_evidence(hero, policy)
+        artifact_reconstruction._parse_core_evidence(hero, policy)
 
 
 @pytest.mark.parametrize(
@@ -116,7 +119,7 @@ def test_reconstruction_rejects_invalid_build_identity_fields(
     build[field] = value
 
     with pytest.raises(ArtifactBundleError, match="invalid build tags"):
-        artifact_reconstruction._build_identity(hero, policy, manifest)
+        artifact_reconstruction._parse_build_identity(hero, policy, manifest)
 
 
 def test_reconstruction_rejects_missing_projection_and_bad_function_tag(
@@ -126,14 +129,14 @@ def test_reconstruction_rejects_missing_projection_and_bad_function_tag(
     missing = copy.deepcopy(hero)
     missing["projection"] = None
     with pytest.raises(ArtifactBundleError, match="no build identity"):
-        artifact_reconstruction._build_identity(missing, policy, manifest)
+        artifact_reconstruction._parse_build_identity(missing, policy, manifest)
 
     bad_class = copy.deepcopy(hero)
     projection = require_object_dict(bad_class["projection"])
     build = require_object_dict(projection["build"])
     build["tag_classes"] = ["ability_10", "item_1005", "not-a-function"]
     with pytest.raises(ArtifactBundleError, match="invalid build tags"):
-        artifact_reconstruction._build_identity(bad_class, policy, manifest)
+        artifact_reconstruction._parse_build_identity(bad_class, policy, manifest)
 
 
 def test_reconstruction_rejects_incomplete_epoch_boundaries(tmp_path: Path) -> None:
@@ -142,7 +145,7 @@ def test_reconstruction_rejects_incomplete_epoch_boundaries(tmp_path: Path) -> N
     epochs.pop("telemetry")
 
     with pytest.raises(ArtifactBundleError, match="invalid epoch boundaries"):
-        artifact_reconstruction._analysis_start_timestamp(manifest)
+        artifact_reconstruction._calculate_analysis_start_timestamp(manifest)
 
 
 @pytest.mark.parametrize(
@@ -158,7 +161,7 @@ def test_reconstruction_rejects_invalid_snapshot_cohort(
     field: str,
     value: object,
 ) -> None:
-    paths = _write_bundle(tmp_path)
+    paths = write_artifact_bundle(tmp_path)
     document = json.loads(paths[1].read_text())
     document["snapshot_manifest"][field] = value
     paths[1].write_text(json.dumps(document))

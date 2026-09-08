@@ -39,16 +39,18 @@ from deadlock_build_sync.value_validation import (
     integer,
     require_object_rows,
 )
-from tests.artifact_projection_fixtures import _projection
-from tests.canonical_bundle_fixtures import canonical_projection, fixture_kit
-from tests.discovery_fixtures import current_document
+from tests.artifact_projection_fixtures import make_artifact_projection
+from tests.canonical_bundle_fixtures import make_canonical_projection, make_hero_kit
+from tests.discovery_fixtures import make_current_evidence_document
 
-__all__ = ["_projection"]
+__all__ = ["make_artifact_projection"]
 
 PATCH = Patch("Patch", 100, "2026-01-01T00:00:00Z")
 
 
-def _manifest(evidence: dict[str, object], raw_evidence: bytes) -> SnapshotManifest:
+def make_snapshot_manifest(
+    evidence: dict[str, object], raw_evidence: bytes
+) -> SnapshotManifest:
     boundary = EpochBoundary(PATCH.identity, 100)
     rank_range = DEFAULT_RANK_RANGE.as_dict()
     rank_range["labels_sha256"] = "a" * 64
@@ -94,7 +96,7 @@ def _manifest(evidence: dict[str, object], raw_evidence: bytes) -> SnapshotManif
     )
 
 
-def _policy(snapshot_id: str) -> BuildPolicy:
+def make_build_policy(snapshot_id: str) -> BuildPolicy:
     core_ids = tuple(range(1001, 1007))
     nodes = (
         *(
@@ -144,9 +146,9 @@ def _policy(snapshot_id: str) -> BuildPolicy:
     )
 
 
-def _build_evidence() -> dict[str, object]:
+def make_build_evidence() -> dict[str, object]:
     items: list[dict[str, object]] = []
-    rows = require_object_rows(_projection()["categories"])
+    rows = require_object_rows(make_artifact_projection()["categories"])
     for row_index, row in enumerate(rows):
         for offset, projected in enumerate(require_object_rows(row["items"])):
             tier = (offset // 2) + 1 if row_index == 0 else row_index
@@ -351,23 +353,23 @@ def _build_evidence() -> dict[str, object]:
         }
         for item in items
     ]
-    return current_document(payload, assets)
+    return make_current_evidence_document(payload, assets)
 
 
-def _write_bundle(root: Path) -> tuple[Path, Path, Path, Path]:
-    evidence = _build_evidence()
+def write_artifact_bundle(root: Path) -> tuple[Path, Path, Path, Path]:
+    evidence = make_build_evidence()
     raw_evidence = json.dumps(evidence).encode()
     evidence_path = root / "build-evidence.json"
     evidence_path.write_bytes(raw_evidence)
-    manifest = _manifest(evidence, raw_evidence)
-    policy = _policy(manifest.snapshot_id)
-    categories, cost, guidance = canonical_projection(evidence_path, policy)
+    manifest = make_snapshot_manifest(evidence, raw_evidence)
+    policy = make_build_policy(manifest.snapshot_id)
+    categories, cost, guidance = make_canonical_projection(evidence_path, policy)
     hero: dict[str, object] = {
         "hero_id": 12,
         "path_id": "default",
         "path_label": "Evidence Default",
         "hero": "Kelvin",
-        "hero_mechanics": fixture_kit(),
+        "hero_mechanics": make_hero_kit(),
         "item_mechanics_ids": [],
         "item_mechanics_sha256": sha256_json({}),
         "snapshot_id": manifest.snapshot_id,
@@ -395,7 +397,11 @@ def _write_bundle(root: Path) -> tuple[Path, Path, Path, Path]:
             "median_final_net_worth": 38_000,
             "core_target_cost": cost,
         },
-        "projection": {**_projection(), "guide_version": 3, "categories": categories},
+        "projection": {
+            **make_artifact_projection(),
+            "guide_version": 3,
+            "categories": categories,
+        },
         "purchase_guidance": guidance,
         "explainable_actions": [
             {

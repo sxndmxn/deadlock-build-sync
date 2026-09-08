@@ -3,15 +3,15 @@
 from pathlib import Path
 
 from deadlock_build_sync.build_evidence import load_build_evidence, select_hero_build
-from deadlock_build_sync.mechanics import ItemGraph, ability_definitions_from_kit
+from deadlock_build_sync.mechanics import ItemGraph, parse_ability_definitions
 from deadlock_build_sync.policy import BuildPolicy, ValidationContext
-from deadlock_build_sync.purchase_categories import category_records
+from deadlock_build_sync.purchase_categories import serialize_category_records
 from deadlock_build_sync.purchase_guidance import attach_purchase_guidance
 from deadlock_build_sync.purchase_guide import build_purchase_guide_from_evidence
 from deadlock_build_sync.renderer import ProjectionIdentity, project_policy_to_guide
 
 
-def fixture_kit() -> dict[str, object]:
+def make_hero_kit() -> dict[str, object]:
     return {
         "class_name": "hero_kelvin",
         "abilities": [{"id": item} for item in (10, 20, 30, 40)],
@@ -22,12 +22,12 @@ def fixture_kit() -> dict[str, object]:
     }
 
 
-def canonical_projection(
+def make_canonical_projection(
     path: Path, policy: BuildPolicy
 ) -> tuple[list[dict[str, object]], int, dict[str, object]]:
     catalog = load_build_evidence(path)
     assets = list(catalog.assets)
-    kit = fixture_kit()
+    kit = make_hero_kit()
     layout = build_purchase_guide_from_evidence(
         {"id": 12, "name": "Kelvin", "class_name": "hero_kelvin"},
         select_hero_build(catalog.heroes[12], assets),
@@ -36,7 +36,7 @@ def canonical_projection(
         policy,
         ValidationContext(
             ItemGraph.from_assets(assets),
-            ability_definitions_from_kit(kit),
+            parse_ability_definitions(kit),
             kit["level_info"],
         ),
         assets=assets,
@@ -46,7 +46,7 @@ def canonical_projection(
     guide = attach_purchase_guidance(guide, assets)
     assert guide.purchase_guidance is not None
     return (
-        category_records(guide.rendered_categories),
+        serialize_category_records(guide.rendered_categories),
         guide.core_target_cost,
         guide.purchase_guidance.as_dict(),
     )

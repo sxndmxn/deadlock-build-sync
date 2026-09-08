@@ -5,12 +5,12 @@ import pytest
 
 from deadlock_build_sync import cache_storage
 from deadlock_build_sync.cache import CacheError, update_managed_builds
-from deadlock_build_sync.protobuf import hero_build_metadata
+from deadlock_build_sync.protobuf import parse_hero_build_metadata
 from tests.cache_fixtures import (
-    complete_guide,
-    isolated_location,
-    snapshot_manifest,
-    unpublished,
+    make_complete_guide,
+    make_isolated_cache_location,
+    make_snapshot_manifest,
+    make_unpublished_build,
 )
 
 
@@ -18,14 +18,14 @@ def _managed_root() -> tuple[dict[str, object], dict[tuple[int, str], int], byte
     root: dict[str, object] = {"Unpublished": []}
     updated, build_ids, _, _, _ = update_managed_builds(
         root,
-        [complete_guide()],
+        [make_complete_guide()],
         account_id=146293212,
         persona="Player",
         timestamp=100,
         patch_title="Patch",
         patch_published_at="2026-01-01T00:00:00Z",
     )
-    blob = unpublished(updated)[0]
+    blob = make_unpublished_build(updated)[0]
     assert isinstance(blob, bytes)
     return updated, build_ids, blob
 
@@ -35,15 +35,15 @@ def test_state_root_honors_xdg_and_uses_default(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
-    assert cache_storage._state_root() == tmp_path / "state"
+    assert cache_storage._resolve_state_root() == tmp_path / "state"
 
     monkeypatch.delenv("XDG_STATE_HOME")
     monkeypatch.setattr(cache_storage.Path, "home", lambda: tmp_path)
-    assert cache_storage._state_root() == tmp_path / ".local/state"
+    assert cache_storage._resolve_state_root() == tmp_path / ".local/state"
 
 
 def test_backup_uses_suffix_and_copies_remote_metadata(tmp_path: Path) -> None:
-    location, _ = isolated_location(tmp_path)
+    location, _ = make_isolated_cache_location(tmp_path)
     location.remote_cache_path.write_text("remote", encoding="utf-8")
     root = tmp_path / "state"
 
@@ -56,7 +56,7 @@ def test_backup_uses_suffix_and_copies_remote_metadata(tmp_path: Path) -> None:
 
 
 def test_stable_cache_value_normalizes_bytearray() -> None:
-    normalized = cache_storage._stable_cache_value({"rows": [bytearray(b"value")]})
+    normalized = cache_storage._normalize_cache_value({"rows": [bytearray(b"value")]})
 
     assert normalized == {
         "rows": [
@@ -79,16 +79,19 @@ def test_managed_blob_helpers_ignore_bad_inputs() -> None:
         b"\xff", account_id=146293212, target_hero_ids={12}
     )
     assert (
-        cache_storage._target_managed_metadata("not-bytes", build_ids, 146293212)
+        cache_storage._match_target_managed_metadata("not-bytes", build_ids, 146293212)
         is None
     )
-    assert cache_storage._target_managed_metadata(b"\xff", build_ids, 146293212) is None
-    assert cache_storage._target_managed_metadata(blob, build_ids, 99) is None
+    assert (
+        cache_storage._match_target_managed_metadata(b"\xff", build_ids, 146293212)
+        is None
+    )
+    assert cache_storage._match_target_managed_metadata(blob, build_ids, 99) is None
 
 
 def test_managed_identity_requires_build_id_and_current_fingerprints() -> None:
     _, _, blob = _managed_root()
-    metadata = hero_build_metadata(blob)
+    metadata = parse_hero_build_metadata(blob)
     key = (12, "default")
 
     with pytest.raises(CacheError, match="has no build ID"):
@@ -129,7 +132,7 @@ def test_managed_entry_validation_checks_section_duplicates_and_coverage() -> No
 
 
 def test_restore_removes_temporary_file_after_copy_error(tmp_path: Path) -> None:
-    location, _ = isolated_location(tmp_path)
+    location, _ = make_isolated_cache_location(tmp_path)
 
     with pytest.raises(FileNotFoundError):
         cache_storage._restore_cache_file(
@@ -148,20 +151,20 @@ def test_install_coverage_allows_unspecified_or_explicit_subsets() -> None:
 def test_install_request_rejects_empty_duplicate_and_mixed_guides() -> None:
     with pytest.raises(CacheError, match="no guides"):
         cache_storage._validate_install_request(
-            [], snapshot_manifest(), {12}, allow_subset=False
+            [], make_snapshot_manifest(), {12}, allow_subset=False
         )
 
-    guide = complete_guide()
+    guide = make_complete_guide()
     with pytest.raises(CacheError, match="duplicate hero/build-path"):
         cache_storage._validate_install_request(
-            [guide, guide], snapshot_manifest(), {12}, allow_subset=False
+            [guide, guide], make_snapshot_manifest(), {12}, allow_subset=False
         )
 
     other_snapshot = replace(guide, hero_id=13, snapshot_id="other")
     with pytest.raises(CacheError, match="use one snapshot"):
         cache_storage._validate_install_request(
             [guide, other_snapshot],
-            snapshot_manifest(),
+            make_snapshot_manifest(),
             None,
             allow_subset=True,
         )

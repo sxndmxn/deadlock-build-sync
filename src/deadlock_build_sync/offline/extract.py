@@ -9,7 +9,7 @@ from pathlib import Path
 
 import duckdb
 
-from deadlock_build_sync.hero_cohort import ranked_cutoffs
+from deadlock_build_sync.hero_cohort import calculate_rank_cutoffs
 
 from .config import DUCKLAKE_URL, Cohort, RunPaths
 
@@ -21,22 +21,22 @@ _RETRYABLE_REMOTE_ERRORS = (
 )
 
 
-def _sql_timestamp(value: datetime) -> str:
+def _format_sql_timestamp(value: datetime) -> str:
     return value.isoformat().replace("+00:00", "+00")
 
 
-def _cohort_where(cohort: Cohort) -> str:
+def _build_cohort_filter(cohort: Cohort) -> str:
     return f"""
         match_mode = '{cohort.match_mode}'
         AND game_mode = '{cohort.game_mode}'
-        AND start_time >= TIMESTAMPTZ '{_sql_timestamp(cohort.since)}'
+        AND start_time >= TIMESTAMPTZ '{_format_sql_timestamp(cohort.since)}'
         AND start_time + duration_s * INTERVAL '1 second'
-            <= TIMESTAMPTZ '{_sql_timestamp(cohort.resolved_as_of())}'
+            <= TIMESTAMPTZ '{_format_sql_timestamp(cohort.resolved_as_of())}'
         AND average_badge BETWEEN {cohort.minimum_badge} AND {cohort.maximum_badge}
     """
 
 
-def _eligible_matches_query(
+def _build_eligible_matches_query(
     cohort: Cohort,
     *,
     source: str = "remote.main.match_player",
@@ -45,7 +45,7 @@ def _eligible_matches_query(
     return f"""
         SELECT match_id
         FROM {source}
-        WHERE {_cohort_where(cohort)}
+        WHERE {_build_cohort_filter(cohort)}
         GROUP BY match_id
         HAVING count(*) = 12
            AND count(DISTINCT player_slot) = 12
@@ -58,14 +58,14 @@ def _eligible_matches_query(
     """
 
 
-def _connect(paths: RunPaths) -> duckdb.DuckDBPyConnection:
+def _connect_analysis_database(paths: RunPaths) -> duckdb.DuckDBPyConnection:
     database = paths.raw / "analysis.duckdb"
-    con = duckdb.connect(str(database))
-    con.execute("SET threads = 8")
-    con.execute("SET memory_limit = '12GB'")
-    con.execute(f"SET temp_directory = '{paths.raw / 'duckdb-tmp'}'")
-    con.execute("INSTALL ducklake; LOAD ducklake; INSTALL httpfs; LOAD httpfs")
-    con.execute(
+    connection = duckdb.connect(str(database))
+    connection.execute("SET threads = 8")
+    connection.execute("SET memory_limit = '12GB'")
+    connection.execute(f"SET temp_directory = '{paths.raw / 'duckdb-tmp'}'")
+    connection.execute("INSTALL ducklake; LOAD ducklake; INSTALL httpfs; LOAD httpfs")
+    connection.execute(
         """
         CREATE OR REPLACE SECRET deadlock_s3 (
             TYPE S3,
@@ -77,19 +77,19 @@ def _connect(paths: RunPaths) -> duckdb.DuckDBPyConnection:
         )
         """
     )
-    con.execute(f"ATTACH '{DUCKLAKE_URL}' AS remote (READ_ONLY)")
-    version = _count(con, "SELECT id FROM remote.current_snapshot()")
-    con.execute("DETACH remote")
-    con.execute(
+    connection.execute(f"ATTACH '{DUCKLAKE_URL}' AS remote (READ_ONLY)")
+    version = _query_count(connection, "SELECT id FROM remote.current_snapshot()")
+    connection.execute("DETACH remote")
+    connection.execute(
         f"ATTACH '{DUCKLAKE_URL}' AS remote (READ_ONLY, SNAPSHOT_VERSION {version})"
     )
-    con.execute(
+    connection.execute(
         f"CREATE OR REPLACE TABLE source_snapshot AS SELECT {version}::BIGINT AS version"
     )
-    return con
+    return connection
 
 
-def _load_item_assets(con: duckdb.DuckDBPyConnection, path: Path) -> None:
+def _load_item_assets(connection: duckdb.DuckDBPyConnection, path: Path) -> None:
     items = json.loads(path.read_text(encoding="utf-8"))
     rows = [
         (
@@ -105,8 +105,8 @@ def _load_item_assets(con: duckdb.DuckDBPyConnection, path: Path) -> None:
         )
         for item in items
     ]
-    con.execute("DROP TABLE IF EXISTS item_assets")
-    con.execute(
+    connection.execute("DROP TABLE IF EXISTS item_assets")
+    connection.execute(
         """
         CREATE TABLE item_assets (
             item_id UBIGINT,
@@ -121,31 +121,35 @@ def _load_item_assets(con: duckdb.DuckDBPyConnection, path: Path) -> None:
         )
         """
     )
-    con.executemany("INSERT INTO item_assets VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", rows)
+    connection.executemany(
+        "INSERT INTO item_assets VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", rows
+    )
 
 
-def _export(con: duckdb.DuckDBPyConnection, table: str, path: Path) -> None:
-    con.execute(
+def _export_table(
+    connection: duckdb.DuckDBPyConnection, table: str, path: Path
+) -> None:
+    connection.execute(
         f"COPY {table} TO '{path}' (FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE 100000)"
     )
 
 
-def _count(con: duckdb.DuckDBPyConnection, query: str) -> int:
-    row = con.execute(query).fetchone()
+def _query_count(connection: duckdb.DuckDBPyConnection, query: str) -> int:
+    row = connection.execute(query).fetchone()
     if row is None:
         raise RuntimeError(f"count query returned no row: {query}")
     return int(row[0])
 
 
 def _execute_remote_query(
-    con: duckdb.DuckDBPyConnection,
+    connection: duckdb.DuckDBPyConnection,
     query: str,
 ) -> duckdb.DuckDBPyConnection:
-    """Retry when DuckLake publishes metadata just before a shard is readable."""
+    """Retry when DuckLake metadata references a data file that is not yet readable."""
     attempt = 1
     while True:
         try:
-            return con.execute(query)
+            return connection.execute(query)
         except duckdb.Error as error:
             retryable = any(marker in str(error) for marker in _RETRYABLE_REMOTE_ERRORS)
             if not retryable or attempt >= _REMOTE_QUERY_ATTEMPTS:
@@ -160,9 +164,9 @@ def _execute_remote_query(
             attempt += 1
 
 
-def _freeze_splits(con: duckdb.DuckDBPyConnection, cohort: Cohort) -> None:
-    # Determine all cutoffs from the starting cohort before any per-hero search.
-    con.execute(
+def _freeze_splits(connection: duckdb.DuckDBPyConnection, cohort: Cohort) -> None:
+    # Cutoffs use the starting cohort or fixed time fractions when that cohort is empty.
+    connection.execute(
         """
         CREATE OR REPLACE TABLE split_boundaries AS
         WITH matches AS (
@@ -176,9 +180,8 @@ def _freeze_splits(con: duckdb.DuckDBPyConnection, cohort: Cohort) -> None:
     """,
         [cohort.minimum_badge, cohort.maximum_badge],
     )
-    # An empty starting range uses fixed time fractions, never expanded outcomes.
     start, end = cohort.since.timestamp(), cohort.resolved_as_of().timestamp()
-    con.execute(
+    connection.execute(
         """
         UPDATE split_boundaries SET
             discovery_end=coalesce(discovery_end, ?),
@@ -186,7 +189,7 @@ def _freeze_splits(con: duckdb.DuckDBPyConnection, cohort: Cohort) -> None:
     """,
         [start + (end - start) * share for share in (0.45, 0.6, 0.8)],
     )
-    con.execute("""
+    connection.execute("""
         CREATE OR REPLACE TABLE match_folds AS
         SELECT match_id,
                CASE WHEN epoch(min(start_time)) <= train_end THEN 'train'
@@ -201,20 +204,23 @@ def extract_cohort(
     paths: RunPaths, cohort: Cohort, *, rank_expansion: str = "off"
 ) -> dict[str, object]:
     cohort.validate()
-    cutoffs = ranked_cutoffs(cohort.minimum_badge, cohort.maximum_badge, rank_expansion)
+    cutoffs = calculate_rank_cutoffs(
+        cohort.minimum_badge, cohort.maximum_badge, rank_expansion
+    )
     extraction = replace(cohort, minimum_badge=cutoffs[-1])
-    con = _connect(paths)
+    connection = _connect_analysis_database(paths)
     try:
-        _load_item_assets(con, paths.raw / "items.json")
-        con.execute("DROP TABLE IF EXISTS eligible_matches")
+        _load_item_assets(connection, paths.raw / "items.json")
+        connection.execute("DROP TABLE IF EXISTS eligible_matches")
         _execute_remote_query(
-            con,
-            "CREATE TABLE eligible_matches AS " + _eligible_matches_query(extraction),
+            connection,
+            "CREATE TABLE eligible_matches AS "
+            + _build_eligible_matches_query(extraction),
         )
         print("Extracting deidentified player-match cohort…", flush=True)
-        con.execute("DROP TABLE IF EXISTS player_matches")
+        connection.execute("DROP TABLE IF EXISTS player_matches")
         _execute_remote_query(
-            con,
+            connection,
             """
             CREATE TABLE player_matches AS
             SELECT
@@ -235,9 +241,9 @@ def extract_cohort(
             """,
         )
         print("Aggregating deidentified unique-player breadth…", flush=True)
-        con.execute("DROP TABLE IF EXISTS hero_account_counts")
+        connection.execute("DROP TABLE IF EXISTS hero_account_counts")
         _execute_remote_query(
-            con,
+            connection,
             """
             CREATE TABLE hero_account_counts AS
             SELECT hero_id, count(DISTINCT account_id) AS unique_accounts
@@ -246,8 +252,8 @@ def extract_cohort(
             GROUP BY hero_id
             """,
         )
-        _freeze_splits(con, cohort)
-        con.execute(
+        _freeze_splits(connection, cohort)
+        connection.execute(
             """
             CREATE OR REPLACE TABLE compositions AS
             SELECT match_id, team_id, list_sort(list(hero_id)) AS hero_ids
@@ -256,9 +262,9 @@ def extract_cohort(
         )
 
         print("Extracting personal net-worth snapshots…", flush=True)
-        con.execute("DROP TABLE IF EXISTS player_snapshots")
+        connection.execute("DROP TABLE IF EXISTS player_snapshots")
         _execute_remote_query(
-            con,
+            connection,
             """
             CREATE TABLE player_snapshots AS
             SELECT match_id, player_slot,
@@ -270,9 +276,9 @@ def extract_cohort(
         )
 
         print("Extracting team net-worth snapshots…", flush=True)
-        con.execute("DROP TABLE IF EXISTS team_snapshots")
+        connection.execute("DROP TABLE IF EXISTS team_snapshots")
         _execute_remote_query(
-            con,
+            connection,
             """
             CREATE TABLE team_snapshots AS
             WITH snapshots AS (
@@ -296,9 +302,9 @@ def extract_cohort(
             "Extracting upgrade purchase events and valid pre-decision state…",
             flush=True,
         )
-        con.execute("DROP TABLE IF EXISTS purchases")
+        connection.execute("DROP TABLE IF EXISTS purchases")
         _execute_remote_query(
-            con,
+            connection,
             """
             CREATE TABLE purchases AS
             WITH expanded AS (
@@ -363,8 +369,8 @@ def extract_cohort(
         )
 
         print("Joining purchase events to team state…", flush=True)
-        con.execute("DROP TABLE IF EXISTS first_purchases")
-        con.execute(
+        connection.execute("DROP TABLE IF EXISTS first_purchases")
+        connection.execute(
             """
             CREATE TABLE first_purchases AS
             WITH firsts AS (
@@ -412,8 +418,8 @@ def extract_cohort(
             ORDER BY hero_id, match_id, player_slot, buy_time, item_id
             """
         )
-        con.execute("DROP TABLE IF EXISTS decision_opportunities")
-        con.execute(
+        connection.execute("DROP TABLE IF EXISTS decision_opportunities")
+        connection.execute(
             """
             CREATE TABLE decision_opportunities AS
             WITH realized AS (
@@ -457,10 +463,10 @@ def extract_cohort(
             "first_purchases",
             "decision_opportunities",
         ):
-            _export(con, table, paths.data / f"{table}.parquet")
+            _export_table(connection, table, paths.data / f"{table}.parquet")
 
         counts: dict[str, object] = {
-            table: _count(con, f"SELECT count(*) FROM {table}")
+            table: _query_count(connection, f"SELECT count(*) FROM {table}")
             for table in (
                 "player_matches",
                 "match_folds",
@@ -469,25 +475,25 @@ def extract_cohort(
                 "decision_opportunities",
             )
         }
-        counts["source_snapshot_version"] = _count(
-            con, "SELECT version FROM source_snapshot"
+        counts["source_snapshot_version"] = _query_count(
+            connection, "SELECT version FROM source_snapshot"
         )
         counts["extracted_minimum_badge"] = extraction.minimum_badge
-        counts["heroes"] = _count(
-            con, "SELECT count(DISTINCT hero_id) FROM player_matches"
+        counts["heroes"] = _query_count(
+            connection, "SELECT count(DISTINCT hero_id) FROM player_matches"
         )
-        counts["hero_account_rows"] = _count(
-            con, "SELECT count(*) FROM hero_account_counts"
+        counts["hero_account_rows"] = _query_count(
+            connection, "SELECT count(*) FROM hero_account_counts"
         )
-        counts["valid_purchase_net_worth"] = _count(
-            con, "SELECT count(own_net_worth_at_buy) FROM first_purchases"
+        counts["valid_purchase_net_worth"] = _query_count(
+            connection, "SELECT count(own_net_worth_at_buy) FROM first_purchases"
         )
-        counts["valid_team_lead"] = _count(
-            con, "SELECT count(team_net_worth_lead) FROM first_purchases"
+        counts["valid_team_lead"] = _query_count(
+            connection, "SELECT count(team_net_worth_lead) FROM first_purchases"
         )
         return counts
     finally:
-        con.close()
+        connection.close()
         temporary = paths.raw / "duckdb-tmp"
         if temporary.exists():
             shutil.rmtree(temporary)

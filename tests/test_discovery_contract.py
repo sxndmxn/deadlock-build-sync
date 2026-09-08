@@ -13,8 +13,8 @@ from deadlock_build_sync.value_validation import (
     require_object_rows,
 )
 from tests.build_evidence_fixtures import (
-    _document,
-    _first_build,
+    get_first_build,
+    make_evidence_document,
     write_fingerprinted_evidence,
 )
 
@@ -33,12 +33,14 @@ def exclusion() -> dict[str, object]:
 
 
 def _multiple_builds(count: int = 5) -> dict[str, object]:
-    document = _document()
+    document = make_evidence_document()
     hero = require_object_rows(document["heroes"])[0]
     builds = []
     for rank in range(count):
-        build = _first_build(
-            _document(default_item_ids=[101, 102, 201, 202, 301, 302 + rank])
+        build = get_first_build(
+            make_evidence_document(
+                default_item_ids=[101, 102, 201, 202, 301, 302 + rank]
+            )
         )
         build["path_id"] = f"core-{rank}"
         build["guide_group_id"] = f"core-{rank}"
@@ -101,7 +103,7 @@ def test_uncapped_catalog_keeps_identity_and_admission_checks(
 
 
 def test_capped_method_requires_refresh(tmp_path: Path) -> None:
-    document = _document()
+    document = make_evidence_document()
     require_object_dict(document["method"])["version"] = "eclat-leiden-pairwise-v1"
     path = tmp_path / "evidence.json"
     write_fingerprinted_evidence(path, document)
@@ -137,7 +139,7 @@ def test_exclusions_require_observations_and_reasons(change: dict[str, object]) 
 def test_catalog_preserves_excluded_heroes_and_rejects_missing_disposition(
     tmp_path: Path,
 ) -> None:
-    document = _document()
+    document = make_evidence_document()
     hero = require_object_rows(document["heroes"])[0]
     skipped = {"hero_id": 12, "hero": "Kelvin", "builds": [], "exclusion": exclusion()}
     document["heroes"] = [hero, skipped]

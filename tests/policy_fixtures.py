@@ -22,7 +22,9 @@ from deadlock_build_sync.snapshot import EvidenceUnit
 SNAPSHOT_ID = "a" * 64
 
 
-def assets(count: int = 10, *, active: bool = False) -> list[dict[str, object]]:
+def make_policy_assets(
+    count: int = 10, *, active: bool = False
+) -> list[dict[str, object]]:
     return [
         {
             "id": item_id,
@@ -40,7 +42,7 @@ def assets(count: int = 10, *, active: bool = False) -> list[dict[str, object]]:
     ]
 
 
-def claim(
+def make_evidence_claim(
     claim_id: str,
     claim_class: ClaimClass = ClaimClass.DESCRIPTIVE,
 ) -> EvidenceClaim:
@@ -67,15 +69,17 @@ def claim(
     )
 
 
-def context(item_assets: list[dict[str, object]] | None = None) -> ValidationContext:
+def make_validation_context(
+    item_assets: list[dict[str, object]] | None = None,
+) -> ValidationContext:
     return ValidationContext(
-        ItemGraph.from_assets(item_assets or assets()),
+        ItemGraph.from_assets(item_assets or make_policy_assets()),
         {10: AbilityDefinition(10, unlock_level=1)},
         {"1": {"bonus_currencies": ["EAbilityUnlocks"]}},
     )
 
 
-def branching_policy() -> BuildPolicy:
+def make_branching_policy() -> BuildPolicy:
     return BuildPolicy(
         schema_version=1,
         hero_id=12,
@@ -127,8 +131,8 @@ def branching_policy() -> BuildPolicy:
             PolicyNode("end", NodeKind.END),
         ),
         evidence=(
-            claim("mechanic/ability", ClaimClass.MECHANICAL),
-            claim("item/counter"),
-            claim("item/core"),
+            make_evidence_claim("mechanic/ability", ClaimClass.MECHANICAL),
+            make_evidence_claim("item/counter"),
+            make_evidence_claim("item/core"),
         ),
     )

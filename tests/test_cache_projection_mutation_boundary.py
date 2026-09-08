@@ -5,9 +5,9 @@ import pytest
 from deadlock_build_sync import cache_projection
 from deadlock_build_sync.cache import CacheError
 from deadlock_build_sync.presentation import MANAGED_MARKER
-from deadlock_build_sync.protobuf import HeroBuildMetadata, hero_build_metadata
+from deadlock_build_sync.protobuf import HeroBuildMetadata, parse_hero_build_metadata
 from deadlock_build_sync.ranks import Rank, RankDivision, RankRange, RankTier
-from tests.cache_fixtures import guide, unpublished
+from tests.cache_fixtures import make_purchase_guide, make_unpublished_build
 
 
 def _metadata(
@@ -37,12 +37,12 @@ def test_cached_builds_reads_all_three_build_sections_in_order() -> None:
         "SavedLastUsed": [b"saved"],
     }
 
-    assert cache_projection._cached_builds(root) == [
+    assert cache_projection._read_cached_builds(root) == [
         b"favorite",
         b"unpublished",
         b"saved",
     ]
-    assert cache_projection._cached_builds({}) == []
+    assert cache_projection._read_cached_builds({}) == []
 
 
 def test_build_id_allocation_skips_bad_blobs_before_a_valid_build(
@@ -50,7 +50,7 @@ def test_build_id_allocation_skips_bad_blobs_before_a_valid_build(
 ) -> None:
     monkeypatch.setattr(
         cache_projection,
-        "_cached_builds",
+        "_read_cached_builds",
         lambda _root: [b"bad", b"valid"],
     )
 
@@ -59,7 +59,7 @@ def test_build_id_allocation_skips_bad_blobs_before_a_valid_build(
             raise ValueError("bad protobuf")
         return _metadata(build_id=5)
 
-    monkeypatch.setattr(cache_projection, "hero_build_metadata", metadata)
+    monkeypatch.setattr(cache_projection, "parse_hero_build_metadata", metadata)
 
     assert cache_projection._allocate_local_build_id({}, 7) == 6
 
@@ -70,10 +70,12 @@ def test_build_id_allocation_ignores_reserved_or_nonpositive_ids(
     expected: int,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(cache_projection, "_cached_builds", lambda _root: [b"blob"])
+    monkeypatch.setattr(
+        cache_projection, "_read_cached_builds", lambda _root: [b"blob"]
+    )
     monkeypatch.setattr(
         cache_projection,
-        "hero_build_metadata",
+        "parse_hero_build_metadata",
         lambda _blob: _metadata(build_id=existing_id),
     )
 
@@ -83,10 +85,12 @@ def test_build_id_allocation_ignores_reserved_or_nonpositive_ids(
 def test_build_id_allocation_reports_the_reserved_limit_exactly(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(cache_projection, "_cached_builds", lambda _root: [b"blob"])
+    monkeypatch.setattr(
+        cache_projection, "_read_cached_builds", lambda _root: [b"blob"]
+    )
     monkeypatch.setattr(
         cache_projection,
-        "hero_build_metadata",
+        "parse_hero_build_metadata",
         lambda _blob: _metadata(build_id=999),
     )
 
@@ -102,12 +106,12 @@ def test_target_managed_build_rejects_missing_hero_identity(
 ) -> None:
     monkeypatch.setattr(
         cache_projection,
-        "try_hero_build_metadata",
+        "try_parse_hero_build_metadata",
         lambda _blob: _metadata(hero_id=None),
     )
 
     assert (
-        cache_projection._target_managed_build(
+        cache_projection._match_target_managed_build(
             b"blob",
             target_hero_ids={12},
             account_id=7,
@@ -127,7 +131,7 @@ def test_managed_scan_continues_past_retained_and_stale_entries(
     }
     monkeypatch.setattr(
         cache_projection,
-        "_target_managed_build",
+        "_match_target_managed_build",
         lambda blob, **_kwargs: values[blob],
     )
 
@@ -147,7 +151,7 @@ def test_managed_scan_ignores_a_managed_marker_without_a_path(
 ) -> None:
     monkeypatch.setattr(
         cache_projection,
-        "_target_managed_build",
+        "_match_target_managed_build",
         lambda _blob, **_kwargs: (12, _metadata(path_id=None)),
     )
 
@@ -167,7 +171,7 @@ def test_managed_scan_reports_duplicate_hero_and_path_exactly(
 ) -> None:
     monkeypatch.setattr(
         cache_projection,
-        "_target_managed_build",
+        "_match_target_managed_build",
         lambda _blob, **_kwargs: (12, _metadata()),
     )
 
@@ -192,8 +196,10 @@ def test_managed_update_allocates_sequential_ids_for_the_requested_account(
         return 2
 
     monkeypatch.setattr(cache_projection, "_allocate_local_build_id", allocate)
-    first = replace(guide(), path_id="control", policy_id="policy/control")
-    second = replace(guide(), path_id="damage", policy_id="policy/damage")
+    first = replace(
+        make_purchase_guide(), path_id="control", policy_id="policy/control"
+    )
+    second = replace(make_purchase_guide(), path_id="damage", policy_id="policy/damage")
 
     _, build_ids, created, updated, removed = cache_projection.update_managed_builds(
         {"Unpublished": []},
@@ -211,8 +217,10 @@ def test_managed_update_allocates_sequential_ids_for_the_requested_account(
 
 
 def test_managed_update_counts_multiple_existing_builds() -> None:
-    control = replace(guide(), path_id="control", policy_id="policy/control")
-    damage = replace(guide(), path_id="damage", policy_id="policy/damage")
+    control = replace(
+        make_purchase_guide(), path_id="control", policy_id="policy/control"
+    )
+    damage = replace(make_purchase_guide(), path_id="damage", policy_id="policy/damage")
     first, _, _, _, _ = cache_projection.update_managed_builds(
         {"Unpublished": []},
         [control, damage],
@@ -234,7 +242,7 @@ def test_managed_update_counts_multiple_existing_builds() -> None:
     )
 
     assert (created, updated, removed) == (0, 2, 0)
-    assert len(unpublished(second)) == 2
+    assert len(make_unpublished_build(second)) == 2
 
 
 def test_managed_update_passes_a_custom_rank_range_to_presentation() -> None:
@@ -245,7 +253,7 @@ def test_managed_update_passes_a_custom_rank_range_to_presentation() -> None:
 
     updated, _, _, _, _ = cache_projection.update_managed_builds(
         {"Unpublished": []},
-        [guide()],
+        [make_purchase_guide()],
         account_id=7,
         persona="Player",
         timestamp=100,
@@ -254,6 +262,6 @@ def test_managed_update_passes_a_custom_rank_range_to_presentation() -> None:
         rank_range=rank_range,
     )
 
-    blob = unpublished(updated)[0]
+    blob = make_unpublished_build(updated)[0]
     assert isinstance(blob, bytes)
-    assert "Initiate I–Seeker II" in (hero_build_metadata(blob).description or "")
+    assert "Initiate I–Seeker II" in (parse_hero_build_metadata(blob).description or "")

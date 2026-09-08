@@ -143,65 +143,77 @@ class DecisionState:
         if "lane_enemy_hero_ids" not in value:
             raise RecommendationError("decision state lacks lane enemy heroes")
         state = cls(
-            build_evidence_id=_text(
+            build_evidence_id=_require_state_text(
                 value.get("build_evidence_id"), "build evidence id"
             ),
-            client_version=_integer(
+            client_version=_require_state_integer(
                 value.get("client_version"), "client version", minimum=1
             ),
-            patch_identity=_text(value.get("patch_identity"), "patch identity"),
-            match_mode=_text(value.get("match_mode"), "match mode"),
-            game_mode=_text(value.get("game_mode"), "game mode"),
-            hero_id=_integer(value.get("hero_id"), "hero id", minimum=1),
-            clock_s=_integer(value.get("clock_s"), "clock", minimum=0),
-            average_badge=_integer(
+            patch_identity=_require_state_text(
+                value.get("patch_identity"), "patch identity"
+            ),
+            match_mode=_require_state_text(value.get("match_mode"), "match mode"),
+            game_mode=_require_state_text(value.get("game_mode"), "game mode"),
+            hero_id=_require_state_integer(value.get("hero_id"), "hero id", minimum=1),
+            clock_s=_require_state_integer(value.get("clock_s"), "clock", minimum=0),
+            average_badge=_require_state_integer(
                 value.get("average_badge"), "average badge", minimum=1
             ),
-            liquid_souls=_integer(value.get("liquid_souls"), "liquid souls", minimum=0),
-            purchases=_integers(value.get("purchases"), "purchase history"),
-            owned_items=_unique_integers(inventory.get("items"), "owned items"),
-            owned_components=_unique_integers(
+            liquid_souls=_require_state_integer(
+                value.get("liquid_souls"), "liquid souls", minimum=0
+            ),
+            purchases=_parse_state_integers(value.get("purchases"), "purchase history"),
+            owned_items=_parse_unique_state_integers(
+                inventory.get("items"), "owned items"
+            ),
+            owned_components=_parse_unique_state_integers(
                 inventory.get("components"), "owned components"
             ),
-            open_slots=_integer(inventory.get("open_slots"), "open slots", minimum=0),
-            unlocked_flex_slots=_integer(
+            open_slots=_require_state_integer(
+                inventory.get("open_slots"), "open slots", minimum=0
+            ),
+            unlocked_flex_slots=_require_state_integer(
                 inventory.get("flex_slots"), "flex slots", minimum=0
             ),
-            active_bindings=_integer(
+            active_bindings=_require_state_integer(
                 inventory.get("active_bindings"), "active bindings", minimum=0
             ),
-            learned_abilities=_unique_integers(
+            learned_abilities=_parse_unique_state_integers(
                 value.get("learned_abilities"), "learned abilities"
             ),
-            enemy_hero_ids=_unique_integers(
+            enemy_hero_ids=_parse_unique_state_integers(
                 value.get("enemy_hero_ids", []), "enemy heroes"
             ),
-            lane_enemy_hero_ids=_unique_integers(
+            lane_enemy_hero_ids=_parse_unique_state_integers(
                 value.get("lane_enemy_hero_ids", []), "lane enemy heroes"
             ),
-            enemy_item_ids=_unique_integers(
+            enemy_item_ids=_parse_unique_state_integers(
                 value.get("enemy_item_ids", []), "enemy items"
             ),
-            allied_hero_ids=_unique_integers(
+            allied_hero_ids=_parse_unique_state_integers(
                 value.get("allied_hero_ids", []), "allied heroes"
             ),
-            objectives=_unique_strings(value.get("objectives", []), "objectives"),
-            threats=_unique_strings(value.get("threats", []), "threats"),
+            objectives=_parse_unique_state_strings(
+                value.get("objectives", []), "objectives"
+            ),
+            threats=_parse_unique_state_strings(value.get("threats", []), "threats"),
         )
         state = replace(
             state,
-            path_id=_text(value.get("path_id"), "path id")
+            path_id=_require_state_text(value.get("path_id"), "path id")
             if value.get("path_id") is not None
             else None,
-            selected_optional_items=_unique_integers(
+            selected_optional_items=_parse_unique_state_integers(
                 value.get("selected_optional_items", []), "selected optional items"
             ),
-            placement_overrides=_placements(value.get("placement_overrides", {})),
-            core_substitution_item_id=_optional_integer(
+            placement_overrides=_parse_purchase_placements(
+                value.get("placement_overrides", {})
+            ),
+            core_substitution_item_id=_parse_optional_state_integer(
                 value.get("core_substitution_item_id"), "core substitution item"
             ),
-            economy=_economy(value.get("economy")),
-            enemy_observed_at_s=_integer(
+            economy=_parse_match_economy(value.get("economy")),
+            enemy_observed_at_s=_require_state_integer(
                 value.get("enemy_observed_at_s"), "enemy observation time", minimum=0
             )
             if value.get("enemy_observed_at_s") is not None
@@ -248,36 +260,36 @@ class Recommendation:
         }
 
 
-def _integer(value: object, label: str, *, minimum: int = 1) -> int:
+def _require_state_integer(value: object, label: str, *, minimum: int = 1) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or value < minimum:
         raise RecommendationError(f"decision state has invalid {label}")
     return value
 
 
-def _text(value: object, label: str) -> str:
+def _require_state_text(value: object, label: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise RecommendationError(f"decision state has invalid {label}")
     return value.strip()
 
 
-def _optional_integer(value: object, label: str) -> int | None:
-    return _integer(value, label) if value is not None else None
+def _parse_optional_state_integer(value: object, label: str) -> int | None:
+    return _require_state_integer(value, label) if value is not None else None
 
 
-def _integers(value: object, label: str) -> tuple[int, ...]:
+def _parse_state_integers(value: object, label: str) -> tuple[int, ...]:
     if not isinstance(value, list):
         raise RecommendationError(f"decision state has invalid {label}")
-    return tuple(_integer(item, label) for item in value)
+    return tuple(_require_state_integer(item, label) for item in value)
 
 
-def _unique_integers(value: object, label: str) -> tuple[int, ...]:
-    result = _integers(value, label)
+def _parse_unique_state_integers(value: object, label: str) -> tuple[int, ...]:
+    result = _parse_state_integers(value, label)
     if len(result) != len(set(result)):
         raise RecommendationError(f"decision state has duplicate {label}")
     return result
 
 
-def _unique_strings(value: object, label: str) -> tuple[str, ...]:
+def _parse_unique_state_strings(value: object, label: str) -> tuple[str, ...]:
     if not isinstance(value, list) or not all(
         isinstance(item, str) and item.strip() for item in value
     ):
@@ -288,7 +300,7 @@ def _unique_strings(value: object, label: str) -> tuple[str, ...]:
     return result
 
 
-def _placements(value: object) -> dict[int, int]:
+def _parse_purchase_placements(value: object) -> dict[int, int]:
     if not isinstance(value, dict):
         raise RecommendationError(
             "Placement overrides must map item IDs to checkpoints"
@@ -302,11 +314,13 @@ def _placements(value: object) -> dict[int, int]:
             or int(key) < 1
         ):
             raise RecommendationError("Placement override keys must be item IDs")
-        result[int(key)] = _integer(position, "purchase checkpoint", minimum=0)
+        result[int(key)] = _require_state_integer(
+            position, "purchase checkpoint", minimum=0
+        )
     return result
 
 
-def _economy(value: object) -> MatchEconomy | None:
+def _parse_match_economy(value: object) -> MatchEconomy | None:
     if value is None:
         return None
     if not isinstance(value, dict) or set(value) - {
@@ -321,11 +335,14 @@ def _economy(value: object) -> MatchEconomy | None:
     if not isinstance(lobby, list) or len(lobby) > 12:
         raise RecommendationError("Lobby wealth must contain at most 12 player values")
     return MatchEconomy(
-        _integer(personal, "personal net worth", minimum=0)
+        _require_state_integer(personal, "personal net worth", minimum=0)
         if personal is not None
         else None,
-        tuple(_integer(amount, "lobby net worth", minimum=0) for amount in lobby),
-        _integer(observed, "economy observation time", minimum=0)
+        tuple(
+            _require_state_integer(amount, "lobby net worth", minimum=0)
+            for amount in lobby
+        ),
+        _require_state_integer(observed, "economy observation time", minimum=0)
         if observed is not None
         else None,
     )

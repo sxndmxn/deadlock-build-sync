@@ -9,11 +9,11 @@ from .build_evidence_types import (
     SituationalBranch,
 )
 from .build_evidence_values import (
-    _document,
-    _finite_float,
-    _required_bool,
-    _required_float,
-    _required_int,
+    _require_boolean,
+    _require_evidence_document,
+    _require_finite_float,
+    _require_float,
+    _require_integer,
 )
 from .value_validation import object_dict
 
@@ -21,7 +21,7 @@ _FOLDS = ("train", "validation", "test")
 
 
 @dataclass(frozen=True)
-class _Identity:
+class _SituationalBranchIdentity:
     threat: str
     enemy_hero_id: int | None
     enemy_scope: str
@@ -31,7 +31,7 @@ class _Identity:
 
 
 @dataclass(frozen=True)
-class _Support:
+class _SituationalBranchSupport:
     comparison: int
     same_opportunity: bool
     support: int
@@ -41,7 +41,7 @@ class _Support:
     interval: tuple[float, float]
 
 
-def _required_text(document: dict[str, object], hero_id: int) -> None:
+def _validate_situational_text(document: dict[str, object], hero_id: int) -> None:
     fields = (
         "mechanic_ref",
         "comparator",
@@ -56,7 +56,9 @@ def _required_text(document: dict[str, object], hero_id: int) -> None:
             raise ArtifactError(f"hero {hero_id} has an incomplete situational branch")
 
 
-def _enemy_refs(document: dict[str, object], hero_id: int) -> tuple[str, ...]:
+def _parse_enemy_references(
+    document: dict[str, object], hero_id: int
+) -> tuple[str, ...]:
     raw_refs = document.get("enemy_mechanics_refs")
     if not isinstance(raw_refs, list) or not raw_refs:
         raise ArtifactError(
@@ -69,19 +71,23 @@ def _enemy_refs(document: dict[str, object], hero_id: int) -> tuple[str, ...]:
     return tuple(str(ref).strip() for ref in raw_refs)
 
 
-def _identity(document: dict[str, object], hero_id: int) -> _Identity:
+def _parse_situational_identity(
+    document: dict[str, object], hero_id: int
+) -> _SituationalBranchIdentity:
     threat = document.get("threat")
     enemy_scope = document.get("enemy_scope")
     if threat not in THREAT_CLASSES:
         raise ArtifactError(f"hero {hero_id} has an incomplete situational branch")
     if enemy_scope not in {"same_lane", "whole_enemy_team"}:
         raise ArtifactError(f"hero {hero_id} has an incomplete situational branch")
-    _required_text(document, hero_id)
+    _validate_situational_text(document, hero_id)
     enemy_hero_id = document.get("enemy_hero_id")
     if enemy_hero_id is not None:
-        enemy_hero_id = _required_int(enemy_hero_id, "enemy hero id", minimum=1)
-    item_id = _required_int(document.get("item_id"), "situational item id", minimum=1)
-    comparator_id = _required_int(
+        enemy_hero_id = _require_integer(enemy_hero_id, "enemy hero id", minimum=1)
+    item_id = _require_integer(
+        document.get("item_id"), "situational item id", minimum=1
+    )
+    comparator_id = _require_integer(
         document.get("comparator_item_id"),
         "situational comparator item id",
         minimum=1,
@@ -93,17 +99,17 @@ def _identity(document: dict[str, object], hero_id: int) -> _Identity:
         raise ArtifactError(
             f"hero {hero_id} has a mismatched situational mechanic reference"
         )
-    return _Identity(
+    return _SituationalBranchIdentity(
         str(threat),
         enemy_hero_id,
         str(enemy_scope),
         item_id,
         comparator_id,
-        _enemy_refs(document, hero_id),
+        _parse_enemy_references(document, hero_id),
     )
 
 
-def _comparative_interval(
+def _parse_comparative_interval(
     document: dict[str, object], hero_id: int
 ) -> tuple[float, float]:
     raw = document.get("comparative_interval")
@@ -111,8 +117,8 @@ def _comparative_interval(
         raise ArtifactError(
             f"hero {hero_id} has no bounded situational comparative interval"
         )
-    lower = _required_float(raw[0], "situational interval lower")
-    upper = _required_float(raw[1], "situational interval upper")
+    lower = _require_float(raw[0], "situational interval lower")
+    upper = _require_float(raw[1], "situational interval upper")
     if lower > upper or lower <= 0 or upper - lower > MAX_COMPARATIVE_INTERVAL_WIDTH:
         raise ArtifactError(
             f"hero {hero_id} has an unqualified situational comparative interval"
@@ -120,29 +126,33 @@ def _comparative_interval(
     return lower, upper
 
 
-def _support(document: dict[str, object], hero_id: int) -> _Support:
-    same_opportunity = _required_bool(
+def _parse_situational_support(
+    document: dict[str, object], hero_id: int
+) -> _SituationalBranchSupport:
+    same_opportunity = _require_boolean(
         document.get("same_opportunity"), "situational same-opportunity gate"
     )
-    comparison = _required_int(
+    comparison = _require_integer(
         document.get("comparison_support"),
         "situational comparison support",
         minimum=20,
     )
-    support = _required_int(document.get("support"), "situational support", minimum=20)
-    effective = _required_float(
+    support = _require_integer(
+        document.get("support"), "situational support", minimum=20
+    )
+    effective = _require_float(
         document.get("effective_support"), "situational effective support", minimum=20
     )
-    overlap = _required_float(
+    overlap = _require_float(
         document.get("overlap"), "situational overlap", maximum=1.0
     )
-    stable = _required_bool(document.get("stable"), "situational stability")
-    interval = _comparative_interval(document, hero_id)
+    stable = _require_boolean(document.get("stable"), "situational stability")
+    interval = _parse_comparative_interval(document, hero_id)
     if overlap < 0.5 or not stable or not same_opportunity:
         raise ArtifactError(
             f"hero {hero_id} contains an unqualified situational branch"
         )
-    return _Support(
+    return _SituationalBranchSupport(
         comparison,
         same_opportunity,
         support,
@@ -153,7 +163,7 @@ def _support(document: dict[str, object], hero_id: int) -> _Support:
     )
 
 
-def _fold_evidence(
+def _parse_situational_fold_evidence(
     document: dict[str, object], hero_id: int
 ) -> tuple[dict[str, float], dict[str, dict[str, int]]]:
     raw_estimates = object_dict(document.get("fold_comparative_estimates"))
@@ -163,16 +173,16 @@ def _fold_evidence(
     if raw_support is None or not set(raw_support) >= set(_FOLDS):
         raise ArtifactError(f"hero {hero_id} lacks situational fold evidence")
     estimates = {
-        fold: _finite_float(value, f"situational {fold} comparative estimate")
+        fold: _require_finite_float(value, f"situational {fold} comparative estimate")
         for fold, value in raw_estimates.items()
     }
     support: dict[str, dict[str, int]] = {}
     for fold in _FOLDS:
-        support_document = _document(
+        support_document = _require_evidence_document(
             raw_support[fold], f"hero {hero_id} lacks situational {fold} support"
         )
         support[fold] = {
-            side: _required_int(
+            side: _require_integer(
                 support_document.get(side),
                 f"situational {fold} {side} support",
                 minimum=20,
@@ -191,17 +201,19 @@ def _fold_evidence(
 
 
 def parse_situational_branch(value: object, hero_id: int) -> SituationalBranch:
-    document = _document(value, f"hero {hero_id} has a malformed situational branch")
-    identity = _identity(document, hero_id)
-    support = _support(document, hero_id)
-    fold_estimates, fold_support = _fold_evidence(document, hero_id)
+    document = _require_evidence_document(
+        value, f"hero {hero_id} has a malformed situational branch"
+    )
+    identity = _parse_situational_identity(document, hero_id)
+    support = _parse_situational_support(document, hero_id)
+    fold_estimates, fold_support = _parse_situational_fold_evidence(document, hero_id)
     return SituationalBranch(
         threat=identity.threat,
         item_id=identity.item_id,
         enemy_hero_id=identity.enemy_hero_id,
         enemy_scope=identity.enemy_scope,
-        phase=_required_int(document.get("phase"), "situational phase", maximum=3),
-        tier=_required_int(
+        phase=_require_integer(document.get("phase"), "situational phase", maximum=3),
+        tier=_require_integer(
             document.get("tier"), "situational decision tier", minimum=1, maximum=4
         ),
         mechanic_ref=str(document["mechanic_ref"]),

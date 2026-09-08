@@ -12,13 +12,13 @@ if TYPE_CHECKING:
     from .build_evidence_types import ItemEvidence, SequencePolicy, TierPolicyEvidence
 
 
-def _count(value: object) -> int:
+def _require_purchase_count(value: object) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         raise ArtifactError("purchase timing counts must be nonnegative integers")
     return value
 
 
-def purchase_timing(
+def parse_purchase_timing(
     value: object,
     sequence: SequencePolicy | None,
     tiers: TierPolicyEvidence,
@@ -56,7 +56,9 @@ def purchase_timing(
     evidence = {item.item_id: item for item in items}
     result: dict[int, PurchaseTiming] = {}
     for value_row in raw:
-        timing = _timing_row(value_row, pool_ids, evidence, len(sequence.default_path))
+        timing = _parse_timing_row(
+            value_row, pool_ids, evidence, len(sequence.default_path)
+        )
         if timing.item_id in result:
             raise ArtifactError("purchase timing must cover each pool item once")
         result[timing.item_id] = timing
@@ -65,7 +67,7 @@ def purchase_timing(
     return tuple(result[item] for item in sorted(result))
 
 
-def _timing_row(
+def _parse_timing_row(
     value: object,
     pool_ids: set[int],
     evidence: dict[int, ItemEvidence],
@@ -74,12 +76,12 @@ def _timing_row(
     row = object_dict(value)
     if row is None:
         raise ArtifactError("purchase timing contains a malformed item")
-    item = _count(row.get("item_id"))
-    buyers = _count(row.get("buyers"))
+    item = _require_purchase_count(row.get("item_id"))
+    buyers = _require_purchase_count(row.get("buyers"))
     counts = object_list(row.get("counts_by_checkpoint"))
     if item not in pool_ids or counts is None:
         raise ArtifactError("purchase timing must cover each pool item once")
-    resolved = tuple(_count(count) for count in counts)
+    resolved = tuple(_require_purchase_count(count) for count in counts)
     if (
         buyers != evidence[item].training_adopter_matches
         or len(resolved) != path_length + 1

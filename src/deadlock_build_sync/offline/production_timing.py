@@ -1,17 +1,17 @@
-"""Freeze outcome-blind optional purchase positions within each build cohort."""
+"""Count optional purchase positions within each build cohort without using outcomes."""
 
 from __future__ import annotations
 
 
-def _interval_counts(
+def _count_purchase_intervals(
     item_ids: list[int],
     path: tuple[int, ...],
     histories: dict[tuple[int, int], dict[int, float]],
 ) -> list[dict[str, object]]:
-    return [_item_counts(item, path, histories) for item in item_ids]
+    return [_count_item_purchase_intervals(item, path, histories) for item in item_ids]
 
 
-def _item_counts(
+def _count_item_purchase_intervals(
     item: int, path: tuple[int, ...], histories: dict[tuple[int, int], dict[int, float]]
 ) -> dict[str, object]:
     counts = [0] * (len(path) + 1)

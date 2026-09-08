@@ -1,7 +1,7 @@
 """Fresh core alternative and situational branch records."""
 
 
-def core_alternative() -> dict[str, object]:
+def make_core_alternative() -> dict[str, object]:
     return {
         "item_id": 303,
         "comparator_item_id": 302,
@@ -40,7 +40,7 @@ def core_alternative() -> dict[str, object]:
     }
 
 
-def situational_branch() -> dict[str, object]:
+def make_situational_branch() -> dict[str, object]:
     return {
         "threat": "healing",
         "item_id": 103,

@@ -1,4 +1,6 @@
-from deadlock_build_sync.offline.late_game import reconstruct_final_inventory
+from deadlock_build_sync.offline.inventory_reconstruction import (
+    reconstruct_final_inventory,
+)
 
 
 def test_final_inventory_consumes_components_and_applies_sales() -> None:

@@ -331,7 +331,7 @@ max-complexity = 21
   "typing-only-standard-library-import",
 ]
 
-"src/deadlock_build_sync/offline/core_policy_dr.py" = ["too-many-locals"]
+"src/deadlock_build_sync/offline/doubly_robust_estimation.py" = ["too-many-locals"]
 "src/deadlock_build_sync/offline/discovery_branches.py" = ["too-many-locals"]
 
 "src/deadlock_build_sync/offline/discovery_mining.py" = ["too-many-arguments", "too-many-positional-arguments"]

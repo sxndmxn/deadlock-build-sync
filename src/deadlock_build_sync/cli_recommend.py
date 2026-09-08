@@ -8,21 +8,21 @@ from .artifacts import load_policy_artifact
 from .cli_support import (
     _BUILD_EVIDENCE_FILENAME,
     _POLICY_FILENAME,
-    _build_evidence,
-    _catalog,
     _describe_preview_guide,
-    _generate,
-    _location,
+    _discover_cache_location,
+    _generate_requested_guides,
+    _load_build_evidence,
+    _load_optional_narrative_catalog,
     _record_fresh_evidence,
-    _sync_artifact_directory,
+    _resolve_artifact_directory,
 )
 from .freshness import (
     require_current_build_evidence,
 )
 from .guide_groups import group_guides
-from .purchase_markdown import build_markdown
+from .purchase_markdown import render_purchase_markdown
 from .recommendation import DecisionState, RecommendationError, recommend
-from .recommendation_plan import recommendation_markdown
+from .recommendation_plan import render_recommendation_markdown
 from .tracing import record_stage_facts
 
 if TYPE_CHECKING:
@@ -33,7 +33,7 @@ def _run_recommend(args: argparse.Namespace) -> int:
     evidence_path = (
         args.build_evidence.expanduser().resolve()
         if args.build_evidence is not None
-        else _sync_artifact_directory(args.artifacts) / _BUILD_EVIDENCE_FILENAME
+        else _resolve_artifact_directory(args.artifacts) / _BUILD_EVIDENCE_FILENAME
     )
     evidence = require_current_build_evidence(
         evidence_path,
@@ -76,20 +76,20 @@ def _run_recommend(args: argparse.Namespace) -> int:
     )
     decision = recommend(evidence, policy, state, pinned_api.items())
     if args.format == "markdown":
-        print(recommendation_markdown(decision))
+        print(render_recommendation_markdown(decision))
     else:
         print(json.dumps(decision.as_dict(), indent=2, ensure_ascii=False))
     return 0
 
 
 def _run_preview(args: argparse.Namespace) -> int:
-    location = _location(args)
-    evidence_path, evidence = _build_evidence(args)
-    generated = _generate(
+    location = _discover_cache_location(args)
+    evidence_path, evidence = _load_build_evidence(args)
+    generated = _generate_requested_guides(
         args,
         evidence,
         location.account_id,
-        narrative_catalog=_catalog(args),
+        narrative_catalog=_load_optional_narrative_catalog(args),
     )
     guides = group_guides(generated.guides, generated.guide_groups)
     payload = {
@@ -126,7 +126,10 @@ def _run_preview(args: argparse.Namespace) -> int:
     )
     if args.format == "markdown":
         print(
-            "\n".join(build_markdown(guide, details=args.details) for guide in guides)
+            "\n".join(
+                render_purchase_markdown(guide, details=args.details)
+                for guide in guides
+            )
         )
     else:
         print(json.dumps(payload, indent=2, ensure_ascii=False))

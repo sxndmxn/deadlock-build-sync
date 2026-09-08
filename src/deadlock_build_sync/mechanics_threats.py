@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from .mechanics_item_text import (
+    _classify_response_mechanic_labels,
+    _extract_observed_mechanics,
     _has_ally_target,
-    _material_observed_mechanics,
-    _response_mechanic_labels,
-    canonical_mechanics_text,
+    serialize_mechanics_text,
 )
 
 
@@ -15,8 +15,8 @@ def classify_item_threat_responses(asset: dict[str, object]) -> frozenset[str]:
         Threats for which the asset text contains a direct response mechanic.
 
     """
-    responses = set(_response_mechanic_labels(asset))
-    normalized = canonical_mechanics_text(_material_observed_mechanics(asset))
+    responses = set(_classify_response_mechanic_labels(asset))
+    normalized = serialize_mechanics_text(_extract_observed_mechanics(asset))
     if _has_ally_target(normalized) and any(
         phrase in normalized for phrase in ("shield", "heal", "resist")
     ):
@@ -76,7 +76,9 @@ _COMPARATOR_PURPOSES = (
 )
 
 
-def _selected_response(asset: dict[str, object], response: str | None) -> str | None:
+def _select_threat_response(
+    asset: dict[str, object], response: str | None
+) -> str | None:
     responses = classify_item_threat_responses(asset)
     selected = response or next(
         (
@@ -91,9 +93,11 @@ def _selected_response(asset: dict[str, object], response: str | None) -> str | 
     return selected
 
 
-def _response_why(asset: dict[str, object], selected: str) -> tuple[str, str] | None:
-    item_text = canonical_mechanics_text(_material_observed_mechanics(asset))
-    response_labels = _response_mechanic_labels(asset)
+def _describe_response_mechanics(
+    asset: dict[str, object], selected: str
+) -> tuple[str, str] | None:
+    item_text = serialize_mechanics_text(_extract_observed_mechanics(asset))
+    response_labels = _classify_response_mechanic_labels(asset)
     mechanics = list(response_labels[selected])
     for candidate in _CONDITIONAL_RESPONSE_PRIORITY:
         if candidate == "ally_protection" and selected != candidate:
@@ -114,8 +118,8 @@ def _response_why(asset: dict[str, object], selected: str) -> tuple[str, str] | 
     return item_text, " and ".join(mechanics[:3]) + target
 
 
-def _comparator_purpose(comparator: dict[str, object]) -> str | None:
-    text = canonical_mechanics_text(_material_observed_mechanics(comparator))
+def _classify_comparator_purpose(comparator: dict[str, object]) -> str | None:
+    text = serialize_mechanics_text(_extract_observed_mechanics(comparator))
     return next(
         (
             label
@@ -126,7 +130,7 @@ def _comparator_purpose(comparator: dict[str, object]) -> str | None:
     )
 
 
-def _response_copy(selected: str, item_text: str) -> tuple[str, str]:
+def _describe_response_condition(selected: str, item_text: str) -> tuple[str, str]:
     vs, when = _CONDITIONAL_RESPONSE_COPY[selected]
     mobility_phrases = (
         "become grounded",
@@ -154,15 +158,15 @@ def conditional_item_decision(
         The four fields, or ``None`` when either item purpose is not explicit.
 
     """
-    selected = _selected_response(asset, response)
+    selected = _select_threat_response(asset, response)
     if selected is None:
         return None
-    response_result = _response_why(asset, selected)
+    response_result = _describe_response_mechanics(asset, selected)
     if response_result is None:
         return None
     item_text, why = response_result
-    purpose = _comparator_purpose(comparator)
+    purpose = _classify_comparator_purpose(comparator)
     if purpose is None:
         return None
-    vs, when = _response_copy(selected, item_text)
+    vs, when = _describe_response_condition(selected, item_text)
     return vs, why, when, f"Keep default when {purpose} matters more"

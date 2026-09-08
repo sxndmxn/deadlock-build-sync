@@ -10,7 +10,7 @@ from .build_evidence_discovery import (
     discovery_rank,
     exclusion_reason,
 )
-from .build_evidence_path import _hero_builds
+from .build_evidence_path import _parse_hero_builds
 from .build_evidence_types import (
     BUILD_EVIDENCE_SCHEMA_VERSION,
     MAXIMUM_CORE_ITEM_COUNT,
@@ -27,7 +27,7 @@ from .build_evidence_types import (
     BuildEvidenceCatalog,
     HeroBuildEvidence,
 )
-from .build_evidence_values import _required_int, _required_sha256
+from .build_evidence_values import _require_integer, _require_sha256
 from .build_support import SUPPORT
 from .snapshot import EpochBoundary, EpochSet, MatchMode, sha256_json
 from .value_validation import object_dict, object_list, object_rows
@@ -54,7 +54,7 @@ _EXPECTED_METHOD: dict[str, object] = {
 
 
 @dataclass(frozen=True)
-class _Header:
+class _BuildEvidenceHeader:
     artifact_id: str
     heroes: list[object]
     requested: list[object]
@@ -63,7 +63,7 @@ class _Header:
     epochs: dict[str, object]
 
 
-def _epoch(value: object, label: str) -> EpochBoundary:
+def _parse_epoch_boundary(value: object, label: str) -> EpochBoundary:
     if not isinstance(value, dict):
         raise ArtifactError(f"build evidence lacks the {label} epoch")
     identity = value.get("identity")
@@ -71,7 +71,7 @@ def _epoch(value: object, label: str) -> EpochBoundary:
         raise ArtifactError(f"build evidence has an invalid {label} epoch")
     return EpochBoundary(
         identity,
-        _required_int(value.get("start_timestamp"), f"{label} epoch timestamp"),
+        _require_integer(value.get("start_timestamp"), f"{label} epoch timestamp"),
     )
 
 
@@ -97,7 +97,7 @@ def _validate_method(document: dict[str, object]) -> None:
         )
 
 
-def _header(document: dict[str, object]) -> _Header:
+def _parse_evidence_header(document: dict[str, object]) -> _BuildEvidenceHeader:
     artifact_id = document.get("artifact_id")
     payload = {key: value for key, value in document.items() if key != "artifact_id"}
     if not isinstance(artifact_id, str) or artifact_id != sha256_json(payload):
@@ -116,17 +116,17 @@ def _header(document: dict[str, object]) -> _Header:
         raise ArtifactError("build evidence has an incomplete identity header")
     if cohort is None or epochs is None:
         raise ArtifactError("build evidence has an incomplete identity header")
-    return _Header(artifact_id, heroes, requested, patch, cohort, epochs)
+    return _BuildEvidenceHeader(artifact_id, heroes, requested, patch, cohort, epochs)
 
 
-def _catalog_heroes(
+def _parse_catalog_heroes(
     raw_heroes: list[object], requested: list[object]
 ) -> tuple[
     dict[int, tuple[HeroBuildEvidence, ...]],
     dict[int, HeroBuildEvidence],
     frozenset[int],
 ]:
-    hero_rows = tuple(_hero_builds(row) for row in raw_heroes)
+    hero_rows = tuple(_parse_hero_builds(row) for row in raw_heroes)
     hero_builds = dict(hero_rows)
     if len(hero_builds) != len(hero_rows):
         raise ArtifactError("build evidence contains duplicate heroes")
@@ -136,7 +136,8 @@ def _catalog_heroes(
         if builds
     }
     requested_ids = frozenset(
-        _required_int(hero_id, "requested hero id", minimum=1) for hero_id in requested
+        _require_integer(hero_id, "requested hero id", minimum=1)
+        for hero_id in requested
     )
     if len(requested_ids) != len(requested):
         raise ArtifactError("build evidence contains duplicate requested heroes")
@@ -146,7 +147,7 @@ def _catalog_heroes(
 
 
 def _validate_catalog(catalog: BuildEvidenceCatalog) -> None:
-    _required_sha256(catalog.patch.get("identity"), "patch fingerprint")
+    _require_sha256(catalog.patch.get("identity"), "patch fingerprint")
     for hero in catalog.heroes.values():
         cohort = hero.cohort
         if cohort is not None and (
@@ -170,36 +171,44 @@ def _validate_catalog(catalog: BuildEvidenceCatalog) -> None:
 
 def load_build_evidence(path: Path) -> BuildEvidenceCatalog:
     raw, document = _read_document(path)
-    header = _header(document)
-    hero_builds, by_id, requested_ids = _catalog_heroes(header.heroes, header.requested)
+    header = _parse_evidence_header(document)
+    hero_builds, by_id, requested_ids = _parse_catalog_heroes(
+        header.heroes, header.requested
+    )
     catalog = BuildEvidenceCatalog(
         artifact_id=header.artifact_id,
-        client_version=_required_int(
+        client_version=_require_integer(
             document.get("client_version"), "client version", minimum=1
         ),
         patch=header.patch,
         cohort=header.cohort,
         epochs=EpochSet(
-            mechanics=_epoch(header.epochs.get("mechanics"), "mechanics"),
-            matchmaking=_epoch(header.epochs.get("matchmaking"), "matchmaking"),
-            map_objectives=_epoch(
+            mechanics=_parse_epoch_boundary(
+                header.epochs.get("mechanics"), "mechanics"
+            ),
+            matchmaking=_parse_epoch_boundary(
+                header.epochs.get("matchmaking"), "matchmaking"
+            ),
+            map_objectives=_parse_epoch_boundary(
                 header.epochs.get("map_objectives"), "map objectives"
             ),
-            telemetry=_epoch(header.epochs.get("telemetry"), "telemetry"),
+            telemetry=_parse_epoch_boundary(
+                header.epochs.get("telemetry"), "telemetry"
+            ),
         ),
-        rank_labels_sha256=_required_sha256(
+        rank_labels_sha256=_require_sha256(
             document.get("rank_labels_sha256"), "rank-label fingerprint"
         ),
-        heroes_sha256=_required_sha256(
+        heroes_sha256=_require_sha256(
             document.get("heroes_sha256"), "hero fingerprint"
         ),
-        items_sha256=_required_sha256(document.get("items_sha256"), "item fingerprint"),
+        items_sha256=_require_sha256(document.get("items_sha256"), "item fingerprint"),
         requested_hero_ids=requested_ids,
         heroes=by_id,
         hero_builds=hero_builds,
         raw_bytes=raw,
         exclusions={
-            _required_int(
+            _require_integer(
                 row["hero_id"], "excluded hero id", minimum=1
             ): exclusion_reason(row.get("exclusion"))
             for row in object_rows(header.heroes) or []

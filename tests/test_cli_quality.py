@@ -15,9 +15,13 @@ from deadlock_build_sync.quality_inputs import (
 )
 from deadlock_build_sync.recommendation_state import RecommendationError
 from deadlock_build_sync.snapshot import sha256_json
-from tests.artifact_bundle_fixtures import _write_bundle
-from tests.quality_fixtures import replay_document, replay_row
-from tests.recommendation_fixtures import assets, build_policy, catalog
+from tests.artifact_bundle_fixtures import write_artifact_bundle
+from tests.quality_fixtures import make_replay_document, make_replay_row
+from tests.recommendation_fixtures import (
+    make_build_catalog,
+    make_recommendation_assets,
+    make_recommendation_policy,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -28,8 +32,10 @@ def test_quality_cli_reports_missing_replay_without_steam_or_network(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _write_bundle(tmp_path)
-    monkeypatch.setattr("deadlock_build_sync.cli._location", _unexpected_access)
+    write_artifact_bundle(tmp_path)
+    monkeypatch.setattr(
+        "deadlock_build_sync.cli._discover_cache_location", _unexpected_access
+    )
     monkeypatch.setattr("deadlock_build_sync.api.DeadlockApi.items", _unexpected_access)
     result = main(["quality-report", "--artifacts", str(tmp_path)])
     captured = capsys.readouterr()
@@ -49,7 +55,7 @@ def _unexpected_access(_argument: object) -> None:
 def test_quality_cli_requires_pinned_assets_for_replay(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    _write_bundle(tmp_path)
+    write_artifact_bundle(tmp_path)
     assert (
         main(["quality-report", "--artifacts", str(tmp_path), "--replay", "later.json"])
         == 1
@@ -62,8 +68,10 @@ def test_quality_cli_replays_frozen_inputs_and_omits_group_identifiers(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    evidence = replace(catalog(), items_sha256=sha256_json(assets()))
-    policy = build_policy()
+    evidence = replace(
+        make_build_catalog(), items_sha256=sha256_json(make_recommendation_assets())
+    )
+    policy = make_recommendation_policy()
     ability = AbilityPath(
         (1, 2, 3, 4) * 4,
         20,
@@ -87,16 +95,16 @@ def test_quality_cli_replays_frozen_inputs_and_omits_group_identifiers(
     monkeypatch.setattr(
         "deadlock_build_sync.cli_quality.load_quality_inputs", frozen_inputs
     )
-    row = replay_row()
+    row = make_replay_row()
     row.update(
         match_start_timestamp=inputs.cutoff + 100,
         policy_assigned_at=inputs.cutoff + 90,
         feature_as_of_timestamp=inputs.cutoff + 200,
     )
     replay = tmp_path / "replay.json"
-    replay.write_text(json.dumps(replay_document([row])), encoding="utf-8")
+    replay.write_text(json.dumps(make_replay_document([row])), encoding="utf-8")
     asset_path = tmp_path / "assets.json"
-    asset_path.write_text(json.dumps(assets()), encoding="utf-8")
+    asset_path.write_text(json.dumps(make_recommendation_assets()), encoding="utf-8")
     assert (
         main(["quality-report", "--replay", str(replay), "--assets", str(asset_path)])
         == 2
@@ -104,14 +112,14 @@ def test_quality_cli_replays_frozen_inputs_and_omits_group_identifiers(
     output = capsys.readouterr().out
     report = json.loads(output)
     assert report["builds"][0]["replay"]["summary"]["actions"] == {"buy": 1}
-    assert report["replay_sha256"] == sha256_json(replay_document([row]))
+    assert report["replay_sha256"] == sha256_json(make_replay_document([row]))
     assert "deidentified-match" not in output
 
 
 def test_quality_assets_are_fingerprint_bound(tmp_path: Path) -> None:
     path = tmp_path / "assets.json"
-    rows = assets()
-    evidence = replace(catalog(), items_sha256=sha256_json(rows))
+    rows = make_recommendation_assets()
+    evidence = replace(make_build_catalog(), items_sha256=sha256_json(rows))
     path.write_text(json.dumps(rows), encoding="utf-8")
     assert load_replay_assets(path, evidence) == rows
     rows[0]["cost"] = 1
@@ -124,7 +132,7 @@ def test_quality_assets_are_fingerprint_bound(tmp_path: Path) -> None:
 
 
 def test_quality_bundle_rejects_changed_snapshot(tmp_path: Path) -> None:
-    context_path, _, _, _ = _write_bundle(tmp_path)
+    context_path, _, _, _ = write_artifact_bundle(tmp_path)
     document = json.loads(context_path.read_bytes())
     document["snapshot_manifest"]["client_version"] = 999
     context_path.write_text(json.dumps(document), encoding="utf-8")

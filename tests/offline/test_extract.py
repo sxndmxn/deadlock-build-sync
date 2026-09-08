@@ -8,7 +8,7 @@ import pytest
 from deadlock_build_sync.offline import extract
 from deadlock_build_sync.offline.config import Cohort, parse_timestamp
 from deadlock_build_sync.offline.extract import (
-    _eligible_matches_query,
+    _build_eligible_matches_query,
     _execute_remote_query,
 )
 
@@ -42,7 +42,7 @@ def test_frozen_cohort_metadata_preserves_utc_boundaries(timestamp: str) -> None
 
 
 def _insert_match(
-    con: duckdb.DuckDBPyConnection,
+    connection: duckdb.DuckDBPyConnection,
     match: _Match,
 ) -> None:
     rows = [
@@ -60,14 +60,14 @@ def _insert_match(
         )
         for slot in range(match.players)
     ]
-    con.executemany(
+    connection.executemany(
         "INSERT INTO match_player VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", rows
     )
 
 
 def test_match_admission_requires_complete_eligible_twelve_player_match() -> None:
-    con = duckdb.connect()
-    con.execute(
+    connection = duckdb.connect()
+    connection.execute(
         """
         CREATE TABLE match_player (
             match_id INTEGER,
@@ -83,12 +83,12 @@ def test_match_admission_requires_complete_eligible_twelve_player_match() -> Non
         )
         """
     )
-    _insert_match(con, _Match(1))
-    _insert_match(con, _Match(2, players=6))
-    _insert_match(con, _Match(3, players=11))
-    _insert_match(con, _Match(4, eligible=False))
+    _insert_match(connection, _Match(1))
+    _insert_match(connection, _Match(2, players=6))
+    _insert_match(connection, _Match(3, players=11))
+    _insert_match(connection, _Match(4, eligible=False))
     _insert_match(
-        con,
+        connection,
         _Match(
             5,
             start_time="2026-08-16 23:50:00+00",
@@ -100,8 +100,8 @@ def test_match_admission_requires_complete_eligible_twelve_player_match() -> Non
         as_of=datetime(2026, 8, 17, tzinfo=UTC),
     )
 
-    admitted = con.execute(
-        _eligible_matches_query(cohort, source="match_player")
+    admitted = connection.execute(
+        _build_eligible_matches_query(cohort, source="match_player")
     ).fetchall()
 
     assert admitted == [(1,)]

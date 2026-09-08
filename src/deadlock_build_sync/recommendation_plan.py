@@ -7,8 +7,8 @@ from typing import TYPE_CHECKING
 
 from .build_evidence import select_hero_build
 from .mechanics import ItemGraph, MechanicsError
-from .purchase_availability import available_choices
-from .purchase_branching import choose_route
+from .purchase_availability import evaluate_available_choices
+from .purchase_branching import select_purchase_route
 from .purchase_guidance import attach_purchase_guidance
 from .purchase_guidance_types import PurchaseState
 from .purchase_guide import build_purchase_guide_from_evidence
@@ -27,7 +27,7 @@ if TYPE_CHECKING:
     from .recommendation_state import DecisionState
 
 
-def selected_positions(
+def resolve_selected_purchase_positions(
     guidance: PurchaseGuidance, state: DecisionState
 ) -> dict[int, int]:
     cards = {card.item_id: card for card in guidance.choices}
@@ -72,8 +72,8 @@ def recommend_guide(
     if guidance is None:
         raise RecommendationError("Build has no canonical purchase guide")
     graph = ItemGraph.from_assets(assets)
-    positions = selected_positions(guidance, state)
-    route = choose_route(guidance, state, graph, positions)
+    positions = resolve_selected_purchase_positions(guidance, state)
+    route = select_purchase_route(guidance, state, graph, positions)
     current = PurchaseState(
         state.owned_items, state.liquid_souls, state.unlocked_flex_slots
     )
@@ -112,7 +112,7 @@ def recommend_guide(
             "selected_placements": {
                 str(item): index for item, index in route.positions.items()
             },
-            "available_choices": available_choices(
+            "available_choices": evaluate_available_choices(
                 guidance, route, current, graph, plan
             ),
             "relative_wealth": state.economy.relative_wealth(state.clock_s)
@@ -122,7 +122,7 @@ def recommend_guide(
     )
 
 
-def recommendation_markdown(decision: Recommendation) -> str:
+def render_recommendation_markdown(decision: Recommendation) -> str:
     details = decision.purchase_plan or {}
     lines = [
         f"# {decision.action.value.upper()}",

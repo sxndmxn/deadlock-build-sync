@@ -1,16 +1,16 @@
-"""Apply frozen core, order, mechanics, and pool gates to validation data."""
+"""Check validation data against the fixed core, purchase order, mechanics, and item pool requirements."""
 
 from scipy.stats import norm
 
-from .discovery_data import HeroData
-from .discovery_orders import core_times, order_evidence
+from .discovery_data import HeroDiscoveryData
+from .discovery_orders import calculate_order_evidence, select_core_purchase_times
 from .discovery_quality import evaluate_core, rejection_reasons
-from .discovery_types import Nomination
+from .discovery_types import NominatedCoreBuild
 
 
 def admit_core(
-    values: HeroData, row: Nomination, family: int, frozen_hash: str
-) -> Nomination:
+    values: HeroDiscoveryData, row: NominatedCoreBuild, family: int, frozen_hash: str
+) -> NominatedCoreBuild:
     validation = evaluate_core(values, tuple(row["items"]), "validation")
     limitations = [
         f"selection: {reason}" for reason in rejection_reasons(row["selection"])
@@ -26,8 +26,8 @@ def admit_core(
         if adjusted["difference"] is not None
         else None
     )
-    ordered = order_evidence(
-        core_times(values, row["items"], "validation"),
+    ordered = calculate_order_evidence(
+        select_core_purchase_times(values, row["items"], "validation"),
         row["items"],
         row["path"]["order"],
     )
@@ -53,7 +53,7 @@ def admit_core(
     }
 
 
-def discovery_record(row: Nomination) -> dict[str, object]:
+def build_discovery_record(row: NominatedCoreBuild) -> dict[str, object]:
     record = {
         key: value
         for key, value in row.items()

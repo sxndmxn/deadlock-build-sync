@@ -49,7 +49,7 @@ def _validate_build_identity(
         raise StrategyContextError("strategy context has invalid build tags")
 
 
-def _canonical_hash(value: object) -> str:
+def _calculate_canonical_hash(value: object) -> str:
     encoded = json.dumps(
         value,
         ensure_ascii=False,
@@ -94,12 +94,12 @@ def calculate_item_mechanics_sha256(
         A lowercase hexadecimal SHA-256 digest.
 
     """
-    return _canonical_hash({
+    return _calculate_canonical_hash({
         str(item_id): catalog[str(item_id)] for item_id in item_ids
     })
 
 
-def _context_item_records(entry: dict[str, object]) -> list[dict[str, object]]:
+def _collect_context_item_records(entry: dict[str, object]) -> list[dict[str, object]]:
     records: list[dict[str, object]] = []
     core = object_dict(entry.get("core"))
     if core is not None:
@@ -112,7 +112,7 @@ def _context_item_records(entry: dict[str, object]) -> list[dict[str, object]]:
     return records
 
 
-def _validated_item_mechanics(value: object) -> dict[str, dict[str, object]]:
+def _parse_item_mechanics_records(value: object) -> dict[str, dict[str, object]]:
     document = object_dict(value)
     if document is None:
         raise StrategyContextError("strategy context has invalid item mechanics")
@@ -149,7 +149,7 @@ def _validate_hero_item_mechanics(
         raise StrategyContextError(
             f"strategy context has invalid item mechanics references for {hero_name}"
         )
-    item_records = _context_item_records(entry)
+    item_records = _collect_context_item_records(entry)
     if any(
         not isinstance(item.get("item_id"), int) or "mechanics" in item
         for item in item_records
@@ -175,7 +175,7 @@ def _validate_hero_item_mechanics(
     return set(normalized_ids)
 
 
-def _narrative_basis(context: dict[str, object]) -> dict[str, object]:
+def _build_narrative_basis(context: dict[str, object]) -> dict[str, object]:
     core = object_dict(context.get("core"))
     core_items = object_rows(core.get("items")) if core is not None else None
     policy = object_dict(context.get("policy"))
@@ -210,7 +210,7 @@ def _narrative_basis(context: dict[str, object]) -> dict[str, object]:
     }
 
 
-def _kit_basis(context: dict[str, object]) -> dict[str, object]:
+def _build_kit_basis(context: dict[str, object]) -> dict[str, object]:
     return {
         "schema_version": KIT_BASIS_SCHEMA_VERSION,
         "hero_id": context.get("hero_id"),
@@ -228,7 +228,7 @@ def calculate_kit_basis_sha256(context: dict[str, object]) -> str:
         A lowercase hexadecimal SHA-256 digest.
 
     """
-    return _canonical_hash(_kit_basis(context))
+    return _calculate_canonical_hash(_build_kit_basis(context))
 
 
 def calculate_narrative_basis_sha256(context: dict[str, object]) -> str:
@@ -238,7 +238,7 @@ def calculate_narrative_basis_sha256(context: dict[str, object]) -> str:
         A lowercase hexadecimal SHA-256 digest.
 
     """
-    return _canonical_hash(_narrative_basis(context))
+    return _calculate_canonical_hash(_build_narrative_basis(context))
 
 
 def calculate_context_sha256(context: dict[str, object]) -> str:
@@ -250,7 +250,7 @@ def calculate_context_sha256(context: dict[str, object]) -> str:
     """
     payload = dict(context)
     payload.pop("context_sha256", None)
-    return _canonical_hash(payload)
+    return _calculate_canonical_hash(payload)
 
 
 def calculate_source_context_sha256(document: dict[str, object]) -> str:
@@ -262,7 +262,7 @@ def calculate_source_context_sha256(document: dict[str, object]) -> str:
     """
     payload = dict(document)
     payload.pop("source_context_sha256", None)
-    return _canonical_hash(payload)
+    return _calculate_canonical_hash(payload)
 
 
 type _StrategyContextHeader = tuple[
@@ -274,14 +274,16 @@ type _StrategyContextHeader = tuple[
 ]
 
 
-def _strategy_context_header(document: dict[str, object]) -> _StrategyContextHeader:
+def _parse_strategy_context_header(
+    document: dict[str, object],
+) -> _StrategyContextHeader:
     manifest = object_dict(document.get("snapshot_manifest"))
     if manifest is None or not isinstance(manifest.get("snapshot_id"), str):
         raise StrategyContextError("strategy context is missing its snapshot manifest")
     heroes = object_rows(document.get("heroes"))
     if heroes is None:
         raise StrategyContextError("strategy context is missing its heroes array")
-    item_mechanics = _validated_item_mechanics(document.get("item_mechanics"))
+    item_mechanics = _parse_item_mechanics_records(document.get("item_mechanics"))
     requested = object_list(document.get("requested_hero_ids"))
     exclusions = object_rows(document.get("exclusions"))
     if requested is None or not all(isinstance(hero_id, int) for hero_id in requested):
@@ -302,7 +304,7 @@ def _strategy_context_header(document: dict[str, object]) -> _StrategyContextHea
     )
 
 
-def _context_build_key(entry: object) -> tuple[int, str]:
+def _parse_context_build_key(entry: object) -> tuple[int, str]:
     hero = object_dict(entry)
     if hero is None:
         raise StrategyContextError("strategy context contains an invalid hero")
@@ -365,15 +367,15 @@ def validate_strategy_context_document(document: dict[str, object]) -> None:
     """
     if document.get("schema_version") != CONTEXT_SCHEMA_VERSION:
         raise StrategyContextError("unsupported strategy-context schema")
-    manifest, heroes, item_mechanics, requested, exclusions = _strategy_context_header(
-        document
+    manifest, heroes, item_mechanics, requested, exclusions = (
+        _parse_strategy_context_header(document)
     )
 
     seen_build_keys: set[tuple[int, str]] = set()
     seen_hero_ids: set[int] = set()
     referenced_item_ids: set[int] = set()
     for entry in heroes:
-        build_key = _context_build_key(entry)
+        build_key = _parse_context_build_key(entry)
         hero_id = build_key[0]
         if build_key in seen_build_keys:
             raise StrategyContextError(

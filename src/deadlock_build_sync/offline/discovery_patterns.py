@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import numpy as np
 
-from .discovery_types import PatternCounts
+from .discovery_types import ItemsetSupportCounts
 
 
-def eclat(
+def mine_eclat_itemsets(
     matrix: np.ndarray, minimum: int = 100, length: int = 3
 ) -> dict[tuple[int, ...], int]:
     vertical = []
@@ -27,7 +27,7 @@ def extend_itemset(
     vertical: list[tuple[int, int]],
     minimum: int,
     length: int,
-    result: PatternCounts,
+    result: ItemsetSupportCounts,
 ) -> None:
     for offset, (item, tids) in enumerate(vertical):
         following = (*prefix, item)

@@ -21,12 +21,12 @@ def metric(
 
 def test_physical_line_boundary() -> None:
     assert (
-        quality_gate._physical_line_issue(
+        quality_gate._check_physical_line_limit(
             "pass.py", "x\n" * quality_gate.MAX_PHYSICAL_LINES
         )
         is None
     )
-    issue = quality_gate._physical_line_issue(
+    issue = quality_gate._check_physical_line_limit(
         "fail.py", "x\n" * (quality_gate.MAX_PHYSICAL_LINES + 1)
     )
     assert issue is not None
@@ -34,8 +34,8 @@ def test_physical_line_boundary() -> None:
 
 
 def test_static_metric_boundaries() -> None:
-    assert quality_gate._static_metric_issues("pass.py", [metric()]) == []
-    issues = quality_gate._static_metric_issues(
+    assert quality_gate._check_static_metric_limits("pass.py", [metric()]) == []
+    issues = quality_gate._check_static_metric_limits(
         "fail.py",
         [
             metric(
@@ -53,7 +53,7 @@ def test_static_metric_boundaries() -> None:
 def test_decorated_function_uses_definition_line_for_coverage() -> None:
     source = "@staticmethod\ndef sample(value: int) -> bool:\n    return value > 0\n"
 
-    metrics = quality_gate._function_metrics(source, ast.parse(source))
+    metrics = quality_gate._calculate_function_metrics(source, ast.parse(source))
 
     assert len(metrics) == 1
     assert metrics[0].coverage_line == 2
@@ -72,7 +72,8 @@ def test_decorated_function_uses_definition_line_for_coverage() -> None:
 def test_dynamic_type_detection(annotation: str, expected: list[str]) -> None:
     tree = ast.parse(f"def value(item: {annotation}) -> None:\n    pass\n")
     assert [
-        issue.symbol for issue in quality_gate._forbidden_type_issues("sample.py", tree)
+        issue.symbol
+        for issue in quality_gate._find_forbidden_type_annotations("sample.py", tree)
     ] == expected
 
 

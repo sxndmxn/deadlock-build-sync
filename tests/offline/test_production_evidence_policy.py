@@ -1,15 +1,19 @@
 import polars as pl
 
-from deadlock_build_sync.offline.core_policy_dr import cross_fitted_dr_contrast
-from deadlock_build_sync.offline.production_sources import _patch_content_sha256
+from deadlock_build_sync.offline.doubly_robust_estimation import (
+    estimate_cross_fitted_doubly_robust_contrast,
+)
+from deadlock_build_sync.offline.production_sources import (
+    _calculate_patch_content_sha256,
+)
 from tests.offline.production_evidence_fixtures import (
-    _contrast_rows,
+    make_contrast_rows,
 )
 
 
 def test_cross_fitted_dr_contrast_rejects_a_stable_like_state_tie() -> None:
-    contrast = cross_fitted_dr_contrast(
-        pl.DataFrame(_contrast_rows(positive=False)), 10, 20
+    contrast = estimate_cross_fitted_doubly_robust_contrast(
+        pl.DataFrame(make_contrast_rows(positive=False)), 10, 20
     )
 
     assert not contrast.admitted
@@ -18,8 +22,8 @@ def test_cross_fitted_dr_contrast_rejects_a_stable_like_state_tie() -> None:
 
 
 def test_cross_fitted_dr_contrast_admits_positive_train_and_validation() -> None:
-    contrast = cross_fitted_dr_contrast(
-        pl.DataFrame(_contrast_rows(positive=True)), 10, 20
+    contrast = estimate_cross_fitted_doubly_robust_contrast(
+        pl.DataFrame(make_contrast_rows(positive=True)), 10, 20
     )
 
     assert contrast.admitted
@@ -32,9 +36,9 @@ def test_cross_fitted_dr_contrast_admits_positive_train_and_validation() -> None
 
 
 def test_test_outcomes_do_not_admit_optional_core_substitutions() -> None:
-    rows = _contrast_rows(positive=True)
-    baseline = cross_fitted_dr_contrast(pl.DataFrame(rows), 10, 20)
-    without_test = cross_fitted_dr_contrast(
+    rows = make_contrast_rows(positive=True)
+    baseline = estimate_cross_fitted_doubly_robust_contrast(pl.DataFrame(rows), 10, 20)
+    without_test = estimate_cross_fitted_doubly_robust_contrast(
         pl.DataFrame([row for row in rows if row["fold"] != "test"]),
         10,
         20,
@@ -50,7 +54,9 @@ def test_patch_content_hash_normalizes_steam_cdn_routing() -> None:
     akamai = '<img src="https://clan.akamai.steamstatic.com/images/x.png">Notes'
     fastly = akamai.replace("akamai", "fastly")
 
-    assert _patch_content_sha256(akamai) == _patch_content_sha256(fastly)
-    assert _patch_content_sha256(akamai) != _patch_content_sha256(
+    assert _calculate_patch_content_sha256(akamai) == _calculate_patch_content_sha256(
+        fastly
+    )
+    assert _calculate_patch_content_sha256(akamai) != _calculate_patch_content_sha256(
         fastly.replace("Notes", "Changed notes")
     )

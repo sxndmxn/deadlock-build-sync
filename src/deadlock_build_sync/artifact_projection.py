@@ -10,7 +10,7 @@ from .policy import BuildPolicy, NodeKind
 from .value_validation import integer, object_dict, object_list, object_rows
 
 
-def _ability_projection(
+def _parse_ability_projection(
     raw: dict[str, object], policy: BuildPolicy
 ) -> tuple[tuple[int, ...], tuple[int, ...]]:
     steps = object_rows(raw.get("steps"))
@@ -51,11 +51,13 @@ def _ability_projection(
     return tuple(ability_ids), tuple(decision_support)
 
 
-def _ability_path(hero: dict[str, object], policy: BuildPolicy) -> AbilityPath:
+def _reconstruct_ability_path(
+    hero: dict[str, object], policy: BuildPolicy
+) -> AbilityPath:
     raw = object_dict(hero.get("ability_policy"))
     if raw is None or object_list(raw.get("steps")) is None:
         raise ArtifactBundleError(f"hero {policy.hero_id} has no ability policy")
-    ability_ids, decision_support = _ability_projection(raw, policy)
+    ability_ids, decision_support = _parse_ability_projection(raw, policy)
     integer_fields = (
         "all_valid_telemetry_appearances",
         "complete_path_appearances",

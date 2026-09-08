@@ -4,7 +4,7 @@ from copy import deepcopy
 from statistics import NormalDist
 
 
-def branch_document(
+def make_branch_document(
     *, item: int = 7, condition: str = "relative_wealth", value: str | int = "behind"
 ) -> dict[str, object]:
     lower = 0.1 - 0.02 / 1.96 * NormalDist().inv_cdf(0.975)

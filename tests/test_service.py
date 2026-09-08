@@ -16,9 +16,9 @@ from deadlock_build_sync.value_validation import (
     require_object_dict,
     require_object_rows,
 )
-from tests.serialization_fixtures import json_default
-from tests.service_evidence_fixtures import build_evidence
-from tests.service_fake_api import FakeApi, ability_rows, duration_points
+from tests.serialization_fixtures import serialize_json_value
+from tests.service_evidence_fixtures import make_service_build_evidence
+from tests.service_fake_api import FakeApi, make_ability_rows, make_duration_statistics
 
 
 def _assert_matchup_context(generated: GeneratedGuides) -> None:
@@ -78,8 +78,8 @@ def _assert_strategy_context(generated: GeneratedGuides) -> None:
 
 
 def test_rejects_selected_hero_without_complete_ability_path() -> None:
-    api = FakeApi(ability_rows=[], duration_points=duration_points())
-    evidence = build_evidence(api)
+    api = FakeApi(ability_rows=[], duration_points=make_duration_statistics())
+    evidence = make_service_build_evidence(api)
 
     with pytest.raises(GuideError, match="reached-state ability projection"):
         generate_guides(
@@ -92,8 +92,10 @@ def test_rejects_selected_hero_without_complete_ability_path() -> None:
 
 
 def test_rejects_observed_imbue_target_outside_current_hero_kit() -> None:
-    api = FakeApi(ability_rows=ability_rows(), duration_points=duration_points())
-    catalog = build_evidence(api)
+    api = FakeApi(
+        ability_rows=make_ability_rows(), duration_points=make_duration_statistics()
+    )
+    catalog = make_service_build_evidence(api)
     hero = catalog.heroes[12]
     items = tuple(
         replace(
@@ -122,13 +124,13 @@ def test_rejects_observed_imbue_target_outside_current_hero_kit() -> None:
 
 def test_incomplete_duration_curve_abstains_without_discarding_policy() -> None:
     api = FakeApi(
-        ability_rows=ability_rows(),
-        duration_points=duration_points()[1:],
+        ability_rows=make_ability_rows(),
+        duration_points=make_duration_statistics()[1:],
     )
 
     generated = generate_guides(
         api,
-        build_evidence=build_evidence(api),
+        build_evidence=make_service_build_evidence(api),
         account_id=123,
         hero_query=None,
         all_heroes=True,
@@ -158,16 +160,18 @@ def test_generated_guide_is_snapshot_bound_policy_projection(
     monkeypatch.setattr(api_module, "datetime", FixedDatetime)
     monkeypatch.setattr(snapshot_module, "datetime", FixedDatetime)
     monkeypatch.setattr(fake_api_module, "datetime", FixedDatetime)
-    api = FakeApi(ability_rows=ability_rows(), duration_points=duration_points())
+    api = FakeApi(
+        ability_rows=make_ability_rows(), duration_points=make_duration_statistics()
+    )
     generated = generate_guides(
         api,
-        build_evidence=build_evidence(api),
+        build_evidence=make_service_build_evidence(api),
         account_id=123,
         hero_query="Kelvin",
         all_heroes=False,
     )
 
-    normalized = json.loads(json.dumps(asdict(generated), default=json_default))
+    normalized = json.loads(json.dumps(asdict(generated), default=serialize_json_value))
     assert sha256_json(normalized) == (
         "bb8163e77d03681668e7cc47e626d8ea6906a9db15774d1531a1419f942c2736"
     )
@@ -179,8 +183,10 @@ def test_generated_guide_is_snapshot_bound_policy_projection(
 
 
 def test_supported_item_paths_create_separate_guides_and_ability_queries() -> None:
-    api = FakeApi(ability_rows=ability_rows(), duration_points=duration_points())
-    catalog = build_evidence(api)
+    api = FakeApi(
+        ability_rows=make_ability_rows(), duration_points=make_duration_statistics()
+    )
+    catalog = make_service_build_evidence(api)
     base = replace(
         catalog.heroes[12],
         path_id="control",

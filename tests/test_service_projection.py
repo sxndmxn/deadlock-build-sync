@@ -14,30 +14,32 @@ from deadlock_build_sync.value_validation import (
     require_object_dict,
     require_object_rows,
 )
-from tests.discovery_fixtures import hero_cohort
-from tests.service_evidence_fixtures import build_evidence
-from tests.service_fake_api import FakeApi, ability_rows, duration_points
+from tests.discovery_fixtures import make_hero_cohort
+from tests.service_evidence_fixtures import make_service_build_evidence
+from tests.service_fake_api import FakeApi, make_ability_rows, make_duration_statistics
 
 
 def test_all_hero_queries_and_claims_use_effective_ranks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    api = FakeApi(ability_rows=ability_rows(), duration_points=duration_points())
-    evidence = build_evidence(api)
-    cohort = HeroCohort.parse(hero_cohort())
+    api = FakeApi(
+        ability_rows=make_ability_rows(), duration_points=make_duration_statistics()
+    )
+    evidence = make_service_build_evidence(api)
+    cohort = HeroCohort.parse(make_hero_cohort())
     hero = replace(evidence.heroes[12], cohort=cohort)
     evidence = replace(evidence, heroes={12: hero}, hero_builds={12: (hero,)})
     queries: list[tuple[str, int]] = []
 
     def abilities(client: FakeApi, **_kwargs: object) -> list[dict[str, object]]:
         queries.append(("ability", client.rank_range.minimum.badge_id))
-        return ability_rows()
+        return make_ability_rows()
 
     def durations(
         client: FakeApi, **_kwargs: object
     ) -> dict[int, tuple[HeroDurationStat, ...]]:
         queries.append(("duration", client.rank_range.minimum.badge_id))
-        return {12: duration_points()}
+        return {12: make_duration_statistics()}
 
     def matchups(client: FakeApi, **_kwargs: object) -> list[dict[str, object]]:
         queries.append(("matchup", client.rank_range.minimum.badge_id))
@@ -70,13 +72,15 @@ def test_all_hero_queries_and_claims_use_effective_ranks(
 
 
 def test_required_components_join_core_queue_and_leave_optional_rows() -> None:
-    api = FakeApi(ability_rows=ability_rows(), duration_points=duration_points())
+    api = FakeApi(
+        ability_rows=make_ability_rows(), duration_points=make_duration_statistics()
+    )
     parent = next(item for item in api._assets if item.get("id") == 200)
     parent["component_items"] = ["item_1_2"]
 
     generated = generate_guides(
         api,
-        build_evidence=build_evidence(api, with_component_path=True),
+        build_evidence=make_service_build_evidence(api, with_component_path=True),
         account_id=123,
         hero_query="Kelvin",
         all_heroes=False,
@@ -122,10 +126,12 @@ def test_required_components_join_core_queue_and_leave_optional_rows() -> None:
 
 
 def test_admitted_situational_branch_reaches_policy_sidecar_and_tier_card() -> None:
-    api = FakeApi(ability_rows=ability_rows(), duration_points=duration_points())
+    api = FakeApi(
+        ability_rows=make_ability_rows(), duration_points=make_duration_statistics()
+    )
     generated = generate_guides(
         api,
-        build_evidence=build_evidence(api, with_situational_branch=True),
+        build_evidence=make_service_build_evidence(api, with_situational_branch=True),
         account_id=123,
         hero_query="Kelvin",
         all_heroes=False,
@@ -167,10 +173,12 @@ def test_admitted_situational_branch_reaches_policy_sidecar_and_tier_card() -> N
 
 
 def test_every_item_card_is_the_two_line_statistics_block() -> None:
-    api = FakeApi(ability_rows=ability_rows(), duration_points=duration_points())
+    api = FakeApi(
+        ability_rows=make_ability_rows(), duration_points=make_duration_statistics()
+    )
     generated = generate_guides(
         api,
-        build_evidence=build_evidence(api),
+        build_evidence=make_service_build_evidence(api),
         account_id=123,
         hero_query="Kelvin",
         all_heroes=False,
@@ -193,10 +201,12 @@ def test_every_item_card_is_the_two_line_statistics_block() -> None:
 
 
 def test_admitted_core_alternative_is_a_non_queue_policy_card() -> None:
-    api = FakeApi(ability_rows=ability_rows(), duration_points=duration_points())
+    api = FakeApi(
+        ability_rows=make_ability_rows(), duration_points=make_duration_statistics()
+    )
     generated = generate_guides(
         api,
-        build_evidence=build_evidence(api, with_core_alternative=True),
+        build_evidence=make_service_build_evidence(api, with_core_alternative=True),
         account_id=123,
         hero_query="Kelvin",
         all_heroes=False,

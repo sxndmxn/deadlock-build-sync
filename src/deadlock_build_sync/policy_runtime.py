@@ -236,7 +236,7 @@ class _PolicyGraphValidator:
 
 
 def validate_policy(policy: BuildPolicy, context: ValidationContext) -> None:
-    """Prove every reachable branch terminates and satisfies hard gates.
+    """Verify that every reachable branch terminates and satisfies all policy checks.
 
     Raises:
         PolicyError: If references, branching, mechanics, evidence, or reachability fail.

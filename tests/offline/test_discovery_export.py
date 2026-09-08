@@ -8,10 +8,13 @@ import duckdb
 import polars as pl
 import pytest
 
+from deadlock_build_sync.offline import discovery_artifacts as artifacts
 from deadlock_build_sync.offline import discovery_export as producer
-from deadlock_build_sync.offline import discovery_materialize as materialize
 from deadlock_build_sync.offline.config import RunPaths
-from deadlock_build_sync.offline.discovery_admission import admit_core, discovery_record
+from deadlock_build_sync.offline.discovery_admission import (
+    admit_core,
+    build_discovery_record,
+)
 from deadlock_build_sync.offline.discovery_quality import evaluate_core
 from deadlock_build_sync.value_validation import (
     integer,
@@ -19,61 +22,80 @@ from deadlock_build_sync.value_validation import (
     require_object_rows,
 )
 from tests.offline.discovery_fixtures import (
-    frozen_guide,
-    graph_fixture,
-    planted_data,
-    supported_tactics,
+    make_frozen_guide,
+    make_hero_discovery_data,
+    make_item_graph,
+    make_supported_mechanic_evidence,
 )
-from tests.offline.production_evidence_fixtures import _context
+from tests.offline.production_evidence_fixtures import make_export_context
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from deadlock_build_sync.offline.discovery_data import HeroData
+    from deadlock_build_sync.offline.discovery_data import HeroDiscoveryData
     from deadlock_build_sync.offline.discovery_types import (
-        Nomination,
+        NominatedCoreBuild,
     )
 
 
 @pytest.mark.parametrize("losing_validation", [False, True])
+@pytest.mark.parametrize("hero_count", [1, 8])
 def test_roster_freezes_all_identities_before_validation_and_reports_exclusions(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, losing_validation: bool
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    hero_count: int,
+    *,
+    losing_validation: bool,
 ) -> None:
     paths = RunPaths.create(tmp_path, "frozen")
     duckdb.connect(str(paths.raw / "analysis.duckdb")).close()
-    context = replace(_context(paths), item_graph=graph_fixture(13))
-    values = planted_data()
+    context = replace(make_export_context(paths), item_graph=make_item_graph(13))
+    values = make_hero_discovery_data()
     if losing_validation:
-        values.won[values.mask("validation")] = False
-    monkeypatch.setattr(producer, "prepare_partitions", lambda _con: None)
-    monkeypatch.setattr(producer, "load_data", lambda *_args: values)
-    monkeypatch.setattr(producer, "checkpoint_rows", lambda *_args: [])
-    monkeypatch.setattr(producer, "freeze_guide", frozen_guide)
-    monkeypatch.setattr(producer, "explain", supported_tactics)
+        values.won[values.fold_mask("validation")] = False
+    monkeypatch.setattr(
+        producer, "prepare_discovery_partitions", lambda _connection: None
+    )
+    monkeypatch.setattr(
+        producer,
+        "load_hero_discovery_data",
+        lambda _cursor, hero, *_args: replace(values, hero=hero),
+    )
+    monkeypatch.setattr(producer, "load_checkpoint_rows", lambda *_args: [])
+    monkeypatch.setattr(producer, "freeze_purchase_guide", make_frozen_guide)
+    monkeypatch.setattr(
+        producer, "describe_mechanic_overlap", make_supported_mechanic_evidence
+    )
     original = producer.admit_core
 
     def checked(
-        data: HeroData, row: Nomination, family: int, digest: str
-    ) -> Nomination:
+        data: HeroDiscoveryData, row: NominatedCoreBuild, family: int, digest: str
+    ) -> NominatedCoreBuild:
         frozen = list(paths.run.glob("discovery-nominations-*.json"))
         assert len(frozen) == 1
         document = require_object_dict(json.loads(frozen[0].read_text()))
         rows = require_object_rows(require_object_dict(document["6"])["rows"])
-        assert family == len(rows) == 6
+        assert len(document) == hero_count
+        assert family == len(rows) * hero_count == 6 * hero_count
         assert all("validation" not in candidate for candidate in rows)
         return original(data, row, family, digest)
 
     monkeypatch.setattr(producer, "admit_core", checked)
     monkeypatch.setattr(
         producer,
-        "build_payload",
-        lambda _con, _values, row, _assets: {
+        "build_evidence_payload",
+        lambda _connection, _values, row, _assets: {
             "path_id": row["identity_id"],
             "rank": row["selection_rank"],
             "evidence_status": row["evidence_status"],
         },
     )
-    result = producer.discover_roster([{"id": 6, "name": "Test Hero"}], context)[0]
+    heroes: list[dict[str, object]] = [
+        {"id": hero, "name": f"Test Hero {hero}"} for hero in range(6, 6 + hero_count)
+    ]
+    results = producer.discover_hero_roster(heroes, context, workers=1)
+    assert [result["hero_id"] for result in results] == [hero["id"] for hero in heroes]
+    result = results[0]
     builds = require_object_rows(result["builds"])
     assert len(builds) == 6
     assert len({row["path_id"] for row in builds}) == 6
@@ -86,14 +108,14 @@ def test_roster_freezes_all_identities_before_validation_and_reports_exclusions(
 
 
 def test_admission_cannot_bypass_order_mechanics_or_pool_failures() -> None:
-    values = planted_data()
-    row: Nomination = {
+    values = make_hero_discovery_data()
+    row: NominatedCoreBuild = {
         "items": [0, 1, 2, 3],
         "selection": evaluate_core(values, (0, 1, 2, 3), "selection"),
         "selection_rejections": [],
         "path": {"order": [0, 1, 2, 3], "admitted_before_validation": False},
         "tactics": {
-            **supported_tactics(),
+            **make_supported_mechanic_evidence(),
             "supported_focus": False,
             "reason": "Unsupported mechanics",
         },
@@ -102,7 +124,7 @@ def test_admission_cannot_bypass_order_mechanics_or_pool_failures() -> None:
     result = admit_core(values, row, 10, "frozen")
     assert len(result["rejections"]) == 2
     assert "Unsupported mechanics" in result["evidence_limitations"]
-    record = discovery_record(result)
+    record = build_discovery_record(result)
     assert record["test_evaluated"] is False
     assert "automatic_choices" not in record
 
@@ -110,9 +132,9 @@ def test_admission_cannot_bypass_order_mechanics_or_pool_failures() -> None:
 def test_materialized_build_uses_frozen_pool_path_and_no_test_cohort(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    values = planted_data()
+    values = make_hero_discovery_data()
     values.actors = tuple((int(match), 0) for match in values.matches)
-    row: Nomination = {
+    row: NominatedCoreBuild = {
         "items": [0, 1, 2, 3],
         "path": {"order": [0, 1, 2, 3]},
         "identity_id": "core",
@@ -133,18 +155,20 @@ def test_materialized_build_uses_frozen_pool_path_and_no_test_cohort(
         "automatic_choices": {"version": 1, "branches": []},
     }
     monkeypatch.setattr(
-        materialize,
-        "_path_item_metrics",
+        artifacts,
+        "_query_path_item_metrics",
         lambda *_args: pl.DataFrame({"item_id": [0, 1, 2, 3, 4]}),
     )
     monkeypatch.setattr(
-        materialize, "_path_cohort_summary", lambda *_args: (800, 15000)
+        artifacts, "_query_path_cohort_summary", lambda *_args: (800, 15000)
     )
     monkeypatch.setattr(
-        materialize, "_item_payload", lambda metric, _assets, _folds: metric
+        artifacts,
+        "_build_item_evidence_payload",
+        lambda metric, _assets, _folds: metric,
     )
-    con = duckdb.connect()
-    payload = materialize.build_payload(con, values, row, {})
+    connection = duckdb.connect()
+    payload = artifacts.build_evidence_payload(connection, values, row, {})
     assert require_object_dict(payload["fold_eligible_player_matches"])["test"] == 0
     assert require_object_dict(payload["tier_policy"])["source_fold"] == "discovery"
     assert require_object_dict(payload["core_policy"])["default_item_ids"] == [
@@ -154,8 +178,10 @@ def test_materialized_build_uses_frozen_pool_path_and_no_test_cohort(
         3,
     ]
     monkeypatch.setattr(
-        materialize, "_path_item_metrics", lambda *_args: pl.DataFrame({"item_id": [0]})
+        artifacts,
+        "_query_path_item_metrics",
+        lambda *_args: pl.DataFrame({"item_id": [0]}),
     )
     with pytest.raises(ValueError, match="incomplete purchase evidence"):
-        materialize.build_payload(con, values, row, {})
-    con.close()
+        artifacts.build_evidence_payload(connection, values, row, {})
+    connection.close()

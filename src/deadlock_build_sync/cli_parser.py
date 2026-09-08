@@ -12,28 +12,28 @@ from .tracing import TRACE_ENVIRONMENT_VARIABLE, TraceError, TraceMode
 DEFAULT_NARRATIVE_PATH = Path("generated/narratives.json")
 
 
-def positive_int(value: str) -> int:
+def parse_positive_integer(value: str) -> int:
     parsed = int(value)
     if parsed < 1:
         raise argparse.ArgumentTypeError("must be at least 1")
     return parsed
 
 
-def _trace_mode(value: str) -> TraceMode:
+def _parse_trace_mode(value: str) -> TraceMode:
     try:
         return TraceMode.parse(value)
     except TraceError as error:
         raise argparse.ArgumentTypeError(str(error)) from error
 
 
-def _trace_argument(
+def _add_trace_argument(
     parser: argparse.ArgumentParser,
     *,
     default: TraceMode | str | None,
 ) -> None:
     parser.add_argument(
         "--trace",
-        type=_trace_mode,
+        type=_parse_trace_mode,
         choices=tuple(TraceMode),
         default=default,
         metavar="{stages,calls}",
@@ -44,7 +44,7 @@ def _trace_argument(
     )
 
 
-def _common_location_arguments(parser: argparse.ArgumentParser) -> None:
+def _add_location_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--account-id", type=int, help="Steam account ID3; auto-detected by default"
     )
@@ -53,7 +53,7 @@ def _common_location_arguments(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _hero_arguments(parser: argparse.ArgumentParser) -> None:
+def _add_hero_arguments(parser: argparse.ArgumentParser) -> None:
     selection = parser.add_mutually_exclusive_group(required=True)
     selection.add_argument("--hero", help="active hero name, class name, or numeric ID")
     selection.add_argument(
@@ -63,7 +63,7 @@ def _hero_arguments(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _narrative_argument(parser: argparse.ArgumentParser) -> None:
+def _add_narrative_argument(parser: argparse.ArgumentParser) -> None:
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument(
         "--narratives",
@@ -83,7 +83,7 @@ def _narrative_argument(parser: argparse.ArgumentParser) -> None:
     parser.set_defaults(narratives=DEFAULT_NARRATIVE_PATH)
 
 
-def _rank_arguments(parser: argparse.ArgumentParser) -> None:
+def _add_rank_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--rank-expansion",
         choices=("auto", "off"),
@@ -106,7 +106,7 @@ def _rank_arguments(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _epoch_boundary(value: str) -> EpochBoundary:
+def _parse_epoch_boundary(value: str) -> EpochBoundary:
     identity, separator, raw_timestamp = value.rpartition("@")
     if not separator or not identity.strip():
         raise argparse.ArgumentTypeError("epoch must use IDENTITY@UNIX_TIMESTAMP")
@@ -119,7 +119,7 @@ def _epoch_boundary(value: str) -> EpochBoundary:
         ) from error
 
 
-def _snapshot_arguments(parser: argparse.ArgumentParser) -> None:
+def _add_snapshot_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--build-evidence",
         type=Path,
@@ -137,24 +137,24 @@ def _snapshot_arguments(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--client-version",
-        type=positive_int,
+        type=parse_positive_integer,
         help="explicit available asset version (default: latest resolved once)",
     )
     parser.add_argument(
         "--as-of-timestamp",
-        type=positive_int,
+        type=parse_positive_integer,
         help="immutable analytics upper cutoff (default: captured at startup)",
     )
     for name in ("mechanics", "matchmaking", "map-objectives", "telemetry"):
         parser.add_argument(
             f"--{name}-epoch",
-            type=_epoch_boundary,
+            type=_parse_epoch_boundary,
             metavar="IDENTITY@UNIX_TIMESTAMP",
             help="override one independent evidence-regime boundary",
         )
 
 
-def _build_arguments(build: argparse.ArgumentParser) -> None:
+def _add_build_arguments(build: argparse.ArgumentParser) -> None:
     build_selection = build.add_mutually_exclusive_group()
     build_selection.add_argument("--hero", help="create builds for one active hero")
     build_selection.add_argument(
@@ -162,8 +162,8 @@ def _build_arguments(build: argparse.ArgumentParser) -> None:
         action="store_true",
         help="create builds for all eligible heroes (default)",
     )
-    _rank_arguments(build)
-    _snapshot_arguments(build)
+    _add_rank_arguments(build)
+    _add_snapshot_arguments(build)
     build.add_argument(
         "--artifacts", type=Path, help="evidence and build artifact directory"
     )
@@ -178,7 +178,9 @@ def build_parser() -> argparse.ArgumentParser:
         prog="deadlock-build-sync",
         description="Generate private analytics-driven Deadlock hero builds.",
     )
-    _trace_argument(parser, default=os.environ.get(TRACE_ENVIRONMENT_VARIABLE) or None)
+    _add_trace_argument(
+        parser, default=os.environ.get(TRACE_ENVIRONMENT_VARIABLE) or None
+    )
     parser.add_argument("--api-base-url", default=DEFAULT_API_BASE_URL)
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -186,7 +188,7 @@ def build_parser() -> argparse.ArgumentParser:
         "sync",
         help="generate deterministic builds and install every reliable hero",
     )
-    _common_location_arguments(sync)
+    _add_location_arguments(sync)
     sync_selection = sync.add_mutually_exclusive_group()
     sync_selection.add_argument(
         "--hero",
@@ -197,8 +199,8 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="sync every active hero with complete reliable analytics (default)",
     )
-    _rank_arguments(sync)
-    _snapshot_arguments(sync)
+    _add_rank_arguments(sync)
+    _add_snapshot_arguments(sync)
     sync.add_argument(
         "--artifacts",
         type=Path,
@@ -208,13 +210,13 @@ def build_parser() -> argparse.ArgumentParser:
     build = subparsers.add_parser(
         "build", help="create complete Markdown and JSON builds without Steam"
     )
-    _build_arguments(build)
+    _add_build_arguments(build)
 
     status = subparsers.add_parser(
         "status",
         help="check evidence, artifacts, and installed managed builds without changes",
     )
-    _common_location_arguments(status)
+    _add_location_arguments(status)
     status.add_argument(
         "--artifacts",
         type=Path,
@@ -229,9 +231,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     refresh.add_argument("--artifacts", type=Path, help="artifact output directory")
     refresh.add_argument("--run-id", help="stable offline run identifier")
-    _rank_arguments(refresh)
-    refresh.add_argument("--min-badge", type=positive_int)
-    refresh.add_argument("--max-badge", type=positive_int)
+    refresh.add_argument(
+        "--resume", action="store_true", help="validate a completed discovery snapshot"
+    )
+    refresh.add_argument(
+        "--workers",
+        type=parse_positive_integer,
+        default=8,
+        help="concurrent hero CPU workers (default: 8)",
+    )
+    _add_rank_arguments(refresh)
+    refresh.add_argument("--min-badge", type=parse_positive_integer)
+    refresh.add_argument("--max-badge", type=parse_positive_integer)
     refresh.add_argument("--since", help="cohort lower timestamp in ISO-8601 form")
     refresh.add_argument("--as-of", help="frozen upper timestamp in ISO-8601 form")
     recommendation = subparsers.add_parser(
@@ -263,28 +274,28 @@ def build_parser() -> argparse.ArgumentParser:
     preview = subparsers.add_parser(
         "preview", help="generate and print guides without changing Steam data"
     )
-    _common_location_arguments(preview)
-    _hero_arguments(preview)
-    _rank_arguments(preview)
-    _snapshot_arguments(preview)
-    _narrative_argument(preview)
+    _add_location_arguments(preview)
+    _add_hero_arguments(preview)
+    _add_rank_arguments(preview)
+    _add_snapshot_arguments(preview)
+    _add_narrative_argument(preview)
     preview.add_argument("--format", choices=("json", "markdown"), default="json")
     preview.add_argument("--details", action="store_true")
 
     install = subparsers.add_parser(
         "install", help="install private guides into My Builds"
     )
-    _common_location_arguments(install)
-    _hero_arguments(install)
-    _rank_arguments(install)
-    _snapshot_arguments(install)
-    _narrative_argument(install)
+    _add_location_arguments(install)
+    _add_hero_arguments(install)
+    _add_rank_arguments(install)
+    _add_snapshot_arguments(install)
+    _add_narrative_argument(install)
 
     install_artifacts = subparsers.add_parser(
         "install-artifacts",
         help="install one reviewed artifact bundle without refetching analytics",
     )
-    _common_location_arguments(install_artifacts)
+    _add_location_arguments(install_artifacts)
     install_artifacts.add_argument(
         "--artifacts",
         type=Path,
@@ -302,10 +313,10 @@ def build_parser() -> argparse.ArgumentParser:
         "export-context",
         help="export structured item and ability context for reviewed artifacts",
     )
-    _common_location_arguments(export_context)
-    _hero_arguments(export_context)
-    _rank_arguments(export_context)
-    _snapshot_arguments(export_context)
+    _add_location_arguments(export_context)
+    _add_hero_arguments(export_context)
+    _add_rank_arguments(export_context)
+    _add_snapshot_arguments(export_context)
     export_context.add_argument("--output", type=Path, required=True)
     export_context.add_argument(
         "--policy-output",
@@ -314,7 +325,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     restore = subparsers.add_parser("restore", help="restore a backed-up build cache")
-    _common_location_arguments(restore)
+    _add_location_arguments(restore)
     restore.add_argument("--latest", action="store_true", required=True)
 
     trace_summary = subparsers.add_parser(
@@ -324,7 +335,7 @@ def build_parser() -> argparse.ArgumentParser:
     trace_summary.add_argument("path", type=Path, help="trace directory or JSONL file")
     trace_summary.add_argument(
         "--max-nodes",
-        type=positive_int,
+        type=parse_positive_integer,
         default=200,
         help="maximum call-tree nodes to print (default: 200)",
     )
@@ -343,5 +354,5 @@ def build_parser() -> argparse.ArgumentParser:
         restore,
         trace_summary,
     ):
-        _trace_argument(command_parser, default=argparse.SUPPRESS)
+        _add_trace_argument(command_parser, default=argparse.SUPPRESS)
     return parser

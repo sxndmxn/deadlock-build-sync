@@ -8,7 +8,7 @@ from deadlock_build_sync import kv3_binary
 
 
 def test_context_assigns_stable_string_ids() -> None:
-    context = kv3_binary._Context()
+    context = kv3_binary._EncodingContext()
 
     assert context.string_id("") == -1
     assert context.string_id("alpha") == 0
@@ -34,7 +34,7 @@ def test_integer_writer_uses_the_smallest_valid_form(
     node_type: int,
     packed: bytes,
 ) -> None:
-    context = kv3_binary._Context()
+    context = kv3_binary._EncodingContext()
 
     kv3_binary._write_integer(context, value)
 
@@ -48,7 +48,7 @@ def test_integer_writer_rejects_values_outside_int64(value: int) -> None:
         OverflowError,
         match=f"^KV3 integer is outside signed 64-bit range: {value}$",
     ):
-        kv3_binary._write_integer(kv3_binary._Context(), value)
+        kv3_binary._write_integer(kv3_binary._EncodingContext(), value)
 
 
 @pytest.mark.parametrize(
@@ -66,7 +66,7 @@ def test_float_writer_preserves_special_and_regular_values(
     node_type: int,
     packed: bytes,
 ) -> None:
-    context = kv3_binary._Context()
+    context = kv3_binary._EncodingContext()
 
     kv3_binary._write_float(context, value)
 
@@ -75,7 +75,7 @@ def test_float_writer_preserves_special_and_regular_values(
 
 
 def test_property_object_string_and_array_writers_record_each_field() -> None:
-    context = kv3_binary._Context()
+    context = kv3_binary._EncodingContext()
 
     kv3_binary._write_object(context, {"name": "value", "rows": [0, 1]})
 
@@ -97,13 +97,13 @@ def test_property_object_string_and_array_writers_record_each_field() -> None:
         kv3_binary.INT64_ONE,
     ])
 
-    empty_name = kv3_binary._Context()
+    empty_name = kv3_binary._EncodingContext()
     kv3_binary._write_property(empty_name, "", 0)
     assert empty_name.bytes4[-4:] == struct.pack("<i", -1)
 
 
 def test_value_writer_supports_each_value_kind() -> None:
-    context = kv3_binary._Context()
+    context = kv3_binary._EncodingContext()
     values: tuple[object, ...] = (
         None,
         False,
@@ -146,7 +146,7 @@ def test_value_writer_supports_each_value_kind() -> None:
 
 def test_value_writer_rejects_an_unsupported_type() -> None:
     with pytest.raises(TypeError, match=r"^unsupported KV3 value: set$"):
-        kv3_binary._write_value(kv3_binary._Context(), {1, 2})
+        kv3_binary._write_value(kv3_binary._EncodingContext(), {1, 2})
 
 
 @pytest.mark.parametrize(

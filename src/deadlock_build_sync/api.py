@@ -12,10 +12,10 @@ from .api_models import (
     ApiError,
     HeroDurationStat,
     Patch,
-    duration_stat,
+    calculate_patch_content_sha256,
+    normalize_patch_guid,
     parse_datetime,
-    patch_content_sha256,
-    patch_guid,
+    parse_duration_statistics,
 )
 from .http_client import JsonHttpClient, JsonHttpError
 from .ranks import DEFAULT_RANK_RANGE, RankCatalog, RankRange
@@ -220,9 +220,9 @@ class DeadlockApi:
             start_timestamp=int(parsed.timestamp()),
             published_at=str(latest["pub_date"]),
             source=str(latest.get("source") or "unknown"),
-            guid=patch_guid(latest.get("guid")),
+            guid=normalize_patch_guid(latest.get("guid")),
             link=str(latest.get("link") or ""),
-            content_sha256=patch_content_sha256(content),
+            content_sha256=calculate_patch_content_sha256(content),
         )
 
     def steam_persona(self, account_id: int) -> str:
@@ -332,7 +332,9 @@ class DeadlockApi:
                     f"hero duration stats response for {label} was not a list"
                 )
             for row in data:
-                resolved = duration_stat(row, label, minimum, maximum_exclusive)
+                resolved = parse_duration_statistics(
+                    row, label, minimum, maximum_exclusive
+                )
                 if resolved is None:
                     continue
                 hero_id, point = resolved

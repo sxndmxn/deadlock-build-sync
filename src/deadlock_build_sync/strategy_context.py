@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 from .artifacts import FingerprintLayers
 from .mechanics import build_hero_mechanics
 from .power_curve import summarize_ending_duration_profile
-from .purchase_categories import category_records
+from .purchase_categories import serialize_category_records
 from .purchase_guide import format_purchase_window
 from .value_validation import integer, object_rows
 
@@ -49,7 +49,7 @@ __all__ = [
 ]
 
 
-def _ability_policy(
+def _describe_ability_policy(
     guide: PurchaseGuide,
     kit: dict[str, object],
     timeline: tuple[AbilityTimelineStep, ...],
@@ -98,7 +98,7 @@ def _ability_policy(
     }
 
 
-def _explainable_actions(
+def _describe_policy_actions(
     policy: BuildPolicy | None,
     assets_by_id: dict[int, dict[str, object]],
 ) -> list[dict[str, object]]:
@@ -137,7 +137,7 @@ def _explainable_actions(
     return result
 
 
-def _ending_duration_evidence(
+def _build_ending_duration_evidence(
     points: tuple[HeroDurationStat, ...],
     distribution: dict[str, dict[str, float | int]] | None,
 ) -> dict[str, object]:
@@ -165,7 +165,7 @@ def _ending_duration_evidence(
     }
 
 
-def _tier_item_context(
+def _build_tier_item_context(
     item: GuideItem,
     rank: int,
     assets_by_id: dict[int, dict[str, object]],
@@ -212,14 +212,14 @@ def _tier_item_context(
     return context
 
 
-def _strategy_tiers(
+def _build_strategy_tiers(
     guide: PurchaseGuide,
     assets_by_id: dict[int, dict[str, object]],
 ) -> dict[str, list[dict[str, object]]]:
     tiers: dict[str, list[dict[str, object]]] = {}
     for tier in range(1, 5):
         tiers[TIER_LABELS[tier]] = [
-            _tier_item_context(item, rank, assets_by_id)
+            _build_tier_item_context(item, rank, assets_by_id)
             for rank, item in enumerate(guide.tiers.get(tier, ()), start=1)
         ]
     return tiers
@@ -250,10 +250,12 @@ def build_hero_strategy_context(
         for asset in assets
         if isinstance(asset.get("id"), int)
     }
-    tiers = _strategy_tiers(guide, assets_by_id)
+    tiers = _build_strategy_tiers(guide, assets_by_id)
 
-    ending_profile = _ending_duration_evidence(duration_curve, duration_distribution)
-    explainable_actions = _explainable_actions(policy, assets_by_id)
+    ending_profile = _build_ending_duration_evidence(
+        duration_curve, duration_distribution
+    )
+    explainable_actions = _describe_policy_actions(policy, assets_by_id)
     item_mechanics_ids = sorted(
         {item.item_id for tier_items in guide.tiers.values() for item in tier_items}
         | {item.item_id for item in guide.core_items}
@@ -276,7 +278,7 @@ def build_hero_strategy_context(
             "tag_catalog_sha256": projected.build_tag_catalog_sha256,
         },
         "guide_version": 3,
-        "categories": category_records(projected.rendered_categories),
+        "categories": serialize_category_records(projected.rendered_categories),
         "semantics": (
             "CORE steps are the validated component path in automatic Queue. "
             "OPTIONAL, PICK ONE, UPGRADE, and ITEM POOL rows are optional. "
@@ -293,7 +295,7 @@ def build_hero_strategy_context(
         "hero_mechanics": kit,
         "item_mechanics_ids": item_mechanics_ids,
         "item_mechanics_sha256": item_mechanics_sha256,
-        "ability_policy": _ability_policy(guide, kit, ability_timeline),
+        "ability_policy": _describe_ability_policy(guide, kit, ability_timeline),
         "ending_duration_profile": ending_profile,
         "core": {
             "selection": "frozen Eclat identity, Leiden group, and supported pairwise component path",

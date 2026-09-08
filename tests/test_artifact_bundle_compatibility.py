@@ -16,9 +16,9 @@ from deadlock_build_sync.strategy_context import (
     calculate_source_context_sha256,
 )
 from tests.artifact_bundle_fixtures import (
-    _write_bundle,
+    write_artifact_bundle,
 )
-from tests.serialization_fixtures import json_default
+from tests.serialization_fixtures import serialize_json_value
 
 
 def test_loads_exact_reviewed_bundle_without_analytics_refetch(
@@ -37,7 +37,9 @@ def test_loads_exact_reviewed_bundle_without_analytics_refetch(
             return datetime.fromtimestamp(timestamp, timezone)
 
     monkeypatch.setattr(bundle_fixtures, "datetime", FixedDatetime)
-    context_path, policy_path, narrative_path, evidence_path = _write_bundle(tmp_path)
+    context_path, policy_path, narrative_path, evidence_path = write_artifact_bundle(
+        tmp_path
+    )
 
     bundle = load_artifact_guide_bundle(
         context_path,
@@ -46,7 +48,7 @@ def test_loads_exact_reviewed_bundle_without_analytics_refetch(
         evidence_path,
     )
 
-    normalized = json.loads(json.dumps(asdict(bundle), default=json_default))
+    normalized = json.loads(json.dumps(asdict(bundle), default=serialize_json_value))
     assert sha256_json(normalized) == (
         "de80951a48a38f25041bf77b3f7b67f1ad7617235ab02dce1ee0616415c1ac61"
     )
@@ -81,7 +83,9 @@ def test_loads_exact_reviewed_bundle_without_analytics_refetch(
 def test_rejects_edited_projection_even_when_other_artifacts_are_unchanged(
     tmp_path: Path,
 ) -> None:
-    context_path, policy_path, narrative_path, evidence_path = _write_bundle(tmp_path)
+    context_path, policy_path, narrative_path, evidence_path = write_artifact_bundle(
+        tmp_path
+    )
     context = json.loads(context_path.read_text(encoding="utf-8"))
     context["heroes"][0]["projection"]["categories"][0]["items"][0]["item_id"] = 999
     context_path.write_text(json.dumps(context), encoding="utf-8")
@@ -113,7 +117,9 @@ def test_rejects_edited_projection_even_when_other_artifacts_are_unchanged(
 def test_rejects_projection_with_stale_canonical_contract(
     tmp_path: Path, change: str
 ) -> None:
-    context_path, policy_path, narrative_path, evidence_path = _write_bundle(tmp_path)
+    context_path, policy_path, narrative_path, evidence_path = write_artifact_bundle(
+        tmp_path
+    )
     context = json.loads(context_path.read_text(encoding="utf-8"))
     hero = context["heroes"][0]
     if change == "dimensions":
@@ -160,7 +166,9 @@ def test_rejects_projection_with_stale_canonical_contract(
 
 
 def test_rejects_crossed_policy_snapshot(tmp_path: Path) -> None:
-    context_path, policy_path, narrative_path, evidence_path = _write_bundle(tmp_path)
+    context_path, policy_path, narrative_path, evidence_path = write_artifact_bundle(
+        tmp_path
+    )
     policies = json.loads(policy_path.read_text(encoding="utf-8"))
     policies["snapshot_manifest"]["created_at"] = "2026-02-01T00:00:00Z"
     policy_path.write_text(json.dumps(policies), encoding="utf-8")
@@ -175,7 +183,9 @@ def test_rejects_crossed_policy_snapshot(tmp_path: Path) -> None:
 
 
 def test_rejects_build_evidence_outside_the_reviewed_snapshot(tmp_path: Path) -> None:
-    context_path, policy_path, narrative_path, evidence_path = _write_bundle(tmp_path)
+    context_path, policy_path, narrative_path, evidence_path = write_artifact_bundle(
+        tmp_path
+    )
     evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
     evidence["producer"] = "other-fixture"
     payload = {key: value for key, value in evidence.items() if key != "artifact_id"}

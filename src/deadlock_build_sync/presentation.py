@@ -5,8 +5,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from .guide_groups import variant_descriptions
-from .purchase_categories import choice_instruction
+from .guide_groups import describe_variants
+from .purchase_categories import format_choice_instruction
 from .purchase_guide import (
     MAX_CATEGORY_DESCRIPTION_BYTES,
     MAX_ITEM_ANNOTATION_BYTES,
@@ -65,25 +65,25 @@ class BuildPresentation:
                     )
 
 
-def _as_of_date(timestamp: int) -> str:
+def _format_as_of_date(timestamp: int) -> str:
     if timestamp <= 0:
         return "UNRESOLVED"
     return datetime.fromtimestamp(timestamp, UTC).date().isoformat()
 
 
-def _compact_date(timestamp: int) -> str:
+def _format_compact_date(timestamp: int) -> str:
     if timestamp <= 0:
         return "????"
     return datetime.fromtimestamp(timestamp, UTC).strftime("%m%d")
 
 
-def _stats_window(start_timestamp: int, end_timestamp: int) -> str:
-    start = _compact_date(start_timestamp)
-    end = _compact_date(end_timestamp)
+def _format_statistics_window(start_timestamp: int, end_timestamp: int) -> str:
+    start = _format_compact_date(start_timestamp)
+    end = _format_compact_date(end_timestamp)
     return f"{start}–{end}"
 
 
-def _build_name(
+def _format_build_name(
     persona: str,
     build_name: str,
     patch_title: str,
@@ -123,7 +123,7 @@ def _build_name(
     )
 
 
-def _role_and_plan(guide: PurchaseGuide) -> tuple[str, str]:
+def _describe_role_and_plan(guide: PurchaseGuide) -> tuple[str, str]:
     profile = guide.tactical_profile
     if profile is not None:
         return (
@@ -136,7 +136,7 @@ def _role_and_plan(guide: PurchaseGuide) -> tuple[str, str]:
     )
 
 
-def _queue_rule(guide: PurchaseGuide) -> str:
+def _describe_queue_rule(guide: PurchaseGuide) -> str:
     if guide.purchase_guidance is not None:
         return "AUTO: CORE steps only. OPTIONAL, PICK ONE, UPGRADE, and ITEM POOL rows stay optional."
     if guide.optional_core_items:
@@ -144,7 +144,7 @@ def _queue_rule(guide: PurchaseGuide) -> str:
     return "AUTO: CORE left→right. TIER 1–4 never auto-queue."
 
 
-def _ability_summary(guide: PurchaseGuide) -> str | None:
+def _describe_ability_order(guide: PurchaseGuide) -> str | None:
     ability_path = guide.ability_path
     if ability_path is None:
         return None
@@ -165,7 +165,7 @@ def build_presentation(
     patch_published_at: str,
     rank_range: RankRange = DEFAULT_RANK_RANGE,
 ) -> BuildPresentation:
-    """Create a complete player-first value for pure protobuf serialization.
+    """Create the complete Steam presentation for protobuf serialization.
 
     Returns:
         The validated player-facing presentation.
@@ -175,14 +175,14 @@ def build_presentation(
 
     """
     queue = guide.match_mode.title() if guide.match_mode else "Unresolved"
-    role_line, plan_line = _role_and_plan(guide)
+    role_line, plan_line = _describe_role_and_plan(guide)
     lines = [
         role_line,
-        _queue_rule(guide),
+        _describe_queue_rule(guide),
         plan_line,
         (
             f"{queue} • {guide.rank_identity or rank_range.label} • data through "
-            f"{_as_of_date(guide.as_of_timestamp)} • client "
+            f"{_format_as_of_date(guide.as_of_timestamp)} • client "
             f"{guide.client_version or 'UNRESOLVED'}."
         ),
     ]
@@ -195,10 +195,10 @@ def build_presentation(
         lines.append(
             f"{len(guide.variant_guides) + 1} supported variants. Queue: default only. CORE OPTIONAL lists additional variant items once. V numbers identify the full paths below."
         )
-        lines.extend(variant_descriptions(guide))
+        lines.extend(describe_variants(guide))
     if any(category.compact for category in guide.rendered_categories):
-        lines.extend(_purchase_details(guide))
-    ability_summary = _ability_summary(guide)
+        lines.extend(_describe_purchase_details(guide))
+    ability_summary = _describe_ability_order(guide)
     if ability_summary is not None:
         lines.append(ability_summary)
     lines.extend([
@@ -216,11 +216,11 @@ def build_presentation(
         raise ValueError("guide does not have exactly three build tags")
     return BuildPresentation(
         hero_id=guide.hero_id,
-        name=_build_name(
+        name=_format_build_name(
             persona,
             guide.build_archetype,
             patch_title,
-            _stats_window(
+            _format_statistics_window(
                 guide.analysis_start_timestamp,
                 guide.as_of_timestamp,
             ),
@@ -232,7 +232,7 @@ def build_presentation(
     )
 
 
-def _purchase_details(guide: PurchaseGuide) -> list[str]:
+def _describe_purchase_details(guide: PurchaseGuide) -> list[str]:
     guidance = guide.purchase_guidance
     if guidance is None:
         return []
@@ -243,7 +243,7 @@ def _purchase_details(guide: PurchaseGuide) -> list[str]:
             for step in guidance.default_path.actions
         ),
         *(
-            f"{card.name}: {choice_instruction(guidance, card)}"
+            f"{card.name}: {format_choice_instruction(guidance, card)}"
             for card in guidance.choices
         ),
         *(

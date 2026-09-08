@@ -17,12 +17,12 @@ from deadlock_build_sync.value_validation import (
     require_object_dict,
     require_object_list,
 )
-from tests.artifact_bundle_fixtures import _policy
+from tests.artifact_bundle_fixtures import make_build_policy
 
 
 def _policy_document() -> dict[str, object]:
     return build_policy_artifact(
-        [_policy("snapshot")],
+        [make_build_policy("snapshot")],
         snapshot_manifest={"snapshot_id": "snapshot"},
         requested_hero_ids={12},
     )

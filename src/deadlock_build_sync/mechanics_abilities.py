@@ -4,11 +4,11 @@ import math
 from dataclasses import dataclass
 
 from .mechanics_assets import DEFAULT_ABILITY_UPGRADE_COSTS, MechanicsError
-from .mechanics_item_text import canonical_mechanics_text
+from .mechanics_item_text import serialize_mechanics_text
 from .value_validation import integer, object_rows
 
 
-def _property_number(asset: dict[str, object], name: str) -> float | None:
+def _read_numeric_property(asset: dict[str, object], name: str) -> float | None:
     properties = asset.get("properties")
     if not isinstance(properties, dict):
         return None
@@ -25,7 +25,7 @@ def _property_number(asset: dict[str, object], name: str) -> float | None:
     return number if math.isfinite(number) else None
 
 
-def ability_definitions_from_kit(
+def parse_ability_definitions(
     kit: dict[str, object],
 ) -> dict[int, AbilityDefinition]:
     """Resolve signature abilities and explicit qualifiers from a kit record.
@@ -45,14 +45,14 @@ def ability_definitions_from_kit(
         if not isinstance(raw.get("id"), int):
             raise MechanicsError("kit contains an invalid signature ability")
         ability_id = integer(raw["id"])
-        normalized = canonical_mechanics_text(raw)
+        normalized = serialize_mechanics_text(raw)
         qualifiers = frozenset(
             qualifier
             for qualifier in ("charged", "channeled", "airborne")
             if qualifier in normalized
             or (
                 qualifier == "channeled"
-                and (_property_number(raw, "AbilityChannelTime") or 0) > 0
+                and (_read_numeric_property(raw, "AbilityChannelTime") or 0) > 0
             )
         )
         raw_unlock_level = raw.get("unlock_level")
@@ -105,7 +105,7 @@ class AbilityTimelineStep:
     unlocks_remaining: int
 
 
-def _level_rows(level_info: object) -> list[tuple[object, object]]:
+def _parse_level_rows(level_info: object) -> list[tuple[object, object]]:
     if isinstance(level_info, dict):
         return list(level_info.items())
     if isinstance(level_info, list):
@@ -116,7 +116,7 @@ def _level_rows(level_info: object) -> list[tuple[object, object]]:
     raise MechanicsError("hero level_info must be an object or list")
 
 
-def _level_grant(raw_level: object, row: object) -> tuple[int, tuple[int, int]]:
+def _parse_level_grant(raw_level: object, row: object) -> tuple[int, tuple[int, int]]:
     if not isinstance(row, dict):
         raise MechanicsError("level_info row is missing level")
     level = raw_level
@@ -145,10 +145,10 @@ def _level_grant(raw_level: object, row: object) -> tuple[int, tuple[int, int]]:
     return level, (unlocks, ap)
 
 
-def _currency_grants_by_level(level_info: object) -> dict[int, tuple[int, int]]:
+def _parse_currency_grants_by_level(level_info: object) -> dict[int, tuple[int, int]]:
     result: dict[int, tuple[int, int]] = {}
-    for raw_level, row in _level_rows(level_info):
-        level, grant = _level_grant(raw_level, row)
+    for raw_level, row in _parse_level_rows(level_info):
+        level, grant = _parse_level_grant(raw_level, row)
         result[level] = grant
     if not result:
         raise MechanicsError("level_info contains no levels")
@@ -233,7 +233,7 @@ def validate_ability_timeline(
         MechanicsError: If an action is unknown, too early, over-upgraded, or unaffordable.
 
     """
-    grants = _currency_grants_by_level(level_info)
+    grants = _parse_currency_grants_by_level(level_info)
     if tuple(actions) != tuple(sorted(actions, key=lambda action: action.level)):
         raise MechanicsError("ability actions must be ordered by level")
     progress = _AbilityProgress(dict.fromkeys(definitions, 0))
@@ -260,7 +260,7 @@ def schedule_ability_path(
         MechanicsError: If no current level can realize an observed action.
 
     """
-    levels = tuple(sorted(_currency_grants_by_level(level_info)))
+    levels = tuple(sorted(_parse_currency_grants_by_level(level_info)))
     if not levels:
         raise MechanicsError("cannot schedule abilities without current levels")
     actions: list[AbilityAction] = []

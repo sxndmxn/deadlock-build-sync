@@ -17,8 +17,8 @@ import polars as pl
 from deadlock_build_sync.mechanics import ItemGraph, MechanicsError
 from deadlock_build_sync.purchase_guidance_types import PurchaseState
 from deadlock_build_sync.purchase_planner import (
-    covered,
-    first_checkpoint,
+    find_first_incomplete_checkpoint,
+    is_item_or_upgrade_owned,
     plan_purchases,
 )
 from deadlock_build_sync.value_validation import (
@@ -28,9 +28,10 @@ from deadlock_build_sync.value_validation import (
     object_list,
 )
 
-from .core_policy_dr import cross_fitted_dr_contrast
-from .discovery_types import Nomination
-from .late_game import reconstruct_final_inventory
+from .discovery_contrast_cache import BranchContrastCache
+from .discovery_types import NominatedCoreBuild
+from .doubly_robust_estimation import estimate_cross_fitted_doubly_robust_contrast
+from .inventory_reconstruction import reconstruct_final_inventory
 
 
 @dataclass(frozen=True)
@@ -39,10 +40,13 @@ class ChoiceObservation:
     conditions: set[tuple[str, str | int]]
 
 
-def decision_rows(
-    con: duckdb.DuckDBPyConnection, hero: int, minimum: int = 11, maximum: int = 116
+def load_decision_rows(
+    connection: duckdb.DuckDBPyConnection,
+    hero: int,
+    minimum: int = 11,
+    maximum: int = 116,
 ) -> list[dict[str, object]]:
-    cursor = con.execute(
+    cursor = connection.execute(
         """
         SELECT p.* EXCLUDE(own_team_net_worth, enemy_team_net_worth,
                           own_team_observed_players, enemy_team_observed_players,
@@ -72,16 +76,24 @@ def decision_rows(
     return [dict(zip(names, values, strict=True)) for values in cursor.fetchall()]
 
 
-def event_histories(
-    con: duckdb.DuckDBPyConnection, hero: int, minimum: int = 11, maximum: int = 116
+def load_purchase_event_histories(
+    connection: duckdb.DuckDBPyConnection,
+    hero: int,
+    minimum: int = 11,
+    maximum: int = 116,
 ) -> dict[tuple[int, int], list[tuple[int, int, int, int]]]:
-    rows = con.execute(
+    rows = connection.execute(
         """
+        WITH hero_actors AS (
+            SELECT DISTINCT match_id,player_slot,team_id FROM player_matches
+            WHERE hero_id=? AND average_badge BETWEEN ? AND ?
+        )
         SELECT p.match_id,p.player_slot,p.team_id,p.item_id,p.buy_time,p.sold_time
         FROM purchases p JOIN discovery_partitions d USING(match_id)
-        WHERE d.partition IN ('discovery','validation') AND p.match_id IN (
-            SELECT match_id FROM player_matches WHERE hero_id=? AND average_badge BETWEEN ? AND ?
-        ) ORDER BY p.match_id,p.player_slot,p.buy_time,p.event_order
+        JOIN hero_actors h ON p.match_id=h.match_id
+          AND (p.player_slot=h.player_slot OR p.team_id!=h.team_id)
+        WHERE d.partition IN ('discovery','validation')
+        ORDER BY p.match_id,p.player_slot,p.buy_time,p.event_order
     """,
         [hero, minimum, maximum],
     ).fetchall()
@@ -96,7 +108,7 @@ def event_histories(
     return result
 
 
-def inventory_before(
+def reconstruct_inventory_before(
     events: list[tuple[int, int, int, int]], clock: int, graph: ItemGraph
 ) -> tuple[int, ...]:
     return reconstruct_final_inventory(
@@ -109,15 +121,15 @@ def inventory_before(
     )
 
 
-def checkpoint_rows(
-    con: duckdb.DuckDBPyConnection,
+def load_checkpoint_rows(
+    connection: duckdb.DuckDBPyConnection,
     hero: int,
     graph: ItemGraph,
     minimum: int = 11,
     maximum: int = 116,
 ) -> list[dict[str, object]]:
-    decisions = decision_rows(con, hero, minimum, maximum)
-    histories = event_histories(con, hero, minimum, maximum)
+    decisions = load_decision_rows(connection, hero, minimum, maximum)
+    histories = load_purchase_event_histories(connection, hero, minimum, maximum)
     by_match: dict[int, list[list[tuple[int, int, int, int]]]] = {}
     for (match, _), events in histories.items():
         by_match.setdefault(match, []).append(events)
@@ -129,7 +141,7 @@ def checkpoint_rows(
             integer(row["team_id"]),
         )
         row["owned_before"] = list(
-            inventory_before(histories.get((match, slot), []), clock, graph)
+            reconstruct_inventory_before(histories.get((match, slot), []), clock, graph)
         )
         enemies = set()
         enemy_observed = row.get("enemy_observed")
@@ -139,7 +151,9 @@ def checkpoint_rows(
         for events in by_match.get(match, []):
             if fresh_enemy and events and events[0][0] != team:
                 enemies.update(
-                    inventory_before(events, integer(enemy_observed) + 1, graph)
+                    reconstruct_inventory_before(
+                        events, integer(enemy_observed) + 1, graph
+                    )
                 )
         if not fresh_enemy:
             row["enemy_heroes"] = []
@@ -164,7 +178,7 @@ def checkpoint_rows(
     return decisions
 
 
-def conditions(row: dict[str, object]) -> set[tuple[str, str | int]]:
+def extract_branch_conditions(row: dict[str, object]) -> set[tuple[str, str | int]]:
     result: set[tuple[str, str | int]] = set()
     relative = row.get("relative_wealth")
     if isinstance(relative, (int, float)):
@@ -182,9 +196,9 @@ def conditions(row: dict[str, object]) -> set[tuple[str, str | int]]:
     return result
 
 
-def legal_at(
+def is_purchase_legal_at_checkpoint(
     row: dict[str, object],
-    nominee: Nomination,
+    nominee: NominatedCoreBuild,
     item: int,
     checkpoint: int,
     graph: ItemGraph,
@@ -193,8 +207,8 @@ def legal_at(
     owned = tuple(
         integer(value) for value in object_list(row.get("owned_before")) or []
     )
-    current = first_checkpoint(graph, path, owned)
-    if current != checkpoint or covered(graph, item, owned):
+    current = find_first_incomplete_checkpoint(graph, path, owned)
+    if current != checkpoint or is_item_or_upgrade_owned(graph, item, owned):
         return False
     try:
         plan_purchases(
@@ -206,8 +220,8 @@ def legal_at(
     return True
 
 
-def freeze_candidates(
-    rows: list[dict[str, object]], nominee: Nomination, graph: ItemGraph
+def freeze_branch_candidates(
+    rows: list[dict[str, object]], nominee: NominatedCoreBuild, graph: ItemGraph
 ) -> list[dict[str, object]]:
     if not nominee["guide"]["ready"]:
         return []
@@ -227,13 +241,13 @@ def freeze_candidates(
             20, integer(record["buyers"]) * 0.1
         ) or checkpoint >= len(nominee["guide"]["path"]):
             continue
-        result.extend(freeze_choice(rows, nominee, item, checkpoint, graph))
+        result.extend(freeze_choice_conditions(rows, nominee, item, checkpoint, graph))
     return result
 
 
-def freeze_choice(
+def freeze_choice_conditions(
     rows: list[dict[str, object]],
-    nominee: Nomination,
+    nominee: NominatedCoreBuild,
     item: int,
     checkpoint: int,
     graph: ItemGraph,
@@ -255,12 +269,12 @@ def freeze_choice(
         if row["fold"] == "train"
         and row.get("relative_wealth") is not None
         and row["item_id"] in {item, comparator}
-        and legal_at(row, nominee, item, checkpoint, graph)
+        and is_purchase_legal_at_checkpoint(row, nominee, item, checkpoint, graph)
     ]
     counts = Counter(
         (condition, trigger, integer(row["item_id"]))
         for row in discovery
-        for condition, trigger in conditions(row)
+        for condition, trigger in extract_branch_conditions(row)
     )
     triggers = {(condition, trigger) for condition, trigger, _action in counts}
     for condition, trigger in sorted(triggers, key=str):
@@ -278,80 +292,109 @@ def freeze_choice(
     return result
 
 
-def evaluate_candidates(
+class BranchCandidateEvaluator:
+    def __init__(
+        self, rows: list[dict[str, object]], graph: ItemGraph, hypotheses: int
+    ) -> None:
+        self.rows = rows
+        self.graph = graph
+        self.hypotheses = hypotheses
+        self.contrast_cache = BranchContrastCache(
+            estimate_cross_fitted_doubly_robust_contrast
+        )
+
+    def evaluate_candidates(
+        self, nominee: NominatedCoreBuild, candidates: list[dict[str, object]]
+    ) -> dict[str, object]:
+        rows, graph, hypotheses = self.rows, self.graph, self.hypotheses
+        admitted, audit = [], []
+        critical = NormalDist().inv_cdf(1 - 0.025 / max(1, hypotheses))
+        choice_rows: dict[tuple[int, int, int], list[ChoiceObservation]] = {}
+        for candidate in candidates:
+            item = integer(candidate["item_id"])
+            comparator = integer(candidate["comparator_item_id"])
+            frame = build_comparison_frame(rows, nominee, candidate, graph, choice_rows)
+            if any(
+                sum(
+                    row["fold"] == fold and row["item_id"] == action
+                    for row in frame.iter_rows(named=True)
+                )
+                < 20
+                for fold in ("train", "validation")
+                for action in (item, comparator)
+            ):
+                audit.append({
+                    **candidate,
+                    "admitted": False,
+                    "reason": "Insufficient support in a temporal fold",
+                })
+                continue
+            try:
+                contrast = self.contrast_cache.estimate_contrast(
+                    frame, item, comparator
+                )
+            except (ValueError, RuntimeError) as error:
+                audit.append({**candidate, "admitted": False, "reason": str(error)})
+                continue
+            record = object_dict(replace_nonfinite_values(asdict(contrast))) or {}
+            lowers, widths = [], []
+            for fold in ("train", "validation"):
+                diagnostics = contrast.fold_diagnostics[fold]
+                interval = object_list(diagnostics["interval"]) or []
+                center = number(diagnostics["estimate"])
+                radius = (
+                    (number(interval[1]) - number(interval[0])) / 2 / 1.96 * critical
+                )
+                lowers.append(center - radius)
+                widths.append(2 * radius)
+            lower = min(lowers)
+            passes = contrast.admitted and lower > 0 and max(widths) <= 0.10
+            evidence = {
+                **record,
+                "hypotheses": hypotheses,
+                "lower_bound": lower,
+                "test_evaluated": False,
+                "gates": {
+                    "support": contrast.admitted,
+                    "overlap": contrast.admitted,
+                    "balance": contrast.admitted,
+                    "uncertainty": max(widths) <= 0.10,
+                    "temporal_stability": contrast.stable,
+                    "corrected_outcome": lower > 0,
+                    "legal_path": True,
+                    "pre_decision_cohort": True,
+                },
+            }
+            branch = {
+                **candidate,
+                "support": contrast.support,
+                "lower_bound": lower,
+                "evidence": evidence,
+            }
+            audit.append({**branch, "admitted": passes})
+            if passes:
+                admitted.append(branch)
+        return {
+            "version": 1,
+            "branches": admitted,
+            "audit": audit,
+            "test_evaluated": False,
+        }
+
+
+def evaluate_branch_candidates(
     rows: list[dict[str, object]],
-    nominee: Nomination,
+    nominee: NominatedCoreBuild,
     candidates: list[dict[str, object]],
     graph: ItemGraph,
     hypotheses: int,
 ) -> dict[str, object]:
-    admitted, audit = [], []
-    critical = NormalDist().inv_cdf(1 - 0.025 / max(1, hypotheses))
-    choice_rows: dict[tuple[int, int, int], list[ChoiceObservation]] = {}
-    for candidate in candidates:
-        item = integer(candidate["item_id"])
-        comparator = integer(candidate["comparator_item_id"])
-        frame = comparison_frame(rows, nominee, candidate, graph, choice_rows)
-        if any(
-            sum(
-                row["fold"] == fold and row["item_id"] == action
-                for row in frame.iter_rows(named=True)
-            )
-            < 20
-            for fold in ("train", "validation")
-            for action in (item, comparator)
-        ):
-            audit.append({
-                **candidate,
-                "admitted": False,
-                "reason": "Insufficient support in a temporal fold",
-            })
-            continue
-        try:
-            contrast = cross_fitted_dr_contrast(frame, item, comparator)
-        except (ValueError, RuntimeError) as error:
-            audit.append({**candidate, "admitted": False, "reason": str(error)})
-            continue
-        record = object_dict(finite_values(asdict(contrast))) or {}
-        lowers, widths = [], []
-        for fold in ("train", "validation"):
-            diagnostics = contrast.fold_diagnostics[fold]
-            interval = object_list(diagnostics["interval"]) or []
-            center = number(diagnostics["estimate"])
-            radius = (number(interval[1]) - number(interval[0])) / 2 / 1.96 * critical
-            lowers.append(center - radius)
-            widths.append(2 * radius)
-        lower = min(lowers)
-        passes = contrast.admitted and lower > 0 and max(widths) <= 0.10
-        evidence = {
-            **record,
-            "hypotheses": hypotheses,
-            "lower_bound": lower,
-            "test_evaluated": False,
-            "gates": {
-                "support": contrast.admitted,
-                "overlap": contrast.admitted,
-                "balance": contrast.admitted,
-                "uncertainty": max(widths) <= 0.10,
-                "temporal_stability": contrast.stable,
-                "corrected_outcome": lower > 0,
-                "legal_path": True,
-                "pre_decision_cohort": True,
-            },
-        }
-        branch = {
-            **candidate,
-            "support": contrast.support,
-            "lower_bound": lower,
-            "evidence": evidence,
-        }
-        audit.append({**branch, "admitted": passes})
-        if passes:
-            admitted.append(branch)
-    return {"version": 1, "branches": admitted, "audit": audit, "test_evaluated": False}
+    return BranchCandidateEvaluator(rows, graph, hypotheses).evaluate_candidates(
+        nominee, candidates
+    )
 
 
-def substitution_legal(
+def is_substitution_legal(
     row: dict[str, object], candidate: dict[str, object], graph: ItemGraph
 ) -> bool:
     substitution = object_dict(candidate.get("substitution"))
@@ -373,20 +416,20 @@ def substitution_legal(
     return True
 
 
-def finite_values(value: object) -> object:
+def replace_nonfinite_values(value: object) -> object:
     if isinstance(value, float) and not math.isfinite(value):
         return None
     mapping = object_dict(value)
     if mapping is not None:
-        return {key: finite_values(item) for key, item in mapping.items()}
+        return {key: replace_nonfinite_values(item) for key, item in mapping.items()}
     if isinstance(value, (list, tuple)):
-        return [finite_values(item) for item in value]
+        return [replace_nonfinite_values(item) for item in value]
     return value
 
 
-def comparison_frame(
+def build_comparison_frame(
     rows: list[dict[str, object]],
-    nominee: Nomination,
+    nominee: NominatedCoreBuild,
     candidate: dict[str, object],
     graph: ItemGraph,
     choice_rows: dict[tuple[int, int, int], list[ChoiceObservation]],
@@ -399,17 +442,17 @@ def comparison_frame(
     key = item, checkpoint, comparator
     if key not in choice_rows:
         choice_rows[key] = [
-            ChoiceObservation(row, conditions(row))
+            ChoiceObservation(row, extract_branch_conditions(row))
             for row in rows
             if row["item_id"] in {item, comparator}
             and row.get("relative_wealth") is not None
-            and legal_at(row, nominee, item, checkpoint, graph)
+            and is_purchase_legal_at_checkpoint(row, nominee, item, checkpoint, graph)
         ]
     selected = [
         observation.row
         for observation in choice_rows[key]
         if (str(candidate["condition"]), candidate["value"]) in observation.conditions
-        and substitution_legal(observation.row, candidate, graph)
+        and is_substitution_legal(observation.row, candidate, graph)
     ]
     if not selected:
         return pl.DataFrame(

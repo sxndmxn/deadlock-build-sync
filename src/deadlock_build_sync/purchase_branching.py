@@ -7,7 +7,11 @@ from typing import TYPE_CHECKING
 
 from .mechanics import MechanicsError
 from .purchase_guidance_types import PurchaseState
-from .purchase_planner import covered, first_checkpoint, plan_purchases
+from .purchase_planner import (
+    find_first_incomplete_checkpoint,
+    is_item_or_upgrade_owned,
+    plan_purchases,
+)
 from .recommendation_state import RecommendationError
 
 if TYPE_CHECKING:
@@ -18,7 +22,7 @@ if TYPE_CHECKING:
 
 
 @dataclass(frozen=True)
-class ChosenRoute:
+class SelectedPurchaseRoute:
     path: tuple[int, ...]
     core: tuple[int, ...]
     positions: dict[int, int]
@@ -26,12 +30,12 @@ class ChosenRoute:
     branch: AutomaticBranch | None = None
 
 
-def choose_route(
+def select_purchase_route(
     guidance: PurchaseGuidance,
     state: DecisionState,
     graph: ItemGraph,
     positions: dict[int, int],
-) -> ChosenRoute:
+) -> SelectedPurchaseRoute:
     path = tuple(step.item_id for step in guidance.default_path.actions)
     branches = sorted(
         guidance.automatic_branches,
@@ -48,7 +52,7 @@ def choose_route(
                 "Selected core substitution lacks admitted branch evidence or an explicit item selection"
             )
         branch = candidates[0]
-        return ChosenRoute(
+        return SelectedPurchaseRoute(
             branch.substituted_path,
             branch.substituted_core,
             positions,
@@ -56,16 +60,18 @@ def choose_route(
             branch,
         )
     if positions:
-        return ChosenRoute(path, guidance.core_ids, positions, "explicit selection")
-    checkpoint = first_checkpoint(graph, path, state.owned_items)
+        return SelectedPurchaseRoute(
+            path, guidance.core_ids, positions, "explicit selection"
+        )
+    checkpoint = find_first_incomplete_checkpoint(graph, path, state.owned_items)
     for branch in branches:
         if (
             branch.after_step != checkpoint
             or not branch.matches(state)
-            or covered(graph, branch.item_id, state.owned_items)
+            or is_item_or_upgrade_owned(graph, branch.item_id, state.owned_items)
         ):
             continue
-        route = ChosenRoute(
+        route = SelectedPurchaseRoute(
             branch.substituted_path or path,
             branch.substituted_core or guidance.core_ids,
             {branch.item_id: branch.after_step},
@@ -85,4 +91,4 @@ def choose_route(
         except (MechanicsError, ValueError):
             continue
         return route
-    return ChosenRoute(path, guidance.core_ids, {}, "default path")
+    return SelectedPurchaseRoute(path, guidance.core_ids, {}, "default path")

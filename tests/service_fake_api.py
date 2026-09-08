@@ -263,7 +263,7 @@ class FakeApi(DeadlockApi):
         )
 
 
-def ability_rows() -> list[dict[str, object]]:
+def make_ability_rows() -> list[dict[str, object]]:
     return [
         {
             "abilities": [10, 20, 30, 40] * 4,
@@ -274,7 +274,7 @@ def ability_rows() -> list[dict[str, object]]:
     ]
 
 
-def duration_points() -> tuple[HeroDurationStat, ...]:
+def make_duration_statistics() -> tuple[HeroDurationStat, ...]:
     return tuple(
         HeroDurationStat(label, minimum, maximum, 55, 45, 100)
         for label, minimum, maximum in HERO_DURATION_BUCKETS

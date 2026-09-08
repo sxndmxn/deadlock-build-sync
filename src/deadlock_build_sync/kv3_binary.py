@@ -39,7 +39,7 @@ _UTF8 = "utf-8"
 
 
 @dataclass
-class _Context:
+class _EncodingContext:
     strings: list[str] = field(default_factory=list)
     string_ids: dict[str, int] = field(default_factory=dict)
     bytes4: bytearray = field(
@@ -66,23 +66,23 @@ def _pack_into(buffer: bytearray, fmt: str, value: float) -> None:
     buffer.extend(struct.pack(fmt, value))
 
 
-def _write_type(context: _Context, node_type: int) -> None:
+def _write_type(context: _EncodingContext, node_type: int) -> None:
     context.types.append(node_type)
 
 
-def _write_property(context: _Context, name: str, value: object) -> None:
+def _write_property(context: _EncodingContext, name: str, value: object) -> None:
     _pack_into(context.bytes4, _INT32_FORMAT, context.string_id(name))
     _write_value(context, value)
 
 
-def _write_object(context: _Context, value: dict[str, object]) -> None:
+def _write_object(context: _EncodingContext, value: dict[str, object]) -> None:
     _write_type(context, OBJECT)
     _pack_into(context.bytes4, _INT32_FORMAT, len(value))
     for name, child in value.items():
         _write_property(context, str(name), child)
 
 
-def _write_integer(context: _Context, value: int) -> None:
+def _write_integer(context: _EncodingContext, value: int) -> None:
     if value == 0:
         _write_type(context, INT64_ZERO)
     elif value == 1:
@@ -94,7 +94,7 @@ def _write_integer(context: _Context, value: int) -> None:
         _pack_into(context.bytes8, "<q", value)
 
 
-def _write_float(context: _Context, value: float) -> None:
+def _write_float(context: _EncodingContext, value: float) -> None:
     packed = struct.pack("<d", value)
     if packed in {_PACKED_DOUBLE_ZERO, _PACKED_DOUBLE_NEGATIVE_ZERO}:
         _write_type(context, DOUBLE_ZERO)
@@ -105,26 +105,28 @@ def _write_float(context: _Context, value: float) -> None:
         _pack_into(context.bytes8, "<d", value)
 
 
-def _write_string(context: _Context, value: str) -> None:
+def _write_string(context: _EncodingContext, value: str) -> None:
     _write_type(context, STRING)
     _pack_into(context.bytes4, _INT32_FORMAT, context.string_id(value))
 
 
-def _write_blob(context: _Context, value: bytes | bytearray | memoryview) -> None:
+def _write_blob(
+    context: _EncodingContext, value: bytes | bytearray | memoryview
+) -> None:
     blob = bytes(value)
     _write_type(context, BINARY_BLOB)
     context.binary_blob_lengths.append(len(blob))
     context.binary_blobs.extend(blob)
 
 
-def _write_array(context: _Context, value: Sequence[object]) -> None:
+def _write_array(context: _EncodingContext, value: Sequence[object]) -> None:
     _write_type(context, ARRAY)
     _pack_into(context.bytes4, _INT32_FORMAT, len(value))
     for child in value:
         _write_value(context, child)
 
 
-def _write_value(context: _Context, value: object) -> None:
+def _write_value(context: _EncodingContext, value: object) -> None:
     if value is None:
         _write_type(context, NULL)
     elif isinstance(value, bool):
@@ -154,7 +156,7 @@ def _align(buffer: bytearray, alignment: int) -> None:
 def encode_binary_v4(root: dict[str, object]) -> bytes:
     if not isinstance(root, dict):
         raise TypeError("KV3 root must be an object")
-    context = _Context()
+    context = _EncodingContext()
     _write_object(context, root)
     context.bytes4[0:4] = struct.pack(_INT32_FORMAT, len(context.strings))
 

@@ -1,8 +1,8 @@
 # Quality gates
 
-The repository uses local, repeatable Python tools as the source of truth. CI
-runs all fast gates on each pull request and each push to `master`. A separate
-scheduled or manual workflow runs the slower mutation gate.
+Local Python tools define the repository quality checks.
+CI runs all fast gates on each pull request and each push to `master`.
+A separate scheduled or manual workflow runs the slower mutation gate.
 
 ## Enforced limits
 
@@ -101,5 +101,6 @@ SonarQube server or project file is required. SonarLint findings appear in the
 VS Code Problems view and its output channel.
 
 The extension does not provide a stable repository CLI for CI or shell piping.
-Use the commands above for pipeable, repeatable output. Treat SonarLint as an
-extra editor check, not as the repository quality authority.
+Use the commands above for repeatable output that shell commands can process.
+Use SonarLint as an additional editor check.
+The repository quality gates remain required.

@@ -15,7 +15,7 @@ def _atomic_write(path: Path, document: dict[str, object]) -> None:
     atomic_write_bytes(path, content)
 
 
-def validated_write(path: Path, document: dict[str, object]) -> None:
+def write_validated_evidence(path: Path, document: dict[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".evidence-", dir=path.parent) as directory:
         candidate = Path(directory) / path.name

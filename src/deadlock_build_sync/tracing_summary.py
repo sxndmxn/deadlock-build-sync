@@ -71,11 +71,13 @@ class _TraceSummaryData:
         elif kind == "function_definition":
             _record_function_definition(event, line_number, self.functions)
         elif kind == "call":
-            span = _call_summary_span(event, line_number, self.functions, self.spans)
+            span = _parse_call_summary_span(
+                event, line_number, self.functions, self.spans
+            )
             self.spans[span.span_id] = span
             self.order.append(span.span_id)
         elif kind == "stage_start":
-            span = _stage_summary_span(event, line_number)
+            span = _parse_stage_summary_span(event, line_number)
             self.spans[span.span_id] = span
             self.order.append(span.span_id)
         elif kind in {"return", "stage_end"}:
@@ -103,7 +105,7 @@ def _read_trace_summary(trace_path: Path) -> _TraceSummaryData:
     return summary
 
 
-def _trace_tree_lines(
+def _render_trace_tree_lines(
     trace_path: Path,
     summary: _TraceSummaryData,
     max_nodes: int,
@@ -134,7 +136,7 @@ def _trace_tree_lines(
     return lines
 
 
-def _inclusive_time_lines(spans: dict[int, _SummarySpan]) -> list[str]:
+def _render_inclusive_time_lines(spans: dict[int, _SummarySpan]) -> list[str]:
     totals: dict[str, tuple[int, int, int]] = {}
     for span in spans.values():
         calls, total_ns, maximum_ns = totals.get(span.label, (0, 0, 0))
@@ -171,12 +173,12 @@ def render_trace_summary(path: Path, *, max_nodes: int = 200) -> str:
     if not trace_path.is_file():
         raise TraceError(f"trace does not exist: {trace_path}")
     summary = _read_trace_summary(trace_path)
-    lines = _trace_tree_lines(trace_path, summary, max_nodes)
-    lines.extend(_inclusive_time_lines(summary.spans))
+    lines = _render_trace_tree_lines(trace_path, summary, max_nodes)
+    lines.extend(_render_inclusive_time_lines(summary.spans))
     return "\n".join(lines)
 
 
-def _call_summary_span(
+def _parse_call_summary_span(
     event: dict[str, object],
     line_number: int,
     functions: dict[int, str],
@@ -210,7 +212,9 @@ def _call_summary_span(
     )
 
 
-def _stage_summary_span(event: dict[str, object], line_number: int) -> _SummarySpan:
+def _parse_stage_summary_span(
+    event: dict[str, object], line_number: int
+) -> _SummarySpan:
     identifier = event.get("stage_id")
     stage = event.get("stage")
     if not isinstance(identifier, int) or not isinstance(stage, str):

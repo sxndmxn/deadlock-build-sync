@@ -71,7 +71,9 @@ def test_connect_configures_local_and_remote_duckdb(
         lambda _path: _connection(fake),
     )
 
-    result = extract_module._connect(RunPaths.create(tmp_path, "connect"))
+    result = extract_module._connect_analysis_database(
+        RunPaths.create(tmp_path, "connect")
+    )
 
     assert result is _connection(fake)
     assert any("memory_limit" in query for query in fake.queries)
@@ -103,7 +105,9 @@ def test_extract_cohort_runs_all_stages_exports_and_cleanup(
     temporary.mkdir()
     (temporary / "work").touch()
     fake = _FakeConnection()
-    monkeypatch.setattr(extract_module, "_connect", lambda _paths: _connection(fake))
+    monkeypatch.setattr(
+        extract_module, "_connect_analysis_database", lambda _paths: _connection(fake)
+    )
 
     counts = extract_module.extract_cohort(paths, _cohort())
 
@@ -139,18 +143,20 @@ def test_extract_helpers_load_export_count_and_format(
     connection = _connection(fake)
 
     extract_module._load_item_assets(connection, paths.raw / "items.json")
-    extract_module._export(connection, "table_name", paths.data / "table.parquet")
+    extract_module._export_table(connection, "table_name", paths.data / "table.parquet")
 
     assert list(fake.inserted) == [
         (10, "Item 10", "", 1, 0, "unknown", False, True, "[]")
     ]
-    assert extract_module._count(connection, "SELECT 7") == 7
-    assert extract_module._sql_timestamp(_cohort().since).endswith("+00")
-    assert "average_badge BETWEEN 71 AND 115" in extract_module._cohort_where(_cohort())
+    assert extract_module._query_count(connection, "SELECT 7") == 7
+    assert extract_module._format_sql_timestamp(_cohort().since).endswith("+00")
+    assert "average_badge BETWEEN 71 AND 115" in extract_module._build_cohort_filter(
+        _cohort()
+    )
 
     empty = _connection(_FakeConnection(row=None))
     with pytest.raises(RuntimeError, match="returned no row"):
-        extract_module._count(empty, "SELECT 0")
+        extract_module._query_count(empty, "SELECT 0")
 
 
 def test_remote_query_rejects_fatal_and_exhausted_failures(

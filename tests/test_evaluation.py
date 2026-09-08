@@ -22,18 +22,20 @@ from deadlock_build_sync.evaluation import (
 )
 from deadlock_build_sync.offline.config import sha256_json
 from tests.evaluation_fixtures import (
-    event,
-    layers,
-    logged,
-    monitor,
-    prediction,
-    target_trial,
-    temporal_examples,
+    make_evaluation_layers,
+    make_logged_decision,
+    make_monitoring_snapshot,
+    make_prediction,
+    make_recommendation_event,
+    make_target_trial,
+    make_temporal_examples,
 )
 
 
 def test_evaluation_report_keeps_hard_gates_separate() -> None:
-    report = EvaluationReport("snapshot", ("policy",), layers(), "split")
+    report = EvaluationReport(
+        "snapshot", ("policy",), make_evaluation_layers(), "split"
+    )
     assert report.passed
     assert report.hard_gates_passed
     assert set(HARD_GATE_LAYERS) == {
@@ -43,7 +45,7 @@ def test_evaluation_report_keeps_hard_gates_separate() -> None:
     failed = EvaluationReport(
         "snapshot",
         ("policy",),
-        layers(failed="user_data_preservation"),
+        make_evaluation_layers(failed="user_data_preservation"),
         "split",
     )
     assert not failed.passed
@@ -53,7 +55,7 @@ def test_evaluation_report_keeps_hard_gates_separate() -> None:
 
 def test_patch_forward_split_is_chronological_group_safe_and_has_baseline() -> None:
     split = patch_forward_group_split(
-        temporal_examples(),
+        make_temporal_examples(),
         validation_patch=2,
         test_patch=3,
     )
@@ -67,7 +69,7 @@ def test_patch_forward_split_is_chronological_group_safe_and_has_baseline() -> N
 
 @pytest.mark.parametrize("field", ["match_group", "player_group"])
 def test_patch_forward_split_rejects_group_leakage(field: str) -> None:
-    examples = temporal_examples()
+    examples = make_temporal_examples()
     examples[2] = replace(examples[2], **{field: getattr(examples[0], field)})
 
     with pytest.raises(EvaluationError, match=field):
@@ -81,7 +83,11 @@ def test_temporal_example_rejects_future_features() -> None:
 
 def test_calibration_reports_brier_logloss_segments_and_selective_risk() -> None:
     report: CalibrationReport = calibration_report(
-        [prediction(0.9, 1), prediction(0.1, 0), prediction(0.8, 0, hero_id=13)],
+        [
+            make_prediction(0.9, 1),
+            make_prediction(0.1, 0),
+            make_prediction(0.8, 0, hero_id=13),
+        ],
         threshold=0.85,
     )
 
@@ -96,18 +102,22 @@ def test_calibration_reports_brier_logloss_segments_and_selective_risk() -> None
 
 
 def test_abstention_threshold_uses_validation_only() -> None:
-    records = [prediction(0.9, 1), prediction(0.8, 1), prediction(0.55, 0)]
+    records = [
+        make_prediction(0.9, 1),
+        make_prediction(0.8, 1),
+        make_prediction(0.55, 0),
+    ]
 
     threshold = select_abstention_threshold(records, maximum_risk=0.0)
 
     assert threshold == 0.6
-    test_records = [prediction(0.9, 1, fold=Fold.TEST)]
+    test_records = [make_prediction(0.9, 1, fold=Fold.TEST)]
     with pytest.raises(EvaluationError, match="validation only"):
         select_abstention_threshold(test_records, maximum_risk=0.1)
 
 
 def test_target_trial_requires_save_sensitivity_and_overlap() -> None:
-    trial = target_trial()
+    trial = make_target_trial()
     assert trial.permits_causal_claim(0.25)
     assert not trial.permits_causal_claim(0.1)
 
@@ -116,7 +126,9 @@ def test_target_trial_requires_save_sensitivity_and_overlap() -> None:
 
 
 def test_off_policy_evaluation_recovers_known_policy_with_diagnostics() -> None:
-    report = off_policy_evaluation([logged("core", 1), logged("counter", 0)] * 50)
+    report = off_policy_evaluation(
+        [make_logged_decision("core", 1), make_logged_decision("counter", 0)] * 50
+    )
 
     assert report.supported
     assert report.ips == pytest.approx(0.5)
@@ -131,7 +143,7 @@ def test_off_policy_evaluation_recovers_known_policy_with_diagnostics() -> None:
 
 
 def test_off_policy_evaluation_abstains_outside_logged_support() -> None:
-    report = off_policy_evaluation([logged("core", 1)] * 10)
+    report = off_policy_evaluation([make_logged_decision("core", 1)] * 10)
 
     assert not report.supported
     assert report.ips is None
@@ -139,11 +151,11 @@ def test_off_policy_evaluation_abstains_outside_logged_support() -> None:
 
 
 def test_decision_log_round_trips_without_personal_fields() -> None:
-    encoded = event().as_dict()
+    encoded = make_recommendation_event().as_dict()
 
     decoded = RecommendationEvent.from_dict(encoded)
 
-    assert decoded == event()
+    assert decoded == make_recommendation_event()
     assert not {
         "account_id",
         "steam_id",
@@ -153,12 +165,12 @@ def test_decision_log_round_trips_without_personal_fields() -> None:
 
 
 def test_decision_log_rejects_personal_fields_and_future_leakage() -> None:
-    encoded = event().as_dict()
+    encoded = make_recommendation_event().as_dict()
     encoded["steam_id"] = "not-allowed"
     with pytest.raises(EvaluationError, match="prohibited personal"):
         RecommendationEvent.from_dict(encoded)
 
-    source = event()
+    source = make_recommendation_event()
     with pytest.raises(EvaluationError, match="future feature leakage"):
         replace(source, feature_as_of_timestamp=201)
 
@@ -178,7 +190,7 @@ def test_monitoring_hard_failures_trigger_rollback(
     reason: str,
 ) -> None:
     decision = evaluate_monitoring(
-        replace(monitor(), **changes),
+        replace(make_monitoring_snapshot(), **changes),
         last_compatible_snapshot_id="last-snapshot",
         last_compatible_policy_ids=("last-policy",),
     )
@@ -189,16 +201,24 @@ def test_monitoring_hard_failures_trigger_rollback(
 
 
 def test_monitoring_refuses_stale_or_rejected_policy_and_alerts_on_drift() -> None:
-    refused = evaluate_monitoring(replace(monitor(), snapshot_age_s=90000))
+    refused = evaluate_monitoring(
+        replace(make_monitoring_snapshot(), snapshot_age_s=90000)
+    )
     assert refused.action == MonitorAction.REFUSE
 
     alerted = evaluate_monitoring(
-        replace(monitor(), unhandled_branches=5, recommendation_concentration=0.9)
+        replace(
+            make_monitoring_snapshot(),
+            unhandled_branches=5,
+            recommendation_concentration=0.9,
+        )
     )
     assert alerted.action == MonitorAction.ALERT
     assert len(alerted.reasons) == 2
 
-    assert evaluate_monitoring(monitor()).action == MonitorAction.HEALTHY
+    assert (
+        evaluate_monitoring(make_monitoring_snapshot()).action == MonitorAction.HEALTHY
+    )
 
 
 def test_checked_in_coverage_and_sample_report_are_complete() -> None:

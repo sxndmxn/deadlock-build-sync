@@ -65,7 +65,7 @@ class FunctionMetric:
     halstead_difficulty: float
 
 
-def _object_mapping(value: object, label: str) -> Mapping[str, object]:
+def _require_object_mapping(value: object, label: str) -> Mapping[str, object]:
     if not isinstance(value, dict):
         raise TypeError(f"{label} must be an object")
     if not all(isinstance(key, str) for key in value):
@@ -73,13 +73,13 @@ def _object_mapping(value: object, label: str) -> Mapping[str, object]:
     return cast("Mapping[str, object]", value)
 
 
-def _number(value: object, label: str) -> float:
+def _require_metric_number(value: object, label: str) -> float:
     if not isinstance(value, int | float):
         raise TypeError(f"{label} must be numeric")
     return float(value)
 
 
-def _tracked_python_files(root: Path) -> tuple[Path, ...]:
+def _list_tracked_python_files(root: Path) -> tuple[Path, ...]:
     git = shutil.which("git")
     if git is None:
         raise RuntimeError("git executable is required")
@@ -106,7 +106,7 @@ def _tracked_python_files(root: Path) -> tuple[Path, ...]:
     )
 
 
-def _physical_line_issue(path: str, source: str) -> QualityIssue | None:
+def _check_physical_line_limit(path: str, source: str) -> QualityIssue | None:
     lines = len(source.splitlines())
     if lines <= MAX_PHYSICAL_LINES:
         return None
@@ -120,7 +120,7 @@ def _physical_line_issue(path: str, source: str) -> QualityIssue | None:
     )
 
 
-def _annotation_roots(tree: ast.AST) -> Iterable[ast.AST]:
+def _collect_annotation_roots(tree: ast.AST) -> Iterable[ast.AST]:
     for node in ast.walk(tree):
         if isinstance(node, ast.AnnAssign) or (
             isinstance(node, ast.arg) and node.annotation is not None
@@ -133,10 +133,10 @@ def _annotation_roots(tree: ast.AST) -> Iterable[ast.AST]:
             yield node.value
 
 
-def _forbidden_type_issues(path: str, tree: ast.AST) -> list[QualityIssue]:
+def _find_forbidden_type_annotations(path: str, tree: ast.AST) -> list[QualityIssue]:
     issues: list[QualityIssue] = []
     seen: set[tuple[int, str]] = set()
-    for annotation in _annotation_roots(tree):
+    for annotation in _collect_annotation_roots(tree):
         for node in ast.walk(annotation):
             if isinstance(node, ast.Name):
                 name = node.id
@@ -165,13 +165,15 @@ def _forbidden_type_issues(path: str, tree: ast.AST) -> list[QualityIssue]:
     return issues
 
 
-def _function_nodes(tree: ast.AST) -> Iterable[ast.FunctionDef | ast.AsyncFunctionDef]:
+def _collect_function_nodes(
+    tree: ast.AST,
+) -> Iterable[ast.FunctionDef | ast.AsyncFunctionDef]:
     for node in ast.walk(tree):
         if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
             yield node
 
 
-def _radon_functions(source: str) -> dict[tuple[int, str], Function]:
+def _collect_radon_functions(source: str) -> dict[tuple[int, str], Function]:
     functions: dict[tuple[int, str], Function] = {}
 
     def collect(function: Function) -> None:
@@ -193,7 +195,7 @@ def _radon_functions(source: str) -> dict[tuple[int, str], Function]:
     return functions
 
 
-def _halstead_difficulty(source: str, node: ast.AST) -> float:
+def _calculate_halstead_difficulty(source: str, node: ast.AST) -> float:
     segment = ast.get_source_segment(source, node)
     if segment is None:
         return 0.0
@@ -203,10 +205,12 @@ def _halstead_difficulty(source: str, node: ast.AST) -> float:
     return float(report.functions[0][1].difficulty)
 
 
-def _function_metrics(source: str, tree: ast.AST) -> tuple[FunctionMetric, ...]:
-    radon_functions = _radon_functions(source)
+def _calculate_function_metrics(
+    source: str, tree: ast.AST
+) -> tuple[FunctionMetric, ...]:
+    radon_functions = _collect_radon_functions(source)
     metrics: list[FunctionMetric] = []
-    for node in _function_nodes(tree):
+    for node in _collect_function_nodes(tree):
         block = radon_functions.get((node.lineno, node.name))
         if block is None:
             continue
@@ -216,13 +220,13 @@ def _function_metrics(source: str, tree: ast.AST) -> tuple[FunctionMetric, ...]:
                 line=node.lineno,
                 coverage_line=node.lineno,
                 complexity=block.complexity,
-                halstead_difficulty=_halstead_difficulty(source, node),
+                halstead_difficulty=_calculate_halstead_difficulty(source, node),
             )
         )
     return tuple(metrics)
 
 
-def _static_metric_issues(
+def _check_static_metric_limits(
     path: str,
     metrics: Sequence[FunctionMetric],
 ) -> list[QualityIssue]:
@@ -253,13 +257,15 @@ def _static_metric_issues(
     return issues
 
 
-def _coverage_function_map(
+def _index_function_coverage(
     file_coverage: Mapping[str, object],
 ) -> dict[int, Mapping[str, object]]:
-    functions = _object_mapping(file_coverage.get("functions"), "coverage functions")
+    functions = _require_object_mapping(
+        file_coverage.get("functions"), "coverage functions"
+    )
     by_line: dict[int, Mapping[str, object]] = {}
     for value in functions.values():
-        region = _object_mapping(value, "coverage function")
+        region = _require_object_mapping(value, "coverage function")
         start_line = region.get("start_line")
         if isinstance(start_line, int):
             by_line[start_line] = region
@@ -277,19 +283,19 @@ def crap_score(complexity: int, line_coverage: float) -> float:
     return complexity**2 * uncovered**3 + complexity
 
 
-def _crap_issues(
+def _check_crap_score_limits(
     path: str,
     metrics: Sequence[FunctionMetric],
     file_coverage: Mapping[str, object],
 ) -> list[QualityIssue]:
-    regions = _coverage_function_map(file_coverage)
+    regions = _index_function_coverage(file_coverage)
     issues: list[QualityIssue] = []
     for metric in metrics:
         region = regions.get(metric.coverage_line)
         line_coverage = 0.0
         if region is not None:
-            summary = _object_mapping(region.get("summary"), "function summary")
-            line_coverage = _number(
+            summary = _require_object_mapping(region.get("summary"), "function summary")
+            line_coverage = _require_metric_number(
                 summary.get("percent_statements_covered"),
                 "function line coverage",
             )
@@ -309,17 +315,21 @@ def _crap_issues(
     return issues
 
 
-def _total_coverage_issues(coverage: Mapping[str, object]) -> list[QualityIssue]:
-    totals = _object_mapping(coverage.get("totals"), "coverage totals")
+def _check_total_coverage_limits(coverage: Mapping[str, object]) -> list[QualityIssue]:
+    totals = _require_object_mapping(coverage.get("totals"), "coverage totals")
     measurements = (
         (
             "line-coverage",
-            _number(totals.get("percent_statements_covered"), "line coverage"),
+            _require_metric_number(
+                totals.get("percent_statements_covered"), "line coverage"
+            ),
             MIN_LINE_COVERAGE,
         ),
         (
             "branch-coverage",
-            _number(totals.get("percent_branches_covered"), "branch coverage"),
+            _require_metric_number(
+                totals.get("percent_branches_covered"), "branch coverage"
+            ),
             MIN_BRANCH_COVERAGE,
         ),
     )
@@ -338,7 +348,9 @@ def _total_coverage_issues(coverage: Mapping[str, object]) -> list[QualityIssue]
 
 
 def _load_coverage(path: Path) -> Mapping[str, object]:
-    return _object_mapping(json.loads(path.read_text(encoding="utf-8")), "coverage")
+    return _require_object_mapping(
+        json.loads(path.read_text(encoding="utf-8")), "coverage"
+    )
 
 
 def check_repository(root: Path, coverage_path: Path) -> tuple[QualityIssue, ...]:
@@ -349,33 +361,33 @@ def check_repository(root: Path, coverage_path: Path) -> tuple[QualityIssue, ...
 
     """
     coverage = _load_coverage(coverage_path)
-    coverage_files = _object_mapping(coverage.get("files"), "coverage files")
-    issues = _total_coverage_issues(coverage)
-    for file_path in _tracked_python_files(root):
+    coverage_files = _require_object_mapping(coverage.get("files"), "coverage files")
+    issues = _check_total_coverage_limits(coverage)
+    for file_path in _list_tracked_python_files(root):
         relative = file_path.relative_to(root).as_posix()
         source = file_path.read_text(encoding="utf-8")
-        line_issue = _physical_line_issue(relative, source)
+        line_issue = _check_physical_line_limit(relative, source)
         if line_issue is not None:
             issues.append(line_issue)
         tree = ast.parse(source, filename=relative)
-        issues.extend(_forbidden_type_issues(relative, tree))
-        metrics = _function_metrics(source, tree)
-        issues.extend(_static_metric_issues(relative, metrics))
+        issues.extend(_find_forbidden_type_annotations(relative, tree))
+        metrics = _calculate_function_metrics(source, tree)
+        issues.extend(_check_static_metric_limits(relative, metrics))
         if relative.startswith(PRODUCT_PREFIXES):
             file_coverage = coverage_files.get(relative)
             if file_coverage is None:
                 file_coverage = {"functions": {}}
             issues.extend(
-                _crap_issues(
+                _check_crap_score_limits(
                     relative,
                     metrics,
-                    _object_mapping(file_coverage, f"coverage for {relative}"),
+                    _require_object_mapping(file_coverage, f"coverage for {relative}"),
                 )
             )
     return tuple(sorted(issues))
 
 
-def _parser() -> argparse.ArgumentParser:
+def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--coverage",
@@ -393,7 +405,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         Zero on success and one when an issue exists.
 
     """
-    args = _parser().parse_args(argv)
+    args = _build_parser().parse_args(argv)
     root = Path.cwd()
     issues = check_repository(root, args.coverage)
     for issue in issues:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from deadlock_build_sync.recommendation_state import DecisionState, RecommendationError
-from tests.recommendation_fixtures import decision_state_document
+from tests.recommendation_fixtures import make_decision_state_document
 
 
 @pytest.mark.parametrize(
@@ -22,7 +22,7 @@ from tests.recommendation_fixtures import decision_state_document
 def test_incomplete_or_stale_economy_disables_wealth_conditions(
     economy: dict[str, object],
 ) -> None:
-    document = decision_state_document()
+    document = make_decision_state_document()
     document["clock_s"] = 301
     document["economy"] = economy
     current = DecisionState.from_document(document)
@@ -43,14 +43,14 @@ def test_incomplete_or_stale_economy_disables_wealth_conditions(
     ],
 )
 def test_malformed_economy_is_an_error(economy: object) -> None:
-    document = decision_state_document()
+    document = make_decision_state_document()
     document["economy"] = economy
     with pytest.raises(RecommendationError):
         DecisionState.from_document(document)
 
 
 def test_state_accepts_combined_choices_explicit_placements_and_economy() -> None:
-    document = decision_state_document()
+    document = make_decision_state_document()
     document.update({
         "path_id": "frozen-core",
         "selected_optional_items": [7, 8],

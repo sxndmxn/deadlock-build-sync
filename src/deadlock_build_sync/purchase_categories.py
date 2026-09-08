@@ -38,7 +38,7 @@ def split_guidance(text: str) -> tuple[str, ...]:
     return tuple(result)
 
 
-def choice_instruction(guidance: PurchaseGuidance, card: PurchaseChoice) -> str:
+def format_choice_instruction(guidance: PurchaseGuidance, card: PurchaseChoice) -> str:
     route = " -> ".join(guidance.names[item] for item in card.route)
     if card.after_step is None:
         return f"{card.purpose.trigger}. Timing unknown. Route: {route}. Catalog cost: {card.catalog_cost:,} souls. Select a checkpoint before purchase."
@@ -57,11 +57,11 @@ def choice_instruction(guidance: PurchaseGuidance, card: PurchaseChoice) -> str:
         f"{cost} Resume: {resume}."
         + (f" Rebuy: {rebuy}." if rebuy else "")
         + (f" Blocked: {card.blocked_reason}." if card.blocked_reason else "")
-        + conditional_instruction(guidance, card)
+        + format_conditional_instruction(guidance, card)
     )
 
 
-def _choice_rows(
+def _build_choice_categories(
     guidance: PurchaseGuidance, card: PurchaseChoice, item: GuideItem
 ) -> list[GuideCategory]:
     decision = next(
@@ -70,7 +70,7 @@ def _choice_rows(
     kind = (
         decision.kind if decision else "UPGRADE" if len(card.route) > 1 else "OPTIONAL"
     )
-    instruction = choice_instruction(guidance, card)
+    instruction = format_choice_instruction(guidance, card)
 
     return [
         GuideCategory(
@@ -83,7 +83,7 @@ def _choice_rows(
     ]
 
 
-def purchase_categories(guide: PurchaseGuide) -> tuple[GuideCategory, ...]:
+def build_purchase_categories(guide: PurchaseGuide) -> tuple[GuideCategory, ...]:
     guidance = guide.purchase_guidance
     if guidance is None:
         raise ValueError("Purchase categories require a canonical guide")
@@ -102,13 +102,15 @@ def purchase_categories(guide: PurchaseGuide) -> tuple[GuideCategory, ...]:
             )
         for card in guidance.choices:
             if card.after_step == checkpoint:
-                result.extend(_choice_rows(guidance, card, items[card.item_id]))
-        result.extend(_conditional_rows(guidance, checkpoint, items))
+                result.extend(
+                    _build_choice_categories(guidance, card, items[card.item_id])
+                )
+        result.extend(_build_conditional_categories(guidance, checkpoint, items))
     for card in guidance.choices:
         if card.after_step is None:
-            result.extend(_choice_rows(guidance, card, items[card.item_id]))
-    result.extend(_core_alternatives(guide))
-    result.extend(_pool_rows(guide))
+            result.extend(_build_choice_categories(guidance, card, items[card.item_id]))
+    result.extend(_build_core_alternative_categories(guide))
+    result.extend(_build_item_pool_categories(guide))
     queued = tuple(
         item.item_id
         for category in result
@@ -120,7 +122,9 @@ def purchase_categories(guide: PurchaseGuide) -> tuple[GuideCategory, ...]:
     return tuple(result)
 
 
-def category_records(categories: tuple[GuideCategory, ...]) -> list[dict[str, object]]:
+def serialize_category_records(
+    categories: tuple[GuideCategory, ...],
+) -> list[dict[str, object]]:
     return [
         {
             "name": category.name,
@@ -144,7 +148,7 @@ def category_records(categories: tuple[GuideCategory, ...]) -> list[dict[str, ob
     ]
 
 
-def _core_alternatives(guide: PurchaseGuide) -> list[GuideCategory]:
+def _build_core_alternative_categories(guide: PurchaseGuide) -> list[GuideCategory]:
     result: list[GuideCategory] = []
     for alternative in guide.core_alternatives:
         item = next(
@@ -160,15 +164,19 @@ def _core_alternatives(guide: PurchaseGuide) -> list[GuideCategory]:
     return result
 
 
-def conditional_instruction(guidance: PurchaseGuidance, card: PurchaseChoice) -> str:
+def format_conditional_instruction(
+    guidance: PurchaseGuidance, card: PurchaseChoice
+) -> str:
     return "".join(
-        _branch_instruction(guidance, branch)
+        _format_branch_instruction(guidance, branch)
         for branch in guidance.automatic_branches
         if branch.item_id == card.item_id
     )
 
 
-def _branch_instruction(guidance: PurchaseGuidance, branch: AutomaticBranch) -> str:
+def _format_branch_instruction(
+    guidance: PurchaseGuidance, branch: AutomaticBranch
+) -> str:
     condition = (
         f"wealth is {branch.value} (personal net worth / lobby mean; behind <0.90, ahead >1.10)"
         if branch.condition == "relative_wealth"
@@ -182,7 +190,7 @@ def _branch_instruction(guidance: PurchaseGuidance, branch: AutomaticBranch) -> 
     return instruction
 
 
-def _conditional_rows(
+def _build_conditional_categories(
     guidance: PurchaseGuidance, checkpoint: int, items: dict[int, GuideItem]
 ) -> list[GuideCategory]:
     result = []
@@ -200,7 +208,7 @@ def _conditional_rows(
         resume = steps[resume_at].name if resume_at < len(steps) else "core complete"
         extra = plan.remaining_cost - guidance.default_path.remaining_cost
         instruction = (
-            _branch_instruction(guidance, branch)
+            _format_branch_instruction(guidance, branch)
             + f" Route: {route}. Extra cost: {extra:,} souls. Resume: {resume}."
         )
         result.extend(
@@ -212,7 +220,7 @@ def _conditional_rows(
     return result
 
 
-def _pool_rows(guide: PurchaseGuide) -> list[GuideCategory]:
+def _build_item_pool_categories(guide: PurchaseGuide) -> list[GuideCategory]:
     return [
         GuideCategory(
             f"ITEM POOL | TIER {tier}",

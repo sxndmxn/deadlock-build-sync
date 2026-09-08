@@ -6,7 +6,7 @@ import json
 from typing import TYPE_CHECKING
 
 from .build_evidence import reliable_purchase_window
-from .cli_support import _sync_artifact_directory
+from .cli_support import _resolve_artifact_directory
 from .quality import evaluate_policy
 from .quality_inputs import load_quality_inputs, load_replay_assets
 from .quality_replay import parse_replay
@@ -84,7 +84,7 @@ def build_quality_report(
 
 
 def run_quality_report(args: argparse.Namespace) -> int:
-    inputs = load_quality_inputs(_sync_artifact_directory(args.artifacts))
+    inputs = load_quality_inputs(_resolve_artifact_directory(args.artifacts))
     cases: tuple[ReplayCase, ...] = ()
     assets: list[dict[str, object]] = []
     replay_hash = None

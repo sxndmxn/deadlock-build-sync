@@ -7,7 +7,7 @@ from deadlock_build_sync.protobuf import ProtoField, encode_hero_build, parse_fi
 from deadlock_build_sync.purchase_guide import PurchaseGuide
 
 
-def build_details(guide: PurchaseGuide) -> list[ProtoField]:
+def decode_build_details(guide: PurchaseGuide) -> list[ProtoField]:
     build = encode_hero_build(
         build_presentation(
             replace(

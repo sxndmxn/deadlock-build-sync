@@ -42,18 +42,18 @@ def test_varint_encoder_preserves_boundaries(value: int, encoded: bytes) -> None
 
 
 def test_field_encoders_preserve_wire_types_and_empty_rules() -> None:
-    assert protobuf.varint_field(3, None) == b""
-    assert protobuf.varint_field(3, 150) == b"\x18\x96\x01"
-    assert protobuf.bool_field(3, value=None) == b""
-    assert protobuf.bool_field(3, value=False) == b"\x18\x00"
-    assert protobuf.bool_field(3, value=True) == b"\x18\x01"
-    assert protobuf.float_field(2, None) == b""
-    assert protobuf.float_field(2, 1.5) == b"\x15\x00\x00\xc0\x3f"
-    assert protobuf.bytes_field(2, b"ab") == b"\x12\x02ab"
-    assert protobuf.string_field(1, None) == b""
-    assert protobuf.string_field(1, "é") == b"\x0a\x02\xc3\xa9"
-    assert protobuf.message_field(1, b"") == b""
-    assert protobuf.message_field(1, b"x") == b"\x0a\x01x"
+    assert protobuf.encode_varint_field(3, None) == b""
+    assert protobuf.encode_varint_field(3, 150) == b"\x18\x96\x01"
+    assert protobuf.encode_boolean_field(3, value=None) == b""
+    assert protobuf.encode_boolean_field(3, value=False) == b"\x18\x00"
+    assert protobuf.encode_boolean_field(3, value=True) == b"\x18\x01"
+    assert protobuf.encode_float_field(2, None) == b""
+    assert protobuf.encode_float_field(2, 1.5) == b"\x15\x00\x00\xc0\x3f"
+    assert protobuf.encode_bytes_field(2, b"ab") == b"\x12\x02ab"
+    assert protobuf.encode_string_field(1, None) == b""
+    assert protobuf.encode_string_field(1, "é") == b"\x0a\x02\xc3\xa9"
+    assert protobuf.encode_message_field(1, b"") == b""
+    assert protobuf.encode_message_field(1, b"x") == b"\x0a\x01x"
 
 
 def test_varint_reader_honors_offset_and_reports_bad_input() -> None:
@@ -93,12 +93,14 @@ def test_field_parser_rejects_malformed_fields(payload: bytes, message: str) -> 
 
 
 def test_build_extractor_requires_expected_nested_fields() -> None:
-    build = protobuf.varint_field(2, 12) + protobuf.string_field(5, "Build")
-    wrong_nested = protobuf.varint_field(2, 12)
+    build = protobuf.encode_varint_field(2, 12) + protobuf.encode_string_field(
+        5, "Build"
+    )
+    wrong_nested = protobuf.encode_varint_field(2, 12)
     wrapper = (
-        protobuf.varint_field(1, 7)
-        + protobuf.bytes_field(1, wrong_nested)
-        + protobuf.bytes_field(1, build)
+        protobuf.encode_varint_field(1, 7)
+        + protobuf.encode_bytes_field(1, wrong_nested)
+        + protobuf.encode_bytes_field(1, build)
     )
 
     assert protobuf.extract_hero_build(wrapper) == build
@@ -124,19 +126,19 @@ def test_build_extractor_ignores_an_inconsistent_length_field(
 
 def test_metadata_parser_preserves_supported_fields_and_tags() -> None:
     build = (
-        protobuf.varint_field(1, 34)
-        + protobuf.varint_field(2, 12)
-        + protobuf.varint_field(3, 56)
-        + protobuf.float_field(4, 1.5)
-        + protobuf.string_field(5, "Build")
-        + protobuf.bytes_field(6, b"bad\xfftext")
-        + protobuf.varint_field(8, 2)
-        + protobuf.varint_field(11, 7)
-        + protobuf.varint_field(11, 8)
-        + protobuf.varint_field(13, 90)
+        protobuf.encode_varint_field(1, 34)
+        + protobuf.encode_varint_field(2, 12)
+        + protobuf.encode_varint_field(3, 56)
+        + protobuf.encode_float_field(4, 1.5)
+        + protobuf.encode_string_field(5, "Build")
+        + protobuf.encode_bytes_field(6, b"bad\xfftext")
+        + protobuf.encode_varint_field(8, 2)
+        + protobuf.encode_varint_field(11, 7)
+        + protobuf.encode_varint_field(11, 8)
+        + protobuf.encode_varint_field(13, 90)
     )
 
-    assert protobuf.hero_build_metadata(build) == protobuf.HeroBuildMetadata(
+    assert protobuf.parse_hero_build_metadata(build) == protobuf.HeroBuildMetadata(
         build_id=34,
         hero_id=12,
         author_account_id=56,

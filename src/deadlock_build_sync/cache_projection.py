@@ -11,10 +11,10 @@ from .presentation import build_presentation
 from .protobuf import (
     HeroBuildMetadata,
     encode_hero_build,
-    hero_build_metadata,
     is_managed_build,
     managed_build_path,
-    try_hero_build_metadata,
+    parse_hero_build_metadata,
+    try_parse_hero_build_metadata,
     wrap_hero_build,
 )
 from .ranks import DEFAULT_RANK_RANGE
@@ -85,7 +85,7 @@ def read_cache(path: Path) -> dict[str, object]:
     return root
 
 
-def _cached_builds(root: dict[str, object]) -> list[bytes]:
+def _read_cached_builds(root: dict[str, object]) -> list[bytes]:
     blobs: list[bytes] = []
     for section in ("Favorites", "Unpublished", "SavedLastUsed"):
         values = root.get(section)
@@ -99,9 +99,9 @@ def _cached_builds(root: dict[str, object]) -> list[bytes]:
 
 def _allocate_local_build_id(root: dict[str, object], account_id: int) -> int:
     local_ids = []
-    for blob in _cached_builds(root):
+    for blob in _read_cached_builds(root):
         try:
-            metadata = hero_build_metadata(blob)
+            metadata = parse_hero_build_metadata(blob)
         except ValueError:
             continue
         if (
@@ -117,13 +117,13 @@ def _allocate_local_build_id(root: dict[str, object], account_id: int) -> int:
     return build_id
 
 
-def _target_managed_build(
+def _match_target_managed_build(
     blob: object,
     *,
     target_hero_ids: set[int],
     account_id: int,
 ) -> tuple[int, HeroBuildMetadata] | None:
-    metadata = try_hero_build_metadata(blob)
+    metadata = try_parse_hero_build_metadata(blob)
     if metadata is None:
         return None
     hero_id = metadata.hero_id
@@ -151,7 +151,7 @@ def _scan_managed_builds(
     retained: list[object] = []
     removed_candidates = 0
     for blob in unpublished:
-        target = _target_managed_build(
+        target = _match_target_managed_build(
             blob,
             target_hero_ids=target_hero_ids,
             account_id=account_id,

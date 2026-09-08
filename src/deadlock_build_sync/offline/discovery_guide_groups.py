@@ -2,14 +2,14 @@
 
 from operator import itemgetter
 
-from .discovery_grouping import consolidate
-from .discovery_types import Candidate, Nomination
+from .discovery_grouping import group_core_candidates
+from .discovery_types import CoreDiscoveryCandidate, NominatedCoreBuild
 
 
-def guide_group_ids(nominations: list[Nomination]) -> dict[str, str]:
+def assign_guide_group_ids(nominations: list[NominatedCoreBuild]) -> dict[str, str]:
     rows = sorted(nominations, key=lambda row: tuple(sorted(row["items"])))
-    candidates: list[Candidate] = list(rows)
-    grouping = consolidate(candidates)
+    candidates: list[CoreDiscoveryCandidate] = list(rows)
+    grouping = group_core_candidates(candidates)
     result: dict[str, str] = {}
     for indices in grouping["groups"]:
         members = [rows[index] for index in indices]

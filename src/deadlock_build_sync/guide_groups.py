@@ -20,7 +20,7 @@ VARIANT_RULE = (
 )
 
 
-def variant_changes(default: PurchaseGuide, variant: PurchaseGuide) -> str:
+def describe_variant_changes(default: PurchaseGuide, variant: PurchaseGuide) -> str:
     original = {item.item_id for item in default.core_items}
     selected = {item.item_id for item in variant.core_items}
     added = ", ".join(
@@ -33,7 +33,7 @@ def variant_changes(default: PurchaseGuide, variant: PurchaseGuide) -> str:
     return "; ".join(part for part in parts if part) or "Default core"
 
 
-def variant_record(guide: PurchaseGuide) -> dict[str, object]:
+def build_variant_record(guide: PurchaseGuide) -> dict[str, object]:
     return {
         "path_id": guide.path_id,
         "policy_id": guide.policy_id,
@@ -54,20 +54,20 @@ def variant_record(guide: PurchaseGuide) -> dict[str, object]:
     }
 
 
-def group_record(guide: PurchaseGuide) -> dict[str, object]:
+def build_group_record(guide: PurchaseGuide) -> dict[str, object]:
     return {
         "schema_version": 1,
         "group_id": guide.path_id,
         "default_path_id": guide.path_id,
         "variants": [
-            variant_record(member) for member in (guide, *guide.variant_guides)
+            build_variant_record(member) for member in (guide, *guide.variant_guides)
         ],
     }
 
 
-def variant_descriptions(guide: PurchaseGuide) -> list[str]:
+def describe_variants(guide: PurchaseGuide) -> list[str]:
     return [
-        f"V{index}: {variant_changes(guide, variant)}. "
+        f"V{index}: {describe_variant_changes(guide, variant)}. "
         f"{variant.core_target_cost:,} souls; {variant.evidence_summary.get('status', 'observed')}. "
         + " -> ".join(
             item.name
@@ -86,7 +86,7 @@ def variant_descriptions(guide: PurchaseGuide) -> list[str]:
     ]
 
 
-def _scoped_items(
+def _collect_variant_items(
     members: list[tuple[GuideItem, str]],
 ) -> tuple[GuideItem, ...]:
     grouped: dict[int, list[tuple[GuideItem, str]]] = {}
@@ -114,7 +114,7 @@ def _scoped_items(
     return tuple(result)
 
 
-def _optional_core(guide: PurchaseGuide) -> tuple[GuideItem, ...]:
+def _collect_optional_core_items(guide: PurchaseGuide) -> tuple[GuideItem, ...]:
     core_ids = {item.item_id for item in guide.core_purchase_items or guide.core_items}
     members = [
         (item, f"V{index}")
@@ -136,10 +136,10 @@ def _optional_core(guide: PurchaseGuide) -> tuple[GuideItem, ...]:
         for item in items
         if item.item_id in optional_ids
     )
-    return _scoped_items(members)
+    return _collect_variant_items(members)
 
 
-def _compact_categories(guide: PurchaseGuide) -> tuple[GuideCategory, ...]:
+def _build_compact_categories(guide: PurchaseGuide) -> tuple[GuideCategory, ...]:
     if guide.purchase_guidance is None:
         return guide.rendered_categories
     core = tuple(
@@ -156,7 +156,7 @@ def _compact_categories(guide: PurchaseGuide) -> tuple[GuideCategory, ...]:
             1,
         )
     )
-    optional = _optional_core(guide)
+    optional = _collect_optional_core_items(guide)
     covered = {item.item_id for item in (*core, *optional)}
     result = [GuideCategory("CORE", core, compact=True)]
     if optional:
@@ -170,7 +170,7 @@ def _compact_categories(guide: PurchaseGuide) -> tuple[GuideCategory, ...]:
             for item in variant.tiers[tier]
             if item.item_id not in covered
         ]
-        items = _scoped_items(members)
+        items = _collect_variant_items(members)
         result.append(
             GuideCategory(
                 f"TIER {tier}",
@@ -204,7 +204,9 @@ def group_guides(
         if default is None:
             raise ArtifactError("Guide group has no supported default")
         if len(members) == 1:
-            result.append(replace(default, categories=_compact_categories(default)))
+            result.append(
+                replace(default, categories=_build_compact_categories(default))
+            )
             continue
         result.append(_combine_guides(default, members))
     return result
@@ -228,4 +230,4 @@ def _combine_guides(
     combined = replace(
         default, variant_guides=variants, path_label=label, build_archetype=label
     )
-    return replace(combined, categories=_compact_categories(combined))
+    return replace(combined, categories=_build_compact_categories(combined))

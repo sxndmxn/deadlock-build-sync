@@ -32,7 +32,7 @@ from .artifact_bundle_types import (
     ArtifactGuideBundle,
     _GuideReconstructionContext,
 )
-from .artifact_reconstruction import _guide
+from .artifact_reconstruction import _reconstruct_guide
 
 __all__ = [
     "ArtifactBuildIdentity",
@@ -52,7 +52,7 @@ def _read_document(path: Path, label: str) -> dict[str, object]:
     return value
 
 
-def _snapshot_identity(manifest: dict[str, object]) -> str:
+def _calculate_snapshot_identity(manifest: dict[str, object]) -> str:
     payload = dict(manifest)
     payload.pop("snapshot_id", None)
     payload.pop("created_at", None)
@@ -69,7 +69,7 @@ def _snapshot_identity(manifest: dict[str, object]) -> str:
     return sha256_json(payload)
 
 
-def _patch(value: object) -> Patch:
+def _parse_patch(value: object) -> Patch:
     document = object_dict(value)
     if document is None:
         raise ArtifactBundleError("artifact bundle has no patch identity")
@@ -95,7 +95,7 @@ def _patch(value: object) -> Patch:
     return patch
 
 
-def _rank_from_boundary(value: object, label: str) -> Rank:
+def _parse_rank_boundary(value: object, label: str) -> Rank:
     if not isinstance(value, dict) or not isinstance(value.get("badge_id"), int):
         raise ArtifactBundleError(f"artifact bundle has no numeric {label} rank")
     data = cast("dict[str, object]", value)
@@ -110,16 +110,16 @@ def _rank_from_boundary(value: object, label: str) -> Rank:
     return rank
 
 
-def _rank_range(value: object) -> RankRange:
+def _parse_rank_range(value: object) -> RankRange:
     if not isinstance(value, dict):
         raise ArtifactBundleError("artifact bundle has no rank range")
     return RankRange(
-        _rank_from_boundary(value.get("minimum"), "minimum"),
-        _rank_from_boundary(value.get("maximum"), "maximum"),
+        _parse_rank_boundary(value.get("minimum"), "minimum"),
+        _parse_rank_boundary(value.get("maximum"), "maximum"),
     )
 
 
-def _exclusions(value: object) -> tuple[tuple[int, str], ...]:
+def _parse_exclusions(value: object) -> tuple[tuple[int, str], ...]:
     if not isinstance(value, list):
         raise ArtifactBundleError("artifact bundle has invalid exclusions")
     result: list[tuple[int, str]] = []
@@ -138,7 +138,7 @@ def _exclusions(value: object) -> tuple[tuple[int, str], ...]:
     return tuple(result)
 
 
-def _validated_manifest(
+def _validate_manifest(
     context: dict[str, object],
     policies: dict[str, object],
     catalog: NarrativeCatalog,
@@ -150,7 +150,7 @@ def _validated_manifest(
     if policies.get("snapshot_manifest") != data:
         raise ArtifactBundleError("context and policy snapshot manifests differ")
     snapshot_id = data.get("snapshot_id")
-    if snapshot_id != _snapshot_identity(data):
+    if snapshot_id != _calculate_snapshot_identity(data):
         raise ArtifactBundleError(
             "artifact snapshot fingerprint does not match its sources"
         )
@@ -161,13 +161,13 @@ def _validated_manifest(
     return data
 
 
-def _validated_coverage(
+def _validate_bundle_coverage(
     context: dict[str, object],
     policies: dict[str, object],
     catalog: NarrativeCatalog,
 ) -> tuple[tuple[int, str], ...]:
     requested = context.get("requested_hero_ids")
-    exclusions = _exclusions(context.get("exclusions"))
+    exclusions = _parse_exclusions(context.get("exclusions"))
     if not isinstance(requested, list) or not all(
         isinstance(hero_id, int) for hero_id in requested
     ):
@@ -183,12 +183,12 @@ def _validated_coverage(
     return exclusions
 
 
-def _validated_cohort(
+def _validate_bundle_cohort(
     context: dict[str, object],
     manifest: dict[str, object],
     catalog: NarrativeCatalog,
 ) -> tuple[Patch, RankRange, str]:
-    patch = _patch(context.get("patch"))
+    patch = _parse_patch(context.get("patch"))
     if manifest.get("patch") != context.get("patch"):
         raise ArtifactBundleError("artifact patch differs from its snapshot manifest")
     if catalog.patch_identity != patch.identity:
@@ -200,7 +200,7 @@ def _validated_cohort(
     if catalog.match_mode != manifest.get("match_mode"):
         raise ArtifactBundleError("narrative cohort differs from the artifact snapshot")
     rank_data = object_dict(manifest.get("rank_range"))
-    rank_range = _rank_range(rank_data)
+    rank_range = _parse_rank_range(rank_data)
     if rank_data is None or not isinstance(rank_data.get("label"), str):
         raise ArtifactBundleError("artifact bundle has no rank label")
     if rank_data.get("labels_sha256") != manifest.get("rank_labels_sha256"):
@@ -208,7 +208,7 @@ def _validated_cohort(
     return patch, rank_range, str(rank_data["label"])
 
 
-def _decoded_policies(
+def _decode_bundle_policies(
     document: dict[str, object],
 ) -> dict[tuple[int, str], BuildPolicy]:
     rows = object_rows(document.get("policies")) or []
@@ -216,7 +216,7 @@ def _decoded_policies(
     return {(policy.hero_id, policy.path_id): policy for policy in decoded}
 
 
-def _hero_contexts(
+def _parse_hero_contexts(
     document: dict[str, object],
 ) -> dict[tuple[int, str], dict[str, object]]:
     rows = object_rows(document.get("heroes")) or []
@@ -230,7 +230,7 @@ def _hero_contexts(
     return heroes
 
 
-def _evidence_snapshot_record(
+def _require_evidence_snapshot_record(
     manifest: dict[str, object],
     catalog: BuildEvidenceCatalog,
 ) -> dict[str, object]:
@@ -254,7 +254,7 @@ def _evidence_snapshot_record(
     return record
 
 
-def _build_evidence_compatibility(
+def _check_build_evidence_compatibility(
     catalog: BuildEvidenceCatalog,
     context: dict[str, object],
     manifest: dict[str, object],
@@ -286,7 +286,7 @@ def _build_evidence_compatibility(
     }
 
 
-def _validated_build_evidence(
+def _validate_bundle_evidence(
     path: Path,
     context: dict[str, object],
     manifest: dict[str, object],
@@ -295,8 +295,8 @@ def _validated_build_evidence(
         catalog = load_build_evidence(path)
     except ArtifactError as error:
         raise ArtifactBundleError(str(error)) from error
-    _evidence_snapshot_record(manifest, catalog)
-    checks = _build_evidence_compatibility(catalog, context, manifest)
+    _require_evidence_snapshot_record(manifest, catalog)
+    checks = _check_build_evidence_compatibility(catalog, context, manifest)
     differences = [label for label, compatible in checks.items() if not compatible]
     if differences:
         raise ArtifactBundleError(
@@ -325,7 +325,7 @@ def _reconstruct_guides(
         )
         if evidence is None:
             raise ArtifactBundleError(f"build evidence lacks path {hero_id}/{path_id}")
-        guide = _guide(
+        guide = _reconstruct_guide(
             heroes[build_key],
             policies[build_key],
             evidence,
@@ -368,18 +368,20 @@ def load_artifact_guide_bundle(
     validate_policy_artifact(policies)
     catalog = load_narrative_catalog(narrative_path)
 
-    manifest = _validated_manifest(context, policies, catalog)
-    exclusions = _validated_coverage(context, policies, catalog)
-    patch, rank_range, rank_identity = _validated_cohort(context, manifest, catalog)
-    build_evidence = _validated_build_evidence(
+    manifest = _validate_manifest(context, policies, catalog)
+    exclusions = _validate_bundle_coverage(context, policies, catalog)
+    patch, rank_range, rank_identity = _validate_bundle_cohort(
+        context, manifest, catalog
+    )
+    build_evidence = _validate_bundle_evidence(
         build_evidence_path,
         context,
         manifest,
     )
     if dict(exclusions) != build_evidence.exclusions:
         raise ArtifactBundleError("Artifact exclusions differ from build evidence")
-    by_policy = _decoded_policies(policies)
-    heroes = _hero_contexts(context)
+    by_policy = _decode_bundle_policies(policies)
+    heroes = _parse_hero_contexts(context)
     if set(heroes) != set(by_policy):
         raise ArtifactBundleError(
             "strategy contexts and policies cover different heroes"

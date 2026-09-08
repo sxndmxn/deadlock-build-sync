@@ -12,8 +12,8 @@ from .build_evidence import (
 from .mechanics import (
     AbilityDefinition,
     MechanicsError,
-    ability_definitions_from_kit,
     build_hero_mechanics,
+    parse_ability_definitions,
     schedule_ability_path,
     validate_ability_timeline,
 )
@@ -37,7 +37,7 @@ from .service_types import (
 )
 
 
-def _matchups_by_hero(
+def _group_matchups_by_hero(
     rows: list[dict[str, object]],
     *,
     scope: str,
@@ -66,7 +66,7 @@ class _GenerationEvidence:
     whole_team_matchups: dict[int, list[dict[str, object]]]
 
 
-def _ability_path_for_build(
+def _select_build_ability_path(
     api: DeadlockApi,
     *,
     hero_id: int,
@@ -100,7 +100,7 @@ def _ability_path_for_build(
     )
 
 
-def _invalid_imbue_target(
+def _find_invalid_imbue_target(
     selected_build: SelectedHeroBuild,
     definitions: dict[int, AbilityDefinition],
 ) -> str | None:
@@ -152,7 +152,7 @@ def _prepare_hero_inputs(
     duration_curve = evidence.duration_curves.get(hero_id, ())
     try:
         kit = build_hero_mechanics(hero, evidence.assets)
-        definitions = ability_definitions_from_kit(kit)
+        definitions = parse_ability_definitions(kit)
     except MechanicsError as error:
         return f"complete current mechanics: {error}"
     prepared: list[_HeroInputs] = []
@@ -164,10 +164,10 @@ def _prepare_hero_inputs(
                 f"{hero_name} path {build_evidence.path_id} has invalid build "
                 f"evidence: {error}"
             ) from error
-        invalid_imbue = _invalid_imbue_target(selected_build, definitions)
+        invalid_imbue = _find_invalid_imbue_target(selected_build, definitions)
         if invalid_imbue is not None:
             return f"path {build_evidence.path_label} with valid imbue data: {invalid_imbue}"
-        ability_path = _ability_path_for_build(
+        ability_path = _select_build_ability_path(
             api,
             hero_id=hero_id,
             analysis_start=evidence.analysis_start,
@@ -244,13 +244,13 @@ def _collect_hero_inputs(
                 duration_curves=scoped_api.hero_stats_by_duration(
                     min_unix_timestamp=evidence.analysis_start
                 ),
-                same_lane_matchups=_matchups_by_hero(
+                same_lane_matchups=_group_matchups_by_hero(
                     scoped_api.hero_counter_stats(
                         min_unix_timestamp=evidence.analysis_start, same_lane=True
                     ),
                     scope="same_lane",
                 ),
-                whole_team_matchups=_matchups_by_hero(
+                whole_team_matchups=_group_matchups_by_hero(
                     scoped_api.hero_counter_stats(
                         min_unix_timestamp=evidence.analysis_start, same_lane=False
                     ),

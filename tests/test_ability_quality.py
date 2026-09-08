@@ -5,8 +5,8 @@ import pytest
 
 from deadlock_build_sync.ability_order import AbilityPath
 from deadlock_build_sync.service import generate_guides
-from tests.service_evidence_fixtures import build_evidence
-from tests.service_fake_api import FakeApi, ability_rows, duration_points
+from tests.service_evidence_fixtures import make_service_build_evidence
+from tests.service_fake_api import FakeApi, make_ability_rows, make_duration_statistics
 
 
 class _SparseBuildApi(FakeApi):
@@ -37,7 +37,7 @@ def test_unsupported_build_orders_keep_explicit_unapproved_fallback(
     empty: bool,
 ) -> None:
     api = _SparseBuildApi(
-        ability_rows=ability_rows(), duration_points=duration_points()
+        ability_rows=make_ability_rows(), duration_points=make_duration_statistics()
     )
     if empty:
         original = api.ability_order_stats
@@ -52,7 +52,7 @@ def test_unsupported_build_orders_keep_explicit_unapproved_fallback(
         monkeypatch.setattr(api, "ability_order_stats", without_build)
     generated = generate_guides(
         api,
-        build_evidence=build_evidence(api),
+        build_evidence=make_service_build_evidence(api),
         account_id=123,
         hero_query="Kelvin",
         all_heroes=False,
@@ -65,10 +65,12 @@ def test_unsupported_build_orders_keep_explicit_unapproved_fallback(
 
 
 def test_single_path_checks_build_conditioned_ability_support() -> None:
-    api = FakeApi(ability_rows=ability_rows(), duration_points=duration_points())
+    api = FakeApi(
+        ability_rows=make_ability_rows(), duration_points=make_duration_statistics()
+    )
     generated = generate_guides(
         api,
-        build_evidence=build_evidence(api),
+        build_evidence=make_service_build_evidence(api),
         account_id=123,
         hero_query="Kelvin",
         all_heroes=False,

@@ -1,4 +1,4 @@
-"""Source-backed descriptive mechanic focus; no inferred synergy weights."""
+"""Describe mechanics that hero abilities and core items share."""
 
 from __future__ import annotations
 
@@ -8,19 +8,19 @@ from deadlock_build_sync.mechanics_compatibility import (
 )
 from deadlock_build_sync.value_validation import integer, object_dict
 
-from .discovery_types import Tactics
+from .discovery_types import MechanicOverlapEvidence
 
 
-def description_text(value: object) -> str:
+def extract_description_text(value: object) -> str:
     if isinstance(value, dict):
-        return " ".join(description_text(part) for part in value.values())
+        return " ".join(extract_description_text(part) for part in value.values())
     if isinstance(value, (list, tuple)):
-        return " ".join(description_text(part) for part in value)
+        return " ".join(extract_description_text(part) for part in value)
     return clean_mechanical_text(str(value)) if value is not None else ""
 
 
-def channels(asset: dict[str, object]) -> dict[str, dict[str, object]]:
-    text = description_text(asset.get("description"))
+def extract_mechanic_channels(asset: dict[str, object]) -> dict[str, dict[str, object]]:
+    text = extract_description_text(asset.get("description"))
     lower = text.casefold()
     return {
         channel: {
@@ -35,9 +35,9 @@ def channels(asset: dict[str, object]) -> dict[str, dict[str, object]]:
     }
 
 
-def explain(
+def describe_mechanic_overlap(
     hero: dict[str, object], items: list[int], assets: list[dict[str, object]]
-) -> Tactics:
+) -> MechanicOverlapEvidence:
     by_id = {integer(asset["id"]): asset for asset in assets}
     by_class = {str(asset.get("class_name")): asset for asset in assets}
     signatures = object_dict(hero.get("items")) or {}
@@ -48,8 +48,8 @@ def explain(
         and isinstance(value, str)
         and value in by_class
     ]
-    kit = [channels(ability) for ability in abilities]
-    item_channels = {item: channels(by_id[item]) for item in items}
+    kit = [extract_mechanic_channels(ability) for ability in abilities]
+    item_channels = {item: extract_mechanic_channels(by_id[item]) for item in items}
     focuses: list[dict[str, object]] = []
     for channel in _MECHANIC_TAG_PHRASES:
         supporting = [

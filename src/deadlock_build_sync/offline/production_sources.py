@@ -54,7 +54,7 @@ class _HeroExportContext:
     rank_expansion: str = "auto"
 
 
-def _patch_guid(value: object) -> str:
+def _normalize_patch_guid(value: object) -> str:
     if isinstance(value, str) and value.strip():
         return value.strip()
     if isinstance(value, (dict, list)):
@@ -79,7 +79,7 @@ def _normalize_patch_content(value: object) -> object:
     return value
 
 
-def _patch_content_sha256(value: object) -> str:
+def _calculate_patch_content_sha256(value: object) -> str:
     return hashlib.sha256(
         json.dumps(
             _normalize_patch_content(value),
@@ -90,7 +90,7 @@ def _patch_content_sha256(value: object) -> str:
     ).hexdigest()
 
 
-def _patch_at(paths: RunPaths, as_of: datetime) -> dict[str, object]:
+def _select_patch_at_timestamp(paths: RunPaths, as_of: datetime) -> dict[str, object]:
     payload = read_json(paths.raw / "patches.json")
     payload_object = object_dict(payload)
     if payload_object is not None:
@@ -109,13 +109,13 @@ def _patch_at(paths: RunPaths, as_of: datetime) -> dict[str, object]:
     if not candidates:
         raise RuntimeError("patch source has no entry at the frozen as-of cutoff")
     published, selected = max(candidates, key=itemgetter(0))
-    content_sha256 = _patch_content_sha256(selected.get("content"))
+    content_sha256 = _calculate_patch_content_sha256(selected.get("content"))
     patch = {
         "title": str(selected.get("title") or "Current patch"),
         "start_timestamp": int(published.timestamp()),
         "published_at": str(selected["pub_date"]),
         "source": str(selected.get("source") or "unknown"),
-        "guid": _patch_guid(selected.get("guid")),
+        "guid": _normalize_patch_guid(selected.get("guid")),
         "link": str(selected.get("link") or ""),
         "content_sha256": content_sha256,
     }
@@ -129,7 +129,7 @@ def _patch_at(paths: RunPaths, as_of: datetime) -> dict[str, object]:
     return patch
 
 
-def _rank_labels_sha256(paths: RunPaths) -> str:
+def _calculate_rank_labels_sha256(paths: RunPaths) -> str:
     rows = object_rows(read_json(paths.raw / "ranks.json")) or []
     labels = {
         integer(row["tier"]): str(row["name"]).strip()
@@ -141,17 +141,17 @@ def _rank_labels_sha256(paths: RunPaths) -> str:
     return sha256_json(labels)
 
 
-def _path_item_metrics(
-    con: duckdb.DuckDBPyConnection,
+def _query_path_item_metrics(
+    connection: duckdb.DuckDBPyConnection,
     member_ids: frozenset[tuple[int, int]],
 ) -> pl.DataFrame:
     members = pl.DataFrame({
         "match_id": [identity[0] for identity in member_ids],
         "player_slot": [identity[1] for identity in member_ids],
     })
-    con.register("_build_path_members", members)
+    connection.register("_build_path_members", members)
     try:
-        return con.sql(
+        return connection.sql(
             f"""
             WITH firsts AS (
                 SELECT p.* FROM first_purchases p
@@ -251,4 +251,4 @@ def _path_item_metrics(
             """
         ).pl()
     finally:
-        con.unregister("_build_path_members")
+        connection.unregister("_build_path_members")

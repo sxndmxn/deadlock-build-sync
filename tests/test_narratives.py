@@ -7,7 +7,7 @@ import pytest
 from deadlock_build_sync.narratives import (
     NarrativeError,
     apply_narrative,
-    deterministic_build_description,
+    build_deterministic_description,
     load_narrative_catalog,
 )
 from tests.narrative_fixtures import (
@@ -15,7 +15,7 @@ from tests.narrative_fixtures import (
     CONTEXT_ID,
     DESCRIPTION,
     PATCH,
-    guide,
+    make_narrative_guide,
     write_catalog,
 )
 
@@ -23,7 +23,7 @@ from tests.narrative_fixtures import (
 def test_applies_only_exact_build_description(tmp_path: Path) -> None:
     path = tmp_path / "narratives.json"
     write_catalog(path)
-    source = guide()
+    source = make_narrative_guide()
 
     updated = apply_narrative(
         source,
@@ -67,7 +67,9 @@ def test_rejects_changed_context_or_basis(
     }
 
     with pytest.raises(NarrativeError, match=error):
-        apply_narrative(guide(), context, PATCH, load_narrative_catalog(path))
+        apply_narrative(
+            make_narrative_guide(), context, PATCH, load_narrative_catalog(path)
+        )
 
 
 def test_rejects_other_match_mode(tmp_path: Path) -> None:
@@ -76,7 +78,7 @@ def test_rejects_other_match_mode(tmp_path: Path) -> None:
 
     with pytest.raises(NarrativeError, match="match mode"):
         apply_narrative(
-            replace(guide(), match_mode="unranked"),
+            replace(make_narrative_guide(), match_mode="unranked"),
             {"context_sha256": CONTEXT_ID, "narrative_basis_sha256": BASIS_ID},
             PATCH,
             load_narrative_catalog(path),
@@ -92,7 +94,7 @@ def test_rejects_missing_build_description(tmp_path: Path) -> None:
 
     with pytest.raises(NarrativeError, match="incomplete"):
         apply_narrative(
-            guide(),
+            make_narrative_guide(),
             {"context_sha256": CONTEXT_ID, "narrative_basis_sha256": BASIS_ID},
             PATCH,
             load_narrative_catalog(path),
@@ -144,7 +146,7 @@ def test_build_description_is_deterministic_and_grounded() -> None:
         "projection": {"build": {"archetype": "Spirit Damage"}},
     }
 
-    assert deterministic_build_description(context) == (
+    assert build_deterministic_description(context) == (
         "Kelvin: Protect allies. Controls space with ice. Follow the shown Spirit "
         "Damage CORE order and max Frozen Shelter first. Use conditional cards only "
         "when their VS line applies; all optional rows stay outside Queue."
@@ -170,6 +172,6 @@ def test_build_description_preserves_the_selected_archetype(archetype: str) -> N
         "projection": {"build": {"archetype": archetype}},
     }
 
-    description = deterministic_build_description(context)
+    description = build_deterministic_description(context)
 
     assert f"shown {archetype} CORE order" in description

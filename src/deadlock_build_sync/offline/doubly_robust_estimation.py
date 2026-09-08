@@ -13,8 +13,7 @@ from sklearn.preprocessing import StandardScaler
 
 from deadlock_build_sync.value_validation import integer, number
 
-from .core_policy_config import (
-    CLIPS,
+from .effect_estimation_limits import (
     MAXIMUM_INTERVAL_WIDTH,
     MAXIMUM_STANDARDIZED_MEAN_DIFFERENCE,
     MINIMUM_EFFECTIVE_SUPPORT,
@@ -23,11 +22,12 @@ from .core_policy_config import (
     PROPENSITY_FLOOR,
     SELECTION_FOLDS,
     STATE_FEATURES,
+    WEIGHT_CLIP_LIMITS,
 )
 
 
 @dataclass(frozen=True)
-class DrContrast:
+class DoublyRobustContrast:
     treatment_item_id: int
     comparator_item_id: int
     support: int
@@ -46,7 +46,7 @@ class DrContrast:
     failed_gates: tuple[str, ...]
 
 
-def _matrix(frame: pl.DataFrame) -> np.ndarray:
+def _build_feature_matrix(frame: pl.DataFrame) -> np.ndarray:
     columns = []
     extra = sorted(name for name in frame.columns if name.startswith("context_"))
     for feature in (*STATE_FEATURES, *extra):
@@ -59,7 +59,7 @@ def _matrix(frame: pl.DataFrame) -> np.ndarray:
     return np.column_stack(columns)
 
 
-def _context_features(frame: pl.DataFrame) -> pl.DataFrame:
+def _add_context_features(frame: pl.DataFrame) -> pl.DataFrame:
     columns = []
     for feature in ("enemy_heroes", "enemy_items", "owned_before"):
         if feature in frame.columns:
@@ -79,9 +79,11 @@ def _context_features(frame: pl.DataFrame) -> pl.DataFrame:
     return frame.with_columns(columns)
 
 
-def _probability_model(x: np.ndarray, y: np.ndarray) -> Pipeline | float:
-    if len(np.unique(y)) < 2:
-        return float((y.sum() + 1) / (len(y) + 2))
+def _fit_probability_model(
+    features: np.ndarray, labels: np.ndarray
+) -> Pipeline | float:
+    if len(np.unique(labels)) < 2:
+        return float((labels.sum() + 1) / (len(labels) + 2))
     model = Pipeline(
         [
             ("imputer", SimpleImputer(strategy="median", keep_empty_features=True)),
@@ -90,23 +92,23 @@ def _probability_model(x: np.ndarray, y: np.ndarray) -> Pipeline | float:
         ],
         memory=None,
     )
-    model.fit(x, y)
+    model.fit(features, labels)
     return model
 
 
-def _predict(model: Pipeline | float, x: np.ndarray) -> np.ndarray:
+def _predict_probabilities(model: Pipeline | float, features: np.ndarray) -> np.ndarray:
     if isinstance(model, Pipeline):
-        return model.predict_proba(x)[:, 1]
-    return np.full(len(x), float(model))
+        return model.predict_proba(features)[:, 1]
+    return np.full(len(features), float(model))
 
 
-def _weighted_smd(
-    x: np.ndarray, treatment: np.ndarray, propensity: np.ndarray
+def _calculate_maximum_weighted_standardized_difference(
+    features: np.ndarray, treatment: np.ndarray, propensity: np.ndarray
 ) -> float:
     maximum = 0.0
     weights = np.where(treatment == 1, 1 / propensity, 1 / (1 - propensity))
-    for column in range(x.shape[1]):
-        values = x[:, column]
+    for column in range(features.shape[1]):
+        values = features[:, column]
         valid = np.isfinite(values)
         treated = valid & (treatment == 1)
         control = valid & (treatment == 0)
@@ -132,8 +134,10 @@ def _weighted_smd(
     return maximum
 
 
-def _cross_fitted_scores(frame: pl.DataFrame, folds: int) -> dict[str, np.ndarray]:
-    x = _matrix(frame)
+def _calculate_cross_fitted_scores(
+    frame: pl.DataFrame, folds: int
+) -> dict[str, np.ndarray]:
+    features = _build_feature_matrix(frame)
     treatment = frame["treatment"].cast(int).to_numpy()
     outcome = frame["won"].cast(int).to_numpy()
     match_ids = frame["match_id"].cast(int).to_numpy()
@@ -147,14 +151,14 @@ def _cross_fitted_scores(frame: pl.DataFrame, folds: int) -> dict[str, np.ndarra
         match_id: index % min(folds, len(unique_matches))
         for index, match_id in enumerate(unique_matches)
     }
-    microfold = np.array([assignments[match_id] for match_id in match_ids])
+    cross_fit_fold = np.array([assignments[match_id] for match_id in match_ids])
     for fold in range(folds):
-        test = microfold == fold
+        test = cross_fit_fold == fold
         train = ~test
         if not test.any():
             continue
-        propensity_model = _probability_model(x[train], treatment[train])
-        propensity[test] = _predict(propensity_model, x[test])
+        propensity_model = _fit_probability_model(features[train], treatment[train])
+        propensity[test] = _predict_probabilities(propensity_model, features[test])
         for action, destination in (
             (1, outcome_treated),
             (0, outcome_control),
@@ -163,8 +167,10 @@ def _cross_fitted_scores(frame: pl.DataFrame, folds: int) -> dict[str, np.ndarra
             if not action_train.any():
                 destination[test] = outcome[train].mean()
                 continue
-            outcome_model = _probability_model(x[action_train], outcome[action_train])
-            destination[test] = _predict(outcome_model, x[test])
+            outcome_model = _fit_probability_model(
+                features[action_train], outcome[action_train]
+            )
+            destination[test] = _predict_probabilities(outcome_model, features[test])
     propensity = np.clip(propensity, PROPENSITY_FLOOR, 1 - PROPENSITY_FLOOR)
     score_treated = outcome_treated + treatment / propensity * (
         outcome - outcome_treated
@@ -173,7 +179,7 @@ def _cross_fitted_scores(frame: pl.DataFrame, folds: int) -> dict[str, np.ndarra
         outcome - outcome_control
     )
     return {
-        "x": x,
+        "features": features,
         "treatment": treatment,
         "outcome": outcome,
         "propensity": propensity,
@@ -184,7 +190,7 @@ def _cross_fitted_scores(frame: pl.DataFrame, folds: int) -> dict[str, np.ndarra
     }
 
 
-def _cluster_interval(
+def _calculate_cluster_interval(
     influence: np.ndarray, match_ids: np.ndarray
 ) -> tuple[float, float]:
     estimate = float(influence.mean())
@@ -197,7 +203,7 @@ def _cluster_interval(
     return estimate - 1.96 * standard_error, estimate + 1.96 * standard_error
 
 
-def _fold_results(
+def _evaluate_temporal_folds(
     frame: pl.DataFrame, folds: int
 ) -> tuple[dict[str, dict[str, np.ndarray]], dict[str, dict[str, object]]]:
     fold_scores: dict[str, dict[str, np.ndarray]] = {}
@@ -213,21 +219,21 @@ def _fold_results(
             if fold_name in SELECTION_FOLDS:
                 raise ValueError(f"{fold_name} lacks cross-fitting support")
             continue
-        result = _cross_fitted_scores(subset, folds)
+        result = _calculate_cross_fitted_scores(subset, folds)
         fold_scores[fold_name] = result
         treatment = result["treatment"]
         propensity = result["propensity"]
         observed_propensity = np.where(treatment == 1, propensity, 1 - propensity)
         weights = 1 / observed_propensity
-        interval = _cluster_interval(result["influence"], result["match_ids"])
+        interval = _calculate_cluster_interval(result["influence"], result["match_ids"])
         fold_diagnostics[fold_name] = {
             "support": int(treatment.sum()),
             "comparison_support": int(len(treatment) - treatment.sum()),
             "effective_support": float(weights.sum() ** 2 / np.square(weights).sum()),
             "overlap": float(np.mean((propensity >= 0.1) & (propensity <= 0.9))),
             "maximum_weight": float(weights.max()),
-            "maximum_standardized_mean_difference": _weighted_smd(
-                result["x"], treatment, propensity
+            "maximum_standardized_mean_difference": _calculate_maximum_weighted_standardized_difference(
+                result["features"], treatment, propensity
             ),
             "estimate": float(result["influence"].mean()),
             "interval": [float(interval[0]), float(interval[1])],
@@ -235,20 +241,22 @@ def _fold_results(
     return fold_scores, fold_diagnostics
 
 
-def cross_fitted_dr_contrast(
+def estimate_cross_fitted_doubly_robust_contrast(
     decisions: pl.DataFrame,
     treatment_item_id: int,
     comparator_item_id: int,
     *,
     folds: int = 5,
-) -> DrContrast:
-    """Estimate a like-state item contrast with grouped cross-fitting and hard gates."""
+) -> DoublyRobustContrast:
+    """Compare item outcomes at equivalent states with grouped cross-fitting and explicit evidence checks."""
     frame = decisions.filter(
         pl.col("item_id").is_in([treatment_item_id, comparator_item_id])
     ).with_columns(
         (pl.col("item_id") == treatment_item_id).cast(pl.Int8).alias("treatment")
     )
-    fold_scores, fold_diagnostics = _fold_results(_context_features(frame), folds)
+    fold_scores, fold_diagnostics = _evaluate_temporal_folds(
+        _add_context_features(frame), folds
+    )
     scores = {
         key: np.concatenate([fold_scores[fold][key] for fold in SELECTION_FOLDS])
         for key in next(iter(fold_scores.values()))
@@ -259,9 +267,13 @@ def cross_fitted_dr_contrast(
     weights = 1 / observed_propensity
     effective_support = float(weights.sum() ** 2 / np.square(weights).sum())
     overlap = float(np.mean((propensity >= 0.1) & (propensity <= 0.9)))
-    maximum_smd = _weighted_smd(scores["x"], treatment, propensity)
+    maximum_standardized_difference = (
+        _calculate_maximum_weighted_standardized_difference(
+            scores["features"], treatment, propensity
+        )
+    )
     estimate = float(scores["influence"].mean())
-    interval = _cluster_interval(scores["influence"], scores["match_ids"])
+    interval = _calculate_cluster_interval(scores["influence"], scores["match_ids"])
     fold_estimates = {
         fold: number(diagnostics["estimate"])
         for fold, diagnostics in fold_diagnostics.items()
@@ -271,7 +283,7 @@ def cross_fitted_dr_contrast(
         for fold in SELECTION_FOLDS
     }
     clipped_sensitivity = {}
-    for clip in CLIPS:
+    for clip in WEIGHT_CLIP_LIMITS:
         treated_weight = np.minimum(1 / propensity, clip)
         control_weight = np.minimum(1 / (1 - propensity), clip)
         treated_score = scores["outcome_treated"] + treatment * treated_weight * (
@@ -324,7 +336,7 @@ def cross_fitted_dr_contrast(
         integer(fold_diagnostics[fold]["comparison_support"])
         for fold in SELECTION_FOLDS
     )
-    return DrContrast(
+    return DoublyRobustContrast(
         treatment_item_id=treatment_item_id,
         comparator_item_id=comparator_item_id,
         support=support,
@@ -332,7 +344,7 @@ def cross_fitted_dr_contrast(
         effective_support=effective_support,
         overlap=overlap,
         maximum_weight=float(weights.max()),
-        maximum_standardized_mean_difference=maximum_smd,
+        maximum_standardized_mean_difference=maximum_standardized_difference,
         estimate=estimate,
         interval=interval,
         fold_estimates=fold_estimates,

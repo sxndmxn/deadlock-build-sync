@@ -41,7 +41,7 @@ def test_patch_helpers_normalize_guids_content_and_cutoff(tmp_path: Path) -> Non
     }
     write_json(paths.raw / "patches.json", patches)
 
-    patch = sources._patch_at(paths, datetime(2026, 8, 2, tzinfo=UTC))
+    patch = sources._select_patch_at_timestamp(paths, datetime(2026, 8, 2, tzinfo=UTC))
 
     assert patch["title"] == "Old"
     assert patch["guid"] == '{"id":1}'
@@ -49,12 +49,12 @@ def test_patch_helpers_normalize_guids_content_and_cutoff(tmp_path: Path) -> Non
     assert sha256_json(patch) == (
         "6e746befc32de3d8dac343b1735daeef000215306c074aa8588634442e839d64"
     )
-    assert sources._patch_guid(" value ") == "value"
-    assert sources._patch_guid(1) == "unknown"
-    first = sources._patch_content_sha256(
+    assert sources._normalize_patch_guid(" value ") == "value"
+    assert sources._normalize_patch_guid(1) == "unknown"
+    first = sources._calculate_patch_content_sha256(
         "https://clan.akamai.steamstatic.com/image.png"
     )
-    second = sources._patch_content_sha256(
+    second = sources._calculate_patch_content_sha256(
         "https://clan.fastly.steamstatic.com/image.png"
     )
     assert first == second
@@ -64,14 +64,14 @@ def test_patch_and_rank_sources_reject_invalid_or_future_data(tmp_path: Path) ->
     paths = RunPaths.create(tmp_path, "bad-patch")
     write_json(paths.raw / "patches.json", {})
     with pytest.raises(RuntimeError, match="patch list"):
-        sources._patch_at(paths, datetime(2026, 8, 2, tzinfo=UTC))
+        sources._select_patch_at_timestamp(paths, datetime(2026, 8, 2, tzinfo=UTC))
 
     write_json(
         paths.raw / "patches.json",
         [{"pub_date": "2026-08-03T00:00:00+00:00"}],
     )
     with pytest.raises(RuntimeError, match="frozen as-of"):
-        sources._patch_at(paths, datetime(2026, 8, 2, tzinfo=UTC))
+        sources._select_patch_at_timestamp(paths, datetime(2026, 8, 2, tzinfo=UTC))
 
     write_json(
         paths.raw / "ranks.json",
@@ -81,7 +81,7 @@ def test_patch_and_rank_sources_reject_invalid_or_future_data(tmp_path: Path) ->
             {"tier": 3, "name": ""},
         ],
     )
-    assert len(sources._rank_labels_sha256(paths)) == 64
+    assert len(sources._calculate_rank_labels_sha256(paths)) == 64
 
 
 def test_path_item_metrics_aggregate_fold_and_imbue_support() -> None:
@@ -115,19 +115,19 @@ def test_path_item_metrics_aggregate_fold_and_imbue_support() -> None:
         }
         for row in rows
     ])
-    con = duckdb.connect()
+    connection = duckdb.connect()
     try:
-        con.register("first_source", pl.DataFrame(rows))
-        con.register("events_source", purchases)
-        con.execute("CREATE TABLE first_purchases AS SELECT * FROM first_source")
-        con.execute("CREATE TABLE purchases AS SELECT * FROM events_source")
+        connection.register("first_source", pl.DataFrame(rows))
+        connection.register("events_source", purchases)
+        connection.execute("CREATE TABLE first_purchases AS SELECT * FROM first_source")
+        connection.execute("CREATE TABLE purchases AS SELECT * FROM events_source")
 
-        metrics = sources._path_item_metrics(
-            con,
+        metrics = sources._query_path_item_metrics(
+            connection,
             frozenset((match_id, 0) for match_id in range(1, 21)),
         )
     finally:
-        con.close()
+        connection.close()
 
     row = metrics.row(0, named=True)
     assert row["adopter_matches"] == 20

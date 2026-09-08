@@ -143,16 +143,18 @@ def test_run_preview_emits_generated_guides(
     catalog = object()
     monkeypatch.setattr(
         cli_recommend,
-        "_location",
+        "_discover_cache_location",
         lambda _args: location,
     )
     monkeypatch.setattr(
         cli_recommend,
-        "_build_evidence",
+        "_load_build_evidence",
         lambda _args: (evidence_path, evidence),
     )
-    monkeypatch.setattr(cli_support, "_api", lambda *_args: api)
-    monkeypatch.setattr(cli_recommend, "_catalog", lambda _args: catalog)
+    monkeypatch.setattr(cli_support, "_create_evidence_api", lambda *_args: api)
+    monkeypatch.setattr(
+        cli_recommend, "_load_optional_narrative_catalog", lambda _args: catalog
+    )
 
     def generate(*args: object, **kwargs: object) -> SimpleNamespace:
         assert args == (api,)
@@ -211,7 +213,7 @@ def test_run_status_emits_json_with_cache_location(
     monkeypatch.setattr(cli_status, "DeadlockApi", _FakeApi)
     monkeypatch.setattr(
         cli_status,
-        "_location",
+        "_discover_cache_location",
         lambda _args: SimpleNamespace(cache_path=tmp_path / "cache.kv3", account_id=7),
     )
 
@@ -255,7 +257,7 @@ def test_run_status_emits_text_without_cache_location(
     monkeypatch.setattr(cli_status, "DeadlockApi", _FakeApi)
     monkeypatch.setattr(
         cli_status,
-        "_location",
+        "_discover_cache_location",
         lambda _args: (_ for _ in ()).throw(CacheError("missing cache")),
     )
     monkeypatch.setattr(

@@ -10,18 +10,18 @@ from .build_evidence_types import (
     ItemEvidence,
 )
 from .build_evidence_values import (
-    _document,
-    _optional_float,
-    _required_bool,
-    _required_float,
-    _required_int,
+    _parse_optional_float,
+    _require_boolean,
+    _require_evidence_document,
+    _require_float,
+    _require_integer,
 )
 
 _FOLDS = ("training", "validation", "test")
 
 
 @dataclass(frozen=True)
-class _Identity:
+class _ItemIdentity:
     item_id: int
     name: str
     slot: str
@@ -29,7 +29,7 @@ class _Identity:
 
 
 @dataclass(frozen=True)
-class _Totals:
+class _ItemOutcomeTotals:
     adopters: int
     eligible: int
     purchase_events: int
@@ -39,7 +39,7 @@ class _Totals:
 
 
 @dataclass(frozen=True)
-class _Selection:
+class _ItemSelectionEvidence:
     adopters: int
     eligible: int
     adoption: float
@@ -52,7 +52,7 @@ class _Selection:
 
 
 @dataclass(frozen=True)
-class _Imbue:
+class _ItemImbueEvidence:
     target_id: int | None
     target: str | None
     matches: int
@@ -60,33 +60,37 @@ class _Imbue:
     share: float
 
 
-def _identity(document: dict[str, object], hero_id: int) -> _Identity:
-    item_id = _required_int(document.get("item_id"), "item id", minimum=1)
+def _parse_item_identity(document: dict[str, object], hero_id: int) -> _ItemIdentity:
+    item_id = _require_integer(document.get("item_id"), "item id", minimum=1)
     name = document.get("item")
     slot = document.get("slot")
     if not isinstance(name, str) or not name.strip():
         raise ArtifactError(f"hero {hero_id} item {item_id} lacks identity")
     if not isinstance(slot, str) or not slot.strip():
         raise ArtifactError(f"hero {hero_id} item {item_id} lacks identity")
-    tier = _required_int(document.get("tier"), "item tier", minimum=1)
+    tier = _require_integer(document.get("tier"), "item tier", minimum=1)
     if tier > 4:
         raise ArtifactError(f"hero {hero_id} item {item_id} has invalid tier")
-    return _Identity(item_id, name.strip(), slot.strip().casefold(), tier)
+    return _ItemIdentity(item_id, name.strip(), slot.strip().casefold(), tier)
 
 
-def _totals(document: dict[str, object], hero_id: int, item_id: int) -> _Totals:
-    adopters = _required_int(document.get("adopter_matches"), "adopter matches")
-    eligible = _required_int(
+def _parse_item_totals(
+    document: dict[str, object], hero_id: int, item_id: int
+) -> _ItemOutcomeTotals:
+    adopters = _require_integer(document.get("adopter_matches"), "adopter matches")
+    eligible = _require_integer(
         document.get("eligible_player_matches"),
         "eligible player matches",
         minimum=1,
     )
-    purchase_events = _required_int(document.get("purchase_events"), "purchase events")
-    wins = _required_int(document.get("wins"), "wins")
+    purchase_events = _require_integer(
+        document.get("purchase_events"), "purchase events"
+    )
+    wins = _require_integer(document.get("wins"), "wins")
     if adopters > eligible or purchase_events < adopters or wins > adopters:
         raise ArtifactError(f"hero {hero_id} item {item_id} has impossible counts")
-    adoption = _required_float(document.get("adoption"), "adoption", maximum=1.0)
-    outcome = _required_float(
+    adoption = _require_float(document.get("adoption"), "adoption", maximum=1.0)
+    outcome = _require_float(
         document.get("observed_outcome_rate"), "observed outcome", maximum=1.0
     )
     if not math.isclose(adoption, adopters / eligible, abs_tol=1e-9):
@@ -94,16 +98,18 @@ def _totals(document: dict[str, object], hero_id: int, item_id: int) -> _Totals:
     expected_outcome = wins / adopters if adopters else 0.0
     if not math.isclose(outcome, expected_outcome, abs_tol=1e-9):
         raise ArtifactError(f"hero {hero_id} item {item_id} outcome is inconsistent")
-    return _Totals(adopters, eligible, purchase_events, wins, adoption, outcome)
+    return _ItemOutcomeTotals(
+        adopters, eligible, purchase_events, wins, adoption, outcome
+    )
 
 
-def _quantiles(
+def _parse_purchase_quantiles(
     document: dict[str, object],
     *,
     prefix: str = "",
 ) -> tuple[float | None, float | None, float | None]:
     label_prefix = f"{prefix} " if prefix else ""
-    median = _optional_float(
+    median = _parse_optional_float(
         document.get(
             f"{prefix}_median_valid_buy_net_worth"
             if prefix
@@ -111,18 +117,18 @@ def _quantiles(
         ),
         f"{label_prefix}median buy net worth",
     )
-    q25 = _optional_float(
+    q25 = _parse_optional_float(
         document.get(f"{prefix}_buy_net_worth_q25" if prefix else "buy_net_worth_q25"),
         f"{label_prefix}buy net worth q25",
     )
-    q75 = _optional_float(
+    q75 = _parse_optional_float(
         document.get(f"{prefix}_buy_net_worth_q75" if prefix else "buy_net_worth_q75"),
         f"{label_prefix}buy net worth q75",
     )
     return median, q25, q75
 
 
-def _valid_quantiles(
+def _are_valid_purchase_quantiles(
     median: float | None,
     q25: float | None,
     q75: float | None,
@@ -134,32 +140,32 @@ def _valid_quantiles(
     return q25 <= median <= q75
 
 
-def _base_quantiles(
+def _parse_base_purchase_quantiles(
     document: dict[str, object], hero_id: int, item_id: int
 ) -> tuple[float | None, float | None, float | None]:
-    median, q25, q75 = _quantiles(document)
-    if not _valid_quantiles(median, q25, q75):
+    median, q25, q75 = _parse_purchase_quantiles(document)
+    if not _are_valid_purchase_quantiles(median, q25, q75):
         raise ArtifactError(
             f"hero {hero_id} item {item_id} has invalid net-worth quantiles"
         )
     return median, q25, q75
 
 
-def _fold_adoption(
+def _parse_fold_adoption(
     document: dict[str, object], hero_id: int, item_id: int
 ) -> tuple[dict[str, tuple[int, int]], dict[str, float]]:
     counts: dict[str, tuple[int, int]] = {}
     adoption: dict[str, float] = {}
     for fold in _FOLDS:
-        adopters = _required_int(
+        adopters = _require_integer(
             document.get(f"{fold}_adopter_matches"), f"{fold} adopter matches"
         )
-        eligible = _required_int(
+        eligible = _require_integer(
             document.get(f"{fold}_eligible_player_matches"),
             f"{fold} eligible player matches",
             minimum=1 if fold == "training" else 0,
         )
-        rate = _required_float(
+        rate = _require_float(
             document.get(f"{fold}_adoption"), f"{fold} adoption", maximum=1.0
         )
         expected = adopters / eligible if eligible else 0.0
@@ -172,22 +178,22 @@ def _fold_adoption(
     return counts, adoption
 
 
-def _selection_counts(
+def _parse_selection_counts(
     document: dict[str, object],
     hero_id: int,
     item_id: int,
-    totals: _Totals,
+    totals: _ItemOutcomeTotals,
     folds: dict[str, tuple[int, int]],
 ) -> tuple[int, int, float]:
-    adopters = _required_int(
+    adopters = _require_integer(
         document.get("selection_adopter_matches"), "selection adopter matches"
     )
-    eligible = _required_int(
+    eligible = _require_integer(
         document.get("selection_eligible_player_matches"),
         "selection eligible player matches",
         minimum=1,
     )
-    adoption = _required_float(
+    adoption = _require_float(
         document.get("selection_adoption"), "selection adoption", maximum=1.0
     )
     expected_adopters = folds["training"][0] + folds["validation"][0]
@@ -206,7 +212,7 @@ def _selection_counts(
     return adopters, eligible, adoption
 
 
-def _selection_window(
+def _parse_selection_window(
     document: dict[str, object],
     hero_id: int,
     item_id: int,
@@ -214,16 +220,16 @@ def _selection_window(
     adopters: int,
     eligible: int,
     adoption: float,
-) -> _Selection:
-    buy_time = _optional_float(
+) -> _ItemSelectionEvidence:
+    buy_time = _parse_optional_float(
         document.get("selection_median_buy_time_s"), "selection median buy time"
     )
-    median, q25, q75 = _quantiles(document, prefix="selection")
-    observations = _required_int(
+    median, q25, q75 = _parse_purchase_quantiles(document, prefix="selection")
+    observations = _require_integer(
         document.get("selection_valid_buy_net_worth_observations"),
         "selection valid buy net worth observations",
     )
-    share = _required_float(
+    share = _require_float(
         document.get("selection_valid_buy_net_worth_share"),
         "selection valid buy net worth share",
         maximum=1.0,
@@ -234,13 +240,13 @@ def _selection_window(
         or observations > adopters
         or not math.isclose(share, expected_share, abs_tol=1e-9)
         or (median is None) != (observations == 0)
-        or not _valid_quantiles(median, q25, q75)
+        or not _are_valid_purchase_quantiles(median, q25, q75)
     )
     if invalid:
         raise ArtifactError(
             f"hero {hero_id} item {item_id} has invalid selection timing evidence"
         )
-    return _Selection(
+    return _ItemSelectionEvidence(
         adopters,
         eligible,
         adoption,
@@ -253,7 +259,7 @@ def _selection_window(
     )
 
 
-def _fold_windows(
+def _parse_fold_windows(
     document: dict[str, object],
     hero_id: int,
     item_id: int,
@@ -262,15 +268,15 @@ def _fold_windows(
 ) -> dict[str, tuple[int, float | None, float | None]]:
     windows: dict[str, tuple[int, float | None, float | None]] = {}
     for fold in ("training", "validation"):
-        observations = _required_int(
+        observations = _require_integer(
             document.get(f"{fold}_valid_buy_net_worth_observations"),
             f"{fold} valid buy net worth observations",
         )
-        lower = _optional_float(
+        lower = _parse_optional_float(
             document.get(f"{fold}_buy_net_worth_q25"),
             f"{fold} buy net worth q25",
         )
-        upper = _optional_float(
+        upper = _parse_optional_float(
             document.get(f"{fold}_buy_net_worth_q75"),
             f"{fold} buy net worth q75",
         )
@@ -292,21 +298,23 @@ def _fold_windows(
     return windows
 
 
-def _imbue(document: dict[str, object], hero_id: int, item_id: int) -> _Imbue:
+def _parse_imbue_evidence(
+    document: dict[str, object], hero_id: int, item_id: int
+) -> _ItemImbueEvidence:
     raw_target_id = document.get("imbue_target_ability_id")
     target_id = (
         None
         if raw_target_id is None
-        else _required_int(raw_target_id, "imbue target ability id", minimum=1)
+        else _require_integer(raw_target_id, "imbue target ability id", minimum=1)
     )
     raw_target = document.get("imbue_target_ability")
-    matches = _required_int(
+    matches = _require_integer(
         document.get("imbue_target_matches"), "imbue target matches"
     )
-    observations = _required_int(
+    observations = _require_integer(
         document.get("imbue_observations"), "imbue observations"
     )
-    share = _required_float(
+    share = _require_float(
         document.get("imbue_target_share"), "imbue target share", maximum=1.0
     )
     if target_id is None:
@@ -314,7 +322,7 @@ def _imbue(document: dict[str, object], hero_id: int, item_id: int) -> _Imbue:
             raise ArtifactError(
                 f"hero {hero_id} item {item_id} has invalid imbue evidence"
             )
-        return _Imbue(None, None, matches, observations, share)
+        return _ItemImbueEvidence(None, None, matches, observations, share)
     valid_target = isinstance(raw_target, str) and bool(raw_target.strip())
     valid_rate = observations > 0 and math.isclose(
         share, matches / observations, abs_tol=1e-9
@@ -327,19 +335,25 @@ def _imbue(document: dict[str, object], hero_id: int, item_id: int) -> _Imbue:
         or not valid_rate
     ):
         raise ArtifactError(f"hero {hero_id} item {item_id} has invalid imbue evidence")
-    return _Imbue(target_id, str(raw_target).strip(), matches, observations, share)
+    return _ItemImbueEvidence(
+        target_id, str(raw_target).strip(), matches, observations, share
+    )
 
 
-def _item(value: object, hero_id: int) -> ItemEvidence:
-    document = _document(value, f"hero {hero_id} has a malformed item evidence row")
-    identity = _identity(document, hero_id)
-    totals = _totals(document, hero_id, identity.item_id)
-    median, q25, q75 = _base_quantiles(document, hero_id, identity.item_id)
-    folds, fold_adoption = _fold_adoption(document, hero_id, identity.item_id)
-    selection_counts = _selection_counts(
+def _parse_item_evidence(value: object, hero_id: int) -> ItemEvidence:
+    document = _require_evidence_document(
+        value, f"hero {hero_id} has a malformed item evidence row"
+    )
+    identity = _parse_item_identity(document, hero_id)
+    totals = _parse_item_totals(document, hero_id, identity.item_id)
+    median, q25, q75 = _parse_base_purchase_quantiles(
+        document, hero_id, identity.item_id
+    )
+    folds, fold_adoption = _parse_fold_adoption(document, hero_id, identity.item_id)
+    selection_counts = _parse_selection_counts(
         document, hero_id, identity.item_id, totals, folds
     )
-    selection = _selection_window(
+    selection = _parse_selection_window(
         document,
         hero_id,
         identity.item_id,
@@ -347,34 +361,34 @@ def _item(value: object, hero_id: int) -> ItemEvidence:
         eligible=selection_counts[1],
         adoption=selection_counts[2],
     )
-    windows = _fold_windows(
+    windows = _parse_fold_windows(
         document,
         hero_id,
         identity.item_id,
         folds,
         selection.valid_observations,
     )
-    imbue = _imbue(document, hero_id, identity.item_id)
+    imbue = _parse_imbue_evidence(document, hero_id, identity.item_id)
     return ItemEvidence(
         item_id=identity.item_id,
         item=identity.name,
         tier=identity.tier,
-        cost=_required_int(document.get("cost"), "item cost"),
+        cost=_require_integer(document.get("cost"), "item cost"),
         slot=identity.slot,
-        active=_required_bool(document.get("active"), "active-item flag"),
+        active=_require_boolean(document.get("active"), "active-item flag"),
         adopter_matches=totals.adopters,
         eligible_player_matches=totals.eligible,
         purchase_events=totals.purchase_events,
         wins=totals.wins,
         adoption=totals.adoption,
         observed_outcome_rate=totals.outcome,
-        median_buy_time_s=_required_float(
+        median_buy_time_s=_require_float(
             document.get("median_buy_time_s"), "median buy time"
         ),
         median_valid_buy_net_worth=median,
         buy_net_worth_q25=q25,
         buy_net_worth_q75=q75,
-        valid_buy_net_worth_share=_required_float(
+        valid_buy_net_worth_share=_require_float(
             document.get("valid_buy_net_worth_share"),
             "valid buy net worth share",
             maximum=1.0,

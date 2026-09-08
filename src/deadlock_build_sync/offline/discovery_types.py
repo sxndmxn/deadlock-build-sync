@@ -1,26 +1,26 @@
-"""Closed internal values for discovery, nomination, and pool evidence."""
+"""Typed records for core discovery, build selection, and item pool evidence."""
 
 from __future__ import annotations
 
 from typing import TypedDict
 
-type PatternCounts = dict[tuple[int, ...], int]
-type LandmarkRow = tuple[
+type ItemsetSupportCounts = dict[tuple[int, ...], int]
+type HeroLandmarkRow = tuple[
     int, int, str, bool, float | None, float | None, int, float | None, list[int] | None
 ]
-type PurchaseRow = tuple[int, int, int, int, float | None, int | None]
+type FirstPurchaseRow = tuple[int, int, int, int, float | None, int | None]
 
 
-class CatalogAsset(TypedDict):
+class DiscoveryItemAsset(TypedDict):
     name: str
     cost: int
     ancestors: list[int]
 
 
-type Catalog = dict[str, CatalogAsset]
+type DiscoveryItemCatalog = dict[str, DiscoveryItemAsset]
 
 
-class Adjusted(TypedDict, total=False):
+class AdjustedOutcomeEstimate(TypedDict, total=False):
     core_overlap: int
     overlap_share: float
     strata: int
@@ -43,7 +43,7 @@ class CoreEvaluation(TypedDict, total=False):
     joint_lift: float
     win_lower_95: float
     win_p_greater_half: float
-    adjusted: Adjusted
+    adjusted: AdjustedOutcomeEstimate
     adjusted_lower_family: float | None
 
 
@@ -54,7 +54,7 @@ class OrderEvidence(TypedDict):
     passes: bool
 
 
-class Order(TypedDict, total=False):
+class SelectedPurchaseOrder(TypedDict, total=False):
     method: str
     order: list[int]
     ranking_score: int
@@ -67,7 +67,7 @@ class Order(TypedDict, total=False):
     reason: str | None
 
 
-class Candidate(TypedDict, total=False):
+class CoreDiscoveryCandidate(TypedDict, total=False):
     items: list[int]
     names: list[str]
     cost: int
@@ -81,29 +81,29 @@ class Candidate(TypedDict, total=False):
     selection_rejections: list[str]
 
 
-class Grouping(TypedDict):
+class CoreGroupingResult(TypedDict):
     groups: list[list[int]]
     seeds: list[dict[str, int | list[int]]]
     edges: list[dict[str, int | float]]
     candidate_order: list[list[int]]
 
 
-class Mining(TypedDict):
-    candidates: list[Candidate]
+class CoreMiningResult(TypedDict):
+    candidates: list[CoreDiscoveryCandidate]
     sizes: dict[str, dict[str, int]]
 
 
 class DiscoveryReport(TypedDict):
     sizes: dict[str, dict[str, int]]
-    seeds: list[Candidate]
-    candidates: list[Candidate]
-    grouping: Grouping
+    seeds: list[CoreDiscoveryCandidate]
+    candidates: list[CoreDiscoveryCandidate]
+    grouping: CoreGroupingResult
     mine_seconds: float
     group_seconds: float
     selected: dict[str, list[int]]
 
 
-class PoolStat(TypedDict):
+class ItemPoolStatistics(TypedDict):
     buyers: int
     adoption: float
     time_seconds_q25_q50_q75: list[float]
@@ -111,13 +111,13 @@ class PoolStat(TypedDict):
     net_worth_q25_q50_q75: list[float] | None
 
 
-class PoolEvidence(TypedDict):
+class ItemPoolEvidence(TypedDict):
     population: int
-    items: dict[int, PoolStat]
+    items: dict[int, ItemPoolStatistics]
     histories: dict[tuple[int, int], dict[int, float]]
 
 
-class Placement(TypedDict):
+class PurchasePlacementEvidence(TypedDict):
     after_step: int | None
     observed_after_step: int
     support: int
@@ -127,7 +127,7 @@ class Placement(TypedDict):
     basis: str
 
 
-class FrozenGuide(TypedDict, total=False):
+class FrozenPurchaseGuide(TypedDict, total=False):
     timing_status: str
     ready: bool
     reason: str | None
@@ -135,11 +135,11 @@ class FrozenGuide(TypedDict, total=False):
     pool: dict[str, list[int]]
     discovery_buyers: int
     bounds: dict[str, list[float]]
-    pool_statistics: dict[str, PoolStat]
+    pool_statistics: dict[str, ItemPoolStatistics]
     purchase_timing: dict[str, object]
 
 
-class Tactics(TypedDict):
+class MechanicOverlapEvidence(TypedDict):
     supported_focus: bool
     focuses: list[dict[str, object]]
     item_evidence: dict[str, dict[str, dict[str, object]]]
@@ -147,14 +147,14 @@ class Tactics(TypedDict):
     limitation: str
 
 
-class Nomination(Candidate, total=False):
+class NominatedCoreBuild(CoreDiscoveryCandidate, total=False):
     evidence_status: str
     evidence_limitations: list[str]
     hero_id: int
     selection_rank: int
-    path: Order
-    tactics: Tactics
-    guide: FrozenGuide
+    path: SelectedPurchaseOrder
+    tactics: MechanicOverlapEvidence
+    guide: FrozenPurchaseGuide
     validation: CoreEvaluation
     order_validation: OrderEvidence
     hypotheses: int
@@ -164,9 +164,9 @@ class Nomination(Candidate, total=False):
     frozen_sha256: str
 
 
-class FrozenHero(TypedDict):
+class FrozenHeroDiscovery(TypedDict):
     cohort: dict[str, object]
-    rows: list[Nomination]
+    rows: list[NominatedCoreBuild]
     candidate_count: int
-    grouping: Grouping
-    candidates: list[Candidate]
+    grouping: CoreGroupingResult
+    candidates: list[CoreDiscoveryCandidate]

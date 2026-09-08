@@ -94,7 +94,7 @@ def _validate_inventory(state: DecisionState, graph: ItemGraph) -> InventoryStat
     return inventory
 
 
-def _next_purchase(
+def _find_next_component_purchase(
     target_item_id: int,
     inventory: InventoryState,
     graph: ItemGraph,
@@ -119,7 +119,7 @@ def _next_purchase(
     return item_id, graph.incremental_cash_cost(item_id, inventory.owned)
 
 
-def _observed_threats(
+def _collect_observed_threats(
     state: DecisionState,
     assets: list[dict[str, object]],
     graph: ItemGraph,
@@ -138,7 +138,7 @@ def _observed_threats(
     return frozenset((*state.threats, *inferred))
 
 
-def _decision_mechanics(
+def _validate_decision_mechanics(
     state: DecisionState,
     assets: list[dict[str, object]],
 ) -> tuple[ItemGraph, InventoryState]:
@@ -149,7 +149,7 @@ def _decision_mechanics(
         raise RecommendationError(str(error)) from error
 
 
-def _evaluation_state(
+def _build_evaluation_state(
     state: DecisionState,
     threats: frozenset[str],
     inventory: InventoryState,
@@ -180,7 +180,7 @@ def _evaluation_state(
     )
 
 
-def _required_core_complete(policy: BuildPolicy, inventory: InventoryState) -> bool:
+def _is_required_core_complete(policy: BuildPolicy, inventory: InventoryState) -> bool:
     required = {
         node.item_id
         for node in policy.nodes
@@ -189,11 +189,11 @@ def _required_core_complete(policy: BuildPolicy, inventory: InventoryState) -> b
     return bool(required) and required <= set(inventory.owned)
 
 
-def _policy_node(policy: BuildPolicy, node_id: str) -> PolicyNode:
+def _find_policy_node(policy: BuildPolicy, node_id: str) -> PolicyNode:
     return next(node for node in policy.nodes if node.node_id == node_id)
 
 
-def _counter_card(policy: BuildPolicy, node: PolicyNode) -> CounterCard | None:
+def _find_counter_card(policy: BuildPolicy, node: PolicyNode) -> CounterCard | None:
     matches = [
         card
         for card in policy.counter_cards
@@ -218,7 +218,7 @@ def _recommend_policy_node(
             policy.policy_id,
             reason=f"policy action {node.kind.value} is not executable by recommend",
         )
-    purchase = _next_purchase(node.item_id, inventory, graph)
+    purchase = _find_next_component_purchase(node.item_id, inventory, graph)
     if purchase is None:
         return Recommendation(
             RecommendationAction.ABSTAIN,
@@ -231,7 +231,7 @@ def _recommend_policy_node(
         (claim for claim in policy.evidence if claim.claim_id == node.evidence_ref),
         None,
     )
-    card = _counter_card(policy, node)
+    card = _find_counter_card(policy, node)
     support = None
     if claim is not None:
         support = claim.numerator if claim.numerator is not None else claim.support
@@ -278,7 +278,7 @@ def recommend(
         raise RecommendationError("decision state hero is absent from build evidence")
     if policy.hero_id != state.hero_id:
         raise RecommendationError("decision state hero differs from the build policy")
-    graph, inventory = _decision_mechanics(state, assets)
+    graph, inventory = _validate_decision_mechanics(state, assets)
     unknown_threats = sorted(set(state.threats) - THREAT_CLASSES)
     if unknown_threats:
         return Recommendation(
@@ -288,7 +288,7 @@ def recommend(
             reason="unknown threat classes: " + ", ".join(unknown_threats),
         )
     try:
-        observed_threats = _observed_threats(state, assets, graph)
+        observed_threats = _collect_observed_threats(state, assets, graph)
     except MechanicsError as error:
         raise RecommendationError(str(error)) from error
     builds = catalog.hero_builds.get(state.hero_id, (catalog.heroes[state.hero_id],))
@@ -300,7 +300,7 @@ def recommend(
         and evidence.discovery.get("method") == "eclat_leiden_pairwise"
     ):
         return recommend_guide(evidence, policy, state, assets)
-    if _required_core_complete(policy, inventory):
+    if _is_required_core_complete(policy, inventory):
         return Recommendation(
             RecommendationAction.END,
             state.hero_id,
@@ -309,7 +309,7 @@ def recommend(
         )
     decision = next_policy_decision(
         policy,
-        _evaluation_state(state, observed_threats, inventory),
+        _build_evaluation_state(state, observed_threats, inventory),
     )
     if decision.abstention is not None:
         return Recommendation(
@@ -329,7 +329,7 @@ def recommend(
         return _recommend_policy_node(
             policy,
             state,
-            _policy_node(policy, decision.node_id),
+            _find_policy_node(policy, decision.node_id),
             inventory,
             graph,
         )

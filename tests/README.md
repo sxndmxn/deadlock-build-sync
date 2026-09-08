@@ -1,8 +1,9 @@
 # Test maintenance
 
-Test files contain checks for a specific product area. Shared setup belongs in
-the fixture modules below. Import shared data from these modules; do not import
-one test file from another.
+Each test file checks a specific product area.
+The fixture modules below contain shared test data constructors.
+Import shared test data constructors from these modules.
+Do not import one test file from another.
 
 | Test inputs | Fixture module |
 | --- | --- |
@@ -22,7 +23,7 @@ when no other file needs it. Fixture functions must return fresh mutable data on
 each call. Use `dataclasses.replace` to change selected fields in a typed record.
 
 For evidence validation, use `write_fingerprinted_evidence` after an intentional
-field change. For fingerprint rejection tests, use `_write` to preserve the
+field change. For fingerprint rejection tests, use `write_evidence_document` to preserve the
 invalid fingerprint. Keep both paths distinct so setup cannot repair the error
 under test.
 
@@ -37,5 +38,5 @@ uv run pytest -W error tests/test_build_evidence_validation.py
 ```
 
 Run the complete [fast gate](../docs/quality-gates.md#fast-local-gate) before
-handoff. When test structure changes, compare covered statements and branches
+delivery. When test structure changes, compare covered statements and branches
 with the previous run. A lower test count alone does not prove an improvement.

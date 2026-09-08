@@ -56,7 +56,7 @@ class _HeroInputs:
     )
 
 
-def _duration_distribution(
+def _summarize_duration_distribution(
     heroes: list[dict[str, object]],
     curves: dict[int, tuple[HeroDurationStat, ...]],
 ) -> dict[str, dict[str, float | int]]:
@@ -96,7 +96,7 @@ def select_heroes(
     return matches
 
 
-def _rank_identity(catalog: RankCatalog, rank_range: RankRange) -> str:
+def _format_rank_identity(catalog: RankCatalog, rank_range: RankRange) -> str:
     minimum = rank_range.minimum
     maximum = rank_range.maximum
     if minimum == maximum:
@@ -107,7 +107,7 @@ def _rank_identity(catalog: RankCatalog, rank_range: RankRange) -> str:
     )
 
 
-def _cohort(manifest: SnapshotManifest) -> dict[str, object]:
+def _build_cohort_record(manifest: SnapshotManifest) -> dict[str, object]:
     return {
         "match_mode": manifest.match_mode.value,
         "game_mode": manifest.game_mode,

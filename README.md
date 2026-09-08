@@ -13,13 +13,11 @@ Design evidence and implementation contracts:
 - [Build-policy requirements](docs/deadlock-build-policy-requirements.md) — staged normative requirements, acceptance criteria, and verification evidence.
 - [Build usage audit](docs/deadlock-build-usage-audit.md) — live-client findings and the five linked implementation phase briefs.
 
-Every run resolves one client version, freezes one as-of cutoff, and records
-Ranked or Unranked as an explicit cohort identity. Exact response bytes, patch
-identity, independent mechanics/matchmaking/map/telemetry epochs, rank-label
-mapping, route grain, and fallback behavior are captured in a reusable snapshot
-manifest.
+Each run uses one client version and one fixed cutoff time.
+It records Ranked or Unranked as the cohort identity.
+The snapshot manifest records exact response bytes, patch identity, independent epochs, rank labels, API record units, and fallback behavior.
 
-The rich output is a typed, snapshot-bound policy graph:
+The output is a typed policy graph with a snapshot identity:
 
 - A mechanically legal level/AP ability timeline selected from equivalent reached
   legal states, with support reported at each decision. Price tiers are never treated
@@ -44,13 +42,14 @@ The rich output is a typed, snapshot-bound policy graph:
   visible. Buyer win rates describe the data; they do not rank pool items.
 - Automatic choices need separate evidence at the current purchase checkpoint.
   Failed branch checks leave the manual options available.
-- Evidence objects that name their actual unit and claim class. Item adoption uses
-  unique first ownership over eligible player-matches; adopter outcome rate remains
-  descriptive—not an item effect or causal win-rate improvement.
+- Evidence objects name their unit and claim class.
+  Item adoption divides unique first ownership records by eligible player-match records.
+  Adopter outcome rates describe observed results.
+  They do not measure causal effects on win rates.
 - Lane and whole-enemy-team matchup scopes kept separate, with mechanics-first
   counters and structured abstention when support or mechanics are inadequate.
-- An ending-duration profile that describes games ending in each phase. It is not
-  a live power curve and never justifies stalling an available close.
+- An ending-duration profile describes games that end in each phase.
+  It does not measure live power or support delays when a team can end the game.
 
 Steam receives the validated component path as `CORE 1`, `CORE 2`, and later
 steps. These are the only automatic Queue rows. `OPTIONAL`, `PICK ONE`, and
@@ -121,18 +120,27 @@ player-match analysis pipeline. Its default location is
 incompatible patch, client, asset, rank-label, rank-range, mode, epoch, cutoff, or
 roster identities; it never falls back to aggregate purchase-event rankings.
 
-The offline producer is part of this repository, while its data-science dependencies
-remain optional. Install them only on a machine that refreshes evidence:
+The repository includes the offline producer.
+Its analysis dependencies are optional.
+Install them on a machine that refreshes evidence:
 
 ```bash
 uv tool install '.[analysis]'
 deadlock-build-sync refresh-evidence
 ```
 
-`refresh-evidence` downloads and analyzes the frozen public cohort, writes its run
-under `$XDG_STATE_HOME/deadlock-build-sync/offline`, then atomically hands one
-validated `build-evidence.json` to the artifact directory. It never discovers,
-reads, or writes Steam data.
+`refresh-evidence` downloads and analyzes the fixed public cohort.
+It uses eight concurrent hero worker processes by default.
+Use `--workers N` to change the worker count.
+Each worker gives DuckDB a 512 MiB memory limit.
+After discovery completes, `--resume --run-id ID` validates the saved candidate set.
+Supply the original rank options when you resume a run.
+The command verifies candidate fingerprints and guide groups before it resumes validation.
+Within each hero, identical statistical inputs reuse their model fits.
+The cache includes all input values and both item IDs.
+It writes its run under `$XDG_STATE_HOME/deadlock-build-sync/offline`.
+It atomically installs a validated `build-evidence.json` in the artifact directory.
+It does not discover, read, or write Steam data.
 
 Steam discovery supports native (`~/.local/share/Steam`), legacy
 (`~/.steam/steam` and `~/.steam/root`), Flatpak, and Snap installations. A
@@ -300,16 +308,17 @@ core-completion fallback are archived in
 [Git history](tools/comparisons/README.md). Analysis dependencies are optional;
 rendering and installation do not load them.
 
-The normal installation workflow remains one command. Close Deadlock, then run:
+The normal installation workflow uses one command.
+Close Deadlock before you run it:
 
 ```bash
 uv run deadlock-build-sync sync
 ```
 
-`sync` discovers the local Steam account, generates every eligible hero from one
-coherent snapshot, writes one deterministic build-level description per path,
-validates every artifact, backs up the cache, and installs the private builds. Item
-statistics, imbue targets, categories, tags, and titles stay deterministic. Titles
+`sync` discovers the local Steam account.
+It generates every eligible hero from one snapshot and writes one deterministic description per path.
+It validates every artifact, creates a cache backup, and installs the private builds.
+Item statistics, imbue targets, categories, tags, and titles stay deterministic. Titles
 come from the CORE item mix, so an ability-path label cannot misname a weapon-heavy
 build. An all-hero run refuses installation if any pinned
 eligible hero lacks a complete policy. Reusable artifacts live under
@@ -501,7 +510,7 @@ multiple accounts.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow. Report
 bugs and request features through [GitHub Issues](https://github.com/sxndmxn/deadlock-build-sync/issues).
-Please report security vulnerabilities privately as described in
+Report security vulnerabilities privately as described in
 [SECURITY.md](SECURITY.md).
 
 ## License and affiliation

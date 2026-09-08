@@ -13,7 +13,7 @@ from deadlock_build_sync.evaluation import (
 )
 
 
-def layers(*, failed: str | None = None) -> tuple[EvaluationLayer, ...]:
+def make_evaluation_layers(*, failed: str | None = None) -> tuple[EvaluationLayer, ...]:
     return tuple(
         EvaluationLayer(
             name,
@@ -25,7 +25,7 @@ def layers(*, failed: str | None = None) -> tuple[EvaluationLayer, ...]:
     )
 
 
-def temporal_examples() -> list[TemporalExample]:
+def make_temporal_examples() -> list[TemporalExample]:
     return [
         TemporalExample(1, 100, 90, "m1", "p1", "core"),
         TemporalExample(1, 100, 90, "m2", "p2", "core"),
@@ -34,7 +34,7 @@ def temporal_examples() -> list[TemporalExample]:
     ]
 
 
-def prediction(
+def make_prediction(
     probability: float,
     outcome: int,
     *,
@@ -52,7 +52,7 @@ def prediction(
     )
 
 
-def target_trial() -> TargetTrialSpec:
+def make_target_trial() -> TargetTrialSpec:
     return TargetTrialSpec(
         name="first Tier II decision",
         eligibility="eligible ranked player-match at the decision landmark",
@@ -68,7 +68,7 @@ def target_trial() -> TargetTrialSpec:
     )
 
 
-def logged(action: str, outcome: float) -> LoggedDecision:
+def make_logged_decision(action: str, outcome: float) -> LoggedDecision:
     return LoggedDecision(
         candidate_slate=("core", "counter"),
         action=action,
@@ -79,7 +79,7 @@ def logged(action: str, outcome: float) -> LoggedDecision:
     )
 
 
-def event() -> RecommendationEvent:
+def make_recommendation_event() -> RecommendationEvent:
     return RecommendationEvent(
         decision_id="decision-1",
         snapshot_id="snapshot",
@@ -99,7 +99,7 @@ def event() -> RecommendationEvent:
     )
 
 
-def monitor() -> MonitoringSnapshot:
+def make_monitoring_snapshot() -> MonitoringSnapshot:
     return MonitoringSnapshot(
         snapshot_age_s=100,
         invalid_state_rate=0.0,

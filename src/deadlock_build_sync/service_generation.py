@@ -27,14 +27,14 @@ if TYPE_CHECKING:
 from .service_inputs import (
     _collect_hero_inputs,
     _GenerationEvidence,
-    _matchups_by_hero,
+    _group_matchups_by_hero,
 )
 from .service_projection import _project_hero_guides, _ProjectionEnvironment
 from .service_types import (
     GeneratedGuides,
     GuideError,
-    _duration_distribution,
-    _rank_identity,
+    _format_rank_identity,
+    _summarize_duration_distribution,
     select_heroes,
 )
 
@@ -97,15 +97,15 @@ def generate_guides(
     )
     analysis_start = api.analysis_start_timestamp(patch)
     duration_curves = api.hero_stats_by_duration(min_unix_timestamp=analysis_start)
-    duration_distribution = _duration_distribution(heroes, duration_curves)
-    same_lane_matchups = _matchups_by_hero(
+    duration_distribution = _summarize_duration_distribution(heroes, duration_curves)
+    same_lane_matchups = _group_matchups_by_hero(
         api.hero_counter_stats(
             min_unix_timestamp=analysis_start,
             same_lane=True,
         ),
         scope="same_lane",
     )
-    whole_team_matchups = _matchups_by_hero(
+    whole_team_matchups = _group_matchups_by_hero(
         api.hero_counter_stats(
             min_unix_timestamp=analysis_start,
             same_lane=False,
@@ -134,7 +134,7 @@ def generate_guides(
         rank_catalog=rank_catalog,
         build_tags_sha256=build_tag_catalog.sha256,
     )
-    rank_identity = _rank_identity(rank_catalog, api.rank_range)
+    rank_identity = _format_rank_identity(rank_catalog, api.rank_range)
     projection_environment = _ProjectionEnvironment(
         assets,
         manifest,

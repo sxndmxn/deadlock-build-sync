@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from .guide_groups import VARIANT_RULE, variant_changes
-from .purchase_categories import choice_instruction, conditional_instruction
+from .guide_groups import VARIANT_RULE, describe_variant_changes
+from .purchase_categories import (
+    format_choice_instruction,
+    format_conditional_instruction,
+)
 
 if TYPE_CHECKING:
     from .purchase_guidance_types import (
@@ -16,23 +19,29 @@ if TYPE_CHECKING:
     from .purchase_types import PurchaseGuide
 
 
-def _route(guidance: PurchaseGuidance, items: tuple[int, ...]) -> str:
+def _format_purchase_route(guidance: PurchaseGuidance, items: tuple[int, ...]) -> str:
     return " → ".join(guidance.names[item] for item in items)
 
 
-def _option(guidance: PurchaseGuidance, card: PurchaseChoice) -> str:
+def _render_purchase_option(guidance: PurchaseGuidance, card: PurchaseChoice) -> str:
     path = guidance.default_path.actions
     next_item = (
         path[card.after_step].name
         if card.after_step is not None and card.after_step < len(path)
         else None
     )
-    title = ("UPGRADE " if len(card.route) > 1 else "") + _route(guidance, card.route)
+    title = ("UPGRADE " if len(card.route) > 1 else "") + _format_purchase_route(
+        guidance, card.route
+    )
     line = f"- **{title}** — +{card.extra_path_cost:,} souls; " + (
         f"then {next_item}." if next_item else "after the core."
     )
     if card.rebought_components:
-        line += " Includes another " + _route(guidance, card.rebought_components) + "."
+        line += (
+            " Includes another "
+            + _format_purchase_route(guidance, card.rebought_components)
+            + "."
+        )
     stages = [
         row
         for row in guidance.choices
@@ -53,22 +62,24 @@ def _option(guidance: PurchaseGuidance, card: PurchaseChoice) -> str:
         + " "
         + card.purpose.trigger
         + "."
-        + conditional_instruction(guidance, card)
+        + format_conditional_instruction(guidance, card)
     )
 
 
-def _decision(guidance: PurchaseGuidance, decision: PurchaseDecision) -> list[str]:
+def _render_purchase_decision(
+    guidance: PurchaseGuidance, decision: PurchaseDecision
+) -> list[str]:
     cards = {card.item_id: card for card in guidance.choices}
     label = decision.kind + (" UPGRADE" if decision.upgrade_fork else "")
     return [
         f"**{label} — {decision.purpose}**",
         "",
-        *(_option(guidance, cards[item]) for item in decision.options),
+        *(_render_purchase_option(guidance, cards[item]) for item in decision.options),
         "",
     ]
 
 
-def _unplaced(guidance: PurchaseGuidance) -> list[str]:
+def _render_unplaced_choices(guidance: PurchaseGuidance) -> list[str]:
     lines: list[str] = []
     for card in guidance.choices:
         if card.after_step is None:
@@ -85,13 +96,13 @@ def _unplaced(guidance: PurchaseGuidance) -> list[str]:
     return ["## Timing unknown or purchase blocked", "", *lines, ""] if lines else []
 
 
-def _details(guidance: PurchaseGuidance) -> list[str]:
+def _render_purchase_details(guidance: PurchaseGuidance) -> list[str]:
     lines = ["## Choice details", ""]
     for card in guidance.choices:
         lines.extend([
             f"### {card.name}",
             "",
-            choice_instruction(guidance, card),
+            format_choice_instruction(guidance, card),
             f"Timing: {card.timing_basis}.",
             f"Mechanic source: {card.purpose.basis}; {card.purpose.evidence or 'unclassified'}.",
         ])
@@ -99,17 +110,19 @@ def _details(guidance: PurchaseGuidance) -> list[str]:
             if card.upgrades_core:
                 lines.append(
                     "UPGRADE CORE: "
-                    + _route(guidance, card.upgrades_core)
+                    + _format_purchase_route(guidance, card.upgrades_core)
                     + " → "
                     + card.name
                     + "."
                 )
             lines.extend([
                 "Path: "
-                + _route(guidance, tuple(step.item_id for step in card.plan.actions))
+                + _format_purchase_route(
+                    guidance, tuple(step.item_id for step in card.plan.actions)
+                )
                 + ".",
                 "Ending inventory: "
-                + _route(guidance, card.plan.final_inventory)
+                + _format_purchase_route(guidance, card.plan.final_inventory)
                 + ".",
                 f"Extra path cost: {card.extra_path_cost:,} souls.",
             ])
@@ -117,7 +130,7 @@ def _details(guidance: PurchaseGuidance) -> list[str]:
     return lines
 
 
-def build_markdown(guide: PurchaseGuide, *, details: bool = False) -> str:
+def render_purchase_markdown(guide: PurchaseGuide, *, details: bool = False) -> str:
     """Render the exact admitted guide without a separate research runtime.
 
     Returns:
@@ -131,7 +144,7 @@ def build_markdown(guide: PurchaseGuide, *, details: bool = False) -> str:
     if guidance is None:
         raise ValueError("Build has no purchase guidance; generate it with build")
     if not details and any(category.compact for category in guide.rendered_categories):
-        return _compact_markdown(guide, guidance)
+        return _render_compact_markdown(guide, guidance)
     lines = [
         f"# {guide.hero_name} — {guide.build_archetype}",
         "",
@@ -143,7 +156,7 @@ def build_markdown(guide: PurchaseGuide, *, details: bool = False) -> str:
         "Core prices are incremental. Optional +cost includes components and rebuys. An upgrade consumes its component and credits its cost.",
         "",
     ]
-    lines.extend(_variant_markdown(guide))
+    lines.extend(_render_variant_markdown(guide))
     lines.extend(["## Purchase path and choices", ""])
     for index in range(len(guidance.default_path.actions) + 1):
         if index:
@@ -154,8 +167,8 @@ def build_markdown(guide: PurchaseGuide, *, details: bool = False) -> str:
             ])
         for decision in guidance.decisions:
             if decision.after_step == index:
-                lines.extend(_decision(guidance, decision))
-    lines.extend(_unplaced(guidance))
+                lines.extend(_render_purchase_decision(guidance, decision))
+    lines.extend(_render_unplaced_choices(guidance))
     if guide.core_alternatives:
         lines.extend(["## Optional core substitutions", ""])
         lines.extend(
@@ -179,7 +192,7 @@ def build_markdown(guide: PurchaseGuide, *, details: bool = False) -> str:
         for tier in range(1, 5)
     )
     if details:
-        lines.extend(["", *_details(guidance)])
+        lines.extend(["", *_render_purchase_details(guidance)])
     lines.extend([
         "",
         "Each choice keeps the core's upgrade lineages. Recalculate from actual inventory when you combine choices. Slots and active-item limits still apply.",
@@ -190,12 +203,13 @@ def build_markdown(guide: PurchaseGuide, *, details: bool = False) -> str:
     ])
     if details:
         lines.extend(
-            build_markdown(variant, details=True) for variant in guide.variant_guides
+            render_purchase_markdown(variant, details=True)
+            for variant in guide.variant_guides
         )
     return "\n".join(lines)
 
 
-def _variant_markdown(guide: PurchaseGuide) -> list[str]:
+def _render_variant_markdown(guide: PurchaseGuide) -> list[str]:
     if not guide.variant_guides:
         return []
     return [
@@ -205,14 +219,14 @@ def _variant_markdown(guide: PurchaseGuide) -> list[str]:
         VARIANT_RULE,
         "",
         *(
-            f"- **Variant {index}:** {variant_changes(guide, variant)}. {variant.core_target_cost:,} souls; {variant.evidence_summary.get('status', 'observed')}."
+            f"- **Variant {index}:** {describe_variant_changes(guide, variant)}. {variant.core_target_cost:,} souls; {variant.evidence_summary.get('status', 'observed')}."
             for index, variant in enumerate(guide.variant_guides, 1)
         ),
         "",
     ]
 
 
-def _compact_markdown(guide: PurchaseGuide, guidance: PurchaseGuidance) -> str:
+def _render_compact_markdown(guide: PurchaseGuide, guidance: PurchaseGuidance) -> str:
     lines = [
         f"# {guide.hero_name} — {guide.build_archetype}",
         "",

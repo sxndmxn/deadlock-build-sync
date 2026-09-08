@@ -12,11 +12,11 @@ from deadlock_build_sync.cache import (
     read_cache,
 )
 from tests.cache_fixtures import (
-    complete_guide,
-    install_complete,
-    isolated_location,
+    install_complete_guide,
+    make_complete_guide,
+    make_isolated_cache_location,
+    make_snapshot_manifest,
     set_deadlock_check,
-    snapshot_manifest,
 )
 
 if TYPE_CHECKING:
@@ -27,12 +27,12 @@ def test_install_refuses_if_deadlock_starts_at_mutation_boundary(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    location, original = isolated_location(tmp_path)
+    location, original = make_isolated_cache_location(tmp_path)
     states = iter((False, True))
     set_deadlock_check(monkeypatch, lambda: next(states))
 
     with pytest.raises(CacheError, match="started before replacement"):
-        install_complete(location, tmp_path / "state")
+        install_complete_guide(location, tmp_path / "state")
 
     assert read_cache(location.cache_path) == original
 
@@ -41,7 +41,7 @@ def test_install_restores_after_directory_fsync_failure(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    location, original = isolated_location(tmp_path)
+    location, original = make_isolated_cache_location(tmp_path)
     set_deadlock_check(monkeypatch, lambda: False)
     real_fsync_directory = cache_storage_module._fsync_directory
     target_fsync_calls = 0
@@ -57,7 +57,7 @@ def test_install_restores_after_directory_fsync_failure(
     monkeypatch.setattr(cache_storage_module, "_fsync_directory", inject_failure)
 
     with pytest.raises(CacheError, match="original cache was restored"):
-        install_complete(location, tmp_path / "state")
+        install_complete_guide(location, tmp_path / "state")
 
     assert read_cache(location.cache_path) == original
 
@@ -66,7 +66,7 @@ def test_out_of_scope_corruption_is_detected_and_restored(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    location, original = isolated_location(tmp_path)
+    location, original = make_isolated_cache_location(tmp_path)
     set_deadlock_check(monkeypatch, lambda: False)
     real_read_cache = cache_storage_module.read_cache
     calls = 0
@@ -82,7 +82,7 @@ def test_out_of_scope_corruption_is_detected_and_restored(
     monkeypatch.setattr(cache_storage_module, "read_cache", corrupt_candidate)
 
     with pytest.raises(CacheError, match="out-of-scope"):
-        install_complete(location, tmp_path / "state")
+        install_complete_guide(location, tmp_path / "state")
 
     assert real_read_cache(location.cache_path) == original
 
@@ -91,10 +91,10 @@ def test_all_hero_installation_refuses_missing_roster_member(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    location, original = isolated_location(tmp_path)
+    location, original = make_isolated_cache_location(tmp_path)
     set_deadlock_check(monkeypatch, lambda: False)
-    guides = [complete_guide()]
-    manifest = snapshot_manifest()
+    guides = [make_complete_guide()]
+    manifest = make_snapshot_manifest()
 
     with pytest.raises(CacheError, match="coverage mismatch"):
         install_guides(
@@ -117,7 +117,7 @@ def test_double_failure_reports_recoverable_backup_path(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    location, _ = isolated_location(tmp_path)
+    location, _ = make_isolated_cache_location(tmp_path)
     states = iter((False, True))
     set_deadlock_check(monkeypatch, lambda: next(states))
     monkeypatch.setattr(
@@ -127,4 +127,4 @@ def test_double_failure_reports_recoverable_backup_path(
     )
 
     with pytest.raises(CacheError, match=r"automatic restore failed.*backup is at"):
-        install_complete(location, tmp_path / "state")
+        install_complete_guide(location, tmp_path / "state")

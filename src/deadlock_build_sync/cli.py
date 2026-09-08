@@ -21,7 +21,7 @@ from .cache import (
 from .cli_build import write_build_guides
 from .cli_export import _run_export_context, _run_restore, _run_trace_summary
 from .cli_install import _run_install
-from .cli_parser import DEFAULT_NARRATIVE_PATH, build_parser, positive_int
+from .cli_parser import DEFAULT_NARRATIVE_PATH, build_parser, parse_positive_integer
 from .cli_quality import run_quality_report
 from .cli_recommend import _run_preview, _run_recommend
 from .cli_status import _run_status
@@ -29,17 +29,17 @@ from .cli_support import (
     _ARTIFACT_WRITE_STAGE,
     _BUILD_EVIDENCE_FILENAME,
     _POLICY_FILENAME,
-    _build_evidence_path,
     _describe_preview_guide,
-    _generate,
+    _discover_cache_location,
+    _generate_requested_guides,
     _install_and_record,
     _install_generated_guides,
-    _InstallSpec,
-    _location,
+    _InstallationParameters,
     _print_cohort,
     _print_install_result,
     _record_fresh_evidence,
-    _sync_artifact_directory,
+    _resolve_artifact_directory,
+    _resolve_build_evidence_path,
     _write_policy_artifact,
     _write_strategy_context,
 )
@@ -53,7 +53,7 @@ from .narratives import (
     apply_narrative,
     load_narrative_catalog,
 )
-from .purchase_markdown import build_markdown
+from .purchase_markdown import render_purchase_markdown
 from .recommendation import RecommendationError
 from .service import GuideError
 from .steam_identity import local_steam_persona
@@ -74,12 +74,12 @@ __all__ = [
     "build_main",
     "build_parser",
     "main",
-    "positive_int",
+    "parse_positive_integer",
 ]
 
 
 def _current_evidence(args: argparse.Namespace) -> tuple[Path, BuildEvidenceCatalog]:
-    evidence_path = _build_evidence_path(args)
+    evidence_path = _resolve_build_evidence_path(args)
     evidence = require_current_build_evidence(
         evidence_path, DeadlockApi(args.api_base_url)
     )
@@ -98,14 +98,19 @@ def _require_complete(generated: GeneratedGuides) -> None:
 
 
 def _run_build(args: argparse.Namespace) -> int:
-    directory = _sync_artifact_directory(args.artifacts)
+    directory = _resolve_artifact_directory(args.artifacts)
     _, evidence = _current_evidence(args)
-    generated = _generate(args, evidence, 0, all_heroes=args.all or args.hero is None)
+    generated = _generate_requested_guides(
+        args, evidence, 0, all_heroes=args.all or args.hero is None
+    )
     _require_complete(generated)
     guides = _write_build_artifacts(generated, directory)
     if args.format == "markdown":
         print(
-            "\n".join(build_markdown(guide, details=args.details) for guide in guides)
+            "\n".join(
+                render_purchase_markdown(guide, details=args.details)
+                for guide in guides
+            )
         )
     else:
         print(
@@ -195,13 +200,13 @@ def _render_build_artifacts(
 
 
 def _run_sync(args: argparse.Namespace) -> int:
-    artifact_directory = _sync_artifact_directory(args.artifacts)
+    artifact_directory = _resolve_artifact_directory(args.artifacts)
     evidence_path, evidence = _current_evidence(args)
-    location = _location(args)
+    location = _discover_cache_location(args)
     if deadlock_is_running():
         raise CacheError("Deadlock is running; close it before syncing private builds")
 
-    generated = _generate(
+    generated = _generate_requested_guides(
         args,
         evidence,
         location.account_id,
@@ -236,7 +241,7 @@ def _run_refresh_evidence(args: argparse.Namespace) -> int:
             "refresh-evidence requires the analysis dependencies; "
             "install deadlock-build-sync[analysis]"
         ) from error
-    output = _sync_artifact_directory(args.artifacts) / _BUILD_EVIDENCE_FILENAME
+    output = _resolve_artifact_directory(args.artifacts) / _BUILD_EVIDENCE_FILENAME
     forwarded = [
         "--rank-expansion",
         args.rank_expansion,
@@ -246,6 +251,8 @@ def _run_refresh_evidence(args: argparse.Namespace) -> int:
         str(args.max_badge or args.max_rank.badge_id),
         "--output",
         str(output),
+        "--workers",
+        str(args.workers),
     ]
     for flag, value in (
         ("--run-id", args.run_id),
@@ -254,6 +261,8 @@ def _run_refresh_evidence(args: argparse.Namespace) -> int:
     ):
         if value:
             forwarded.extend((flag, str(value)))
+    if args.resume:
+        forwarded.append("--resume")
     result = offline_main(forwarded)
     if result == 0:
         loaded = load_build_evidence(output)
@@ -268,12 +277,12 @@ def _run_refresh_evidence(args: argparse.Namespace) -> int:
 
 
 def _run_install_artifacts(args: argparse.Namespace) -> int:
-    location = _location(args)
+    location = _discover_cache_location(args)
     if deadlock_is_running():
         raise CacheError(
             "Deadlock is running; close it before installing private builds"
         )
-    artifact_directory = _sync_artifact_directory(args.artifacts)
+    artifact_directory = _resolve_artifact_directory(args.artifacts)
     context_path = artifact_directory / "strategy-context.json"
     policy_path = artifact_directory / _POLICY_FILENAME
     narrative_path = artifact_directory / "narratives.json"
@@ -301,7 +310,7 @@ def _run_install_artifacts(args: argparse.Namespace) -> int:
     result = _install_and_record(
         location,
         bundle.guides,
-        _InstallSpec(
+        _InstallationParameters(
             persona=persona,
             patch_title=bundle.patch.title,
             patch_published_at=bundle.patch.published_at,

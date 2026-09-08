@@ -17,13 +17,15 @@ if TYPE_CHECKING:
     from .mechanics import ItemGraph
 
 
-def covered(graph: ItemGraph, item: int, owned: tuple[int, ...]) -> bool:
+def is_item_or_upgrade_owned(
+    graph: ItemGraph, item: int, owned: tuple[int, ...]
+) -> bool:
     return item in owned or any(
         item in graph.transitive_components(parent) for parent in owned
     )
 
 
-def route_targets(graph: ItemGraph, path: tuple[int, ...]) -> tuple[int, ...]:
+def resolve_route_targets(graph: ItemGraph, path: tuple[int, ...]) -> tuple[int, ...]:
     """Associate each component occurrence with its final inventory target.
 
     Returns:
@@ -33,18 +35,18 @@ def route_targets(graph: ItemGraph, path: tuple[int, ...]) -> tuple[int, ...]:
     owned: dict[int, list[int]] = {}
     for index, item in enumerate(path):
         graph.require(item)
-        lineage = [index]
+        purchase_indices = [index]
         for component in graph.components[item]:
-            lineage.extend(owned.pop(component, []))
-        owned.setdefault(item, []).extend(lineage)
+            purchase_indices.extend(owned.pop(component, []))
+        owned.setdefault(item, []).extend(purchase_indices)
     targets = list(path)
-    for target, lineage in owned.items():
-        for index in lineage:
+    for target, purchase_indices in owned.items():
+        for index in purchase_indices:
             targets[index] = target
     return tuple(targets)
 
 
-def first_checkpoint(
+def find_first_incomplete_checkpoint(
     graph: ItemGraph, path: tuple[int, ...], owned: tuple[int, ...]
 ) -> int:
     """Locate the first required occurrence after crediting actual ownership.
@@ -53,12 +55,13 @@ def first_checkpoint(
         The zero-based checkpoint, or the path length when complete.
 
     """
-    targets = route_targets(graph, path)
+    targets = resolve_route_targets(graph, path)
     return next(
         (
             index
             for index, item in enumerate(path)
-            if not covered(graph, targets[index], owned) and item not in owned
+            if not is_item_or_upgrade_owned(graph, targets[index], owned)
+            and item not in owned
         ),
         len(path),
     )
@@ -81,36 +84,36 @@ class PurchasePlanner:
         if sum(graph.require(item).active for item in owned) > 4:
             raise MechanicsError("Current inventory exceeds four active bindings")
         self.actions: list[PurchaseStep] = []
-        self.total = 0
+        self.total_cost = 0
 
-    def acquire(self, item: int, *, exact: bool = False) -> None:
+    def add_item_purchases(self, item: int, *, exact: bool = False) -> None:
         satisfied = (
             item in self.state.owned
             if exact
-            else covered(self.graph, item, self.state.owned)
+            else is_item_or_upgrade_owned(self.graph, item, self.state.owned)
         )
         if satisfied:
             return
         for component in self.graph.components[item]:
-            self.acquire(component, exact=True)
+            self.add_item_purchases(component, exact=True)
         cash = self.graph.incremental_cash_cost(item, self.state.owned)
         consumed = tuple(
             part for part in self.graph.components[item] if part in self.state.owned
         )
         self.state = purchase_item(self.graph, self.state, item)
-        self.total += cash
+        self.total_cost += cash
         self.actions.append(
             PurchaseStep(
                 item,
                 self.graph.require(item).name,
                 cash,
-                self.total,
+                self.total_cost,
                 consumed,
                 self.state.owned,
             )
         )
 
-    def result(self, liquid_souls: int | None) -> PurchasePlan:
+    def build_plan(self, liquid_souls: int | None) -> PurchasePlan:
         shortage = (
             max(0, self.actions[0].incremental_cost - liquid_souls)
             if self.actions and liquid_souls is not None
@@ -126,11 +129,11 @@ class PurchasePlanner:
             else "check cash"
         )
         return PurchasePlan(
-            tuple(self.actions), self.state.owned, self.total, decision, shortage
+            tuple(self.actions), self.state.owned, self.total_cost, decision, shortage
         )
 
 
-def validate_positions(
+def validate_purchase_positions(
     graph: ItemGraph,
     path: tuple[int, ...],
     positions: dict[int, int],
@@ -149,7 +152,9 @@ def validate_positions(
             )
         components = graph.transitive_components(item)
         remaining = {
-            value for value in path[index:] if not covered(graph, value, owned)
+            value
+            for value in path[index:]
+            if not is_item_or_upgrade_owned(graph, value, owned)
         }
         if remaining.intersection(components):
             raise ValueError("Purchase position precedes a required core item")
@@ -187,7 +192,7 @@ def plan_purchases(
     ):
         raise ValueError("Liquid souls must be a nonnegative integer")
     planner = PurchasePlanner(graph, state.owned, state.flex)
-    validate_positions(graph, path, positions, state.owned)
+    validate_purchase_positions(graph, path, positions, state.owned)
     selected = sorted(
         positions,
         key=lambda item: (
@@ -196,15 +201,19 @@ def plan_purchases(
             item,
         ),
     )
-    targets = route_targets(graph, path)
+    targets = resolve_route_targets(graph, path)
     for index in range(len(path) + 1):
         for item in selected:
             if positions[item] == index:
-                planner.acquire(item)
+                planner.add_item_purchases(item)
         if index < len(path):
             target = targets[index]
-            if not covered(graph, target, planner.state.owned):
-                planner.acquire(path[index], exact=path[index] != target)
-    if not all(covered(graph, item, planner.state.owned) for item in core):
-        raise MechanicsError("Choice abandons the core's upgrade lineages")
-    return planner.result(liquid_souls)
+            if not is_item_or_upgrade_owned(graph, target, planner.state.owned):
+                planner.add_item_purchases(path[index], exact=path[index] != target)
+    if not all(
+        is_item_or_upgrade_owned(graph, item, planner.state.owned) for item in core
+    ):
+        raise MechanicsError(
+            "The purchase plan does not retain all required core items"
+        )
+    return planner.build_plan(liquid_souls)

@@ -4146,7 +4146,7 @@ module expectations rather than chasing one repository-wide percentage.
 The observed failures also expose two sharper gaps than a statement percentage
 can show:
 
-- `tests/offline/test_late_game.py` has one happy-path inventory test. Its
+- `tests/offline/test_inventory_reconstruction.py` has one happy-path inventory test. Its
   purchase and removal timestamps are distinct, so it does not exercise the
   equal-time sort, explicit self-removal, rapid upgrade chain, or 12-slot
   postcondition that failed on the production snapshot.

@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from .purchase_guidance_types import PurchaseChoice
 
 
-def _take_fork(
+def _collect_shared_component_choices(
     seed: PurchaseChoice, remaining: list[PurchaseChoice]
 ) -> tuple[list[PurchaseChoice], list[PurchaseChoice]]:
     group = [seed]
@@ -27,16 +27,20 @@ def _take_fork(
         parts.update(item for row in joined for item in row.route[:-1])
 
 
-def _forks(options: list[PurchaseChoice]) -> list[list[PurchaseChoice]]:
+def _group_shared_component_choices(
+    options: list[PurchaseChoice],
+) -> list[list[PurchaseChoice]]:
     groups: list[list[PurchaseChoice]] = []
     remaining = list(options)
     while remaining:
-        group, remaining = _take_fork(remaining[0], remaining[1:])
+        group, remaining = _collect_shared_component_choices(
+            remaining[0], remaining[1:]
+        )
         groups.append(group)
     return groups
 
 
-def _decision(
+def _build_purchase_decision(
     position: int, label: str, rows: list[PurchaseChoice], *, fork: bool = False
 ) -> PurchaseDecision:
     options = tuple(
@@ -56,7 +60,7 @@ def _decision(
     return PurchaseDecision(position, kind, label, options, fork)
 
 
-def decisions_at(
+def build_checkpoint_decisions(
     position: int, choices: tuple[PurchaseChoice, ...], graph: ItemGraph
 ) -> tuple[PurchaseDecision, ...]:
     cards = [
@@ -68,7 +72,7 @@ def decisions_at(
     options = [card for card in cards if card.item_id not in ancestors]
     grouped: dict[str, list[PurchaseChoice]] = defaultdict(list)
     result: list[PurchaseDecision] = []
-    for group in _forks(options):
+    for group in _group_shared_component_choices(options):
         if len(group) > 1:
             common = set.intersection(*(set(row.route[:-1]) for row in group))
             label = (
@@ -77,7 +81,7 @@ def decisions_at(
                 if common
                 else "Shared component upgrades"
             )
-            result.append(_decision(position, label, group, fork=True))
+            result.append(_build_purchase_decision(position, label, group, fork=True))
         else:
             card = group[0]
             label = (
@@ -86,5 +90,8 @@ def decisions_at(
                 else card.name
             )
             grouped[label].append(card)
-    result.extend(_decision(position, label, rows) for label, rows in grouped.items())
+    result.extend(
+        _build_purchase_decision(position, label, rows)
+        for label, rows in grouped.items()
+    )
     return tuple(sorted(result, key=lambda row: (row.purpose, row.options)))

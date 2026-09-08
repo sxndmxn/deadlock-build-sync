@@ -11,21 +11,21 @@ from deadlock_build_sync.value_validation import (
     require_object_list,
 )
 from tests.build_evidence_fixtures import (
-    _document,
-    _first_build,
-    _sequence_policy,
-    _situational_policy,
-    _write,
+    get_first_build,
+    get_sequence_policy,
+    get_situational_policy,
+    make_evidence_document,
+    write_evidence_document,
     write_fingerprinted_evidence,
 )
 
 
 def _core_policy(document: dict[str, object]) -> dict[str, object]:
-    return require_object_dict(_first_build(document)["core_policy"])
+    return require_object_dict(get_first_build(document)["core_policy"])
 
 
 def _tier_policy(document: dict[str, object]) -> dict[str, object]:
-    return require_object_dict(_first_build(document)["tier_policy"])
+    return require_object_dict(get_first_build(document)["tier_policy"])
 
 
 def _expect_load_error(
@@ -55,7 +55,7 @@ def test_core_policy_requires_all_structured_fields(
     field: str,
     value: object,
 ) -> None:
-    document = _document()
+    document = make_evidence_document()
     _core_policy(document)[field] = value
 
     _expect_load_error(
@@ -66,7 +66,7 @@ def test_core_policy_requires_all_structured_fields(
 
 
 def test_core_policy_rejects_an_unsupported_version(tmp_path: Path) -> None:
-    document = _document()
+    document = make_evidence_document()
     _core_policy(document)["version"] = 2
 
     _expect_load_error(
@@ -89,7 +89,7 @@ def test_core_policy_rejects_invalid_membership(
     field: str,
     value: object,
 ) -> None:
-    document = _document()
+    document = make_evidence_document()
     _core_policy(document)[field] = value
 
     _expect_load_error(
@@ -113,14 +113,14 @@ def test_core_policy_rejects_inconsistent_support(
     value: object,
     message: str,
 ) -> None:
-    document = _document()
+    document = make_evidence_document()
     _core_policy(document)[field] = value
 
     _expect_load_error(tmp_path / "build-evidence.json", document, message)
 
 
 def test_core_policy_rejects_malformed_candidate_audit(tmp_path: Path) -> None:
-    document = _document()
+    document = make_evidence_document()
     _core_policy(document)["candidate_audit"] = [7]
 
     _expect_load_error(
@@ -142,7 +142,7 @@ def test_tier_policy_rejects_unsupported_structure(
     change: tuple[str, object],
     message: str,
 ) -> None:
-    document = _document()
+    document = make_evidence_document()
     field, value = change
     _tier_policy(document)[field] = value
 
@@ -154,33 +154,33 @@ def test_tier_policy_rejects_missing_malformed_and_duplicate_membership(
 ) -> None:
     path = tmp_path / "build-evidence.json"
 
-    missing = _document()
+    missing = make_evidence_document()
     membership = require_object_dict(_tier_policy(missing)["item_ids_by_tier"])
     membership.pop("4")
     _expect_load_error(path, missing, "incomplete tier policy")
 
-    malformed = _document()
+    malformed = make_evidence_document()
     membership = require_object_dict(_tier_policy(malformed)["item_ids_by_tier"])
     membership["1"] = "bad"
     _expect_load_error(path, malformed, "malformed Tier 1 policy")
 
-    empty = _document()
+    empty = make_evidence_document()
     membership = require_object_dict(_tier_policy(empty)["item_ids_by_tier"])
     membership["1"] = []
     _expect_load_error(path, empty, "Item pool differs")
 
-    duplicate = _document()
+    duplicate = make_evidence_document()
     membership = require_object_dict(_tier_policy(duplicate)["item_ids_by_tier"])
     tier_one = require_object_list(membership["1"])
     tier_one[1] = tier_one[0]
     _expect_load_error(path, duplicate, "invalid Tier 1 membership")
 
-    wrong_tier = _document()
+    wrong_tier = make_evidence_document()
     membership = require_object_dict(_tier_policy(wrong_tier)["item_ids_by_tier"])
     require_object_list(membership["1"])[0] = 203
     _expect_load_error(path, wrong_tier, "unsupported Tier 1 item")
 
-    repeated = _document()
+    repeated = make_evidence_document()
     membership = require_object_dict(_tier_policy(repeated)["item_ids_by_tier"])
     tier_one_id = require_object_list(membership["1"])[0]
     require_object_list(membership["2"])[0] = tier_one_id
@@ -191,9 +191,9 @@ def test_discovery_pool_requires_discovery_buyers_and_ignores_validation_shortli
     tmp_path: Path,
 ) -> None:
     path = tmp_path / "build-evidence.json"
-    _write(path, _document())
+    write_evidence_document(path, make_evidence_document())
     hero = load_build_evidence(path).heroes[13]
-    policy_value = _first_build(_document())["tier_policy"]
+    policy_value = get_first_build(make_evidence_document())["tier_policy"]
     first_id = hero.tier_policy.item_ids_by_tier[1][0]
     target = next(item for item in hero.items if item.item_id == first_id)
 
@@ -208,7 +208,7 @@ def test_discovery_pool_requires_discovery_buyers_and_ignores_validation_shortli
         )
         assert (
             first_id
-            in build_evidence_core._tier_policy(
+            in build_evidence_core._parse_tier_policy(
                 policy_value, 13, items
             ).item_ids_by_tier[1]
         )
@@ -217,7 +217,7 @@ def test_discovery_pool_requires_discovery_buyers_and_ignores_validation_shortli
         for item in hero.items
     )
     with pytest.raises(ArtifactError, match="unsupported Tier 1 item"):
-        build_evidence_core._tier_policy(policy_value, 13, items)
+        build_evidence_core._parse_tier_policy(policy_value, 13, items)
 
 
 @pytest.mark.parametrize(
@@ -236,8 +236,8 @@ def test_sequence_policy_requires_complete_inputs(
     field: str,
     value: object,
 ) -> None:
-    document = _document()
-    _sequence_policy(document)[field] = value
+    document = make_evidence_document()
+    get_sequence_policy(document)[field] = value
 
     _expect_load_error(
         tmp_path / "build-evidence.json",
@@ -249,22 +249,22 @@ def test_sequence_policy_requires_complete_inputs(
 def test_sequence_policy_rejects_bad_transitions(tmp_path: Path) -> None:
     path = tmp_path / "build-evidence.json"
 
-    malformed = _document()
-    _sequence_policy(malformed)["transitions"] = [7]
+    malformed = make_evidence_document()
+    get_sequence_policy(malformed)["transitions"] = [7]
     _expect_load_error(path, malformed, "malformed sequence transition")
 
-    bad_level = _document()
-    transitions = require_object_list(_sequence_policy(bad_level)["transitions"])
+    bad_level = make_evidence_document()
+    transitions = require_object_list(get_sequence_policy(bad_level)["transitions"])
     require_object_dict(transitions[0])["level"] = "bad"
     _expect_load_error(path, bad_level, "invalid sequence backoff level")
 
-    bad_context = _document()
-    transitions = require_object_list(_sequence_policy(bad_context)["transitions"])
+    bad_context = make_evidence_document()
+    transitions = require_object_list(get_sequence_policy(bad_context)["transitions"])
     require_object_dict(transitions[0])["context_support"] = 49
     _expect_load_error(path, bad_context, "transition context support")
 
-    weak = _document()
-    transitions = require_object_list(_sequence_policy(weak)["transitions"])
+    weak = make_evidence_document()
+    transitions = require_object_list(get_sequence_policy(weak)["transitions"])
     require_object_dict(transitions[0])["support"] = 19
     _expect_load_error(path, weak, "weak sequence transition")
 
@@ -286,15 +286,15 @@ def test_situational_policy_rejects_invalid_structure(
     value: object,
     message: str,
 ) -> None:
-    document = _document()
-    _situational_policy(document)[field] = value
+    document = make_evidence_document()
+    get_situational_policy(document)[field] = value
 
     _expect_load_error(tmp_path / "build-evidence.json", document, message)
 
 
 def test_situational_policy_requires_a_branch_or_abstention(tmp_path: Path) -> None:
-    document = _document()
-    _situational_policy(document)["abstentions"] = []
+    document = make_evidence_document()
+    get_situational_policy(document)["abstentions"] = []
 
     _expect_load_error(
         tmp_path / "build-evidence.json", document, "no situational result"

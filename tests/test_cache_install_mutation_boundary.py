@@ -6,7 +6,11 @@ import pytest
 from deadlock_build_sync import cache_install, cache_types
 from deadlock_build_sync.cache import CacheError, CacheLocation, InstallResult
 from deadlock_build_sync.ranks import DEFAULT_RANK_RANGE
-from tests.cache_fixtures import SNAPSHOT_ID, complete_guide, snapshot_manifest
+from tests.cache_fixtures import (
+    SNAPSHOT_ID,
+    make_complete_guide,
+    make_snapshot_manifest,
+)
 
 
 def _location(tmp_path: Path) -> CacheLocation:
@@ -29,7 +33,7 @@ def test_install_reports_running_deadlock_exactly(
     ):
         cache_install.install_guides(
             _location(tmp_path),
-            [complete_guide()],
+            [make_complete_guide()],
             persona="Player",
             timestamp=100,
             patch_title="Patch",
@@ -42,8 +46,8 @@ def test_install_passes_identity_scope_rank_and_result_fields(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     location = _location(tmp_path)
-    guide = complete_guide()
-    manifest_input = snapshot_manifest()
+    guide = make_complete_guide()
+    manifest_input = make_snapshot_manifest()
     backup = tmp_path / "backup"
     identity = cache_types._GuideInstallationIdentity(
         hero_ids={12},
@@ -105,7 +109,9 @@ def test_install_passes_identity_scope_rank_and_result_fields(
     monkeypatch.setattr(cache_install, "deadlock_is_running", lambda: False)
     monkeypatch.setattr(cache_install, "_validate_install_request", validate_request)
     monkeypatch.setattr(cache_install, "read_cache", lambda _path: {"original": True})
-    monkeypatch.setattr(cache_install, "_out_of_scope_fingerprint", fingerprint)
+    monkeypatch.setattr(
+        cache_install, "_calculate_unmanaged_cache_fingerprint", fingerprint
+    )
     monkeypatch.setattr(cache_install, "update_managed_builds", update)
     monkeypatch.setattr(cache_install, "encode_binary_v4", lambda _root: b"encoded")
     monkeypatch.setattr(

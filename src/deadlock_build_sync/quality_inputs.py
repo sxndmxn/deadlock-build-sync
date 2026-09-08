@@ -8,12 +8,12 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from .artifact_bundle import (
-    _hero_contexts,
+    _calculate_snapshot_identity,
+    _parse_hero_contexts,
     _read_document,
-    _snapshot_identity,
-    _validated_build_evidence,
+    _validate_bundle_evidence,
 )
-from .artifact_projection import _ability_path
+from .artifact_projection import _reconstruct_ability_path
 from .artifacts import load_policy_artifact
 from .recommendation_state import RecommendationError
 from .snapshot import sha256_json
@@ -43,12 +43,12 @@ def load_quality_inputs(directory: Path) -> QualityInputs:
     manifest, policies = load_policy_artifact(directory / "policies.json")
     if object_dict(context.get("snapshot_manifest")) != manifest:
         raise RecommendationError("quality artifacts use different snapshots")
-    if _snapshot_identity(manifest) != manifest.get("snapshot_id"):
+    if _calculate_snapshot_identity(manifest) != manifest.get("snapshot_id"):
         raise RecommendationError("quality snapshot fingerprint does not match")
-    evidence = _validated_build_evidence(
+    evidence = _validate_bundle_evidence(
         directory / "build-evidence.json", context, manifest
     )
-    heroes = _hero_contexts(context)
+    heroes = _parse_hero_contexts(context)
     evidence_keys = {
         (hero_id, build.path_id)
         for hero_id, builds in evidence.hero_builds.items()
@@ -60,7 +60,7 @@ def load_quality_inputs(directory: Path) -> QualityInputs:
     for key, policy in policies.items():
         if heroes[key].get("policy_id") != policy.policy_id:
             raise RecommendationError("quality context references another policy")
-        path = _ability_path(heroes[key], policy)
+        path = _reconstruct_ability_path(heroes[key], policy)
         build = next(
             build
             for build in evidence.hero_builds[policy.hero_id]

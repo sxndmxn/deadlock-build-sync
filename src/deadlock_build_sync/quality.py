@@ -21,7 +21,7 @@ MINIMUM_REPLAY_MATCHES = 20
 
 
 @dataclass(frozen=True)
-class _Outcome:
+class _ReplayOutcome:
     case: ReplayCase
     action: str
     agreement: bool
@@ -39,7 +39,7 @@ class _ReplayContext:
     graph: ItemGraph
 
 
-def _baseline_item(
+def _select_baseline_item(
     evidence: HeroBuildEvidence,
     case: ReplayCase,
     graph: ItemGraph,
@@ -81,13 +81,13 @@ def _buy_is_illegal(
     return cost > case.state.liquid_souls or cost != decision.incremental_cost
 
 
-def _evaluate_case(context: _ReplayContext, case: ReplayCase) -> _Outcome:
+def _evaluate_case(context: _ReplayContext, case: ReplayCase) -> _ReplayOutcome:
     try:
         decision = recommend(
             context.catalog, context.policy, case.state, context.assets
         )
     except (RecommendationError, MechanicsError):
-        return _Outcome(
+        return _ReplayOutcome(
             case,
             "invalid",
             agreement=False,
@@ -100,17 +100,19 @@ def _evaluate_case(context: _ReplayContext, case: ReplayCase) -> _Outcome:
     agreement = decision.action == case.observed_action and (
         not buy or decision.item_id == case.observed_item_id
     )
-    baseline = _baseline_item(context.evidence, case, context.graph)
+    baseline = _select_baseline_item(context.evidence, case, context.graph)
     baseline_agreement = (
         case.observed_action == RecommendationAction.SAVE
         if baseline is None
         else case.observed_action == RecommendationAction.BUY
         and baseline == case.observed_item_id
     )
-    return _Outcome(case, decision.action.value, agreement, baseline_agreement, illegal)
+    return _ReplayOutcome(
+        case, decision.action.value, agreement, baseline_agreement, illegal
+    )
 
 
-def _summary(outcomes: list[_Outcome]) -> dict[str, object]:
+def _summarize_replay_outcomes(outcomes: list[_ReplayOutcome]) -> dict[str, object]:
     usable = [row for row in outcomes if not row.invalid_state]
     scored = [row for row in usable if not row.case.ambiguous_purchase]
     actions = Counter(row.action for row in usable)
@@ -140,9 +142,9 @@ def _summary(outcomes: list[_Outcome]) -> dict[str, object]:
     }
 
 
-def _strata(
-    outcomes: list[_Outcome], evidence: HeroBuildEvidence
-) -> dict[str, list[_Outcome]]:
+def _group_replay_outcomes(
+    outcomes: list[_ReplayOutcome], evidence: HeroBuildEvidence
+) -> dict[str, list[_ReplayOutcome]]:
     default_path = (
         evidence.sequence_policy.default_path
         if evidence.sequence_policy is not None
@@ -162,10 +164,12 @@ def _strata(
     }
 
 
-def _rank_summaries(outcomes: list[_Outcome]) -> dict[str, dict[str, object]]:
+def _summarize_outcomes_by_rank(
+    outcomes: list[_ReplayOutcome],
+) -> dict[str, dict[str, object]]:
     ranks = sorted({row.case.state.average_badge // 10 for row in outcomes})
     return {
-        str(rank): _summary([
+        str(rank): _summarize_replay_outcomes([
             row for row in outcomes if row.case.state.average_badge // 10 == rank
         ])
         for rank in ranks
@@ -196,9 +200,9 @@ def evaluate_policy(
         for case in cases
         if case.policy_id == policy.policy_id and context is not None
     ]
-    summary = _summary(outcomes)
+    summary = _summarize_replay_outcomes(outcomes)
     failed = any(row.illegal_buy or row.invalid_state for row in outcomes)
-    strata = _strata(outcomes, evidence)
+    strata = _group_replay_outcomes(outcomes, evidence)
     supported = all(
         len({
             row.case.match_group
@@ -222,7 +226,9 @@ def evaluate_policy(
             else "insufficient independent replay matches in one or more required strata"
         ),
         "summary": summary,
-        "strata": {name: _summary(rows) for name, rows in strata.items()},
-        "rank_tiers": _rank_summaries(outcomes),
+        "strata": {
+            name: _summarize_replay_outcomes(rows) for name, rows in strata.items()
+        },
+        "rank_tiers": _summarize_outcomes_by_rank(outcomes),
         "claim": "next-action imitation, coverage and legality; not item effect or win improvement",
     }

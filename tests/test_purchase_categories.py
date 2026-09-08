@@ -8,23 +8,29 @@ import pytest
 
 from deadlock_build_sync.match_choices import parse_automatic_branches
 from deadlock_build_sync.protobuf import parse_fields
-from deadlock_build_sync.purchase_categories import purchase_categories, split_guidance
+from deadlock_build_sync.purchase_categories import (
+    build_purchase_categories,
+    split_guidance,
+)
 from deadlock_build_sync.purchase_guidance import attach_purchase_guidance
-from deadlock_build_sync.purchase_purposes import purpose
+from deadlock_build_sync.purchase_purposes import classify_item_purpose
 from deadlock_build_sync.snapshot import sha256_json
-from tests.match_choice_fixtures import branch_document
-from tests.purchase_guidance_fixtures import guidance_assets, guidance_fixture
-from tests.rendering_fixtures import build_details
+from tests.match_choice_fixtures import make_branch_document
+from tests.purchase_guidance_fixtures import (
+    make_guidance_assets,
+    make_purchase_guidance,
+)
+from tests.rendering_fixtures import decode_build_details
 
 if TYPE_CHECKING:
     from deadlock_build_sync.purchase_types import PurchaseGuide
 
 
 def test_steam_decoding_preserves_core_queue_and_every_optional_pool_item() -> None:
-    guide, _ = guidance_fixture()
-    branch = parse_automatic_branches(branch_document(), {7}, (1, 3, 2, 4, 5))[0]
+    guide, _ = make_purchase_guidance()
+    branch = parse_automatic_branches(make_branch_document(), {7}, (1, 3, 2, 4, 5))[0]
     guide = attach_purchase_guidance(
-        replace(guide, automatic_branches=(branch,)), guidance_assets()
+        replace(guide, automatic_branches=(branch,)), make_guidance_assets()
     )
     assert guide.purchase_guidance is not None
     rows = guide.categories
@@ -43,7 +49,7 @@ def test_steam_decoding_preserves_core_queue_and_every_optional_pool_item() -> N
     assert optional == {6, 7, 8, 9, 10, 11, 12}
     missing = replace(guide.purchase_guidance, automatic_branches=(branch,))
     with pytest.raises(ValueError, match="canonical purchase plan"):
-        purchase_categories(replace(guide, purchase_guidance=missing))
+        build_purchase_categories(replace(guide, purchase_guidance=missing))
 
 
 @pytest.mark.parametrize(
@@ -58,7 +64,7 @@ def test_guidance_split_preserves_every_character(text: str) -> None:
 def _decoded_items(guide: PurchaseGuide) -> tuple[list[int | bytes], set[int | bytes]]:
     encoded = [
         field.value
-        for field in build_details(guide)
+        for field in decode_build_details(guide)
         if field.number == 1 and isinstance(field.value, bytes)
     ]
     queued, optional = [], set()
@@ -79,7 +85,7 @@ def _decoded_items(guide: PurchaseGuide) -> tuple[list[int | bytes], set[int | b
 
 
 def test_guide_fingerprint_survives_json_with_item_ids_of_different_lengths() -> None:
-    guide, _ = guidance_fixture()
+    guide, _ = make_purchase_guidance()
     assert guide.purchase_guidance is not None
     document = guide.purchase_guidance.as_dict()
     assert sha256_json(document) == sha256_json(json.loads(json.dumps(document)))
@@ -90,19 +96,19 @@ def test_choice_purpose_does_not_depend_on_json_object_key_order() -> None:
         "z": "Gain bonus souls on assists.",
         "a": "Stay alive while holding the egg to earn souls.",
     }
-    assert purpose({"description": description}) == purpose({
+    assert classify_item_purpose({"description": description}) == classify_item_purpose({
         "description": dict(reversed(list(description.items())))
     })
 
 
 def test_each_conditional_row_uses_its_own_trigger_and_checkpoint() -> None:
-    guide, _ = guidance_fixture()
-    first = parse_automatic_branches(branch_document(), {7}, (1, 3, 2, 4, 5))[0]
+    guide, _ = make_purchase_guidance()
+    first = parse_automatic_branches(make_branch_document(), {7}, (1, 3, 2, 4, 5))[0]
     second = replace(
         first, condition="enemy_hero", value=42, after_step=1, comparator_item_id=3
     )
     guide = attach_purchase_guidance(
-        replace(guide, automatic_branches=(first, second)), guidance_assets()
+        replace(guide, automatic_branches=(first, second)), make_guidance_assets()
     )
     descriptions = [
         row.description for row in guide.categories if "CONDITIONAL" in row.name

@@ -8,9 +8,9 @@ from .cache import (
 from .cli_support import (
     _ARTIFACT_WRITE_STAGE,
     _POLICY_FILENAME,
-    _build_evidence,
-    _generate,
-    _location,
+    _discover_cache_location,
+    _generate_requested_guides,
+    _load_build_evidence,
     _write_policy_artifact,
     _write_strategy_context,
 )
@@ -21,9 +21,9 @@ if TYPE_CHECKING:
 
 
 def _run_export_context(args: argparse.Namespace) -> int:
-    location = _location(args)
-    evidence_path, evidence = _build_evidence(args)
-    generated = _generate(args, evidence, location.account_id)
+    location = _discover_cache_location(args)
+    evidence_path, evidence = _load_build_evidence(args)
+    generated = _generate_requested_guides(args, evidence, location.account_id)
     _write_strategy_context(args.output, generated)
     record_stage_facts(_ARTIFACT_WRITE_STAGE, path=args.output)
     policy_output = args.policy_output or args.output.with_name(_POLICY_FILENAME)
@@ -37,7 +37,7 @@ def _run_export_context(args: argparse.Namespace) -> int:
 
 
 def _run_restore(args: argparse.Namespace) -> int:
-    location = _location(args)
+    location = _discover_cache_location(args)
     restored = restore_latest(location)
     print(f"Restored cache backup: {restored}")
     print(f"Cache: {location.cache_path}")

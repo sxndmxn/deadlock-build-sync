@@ -2,34 +2,37 @@ from deadlock_build_sync.mechanics import ItemGraph
 from deadlock_build_sync.purchase_guidance import attach_purchase_guidance
 from deadlock_build_sync.purchase_guidance_types import PurchaseTiming
 from deadlock_build_sync.purchase_types import GuideItem, PurchaseGuide
-from tests.mechanics_fixtures import item
+from tests.mechanics_fixtures import make_item_asset
 
 
-def guidance_assets() -> list[dict[str, object]]:
+def make_guidance_assets() -> list[dict[str, object]]:
     return [
-        item(1, "Sprint", cost=800),
-        item(2, "Speed", cost=1600, components=["Sprint"]),
-        item(3, "Core A", cost=800),
-        item(4, "Core B", cost=1600),
-        item(5, "Core C", cost=3200),
+        make_item_asset(1, "Sprint", cost=800),
+        make_item_asset(2, "Speed", cost=1600, components=["Sprint"]),
+        make_item_asset(3, "Core A", cost=800),
+        make_item_asset(4, "Core B", cost=1600),
+        make_item_asset(5, "Core C", cost=3200),
         {
-            **item(6, "Trophy", cost=3200, components=["Sprint"]),
+            **make_item_asset(6, "Trophy", cost=3200, components=["Sprint"]),
             "description": "Bonus souls on assist or kill.",
         },
-        {**item(7, "Bullet Guard", cost=1600), "description": "Grants bullet resist."},
         {
-            **item(8, "Bullet Shield", cost=3200, active=True),
+            **make_item_asset(7, "Bullet Guard", cost=1600),
+            "description": "Grants bullet resist.",
+        },
+        {
+            **make_item_asset(8, "Bullet Shield", cost=3200, active=True),
             "description": "Immune to bullets.",
         },
-        {**item(9, "Mystery", cost=800), "description": "A strange effect."},
-        item(10, "Range", cost=800),
-        item(11, "Greater Range", cost=3200, components=["Range"]),
-        item(12, "Other Range", cost=3200, components=["Range"]),
+        {**make_item_asset(9, "Mystery", cost=800), "description": "A strange effect."},
+        make_item_asset(10, "Range", cost=800),
+        make_item_asset(11, "Greater Range", cost=3200, components=["Range"]),
+        make_item_asset(12, "Other Range", cost=3200, components=["Range"]),
     ]
 
 
-def guidance_fixture() -> tuple[PurchaseGuide, ItemGraph]:
-    assets = guidance_assets()
+def make_purchase_guidance() -> tuple[PurchaseGuide, ItemGraph]:
+    assets = make_guidance_assets()
     graph = ItemGraph.from_assets(assets)
     by_id = {
         node.item_id: GuideItem(

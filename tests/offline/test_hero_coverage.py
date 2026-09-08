@@ -11,45 +11,51 @@ import numpy as np
 import pytest
 
 from deadlock_build_sync.build_evidence_discovery import validate_discovery
+from deadlock_build_sync.offline import discovery_artifacts, discovery_orders
 from deadlock_build_sync.offline import discovery_export as producer
-from deadlock_build_sync.offline import discovery_materialize, discovery_orders
 from deadlock_build_sync.offline.config import RunPaths
-from deadlock_build_sync.offline.discovery_admission import admit_core, discovery_record
-from deadlock_build_sync.offline.discovery_fit import select
-from deadlock_build_sync.offline.discovery_pool import summarize
+from deadlock_build_sync.offline.core_discovery import rank_supported_candidates
+from deadlock_build_sync.offline.discovery_admission import (
+    admit_core,
+    build_discovery_record,
+)
+from deadlock_build_sync.offline.discovery_pool import summarize_purchase_evidence
 from deadlock_build_sync.offline.discovery_quality import evaluate_core
 from deadlock_build_sync.value_validation import require_object_rows
 from tests.offline.discovery_fixtures import (
-    catalog_fixture,
-    frozen_guide,
-    graph_fixture,
-    planted_data,
-    supported_tactics,
+    make_discovery_catalog,
+    make_frozen_guide,
+    make_hero_discovery_data,
+    make_item_graph,
+    make_supported_mechanic_evidence,
 )
-from tests.offline.production_evidence_fixtures import _context
+from tests.offline.production_evidence_fixtures import make_export_context
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from deadlock_build_sync.offline.discovery_data import HeroData
-    from deadlock_build_sync.offline.discovery_types import Candidate, Nomination
+    from deadlock_build_sync.offline.discovery_data import HeroDiscoveryData
+    from deadlock_build_sync.offline.discovery_types import (
+        CoreDiscoveryCandidate,
+        NominatedCoreBuild,
+    )
 
 
 def test_viscous_overlap_case_remains_available_with_negative_validation() -> None:
-    values = planted_data(per_fold=1500)
-    values.won[values.mask("validation")] = False
+    values = make_hero_discovery_data(per_fold=1500)
+    values.won[values.fold_mask("validation")] = False
     selection = evaluate_core(values, (0, 1, 2, 3), "selection")
     selection["adjusted"].update({"core_overlap": 383, "overlap_share": 0.766})
-    row: Nomination = {
+    row: NominatedCoreBuild = {
         "items": [0, 1, 2, 3],
         "discovery_support": 500,
         "selection": selection,
         "selection_rejections": [],
         "selection_rank": 0,
-        "path": discovery_orders.choose_order(
-            values, [0, 1, 2, 3], "pairwise", graph_fixture()
+        "path": discovery_orders.select_purchase_order(
+            values, [0, 1, 2, 3], "pairwise", make_item_graph()
         ),
-        "tactics": supported_tactics(),
+        "tactics": make_supported_mechanic_evidence(),
         "guide": {"ready": True, "path": [0, 1, 2, 3], "bounds": {}},
     }
     result = admit_core(values, row, 100, "frozen")
@@ -60,11 +66,11 @@ def test_viscous_overlap_case_remains_available_with_negative_validation() -> No
         in result["evidence_limitations"]
     )
     assert result["validation"]["win_rate"] == 0
-    validate_discovery(discovery_record(result), (0, 1, 2, 3), (0, 1, 2, 3))
+    validate_discovery(build_discovery_record(result), (0, 1, 2, 3), (0, 1, 2, 3))
 
 
 def test_missing_optional_economy_disables_estimate_without_losing_owners() -> None:
-    data = planted_data()
+    data = make_hero_discovery_data()
     data.wealth[:] = np.nan
     data.lead[:] = np.nan
     result = evaluate_core(data, (0, 1, 2, 3), "selection")
@@ -76,7 +82,7 @@ def test_missing_optional_economy_disables_estimate_without_losing_owners() -> N
 def test_candidates_with_estimates_precede_missing_estimates_even_when_negative() -> (
     None
 ):
-    candidates: list[Candidate] = [
+    candidates: list[CoreDiscoveryCandidate] = [
         {
             "items": [item],
             "selection_rejections": [],
@@ -90,7 +96,7 @@ def test_candidates_with_estimates_precede_missing_estimates_even_when_negative(
             (5, 0.0, 200),
         )
     ]
-    assert select(candidates) == [4, 2, 1, 3, 0]
+    assert rank_supported_candidates(candidates) == [4, 2, 1, 3, 0]
 
 
 def test_pairwise_search_tries_the_next_legal_supported_order(
@@ -98,11 +104,11 @@ def test_pairwise_search_tries_the_next_legal_supported_order(
 ) -> None:
     monkeypatch.setattr(
         discovery_orders,
-        "ranked_orders",
+        "rank_purchase_orders",
         lambda *_args: [(100, [1, 0, 2, 3]), (90, [0, 1, 2, 3])],
     )
-    order = discovery_orders.choose_order(
-        planted_data(), [0, 1, 2, 3], "pairwise", graph_fixture()
+    order = discovery_orders.select_purchase_order(
+        make_hero_discovery_data(), [0, 1, 2, 3], "pairwise", make_item_graph()
     )
     assert order["order"] == [0, 1, 2, 3]
     assert order["admitted_before_validation"]
@@ -112,9 +118,9 @@ def test_pairwise_search_tries_the_next_legal_supported_order(
 def test_empty_optional_tiers_and_conflicting_wealth_keep_legal_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    data = planted_data()
+    data = make_hero_discovery_data()
     data.actors = tuple((int(match), 0) for match in data.matches)
-    evidence = summarize(
+    evidence = summarize_purchase_evidence(
         [
             (match, 0, item, 100 + item * 10, 20000.0 - item * 4000, 99 + item * 10)
             for match in range(100)
@@ -122,10 +128,14 @@ def test_empty_optional_tiers_and_conflicting_wealth_keep_legal_path(
         ],
         100,
     )
-    monkeypatch.setattr(discovery_materialize, "pool_evidence", lambda *_args: evidence)
-    row: Nomination = {"items": [0, 1, 2, 3], "path": {"order": [0, 1, 2, 3]}}
-    with duckdb.connect() as con:
-        result = discovery_materialize.freeze_guide(con, data, row, graph_fixture())
+    monkeypatch.setattr(
+        discovery_artifacts, "load_item_pool_evidence", lambda *_args: evidence
+    )
+    row: NominatedCoreBuild = {"items": [0, 1, 2, 3], "path": {"order": [0, 1, 2, 3]}}
+    with duckdb.connect() as connection:
+        result = discovery_artifacts.freeze_purchase_guide(
+            connection, data, row, make_item_graph()
+        )
     assert result["ready"]
     assert result["path"] == [0, 1, 2, 3]
     assert result["timing_status"] == "uncertain"
@@ -149,11 +159,11 @@ def test_rank_expansion_stops_on_support_or_exhaustion(
     expected: list[int],
 ) -> None:
     context = replace(
-        _context(RunPaths.create(tmp_path, "ranges")),
-        item_graph=graph_fixture(13),
+        make_export_context(RunPaths.create(tmp_path, "ranges")),
+        item_graph=make_item_graph(13),
         rank_expansion=mode,
     )
-    values = planted_data()
+    values = make_hero_discovery_data()
     empty = replace(
         values,
         matrix=np.zeros_like(values.matrix),
@@ -162,23 +172,25 @@ def test_rank_expansion_stops_on_support_or_exhaustion(
     attempted: list[int] = []
 
     def load(
-        _con: object, _hero: int, _graph: object, minimum: int, maximum: int
-    ) -> HeroData:
+        _connection: object, _hero: int, _graph: object, minimum: int, maximum: int
+    ) -> HeroDiscoveryData:
         assert maximum == 115
         attempted.append(minimum)
         return values if minimum <= supported_at else empty
 
-    monkeypatch.setattr(producer, "load_data", load)
-    monkeypatch.setattr(producer, "checkpoint_rows", lambda *_args: [])
-    monkeypatch.setattr(producer, "freeze_guide", frozen_guide)
-    monkeypatch.setattr(producer, "explain", supported_tactics)
-    with duckdb.connect() as con:
+    monkeypatch.setattr(producer, "load_hero_discovery_data", load)
+    monkeypatch.setattr(producer, "load_checkpoint_rows", lambda *_args: [])
+    monkeypatch.setattr(producer, "freeze_purchase_guide", make_frozen_guide)
+    monkeypatch.setattr(
+        producer, "describe_mechanic_overlap", make_supported_mechanic_evidence
+    )
+    with duckdb.connect() as connection:
         _, frozen = producer._freeze_hero(
-            con, {"id": 6, "name": "Test"}, context, catalog_fixture(13)
+            connection, {"id": 6, "name": "Test"}, context, make_discovery_catalog(13)
         )
         if not frozen["rows"]:
             result = producer._validate_hero(
-                con,
+                connection,
                 {"id": 6, "name": "Test"},
                 (empty, frozen),
                 context,
@@ -196,37 +208,42 @@ def test_three_item_seeds_and_candidates_after_the_first_three(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     context = replace(
-        _context(RunPaths.create(tmp_path, "seeds")), item_graph=graph_fixture(13)
+        make_export_context(RunPaths.create(tmp_path, "seeds")),
+        item_graph=make_item_graph(13),
     )
-    values = planted_data()
-    monkeypatch.setattr(producer, "load_data", lambda *_args: values)
-    monkeypatch.setattr(producer, "checkpoint_rows", lambda *_args: [])
-    monkeypatch.setattr(producer, "freeze_guide", frozen_guide)
-    monkeypatch.setattr(producer, "explain", supported_tactics)
-    original = producer.choose_order
+    values = make_hero_discovery_data()
+    monkeypatch.setattr(producer, "load_hero_discovery_data", lambda *_args: values)
+    monkeypatch.setattr(producer, "load_checkpoint_rows", lambda *_args: [])
+    monkeypatch.setattr(producer, "freeze_purchase_guide", make_frozen_guide)
+    monkeypatch.setattr(
+        producer, "describe_mechanic_overlap", make_supported_mechanic_evidence
+    )
+    original = producer.select_purchase_order
     calls: list[list[int]] = []
 
     def ordered(
-        data: HeroData, items: list[int], method: str, _graph: object
-    ) -> discovery_orders.Order:
+        data: HeroDiscoveryData, items: list[int], method: str, _graph: object
+    ) -> discovery_orders.SelectedPurchaseOrder:
         calls.append(items)
         order = original(data, items, method, context.item_graph)
         if len(calls) <= 3:
             order.update({"admitted_before_validation": False, "reason": "unsupported"})
         return order
 
-    monkeypatch.setattr(producer, "choose_order", ordered)
-    with duckdb.connect() as con:
+    monkeypatch.setattr(producer, "select_purchase_order", ordered)
+    with duckdb.connect() as connection:
         _, frozen = producer._freeze_hero(
-            con, {"id": 6, "name": "Test"}, context, catalog_fixture(13)
+            connection, {"id": 6, "name": "Test"}, context, make_discovery_catalog(13)
         )
         assert frozen["rows"] and frozen["rows"][0]["selection_rank"] >= 3
         seed_data = deepcopy(values)
         seed_data.matrix[:, [3, 7, 11, 12]] = False
         seed_data.times[:, [3, 7, 11, 12]] = -1
-        monkeypatch.setattr(producer, "load_data", lambda *_args: seed_data)
+        monkeypatch.setattr(
+            producer, "load_hero_discovery_data", lambda *_args: seed_data
+        )
         _, seeds = producer._freeze_hero(
-            con, {"id": 6, "name": "Test"}, context, catalog_fixture(13)
+            connection, {"id": 6, "name": "Test"}, context, make_discovery_catalog(13)
         )
     assert seeds["rows"]
     assert all(len(row["items"]) == 3 for row in seeds["rows"])

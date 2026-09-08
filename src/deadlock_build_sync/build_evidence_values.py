@@ -6,7 +6,7 @@ from .artifacts import ArtifactError
 from .value_validation import object_dict
 
 
-def _required_int(
+def _require_integer(
     value: object,
     label: str,
     *,
@@ -23,7 +23,7 @@ def _required_int(
     return value
 
 
-def _required_float(
+def _require_float(
     value: object, label: str, *, minimum: float = 0.0, maximum: float | None = None
 ) -> float:
     if (
@@ -37,7 +37,7 @@ def _required_float(
     return float(value)
 
 
-def _finite_float(value: object, label: str) -> float:
+def _require_finite_float(value: object, label: str) -> float:
     if (
         not isinstance(value, (int, float))
         or isinstance(value, bool)
@@ -47,17 +47,17 @@ def _finite_float(value: object, label: str) -> float:
     return float(value)
 
 
-def _required_bool(value: object, label: str) -> bool:
+def _require_boolean(value: object, label: str) -> bool:
     if not isinstance(value, bool):
         raise ArtifactError(f"build evidence has invalid {label}")
     return value
 
 
-def _optional_float(value: object, label: str) -> float | None:
-    return None if value is None else _required_float(value, label)
+def _parse_optional_float(value: object, label: str) -> float | None:
+    return None if value is None else _require_float(value, label)
 
 
-def _required_sha256(value: object, label: str) -> str:
+def _require_sha256(value: object, label: str) -> str:
     if (
         not isinstance(value, str)
         or len(value) != 64
@@ -67,7 +67,7 @@ def _required_sha256(value: object, label: str) -> str:
     return value
 
 
-def _document(value: object, error_message: str) -> dict[str, object]:
+def _require_evidence_document(value: object, error_message: str) -> dict[str, object]:
     document = object_dict(value)
     if document is None:
         raise ArtifactError(error_message)

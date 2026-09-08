@@ -45,42 +45,42 @@ def encode_varint(value: int) -> bytes:
     return bytes(output)
 
 
-def _key(field: int, wire_type: int) -> bytes:
+def _encode_field_key(field: int, wire_type: int) -> bytes:
     return encode_varint((field << 3) | wire_type)
 
 
-def varint_field(field: int, value: int | None) -> bytes:
+def encode_varint_field(field: int, value: int | None) -> bytes:
     if value is None:
         return b""
-    return _key(field, 0) + encode_varint(value)
+    return _encode_field_key(field, 0) + encode_varint(value)
 
 
-def bool_field(field: int, *, value: bool | None) -> bytes:
+def encode_boolean_field(field: int, *, value: bool | None) -> bytes:
     if value is None:
         return b""
-    return varint_field(field, int(value))
+    return encode_varint_field(field, int(value))
 
 
-def float_field(field: int, value: float | None) -> bytes:
+def encode_float_field(field: int, value: float | None) -> bytes:
     if value is None:
         return b""
-    return _key(field, 5) + struct.pack("<f", value)
+    return _encode_field_key(field, 5) + struct.pack("<f", value)
 
 
-def bytes_field(field: int, value: bytes) -> bytes:
-    return _key(field, 2) + encode_varint(len(value)) + value
+def encode_bytes_field(field: int, value: bytes) -> bytes:
+    return _encode_field_key(field, 2) + encode_varint(len(value)) + value
 
 
-def string_field(field: int, value: str | None) -> bytes:
+def encode_string_field(field: int, value: str | None) -> bytes:
     if value is None:
         return b""
-    return bytes_field(field, value.encode(_UTF8))
+    return encode_bytes_field(field, value.encode(_UTF8))
 
 
-def message_field(field: int, value: bytes) -> bytes:
+def encode_message_field(field: int, value: bytes) -> bytes:
     if not value:
         return b""
-    return bytes_field(field, value)
+    return encode_bytes_field(field, value)
 
 
 def read_varint(buffer: bytes, index: int) -> tuple[int, int]:
@@ -159,50 +159,50 @@ def _record_metadata_field(
         values[field.number] = field.value.decode(errors="replace")
 
 
-def _metadata_int(values: dict[int, int | str], number: int) -> int | None:
+def _read_metadata_integer(values: dict[int, int | str], number: int) -> int | None:
     value = values.get(number)
     return value if isinstance(value, int) else None
 
 
-def _metadata_text(values: dict[int, int | str], number: int) -> str | None:
+def _read_metadata_text(values: dict[int, int | str], number: int) -> str | None:
     value = values.get(number)
     return value if isinstance(value, str) else None
 
 
-def hero_build_metadata(result_blob: bytes) -> HeroBuildMetadata:
+def parse_hero_build_metadata(result_blob: bytes) -> HeroBuildMetadata:
     build = extract_hero_build(result_blob)
     values: dict[int, int | str] = {}
     tag_ids: list[int] = []
     for field in parse_fields(build):
         _record_metadata_field(field, values, tag_ids)
     return HeroBuildMetadata(
-        build_id=_metadata_int(values, 1),
-        hero_id=_metadata_int(values, 2),
-        author_account_id=_metadata_int(values, 3),
-        name=_metadata_text(values, 5),
-        description=_metadata_text(values, 6),
-        version=_metadata_int(values, 8),
-        publish_timestamp=_metadata_int(values, 13),
+        build_id=_read_metadata_integer(values, 1),
+        hero_id=_read_metadata_integer(values, 2),
+        author_account_id=_read_metadata_integer(values, 3),
+        name=_read_metadata_text(values, 5),
+        description=_read_metadata_text(values, 6),
+        version=_read_metadata_integer(values, 8),
+        publish_timestamp=_read_metadata_integer(values, 13),
         tag_ids=tuple(tag_ids),
     )
 
 
-def try_hero_build_metadata(value: object) -> HeroBuildMetadata | None:
+def try_parse_hero_build_metadata(value: object) -> HeroBuildMetadata | None:
     if not isinstance(value, bytes | bytearray):
         return None
     try:
-        return hero_build_metadata(bytes(value))
+        return parse_hero_build_metadata(bytes(value))
     except ValueError:
         return None
 
 
 def _encode_mod(item: GuideItem) -> bytes:
     return (
-        varint_field(1, item.item_id)
-        + string_field(2, item.annotation)
-        + varint_field(3, item.required_flex_slots)
-        + varint_field(4, item.sell_priority)
-        + varint_field(5, item.imbue_target_ability_id)
+        encode_varint_field(1, item.item_id)
+        + encode_string_field(2, item.annotation)
+        + encode_varint_field(3, item.required_flex_slots)
+        + encode_varint_field(4, item.sell_priority)
+        + encode_varint_field(5, item.imbue_target_ability_id)
     )
 
 
@@ -211,12 +211,12 @@ def _encode_category(
 ) -> bytes:
     output = bytearray()
     for item in category.items:
-        output += message_field(1, _encode_mod(item))
-    output += string_field(2, category.name)
-    output += string_field(3, category.description)
-    output += float_field(4, category.width)
-    output += float_field(5, category.height)
-    output += bool_field(6, value=category.optional)
+        output += encode_message_field(1, _encode_mod(item))
+    output += encode_string_field(2, category.name)
+    output += encode_string_field(3, category.description)
+    output += encode_float_field(4, category.width)
+    output += encode_float_field(5, category.height)
+    output += encode_boolean_field(6, value=category.optional)
     return bytes(output)
 
 
@@ -228,10 +228,10 @@ def _encode_currency_change(
     annotation: str | None = None,
 ) -> bytes:
     return (
-        varint_field(1, ability_id)
-        + varint_field(2, currency_type)
-        + varint_field(3, delta)
-        + string_field(4, annotation)
+        encode_varint_field(1, ability_id)
+        + encode_varint_field(2, currency_type)
+        + encode_varint_field(3, delta)
+        + encode_string_field(4, annotation)
     )
 
 
@@ -252,7 +252,7 @@ def _encode_ability_order(presentation: BuildPresentation) -> bytes:
         else:
             raise ValueError(f"ability {ability_id} appears too often in ability path")
         annotation = presentation.ability_path.annotation if index == 0 else None
-        output += message_field(
+        output += encode_message_field(
             1,
             _encode_currency_change(
                 ability_id,
@@ -274,31 +274,31 @@ def encode_hero_build(
 ) -> bytes:
     details = bytearray()
     for category in presentation.categories:
-        details += message_field(1, _encode_category(category))
-    details += message_field(2, _encode_ability_order(presentation))
+        details += encode_message_field(1, _encode_category(category))
+    details += encode_message_field(2, _encode_ability_order(presentation))
 
-    output = bytearray(varint_field(1, build_id))
-    output += varint_field(2, presentation.hero_id)
-    output += varint_field(3, account_id)
-    output += varint_field(4, timestamp)
-    output += string_field(5, presentation.name)
-    output += string_field(6, presentation.description)
-    output += varint_field(7, 0)
-    output += varint_field(8, 0)
-    output += varint_field(9, 0)
-    output += message_field(10, bytes(details))
+    output = bytearray(encode_varint_field(1, build_id))
+    output += encode_varint_field(2, presentation.hero_id)
+    output += encode_varint_field(3, account_id)
+    output += encode_varint_field(4, timestamp)
+    output += encode_string_field(5, presentation.name)
+    output += encode_string_field(6, presentation.description)
+    output += encode_varint_field(7, 0)
+    output += encode_varint_field(8, 0)
+    output += encode_varint_field(9, 0)
+    output += encode_message_field(10, bytes(details))
     for tag_id in presentation.tag_ids:
-        output += varint_field(11, tag_id)
-    output += bool_field(12, value=False)
+        output += encode_varint_field(11, tag_id)
+    output += encode_boolean_field(12, value=False)
     return bytes(output)
 
 
 def wrap_hero_build(hero_build: bytes) -> bytes:
     return (
-        bytes_field(1, hero_build)
-        + bytes_field(2, b"")
-        + varint_field(3, 0)
-        + varint_field(8, 0)
+        encode_bytes_field(1, hero_build)
+        + encode_bytes_field(2, b"")
+        + encode_varint_field(3, 0)
+        + encode_varint_field(8, 0)
     )
 
 

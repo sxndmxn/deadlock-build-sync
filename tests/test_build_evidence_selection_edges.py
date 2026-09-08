@@ -14,11 +14,15 @@ from deadlock_build_sync.build_evidence_types import (
 )
 from deadlock_build_sync.mechanics import InventoryState, ItemGraph, MechanicsError
 from deadlock_build_sync.purchase_guidance_types import PurchaseTiming
-from tests.build_evidence_fixtures import _assets, _document, _write
+from tests.build_evidence_fixtures import (
+    make_evidence_document,
+    make_item_assets,
+    write_evidence_document,
+)
 
 
 def _hero(path: Path) -> HeroBuildEvidence:
-    _write(path, _document())
+    write_evidence_document(path, make_evidence_document())
     return load_build_evidence(path).heroes[13]
 
 
@@ -50,11 +54,11 @@ def test_component_replay_rejects_missing_evidence_and_components(
 ) -> None:
     hero = _hero(tmp_path / "evidence.json")
     evidence_by_id = {item.item_id: item for item in hero.items}
-    graph = ItemGraph.from_assets(_assets())
+    graph = ItemGraph.from_assets(make_item_assets())
     with pytest.raises(MechanicsError, match="lacks evidence"):
         build_evidence_selection._replay_component_path(graph, evidence_by_id, (999,))
 
-    assets = _assets()
+    assets = make_item_assets()
     child = next(asset for asset in assets if asset["id"] == 202)
     child["component_items"] = ["item_t1_1"]
     graph = ItemGraph.from_assets(assets)
@@ -64,7 +68,7 @@ def test_component_replay_rejects_missing_evidence_and_components(
 
 def test_core_selection_wraps_illegal_inventory_state(tmp_path: Path) -> None:
     hero = _hero(tmp_path / "evidence.json")
-    assets = _assets()
+    assets = make_item_assets()
     for asset in assets:
         if asset["id"] in {101, 102, 201, 202, 301}:
             asset["is_active_item"] = True
@@ -80,7 +84,7 @@ def test_core_selection_checks_the_replayed_final_inventory(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     hero = _hero(tmp_path / "evidence.json")
-    graph = ItemGraph.from_assets(_assets())
+    graph = ItemGraph.from_assets(make_item_assets())
     by_id = {item.item_id: item for item in hero.items}
     monkeypatch.setattr(
         build_evidence_selection,
@@ -108,7 +112,7 @@ def test_selection_rejects_asset_identity_drift(
     value: object,
 ) -> None:
     hero = _hero(tmp_path / "evidence.json")
-    assets = _assets()
+    assets = make_item_assets()
     assets[0][field] = value
 
     with pytest.raises(ArtifactError, match="conflicts with assets"):
@@ -121,7 +125,7 @@ def test_selected_path_rejects_duplicate_and_invalid_sequence_paths(
     hero = _hero(tmp_path / "evidence.json")
     sequence = hero.sequence_policy
     assert sequence is not None
-    graph = ItemGraph.from_assets(_assets())
+    graph = ItemGraph.from_assets(make_item_assets())
     by_id = {item.item_id: item for item in hero.items}
     selected, order, _ = build_evidence_selection._select_core_candidate(
         graph, hero, by_id
@@ -153,7 +157,7 @@ def test_selected_path_rejects_incomplete_core_without_fallback(
         sequence_policy=replace(hero.sequence_policy, default_path=(101,)),
         purchase_timing=timing,
     )
-    graph = ItemGraph.from_assets(_assets())
+    graph = ItemGraph.from_assets(make_item_assets())
     by_id = {item.item_id: item for item in hero.items}
     selected, order, _ = build_evidence_selection._select_core_candidate(
         graph, hero, by_id
@@ -168,7 +172,7 @@ def test_selected_path_rejects_incomplete_core_without_fallback(
 
 def test_tier_selection_checks_core_overlap_and_order(tmp_path: Path) -> None:
     hero = _hero(tmp_path / "evidence.json")
-    graph = ItemGraph.from_assets(_assets())
+    graph = ItemGraph.from_assets(make_item_assets())
     first = hero.tier_policy.item_ids_by_tier[1][0]
     with pytest.raises(ArtifactError, match="invalid Tier 1 policy"):
         build_evidence_selection._tier_selection(
@@ -197,7 +201,7 @@ def test_situational_selection_checks_replacement_and_tier_membership(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     hero = _hero(tmp_path / "evidence.json")
-    graph = ItemGraph.from_assets(_assets())
+    graph = ItemGraph.from_assets(make_item_assets())
     by_id = {item.item_id: item for item in hero.items}
     selected_order = hero.core_policy.default_item_ids
     duplicate = _branch(102, 101)

@@ -38,7 +38,7 @@ class BuildTagError(ValueError):
     """Raised when the pinned build-tag taxonomy or selection is invalid."""
 
 
-def _valid_tag_value(class_name: object, label: object, tag_id: object) -> bool:
+def _is_valid_tag_value(class_name: object, label: object, tag_id: object) -> bool:
     return (
         isinstance(class_name, str)
         and bool(class_name.strip())
@@ -69,7 +69,7 @@ class BuildTagCatalog:
             class_name = value.get("class_name")
             label = value.get("label")
             tag_id = value.get("id")
-            if not _valid_tag_value(class_name, label, tag_id):
+            if not _is_valid_tag_value(class_name, label, tag_id):
                 raise BuildTagError("build-tag catalog contains a malformed tag")
             tags.append(
                 BuildTag(
@@ -111,18 +111,20 @@ class BuildTagSelection:
     archetype: str
 
 
-def _asset_text(value: object) -> str:
+def _extract_asset_text(value: object) -> str:
     if isinstance(value, dict):
-        return " ".join(f"{key} {_asset_text(nested)}" for key, nested in value.items())
+        return " ".join(
+            f"{key} {_extract_asset_text(nested)}" for key, nested in value.items()
+        )
     if isinstance(value, list):
-        return " ".join(_asset_text(nested) for nested in value)
+        return " ".join(_extract_asset_text(nested) for nested in value)
     if isinstance(value, str):
         return value
     return ""
 
 
-def _function_class(asset: dict[str, object]) -> str:
-    text = _asset_text(asset).casefold()
+def _classify_build_function(asset: dict[str, object]) -> str:
+    text = _extract_asset_text(asset).casefold()
     rules = (
         (
             "citadel_build_tag_debuff",
@@ -159,7 +161,7 @@ def _function_class(asset: dict[str, object]) -> str:
     return "citadel_build_tag_damage"
 
 
-def _first_maxed_ability_id(ability_path_ids: tuple[int, ...]) -> int:
+def _find_first_maxed_ability_id(ability_path_ids: tuple[int, ...]) -> int:
     counts = Counter(ability_path_ids)
     if (
         len(ability_path_ids) != 16
@@ -175,7 +177,7 @@ def _first_maxed_ability_id(ability_path_ids: tuple[int, ...]) -> int:
     raise BuildTagError("ability path does not max an ability")
 
 
-def _core_icon_item(core_items: tuple[GuideItem, ...]) -> GuideItem:
+def _select_core_icon_item(core_items: tuple[GuideItem, ...]) -> GuideItem:
     priority = {3: 0, 4: 1, 2: 2, 1: 3}
     candidates = tuple(item for item in core_items if item.tier in priority)
     if not candidates:
@@ -183,7 +185,7 @@ def _core_icon_item(core_items: tuple[GuideItem, ...]) -> GuideItem:
     return min(candidates, key=lambda item: (priority[item.tier], item.item_id))
 
 
-def _asset_identity(asset: dict[str, object], *, kind: str) -> tuple[str, str]:
+def _parse_asset_identity(asset: dict[str, object], *, kind: str) -> tuple[str, str]:
     class_name = asset.get("class_name")
     label = asset.get("name")
     if (
@@ -196,7 +198,7 @@ def _asset_identity(asset: dict[str, object], *, kind: str) -> tuple[str, str]:
     return class_name.strip(), label.strip()
 
 
-def _core_taxonomy(
+def _classify_core_items(
     core_item_ids: tuple[int, ...],
     assets_by_id: dict[int, dict[str, object]],
 ) -> tuple[str, str]:
@@ -213,7 +215,7 @@ def _core_taxonomy(
         axis = slot_class.get(str(asset.get("item_slot_type") or "").casefold())
         if axis is not None:
             axis_cost[axis] += cost
-        function_cost[_function_class(asset)] += cost
+        function_cost[_classify_build_function(asset)] += cost
     axis_class = min(
         AXIS_CLASSES,
         key=lambda class_name: (-axis_cost[class_name], AXIS_CLASSES.index(class_name)),
@@ -251,14 +253,16 @@ def select_build_tags(
     core_item_ids = tuple(item.item_id for item in core_items)
     if not core_item_ids or any(item_id not in by_id for item_id in core_item_ids):
         raise BuildTagError("CORE items are missing from pinned assets")
-    ability_id = _first_maxed_ability_id(ability_path_ids)
+    ability_id = _find_first_maxed_ability_id(ability_path_ids)
     ability_asset = by_id.get(ability_id)
     if ability_asset is None:
         raise BuildTagError("first-maxed ability is missing from pinned assets")
-    icon_item = _core_icon_item(core_items)
-    ability_class, ability_label = _asset_identity(ability_asset, kind="ability")
-    item_class, item_label = _asset_identity(by_id[icon_item.item_id], kind="CORE item")
-    axis_class, function_class = _core_taxonomy(core_item_ids, by_id)
+    icon_item = _select_core_icon_item(core_items)
+    ability_class, ability_label = _parse_asset_identity(ability_asset, kind="ability")
+    item_class, item_label = _parse_asset_identity(
+        by_id[icon_item.item_id], kind="CORE item"
+    )
+    axis_class, function_class = _classify_core_items(core_item_ids, by_id)
     function = catalog.require(function_class)
     axis = catalog.require(axis_class)
     archetype = (

@@ -95,7 +95,7 @@ def test_trace_mode_state_path_and_fact_validation(
     assert tracing_core._sanitize_path("account-123456/file") == (
         "account-<numeric-id>/file"
     )
-    assert tracing_core._exception_name(ValueError) == "builtins.ValueError"
+    assert tracing_core._format_exception_name(ValueError) == "builtins.ValueError"
 
 
 def test_inactive_trace_directory_checks_markers_and_links(
@@ -248,7 +248,7 @@ def test_trace_parent_module_and_stage_return_helpers(tmp_path: Path) -> None:
     session._writer.close()
 
     assert tracing_core._project_module(parent_frame) is None
-    assert tracing_core._module_file(
+    assert tracing_core._resolve_module_filename(
         "deadlock_build_sync.fixture", parent_frame
     ).endswith("deadlock_build_sync/fixture.py")
     assert any(event.get("event") == "stage_end" for event in _events(session.path))
@@ -288,7 +288,7 @@ def test_trace_call_recording_and_stage_exception_paths(
     monkeypatch.setattr(tracing_session, "_project_module", _project_fixture)
     monkeypatch.setattr(
         tracing_session,
-        "_module_file",
+        "_resolve_module_filename",
         lambda *_args: "deadlock_build_sync/fixture.py",
     )
     timestamps = iter((100, 150, 200, 260))

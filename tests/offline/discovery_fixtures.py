@@ -7,20 +7,20 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from deadlock_build_sync.mechanics import ItemGraph, ItemNode
-from deadlock_build_sync.offline.discovery_data import HeroData
+from deadlock_build_sync.offline.discovery_data import HeroDiscoveryData
 
 if TYPE_CHECKING:
     import duckdb
 
     from deadlock_build_sync.offline.discovery_types import (
-        Catalog,
-        FrozenGuide,
-        Nomination,
-        Tactics,
+        DiscoveryItemCatalog,
+        FrozenPurchaseGuide,
+        MechanicOverlapEvidence,
+        NominatedCoreBuild,
     )
 
 
-def graph_fixture(count: int = 12, *, active: bool = False) -> ItemGraph:
+def make_item_graph(count: int = 12, *, active: bool = False) -> ItemGraph:
     return ItemGraph({
         item: ItemNode(
             item,
@@ -38,14 +38,14 @@ def graph_fixture(count: int = 12, *, active: bool = False) -> ItemGraph:
     })
 
 
-def catalog_fixture(count: int) -> Catalog:
+def make_discovery_catalog(count: int) -> DiscoveryItemCatalog:
     return {
         str(item): {"cost": 1600, "name": f"Item {item}", "ancestors": []}
         for item in range(count)
     }
 
 
-def planted_data(seed: int = 17, per_fold: int = 1200) -> HeroData:
+def make_hero_discovery_data(seed: int = 17, per_fold: int = 1200) -> HeroDiscoveryData:
     rng = np.random.default_rng(seed)
     size = per_fold * 3
     group = np.tile(np.arange(per_fold) % 3, 3)
@@ -55,7 +55,7 @@ def planted_data(seed: int = 17, per_fold: int = 1200) -> HeroData:
     matrix[:, 12] = rng.random(size) < 0.65
     times = np.where(matrix, 100 + 55 * np.arange(13)[None, :], -1).astype(np.int32)
     won = rng.random(size) < np.asarray([0.75, 0.65, 0.25])[group]
-    return HeroData(
+    return HeroDiscoveryData(
         6,
         tuple(range(13)),
         matrix,
@@ -71,9 +71,12 @@ def planted_data(seed: int = 17, per_fold: int = 1200) -> HeroData:
     )
 
 
-def frozen_guide(
-    _con: duckdb.DuckDBPyConnection, _data: HeroData, row: Nomination, _graph: ItemGraph
-) -> FrozenGuide:
+def make_frozen_guide(
+    _connection: duckdb.DuckDBPyConnection,
+    _data: HeroDiscoveryData,
+    row: NominatedCoreBuild,
+    _graph: ItemGraph,
+) -> FrozenPurchaseGuide:
     return {
         "ready": True,
         "path": row["path"]["order"],
@@ -84,7 +87,7 @@ def frozen_guide(
     }
 
 
-def supported_tactics(*_args: object) -> Tactics:
+def make_supported_mechanic_evidence(*_args: object) -> MechanicOverlapEvidence:
     return {
         "supported_focus": True,
         "focuses": [],

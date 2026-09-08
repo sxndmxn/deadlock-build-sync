@@ -10,7 +10,7 @@ from deadlock_build_sync.offline import (
 )
 from deadlock_build_sync.offline.api import write_json
 from deadlock_build_sync.offline.config import RunPaths, sha256_json
-from tests.mechanics_fixtures import item
+from tests.mechanics_fixtures import make_item_asset
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -30,7 +30,7 @@ def test_export_production_evidence_writes_closed_document(
 ) -> None:
     paths = RunPaths.create(tmp_path, "export")
     asset = {
-        **item(1, "item_1"),
+        **make_item_asset(1, "item_1"),
         "cost": 500,
         "item_tier": 1,
         "game_mode": "normal",
@@ -54,19 +54,19 @@ def test_export_production_evidence_writes_closed_document(
     write_json(paths.raw / "ranks.json", [])
     monkeypatch.setattr(
         current_production_evidence,
-        "_patch_at",
+        "_select_patch_at_timestamp",
         _return({"identity": "patch", "start_timestamp": 1}),
     )
     monkeypatch.setattr(
         current_production_evidence,
-        "discover_roster",
+        "discover_hero_roster",
         _return([{"hero_id": 7, "hero": "Hero", "builds": [{"path_id": "test"}]}]),
     )
     target = paths.run / "build-evidence.json"
 
     monkeypatch.setattr(
         current_production_evidence,
-        "validated_write",
+        "write_validated_evidence",
         lambda path, value: path.write_text(json.dumps(value)),
     )
     document = current_production_evidence.export_production_evidence(paths, target)
@@ -80,7 +80,7 @@ def test_export_production_evidence_writes_closed_document(
     previous = target.read_bytes()
     monkeypatch.setattr(
         current_production_evidence,
-        "discover_roster",
+        "discover_hero_roster",
         _return([
             {
                 "hero_id": 7,

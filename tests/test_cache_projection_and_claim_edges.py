@@ -10,7 +10,7 @@ from deadlock_build_sync.cache import CacheError, update_managed_builds
 from deadlock_build_sync.policy import ClaimClass, EvidenceClaim, PolicyError
 from deadlock_build_sync.protobuf import HeroBuildMetadata
 from deadlock_build_sync.snapshot import EvidenceUnit
-from tests.cache_fixtures import guide, unpublished
+from tests.cache_fixtures import make_purchase_guide, make_unpublished_build
 
 
 @dataclass
@@ -27,14 +27,14 @@ def _managed_blob() -> bytes:
     }
     updated, _, _, _, _ = update_managed_builds(
         root,
-        [guide()],
+        [make_purchase_guide()],
         account_id=146293212,
         persona="Player",
         timestamp=100,
         patch_title="Patch",
         patch_published_at="2026-01-01T00:00:00Z",
     )
-    blob = unpublished(updated)[0]
+    blob = make_unpublished_build(updated)[0]
     assert isinstance(blob, bytes)
     return blob
 
@@ -162,7 +162,7 @@ def test_cache_reader_adapts_only_external_v4_blob_layout(
 
 
 def test_cached_build_scan_skips_nonlist_sections() -> None:
-    assert cache_projection._cached_builds({
+    assert cache_projection._read_cached_builds({
         "Favorites": {},
         "Unpublished": [bytearray(b"one")],
         "SavedLastUsed": ["not-bytes"],
@@ -172,10 +172,12 @@ def test_cached_build_scan_skips_nonlist_sections() -> None:
 def test_build_id_allocation_rejects_reserved_range(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(cache_projection, "_cached_builds", lambda _root: [b"blob"])
+    monkeypatch.setattr(
+        cache_projection, "_read_cached_builds", lambda _root: [b"blob"]
+    )
     monkeypatch.setattr(
         cache_projection,
-        "hero_build_metadata",
+        "parse_hero_build_metadata",
         lambda _blob: HeroBuildMetadata(999, 12, 7, None, None, None, 0, ()),
     )
 
@@ -189,10 +191,12 @@ def test_build_id_allocation_rejects_reserved_range(
 def test_build_id_allocation_ignores_another_account(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(cache_projection, "_cached_builds", lambda _root: [b"blob"])
+    monkeypatch.setattr(
+        cache_projection, "_read_cached_builds", lambda _root: [b"blob"]
+    )
     monkeypatch.setattr(
         cache_projection,
-        "hero_build_metadata",
+        "parse_hero_build_metadata",
         lambda _blob: HeroBuildMetadata(10, 12, 8, None, None, None, 0, ()),
     )
 
@@ -201,13 +205,13 @@ def test_build_id_allocation_ignores_another_account(
 
 def test_target_managed_build_ignores_bad_values() -> None:
     assert (
-        cache_projection._target_managed_build(
+        cache_projection._match_target_managed_build(
             "not-bytes", target_hero_ids={12}, account_id=7
         )
         is None
     )
     assert (
-        cache_projection._target_managed_build(
+        cache_projection._match_target_managed_build(
             b"\xff", target_hero_ids={12}, account_id=7
         )
         is None
@@ -246,7 +250,7 @@ def test_managed_update_rejects_bad_section_and_reserved_new_id(
     ):
         update_managed_builds(
             {"Unpublished": {}},
-            [guide()],
+            [make_purchase_guide()],
             account_id=7,
             persona="Player",
             timestamp=1,
@@ -263,7 +267,7 @@ def test_managed_update_rejects_bad_section_and_reserved_new_id(
     ):
         update_managed_builds(
             {"Unpublished": []},
-            [guide()],
+            [make_purchase_guide()],
             account_id=7,
             persona="Player",
             timestamp=1,

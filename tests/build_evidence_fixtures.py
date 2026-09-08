@@ -21,12 +21,12 @@ from deadlock_build_sync.value_validation import (
 if TYPE_CHECKING:
     from pathlib import Path
 
-from tests.discovery_fixtures import current_document
+from tests.discovery_fixtures import make_current_evidence_document
 
 PATCH_IDENTITY = "f" * 64
 
 
-def _assets() -> list[dict[str, object]]:
+def make_item_assets() -> list[dict[str, object]]:
     return [
         {
             "id": tier * 100 + index,
@@ -46,16 +46,18 @@ def _assets() -> list[dict[str, object]]:
     ]
 
 
-def _epochs(identity: str = PATCH_IDENTITY) -> EpochSet:
+def make_epoch_boundaries(identity: str = PATCH_IDENTITY) -> EpochSet:
     boundary = EpochBoundary(identity, 1_700_000_000)
     return EpochSet(boundary, boundary, boundary, boundary)
 
 
-def _rank_catalog() -> RankCatalog:
+def make_rank_catalog() -> RankCatalog:
     return RankCatalog({tier: f"Rank {tier}" for tier in range(1, 12)})
 
 
-def _item(asset: dict[str, object], *, eligible: int = 1_000) -> dict[str, object]:
+def make_item_evidence(
+    asset: dict[str, object], *, eligible: int = 1_000
+) -> dict[str, object]:
     item_id = integer(asset["id"])
     index = item_id % 100
     adopters = 200 - index
@@ -143,7 +145,7 @@ def _has_visible_fixture_upgrade(
     )
 
 
-def _fixture_tier_items(
+def _select_fixture_tier_items(
     tier: int,
     item_rows: list[dict[str, object]],
     graph: ItemGraph,
@@ -177,7 +179,7 @@ def _fixture_tier_items(
     return [integer(item["item_id"]) for item in selected]
 
 
-def _fixture_tier_membership(
+def _build_fixture_tier_membership(
     item_rows: list[dict[str, object]],
     graph: ItemGraph,
     excluded_ids: set[int],
@@ -185,7 +187,7 @@ def _fixture_tier_membership(
     visible_higher_tier_ids: set[int] = set()
     membership: dict[str, list[int]] = {}
     for tier in range(4, 0, -1):
-        selected_ids = _fixture_tier_items(
+        selected_ids = _select_fixture_tier_items(
             tier,
             item_rows,
             graph,
@@ -197,19 +199,19 @@ def _fixture_tier_membership(
     return membership
 
 
-def _document(
+def make_evidence_document(
     *,
     assets: list[dict[str, object]] | None = None,
     median_final_net_worth: int = 30_000,
     default_item_ids: list[int] | None = None,
     core_alternatives: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
-    current_assets = assets or _assets()
-    item_rows = [_item(asset) for asset in current_assets]
+    current_assets = assets or make_item_assets()
+    item_rows = [make_item_evidence(asset) for asset in current_assets]
     selected_default = default_item_ids or [101, 102, 201, 202, 301, 302]
     optional_ids = {integer(row["item_id"]) for row in (core_alternatives or [])}
     graph = ItemGraph.from_assets(current_assets)
-    tier_membership = _fixture_tier_membership(
+    tier_membership = _build_fixture_tier_membership(
         item_rows, graph, set(selected_default) | optional_ids
     )
     heroes = [{"id": 13, "name": "Haze"}]
@@ -256,9 +258,9 @@ def _document(
             "maximum_badge": 115,
         },
         "patch": {"identity": PATCH_IDENTITY},
-        "epochs": _epochs().as_dict(),
+        "epochs": make_epoch_boundaries().as_dict(),
         "client_version": 6_673,
-        "rank_labels_sha256": _rank_catalog().sha256,
+        "rank_labels_sha256": make_rank_catalog().sha256,
         "heroes_sha256": sha256_json(heroes),
         "items_sha256": sha256_json(current_assets),
         "requested_hero_ids": [13],
@@ -326,42 +328,42 @@ def _document(
             }
         ],
     }
-    return current_document(payload, current_assets)
+    return make_current_evidence_document(payload, current_assets)
 
 
-def _write(path: Path, document: dict[str, object]) -> None:
+def write_evidence_document(path: Path, document: dict[str, object]) -> None:
     path.write_text(json.dumps(document), encoding="utf-8")
 
 
-def _refingerprint(document: dict[str, object]) -> None:
+def refresh_evidence_fingerprints(document: dict[str, object]) -> None:
     document.pop("artifact_id", None)
     document["artifact_id"] = sha256_json(document)
 
 
 def write_fingerprinted_evidence(path: Path, document: dict[str, object]) -> None:
     """Write an edited fixture with a matching fingerprint for validation tests."""
-    _refingerprint(document)
-    _write(path, document)
+    refresh_evidence_fingerprints(document)
+    write_evidence_document(path, document)
 
 
-def _first_build(document: dict[str, object]) -> dict[str, object]:
+def get_first_build(document: dict[str, object]) -> dict[str, object]:
     heroes = require_object_rows(document["heroes"])
     return require_object_rows(heroes[0]["builds"])[0]
 
 
-def _first_item(document: dict[str, object]) -> dict[str, object]:
-    return require_object_rows(_first_build(document)["items"])[0]
+def get_first_item(document: dict[str, object]) -> dict[str, object]:
+    return require_object_rows(get_first_build(document)["items"])[0]
 
 
-def _sequence_policy(document: dict[str, object]) -> dict[str, object]:
-    return require_object_dict(_first_build(document)["sequence_policy"])
+def get_sequence_policy(document: dict[str, object]) -> dict[str, object]:
+    return require_object_dict(get_first_build(document)["sequence_policy"])
 
 
-def _situational_policy(document: dict[str, object]) -> dict[str, object]:
-    return require_object_dict(_first_build(document)["situational_policy"])
+def get_situational_policy(document: dict[str, object]) -> dict[str, object]:
+    return require_object_dict(get_first_build(document)["situational_policy"])
 
 
-def _fixture_card(tier: int, offset: int) -> str:
+def _make_fixture_core_card(tier: int, offset: int) -> str:
     """Build the item card the projection must carry for a fixture item.
 
     Returns:

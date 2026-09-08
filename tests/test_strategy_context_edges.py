@@ -8,14 +8,14 @@ import pytest
 
 from deadlock_build_sync import strategy_context_validation as validation
 from deadlock_build_sync.value_validation import object_dict, require_object_rows
-from tests.artifact_bundle_fixtures import _write_bundle
+from tests.artifact_bundle_fixtures import write_artifact_bundle
 
 if TYPE_CHECKING:
     from pathlib import Path
 
 
 def _document(tmp_path: Path) -> dict[str, object]:
-    context_path, _policy_path, _narrative_path, _evidence_path = _write_bundle(
+    context_path, _policy_path, _narrative_path, _evidence_path = write_artifact_bundle(
         tmp_path
     )
     document = object_dict(json.loads(context_path.read_text(encoding="utf-8")))
@@ -78,12 +78,14 @@ def test_context_item_records_reads_core_optional_and_tiers() -> None:
         },
         "tiers": {"1": [{"item_id": 3}], "2": "bad"},
     }
-    assert [row["item_id"] for row in validation._context_item_records(entry)] == [
+    assert [
+        row["item_id"] for row in validation._collect_context_item_records(entry)
+    ] == [
         1,
         2,
         3,
     ]
-    assert validation._context_item_records({}) == []
+    assert validation._collect_context_item_records({}) == []
 
 
 @pytest.mark.parametrize(
@@ -92,7 +94,7 @@ def test_context_item_records_reads_core_optional_and_tiers() -> None:
 )
 def test_item_mechanics_document_rejects_invalid_keys_and_rows(value: object) -> None:
     with pytest.raises(validation.StrategyContextError, match="invalid item mechanics"):
-        validation._validated_item_mechanics(value)
+        validation._parse_item_mechanics_records(value)
 
 
 @pytest.mark.parametrize(
@@ -155,7 +157,7 @@ def test_strategy_context_header_rejects_invalid_sections(
 ) -> None:
     document = {**_document(tmp_path), **change}
     with pytest.raises(validation.StrategyContextError, match=message):
-        validation._strategy_context_header(document)
+        validation._parse_strategy_context_header(document)
 
 
 @pytest.mark.parametrize(
@@ -164,7 +166,7 @@ def test_strategy_context_header_rejects_invalid_sections(
 )
 def test_context_build_key_rejects_invalid_identity(entry: object) -> None:
     with pytest.raises(validation.StrategyContextError, match="invalid hero"):
-        validation._context_build_key(entry)
+        validation._parse_context_build_key(entry)
 
 
 def test_validate_context_hero_checks_snapshot_and_all_fingerprints(
@@ -173,7 +175,7 @@ def test_validate_context_hero_checks_snapshot_and_all_fingerprints(
     document = _document(tmp_path)
     hero = _hero(document)
     manifest = _manifest(document)
-    mechanics = validation._validated_item_mechanics(document["item_mechanics"])
+    mechanics = validation._parse_item_mechanics_records(document["item_mechanics"])
 
     changed = deepcopy(hero)
     changed["snapshot_id"] = "wrong"

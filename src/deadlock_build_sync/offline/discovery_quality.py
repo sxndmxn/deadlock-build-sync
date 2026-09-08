@@ -10,17 +10,25 @@ from scipy.stats import binomtest, norm
 
 from deadlock_build_sync.build_support import outcome_limitations as rejection_reasons
 
-from .discovery_ownership import joint_lift, ownership
+from .discovery_ownership import (
+    calculate_core_ownership_mask,
+    calculate_joint_ownership_lift,
+)
 
 if TYPE_CHECKING:
-    from .discovery_data import HeroData
+    from .discovery_data import HeroDiscoveryData
 
-from .discovery_types import Adjusted, CoreEvaluation
+from .discovery_types import AdjustedOutcomeEstimate, CoreEvaluation
 
-__all__ = ["evaluate_core", "rejection_reasons", "standardized", "wilson_lower"]
+__all__ = [
+    "calculate_wilson_lower_bound",
+    "estimate_standardized_outcome_difference",
+    "evaluate_core",
+    "rejection_reasons",
+]
 
 
-def wilson_lower(wins: int, count: int, z: float = 1.96) -> float:
+def calculate_wilson_lower_bound(wins: int, count: int, z: float = 1.96) -> float:
     if count == 0:
         return 0.0
     rate = wins / count
@@ -31,7 +39,9 @@ def wilson_lower(wins: int, count: int, z: float = 1.96) -> float:
     ) / (1 + z * z / count)
 
 
-def standardized(core: np.ndarray, won: np.ndarray, strata: np.ndarray) -> Adjusted:
+def estimate_standardized_outcome_difference(
+    core: np.ndarray, won: np.ndarray, strata: np.ndarray
+) -> AdjustedOutcomeEstimate:
     cells = 2 * strata + core.astype(int)
     size = 2 * (int(strata.max()) + 1) if len(strata) else 0
     counts = np.bincount(cells, minlength=size).reshape(-1, 2)
@@ -39,7 +49,7 @@ def standardized(core: np.ndarray, won: np.ndarray, strata: np.ndarray) -> Adjus
     shared = (counts >= 10).all(axis=1)
     common_counts, common_wins = counts[shared], wins[shared]
     overlap = int(common_counts[:, 1].sum())
-    result: Adjusted = {
+    result: AdjustedOutcomeEstimate = {
         "core_overlap": overlap,
         "overlap_share": overlap / max(1, int(core.sum())),
         "strata": int(shared.sum()),
@@ -67,7 +77,7 @@ def standardized(core: np.ndarray, won: np.ndarray, strata: np.ndarray) -> Adjus
     return result
 
 
-def state_strata(data: HeroData, rows: np.ndarray) -> np.ndarray:
+def calculate_state_strata(data: HeroDiscoveryData, rows: np.ndarray) -> np.ndarray:
     bins = np.column_stack((
         data.wealth[rows] // 5000,
         np.digitize(data.lead[rows], [-0.1, -0.03, 0.03, 0.1]),
@@ -76,18 +86,22 @@ def state_strata(data: HeroData, rows: np.ndarray) -> np.ndarray:
     return np.unique(bins, axis=0, return_inverse=True)[1]
 
 
-def evaluate_core(data: HeroData, items: tuple[int, ...], fold: str) -> CoreEvaluation:
-    rows = data.mask(fold)
+def evaluate_core(
+    data: HeroDiscoveryData, items: tuple[int, ...], fold: str
+) -> CoreEvaluation:
+    rows = data.fold_mask(fold)
     index = {item: column for column, item in enumerate(data.items)}
     columns = tuple(index[item] for item in items)
     matrix, won = data.matrix[rows], data.won[rows]
-    owned = ownership(matrix, columns)
+    owned = calculate_core_ownership_mask(matrix, columns)
     count, wins = int(owned.sum()), int(won[owned].sum())
     observed = np.isfinite(data.wealth[rows]) & np.isfinite(data.lead[rows])
-    adjusted = standardized(
+    adjusted = estimate_standardized_outcome_difference(
         owned[observed],
         won[observed],
-        state_strata(data, rows & np.isfinite(data.wealth) & np.isfinite(data.lead)),
+        calculate_state_strata(
+            data, rows & np.isfinite(data.wealth) & np.isfinite(data.lead)
+        ),
     )
     adjusted["overlap_share"] = adjusted["core_overlap"] / max(1, count)
     return {
@@ -98,8 +112,8 @@ def evaluate_core(data: HeroData, items: tuple[int, ...], fold: str) -> CoreEval
         "win_rate": wins / count if count else None,
         "hero_win_rate": float(won.mean()) if len(won) else None,
         "coverage": count / max(1, len(won)),
-        "joint_lift": joint_lift(matrix, columns, count),
-        "win_lower_95": wilson_lower(wins, count),
+        "joint_lift": calculate_joint_ownership_lift(matrix, columns, count),
+        "win_lower_95": calculate_wilson_lower_bound(wins, count),
         "win_p_greater_half": float(
             binomtest(wins, count, 0.5, alternative="greater").pvalue
         )

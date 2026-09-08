@@ -198,7 +198,9 @@ class CategoryBonusTable:
             raise MechanicsError("authoritative cost_bonuses are missing")
         categories: dict[str, tuple[CategoryBonus, ...]] = {}
         for category, rows in raw.items():
-            categories[str(category).casefold()] = _category_bonuses(category, rows)
+            categories[str(category).casefold()] = _parse_category_bonuses(
+                category, rows
+            )
         return cls(categories)
 
     def crossed(
@@ -225,7 +227,7 @@ class CategoryBonusTable:
         )
 
 
-def _category_bonus_rows(category: object, rows: object) -> list[object]:
+def _parse_category_bonus_rows(category: object, rows: object) -> list[object]:
     if isinstance(rows, dict):
         return [
             {"threshold": threshold, "value": value}
@@ -236,7 +238,7 @@ def _category_bonus_rows(category: object, rows: object) -> list[object]:
     return cast("list[object]", rows)
 
 
-def _category_bonus(category: object, row: object) -> CategoryBonus:
+def _parse_category_bonus(category: object, row: object) -> CategoryBonus:
     document = object_dict(row)
     if document is None:
         raise MechanicsError(f"malformed {category} cost bonus")
@@ -256,11 +258,13 @@ def _category_bonus(category: object, row: object) -> CategoryBonus:
     return CategoryBonus(threshold, values)
 
 
-def _category_bonuses(category: object, rows: object) -> tuple[CategoryBonus, ...]:
+def _parse_category_bonuses(
+    category: object, rows: object
+) -> tuple[CategoryBonus, ...]:
     ordered = sorted(
         (
-            _category_bonus(category, row)
-            for row in _category_bonus_rows(category, rows)
+            _parse_category_bonus(category, row)
+            for row in _parse_category_bonus_rows(category, rows)
         ),
         key=lambda bonus: bonus.threshold,
     )

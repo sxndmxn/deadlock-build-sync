@@ -1,4 +1,4 @@
-"""Outcome-blind, supported extensions of Eclat seed combinations."""
+"""Extend supported Eclat itemsets without using match outcomes."""
 
 from __future__ import annotations
 
@@ -8,16 +8,21 @@ from itertools import combinations
 import numpy as np
 
 from .discovery_config import (
-    EXTENSION_RETENTION,
-    MAXIMUM_COST,
-    MINIMUM,
-    PER_SIZE,
+    MAXIMUM_CANDIDATES_PER_SIZE,
+    MAXIMUM_CORE_COST,
+    MINIMUM_CORE_OWNERS,
+    MINIMUM_EXTENSION_RETENTION,
 )
-from .discovery_patterns import eclat
-from .discovery_types import Candidate, Catalog, Mining, PatternCounts
+from .discovery_patterns import mine_eclat_itemsets
+from .discovery_types import (
+    CoreDiscoveryCandidate,
+    CoreMiningResult,
+    DiscoveryItemCatalog,
+    ItemsetSupportCounts,
+)
 
 
-def valid_items(items: tuple[int, ...], catalog: Catalog) -> bool:
+def are_valid_core_items(items: tuple[int, ...], catalog: DiscoveryItemCatalog) -> bool:
     if not 3 <= len(items) <= 6 or len(set(items)) != len(items):
         return False
     if any(str(item) not in catalog for item in items):
@@ -25,39 +30,40 @@ def valid_items(items: tuple[int, ...], catalog: Catalog) -> bool:
     assets = [catalog[str(item)] for item in items]
     return (
         min(asset["cost"] for asset in assets) >= 1600
-        and sum(asset["cost"] for asset in assets) <= MAXIMUM_COST
+        and sum(asset["cost"] for asset in assets) <= MAXIMUM_CORE_COST
         and not any(set(items) & set(asset["ancestors"]) for asset in assets)
     )
 
 
-def parent_for(
-    columns: tuple[int, ...], count: int, previous: PatternCounts
+def select_supported_parent(
+    columns: tuple[int, ...], count: int, previous: ItemsetSupportCounts
 ) -> tuple[int, ...] | None:
     if len(columns) == 3:
         return ()
     eligible = [
         parent
         for parent in combinations(columns, len(columns) - 1)
-        if parent in previous and count / previous[parent] >= EXTENSION_RETENTION
+        if parent in previous
+        and count / previous[parent] >= MINIMUM_EXTENSION_RETENTION
     ]
     return min(eligible) if eligible else None
 
 
-def qualify(
-    raw: PatternCounts,
-    previous: PatternCounts,
+def qualify_itemsets(
+    raw: ItemsetSupportCounts,
+    previous: ItemsetSupportCounts,
     item_ids: tuple[int, ...],
     marginal: np.ndarray,
     rows: int,
-    catalog: Catalog,
-) -> tuple[list[Candidate], PatternCounts]:
-    candidates: list[Candidate] = []
-    qualified: PatternCounts = {}
+    catalog: DiscoveryItemCatalog,
+) -> tuple[list[CoreDiscoveryCandidate], ItemsetSupportCounts]:
+    candidates: list[CoreDiscoveryCandidate] = []
+    qualified: ItemsetSupportCounts = {}
     for columns, count in raw.items():
         items = tuple(item_ids[column] for column in columns)
-        if not valid_items(items, catalog):
+        if not are_valid_core_items(items, catalog):
             continue
-        parent = parent_for(columns, count, previous)
+        parent = select_supported_parent(columns, count, previous)
         lift = count / rows / float(marginal[list(columns)].prod())
         if parent is None or lift < 1.1:
             continue
@@ -73,23 +79,28 @@ def qualify(
             "parent_retention": count / previous[parent] if parent else None,
         })
     ranked = sorted(candidates, key=lambda row: (-row["score"], row["items"]))
-    return ranked[:PER_SIZE], qualified
+    return ranked[:MAXIMUM_CANDIDATES_PER_SIZE], qualified
 
 
-def mine(
-    matrix: np.ndarray, times: np.ndarray, item_ids: tuple[int, ...], catalog: Catalog
-) -> Mining:
+def mine_core_candidates(
+    matrix: np.ndarray,
+    times: np.ndarray,
+    item_ids: tuple[int, ...],
+    catalog: DiscoveryItemCatalog,
+) -> CoreMiningResult:
     if not np.array_equal(matrix, times >= 0) or (times >= 1200).any():
-        raise ValueError("Inventory/latest acquisition mismatch or future event")
+        raise ValueError(
+            "Inventory does not match acquisition times, or a purchase occurs after the checkpoint"
+        )
     if not len(matrix):
         return {"candidates": [], "sizes": {}}
-    previous: PatternCounts = {}
-    selected: list[Candidate] = []
+    previous: ItemsetSupportCounts = {}
+    selected: list[CoreDiscoveryCandidate] = []
     diagnostics: dict[str, dict[str, int]] = {}
     marginal = matrix.mean(axis=0)
     for length in range(3, 7):
-        raw = eclat(matrix, minimum=MINIMUM, length=length)
-        rows, previous = qualify(
+        raw = mine_eclat_itemsets(matrix, minimum=MINIMUM_CORE_OWNERS, length=length)
+        rows, previous = qualify_itemsets(
             raw, previous, item_ids, marginal, len(matrix), catalog
         )
         selected.extend(rows)

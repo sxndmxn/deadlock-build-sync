@@ -5,7 +5,7 @@ from deadlock_build_sync.mechanics import (
     classify_observed_item_threats,
     conditional_item_decision,
 )
-from tests.mechanics_fixtures import item
+from tests.mechanics_fixtures import make_item_asset
 
 
 @pytest.mark.parametrize(
@@ -23,21 +23,21 @@ def test_observed_enemy_item_threats_require_explicit_mechanics(
     description: str,
     expected: str,
 ) -> None:
-    asset = item(99, "threat")
+    asset = make_item_asset(99, "threat")
     asset["description"] = {"desc": description}
 
     assert expected in classify_observed_item_threats(asset)
 
 
 def test_anti_heal_is_not_mislabeled_as_enemy_healing() -> None:
-    asset = item(99, "anti_heal")
+    asset = make_item_asset(99, "anti_heal")
     asset["description"] = {"desc": "Applies healing reduction."}
 
     assert "healing" not in classify_observed_item_threats(asset)
 
 
 def test_disabled_property_labels_do_not_create_observed_threats() -> None:
-    asset = item(99, "neutral")
+    asset = make_item_asset(99, "neutral")
     asset["properties"] = {
         "WeaponPower": {
             "label": "Weapon Damage",
@@ -55,7 +55,7 @@ def test_disabled_property_labels_do_not_create_observed_threats() -> None:
 
 
 def test_disabled_property_labels_do_not_create_counter_responses() -> None:
-    asset = item(99, "neutral")
+    asset = make_item_asset(99, "neutral")
     asset["properties"] = {
         "BulletResist": {
             "label": "Bullet Resist",
@@ -73,7 +73,7 @@ def test_disabled_property_labels_do_not_create_counter_responses() -> None:
 
 
 def test_only_important_typed_properties_create_observed_threats() -> None:
-    asset = item(99, "spirit")
+    asset = make_item_asset(99, "spirit")
     asset["properties"] = {
         "TechPower": {
             "label": "Spirit Power",
@@ -91,7 +91,7 @@ def test_only_important_typed_properties_create_observed_threats() -> None:
 
 
 def test_hidden_minor_resist_does_not_make_melee_charge_a_bullet_response() -> None:
-    asset = item(99, "melee_charge")
+    asset = make_item_asset(99, "melee_charge")
     asset["description"] = {"desc": "Charge a heavy melee attack faster."}
     asset["properties"] = {
         "BulletResist": {
@@ -106,7 +106,7 @@ def test_hidden_minor_resist_does_not_make_melee_charge_a_bullet_response() -> N
 
 
 def test_enemy_resist_reduction_is_not_a_defensive_response() -> None:
-    hunter_aura = item(99, "hunters_aura")
+    hunter_aura = make_item_asset(99, "hunters_aura")
     hunter_aura["description"] = {
         "desc": "Reduces nearby enemies' Bullet Resist and Fire Rate."
     }
@@ -124,7 +124,7 @@ def test_enemy_resist_reduction_is_not_a_defensive_response() -> None:
             "value": "0.15",
         },
     }
-    comparator = item(100, "weapon_item")
+    comparator = make_item_asset(100, "weapon_item")
     comparator["description"] = {"desc": "Gain Weapon Damage."}
 
     assert classify_item_threat_responses(hunter_aura) == frozenset({"bullet_pressure"})
@@ -137,7 +137,7 @@ def test_enemy_resist_reduction_is_not_a_defensive_response() -> None:
 
 
 def test_bullet_resist_reduction_label_is_not_bullet_defense() -> None:
-    shredder = item(99, "bullet_resist_shredder")
+    shredder = make_item_asset(99, "bullet_resist_shredder")
     shredder["description"] = {"desc": "Reduces Bullet Resist on enemies."}
     shredder["properties"] = {
         "BulletArmorReduction": {
@@ -151,7 +151,7 @@ def test_bullet_resist_reduction_label_is_not_bullet_defense() -> None:
 
 
 def test_automatically_does_not_create_ally_protection() -> None:
-    active_reload = item(99, "active_reload")
+    active_reload = make_item_asset(99, "active_reload")
     active_reload["description"] = {
         "desc": "Automatically finish reloading and gain Bullet Lifesteal."
     }
@@ -160,7 +160,7 @@ def test_automatically_does_not_create_ally_protection() -> None:
 
 
 def test_upgrade_only_ability_text_does_not_create_enemy_threat() -> None:
-    rising_ram = item(99, "rising_ram")
+    rising_ram = make_item_asset(99, "rising_ram")
     rising_ram["type"] = "ability"
     rising_ram["description"] = {
         "desc": "Charge forward and knock enemies upward.",
@@ -169,7 +169,7 @@ def test_upgrade_only_ability_text_does_not_create_enemy_threat() -> None:
 
     assert "bullet_pressure" not in classify_observed_item_threats(rising_ram)
 
-    assassinate = item(100, "assassinate")
+    assassinate = make_item_asset(100, "assassinate")
     assassinate["type"] = "ability"
     assassinate["description"] = {
         "desc": "Deal damage with bonus Weapon Damage against wounded targets."

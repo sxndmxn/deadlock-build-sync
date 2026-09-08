@@ -3,18 +3,23 @@ import pytest
 from deadlock_build_sync.quality_replay import parse_replay
 from deadlock_build_sync.recommendation_state import RecommendationError
 from deadlock_build_sync.value_validation import require_object_dict
-from tests.quality_fixtures import replay_document, replay_row
-from tests.recommendation_fixtures import build_policy
+from tests.quality_fixtures import make_replay_document, make_replay_row
+from tests.recommendation_fixtures import make_recommendation_policy
 
 
 def _parse(document: object) -> None:
-    parse_replay(document, (build_policy(),), cutoff=1000, evidence_id="a" * 64)
+    parse_replay(
+        document, (make_recommendation_policy(),), cutoff=1000, evidence_id="a" * 64
+    )
 
 
 def test_later_replay_retains_unfinished_and_ambiguous_states() -> None:
-    row = {**replay_row(), "ambiguous_purchase": True}
+    row = {**make_replay_row(), "ambiguous_purchase": True}
     cases = parse_replay(
-        replay_document([row]), (build_policy(),), cutoff=1000, evidence_id="a" * 64
+        make_replay_document([row]),
+        (make_recommendation_policy(),),
+        cutoff=1000,
+        evidence_id="a" * 64,
     )
     assert len(cases) == 1
     assert cases[0].ambiguous_purchase
@@ -41,32 +46,32 @@ def test_replay_rejects_invalid_or_future_inputs(
     field: str, value: object, message: str
 ) -> None:
     with pytest.raises(RecommendationError, match=message):
-        _parse(replay_document([{**replay_row(), field: value}]))
+        _parse(make_replay_document([{**make_replay_row(), field: value}]))
 
 
 def test_replay_rejects_duplicate_and_selected_cohorts() -> None:
     with pytest.raises(RecommendationError, match="repeats"):
-        _parse(replay_document([replay_row(), replay_row()]))
+        _parse(make_replay_document([make_replay_row(), make_replay_row()]))
     with pytest.raises(RecommendationError, match="unfinished"):
-        _parse({**replay_document([]), "cohort_selection": "completed_only"})
+        _parse({**make_replay_document([]), "cohort_selection": "completed_only"})
     with pytest.raises(RecommendationError, match="schema"):
         _parse({})
     with pytest.raises(RecommendationError, match="list of objects"):
-        _parse({**replay_document([]), "cases": [None]})
+        _parse({**make_replay_document([]), "cases": [None]})
 
 
 def test_replay_rejects_crossed_state_identity_and_missing_observation() -> None:
-    row = replay_row()
+    row = make_replay_row()
     require_object_dict(row["state"])["hero_id"] = 99
     with pytest.raises(RecommendationError, match="hero differs"):
-        _parse(replay_document([row]))
-    row = replay_row()
+        _parse(make_replay_document([row]))
+    row = make_replay_row()
     require_object_dict(row["state"])["build_evidence_id"] = "b" * 64
     with pytest.raises(RecommendationError, match="another evidence"):
-        _parse(replay_document([row]))
-    row = replay_row()
+        _parse(make_replay_document([row]))
+    row = make_replay_row()
     row.pop("observed_item_id")
     with pytest.raises(RecommendationError, match="requires observed_item_id"):
-        _parse(replay_document([row]))
+        _parse(make_replay_document([row]))
     with pytest.raises(RecommendationError, match="schema"):
-        _parse({**replay_document([]), "schema_version": True})
+        _parse({**make_replay_document([]), "schema_version": True})

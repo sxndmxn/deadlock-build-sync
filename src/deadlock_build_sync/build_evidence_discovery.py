@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 
 from .artifacts import ArtifactError
-from .build_evidence_values import _required_int
+from .build_evidence_values import _require_integer
 from .build_support import SUPPORT, OutcomeEvidence, outcome_limitations
 from .build_support import numeric as _numeric
 from .value_validation import object_dict, object_list
@@ -23,8 +23,10 @@ def exclusion_reason(value: object) -> str:
     if not isinstance(reason, str) or not reason.strip() or counts is None:
         raise ArtifactError("Hero exclusion has no reason or observation counts")
     for fold in ("discovery", "selection", "validation"):
-        _required_int(counts.get(fold), f"{fold} exclusion observations")
-    candidates = _required_int(row.get("candidate_count"), "excluded candidate count")
+        _require_integer(counts.get(fold), f"{fold} exclusion observations")
+    candidates = _require_integer(
+        row.get("candidate_count"), "excluded candidate count"
+    )
     rejections = object_list(row.get("candidate_rejections"))
     if rejections is None or (candidates and not rejections):
         raise ArtifactError("Hero exclusion lacks candidate rejection evidence")
@@ -35,7 +37,7 @@ def exclusion_reason(value: object) -> str:
 
 
 def discovery_rank(discovery: dict[str, object]) -> int:
-    return _required_int(discovery.get("selection_rank"), "frozen selection rank")
+    return _require_integer(discovery.get("selection_rank"), "frozen selection rank")
 
 
 def validate_discovery(
@@ -67,10 +69,10 @@ def _validate_outcome_status(
     selection: dict[str, object],
     validation: dict[str, object],
 ) -> bool:
-    hypotheses = _required_int(
+    hypotheses = _require_integer(
         discovery.get("hypotheses"), "discovery hypotheses", minimum=1
     )
-    discovery_support = _required_int(
+    discovery_support = _require_integer(
         discovery.get("discovery_support"), "discovery core owners"
     )
     selection_outcome = OutcomeEvidence.parse(selection)
@@ -123,8 +125,8 @@ def _order_record(value: object, *, required: bool) -> None:
     record = object_dict(value)
     if record is None:
         raise ArtifactError("Discovery lacks purchase-order evidence")
-    owners = _required_int(record.get("owners"), "order owners")
-    support = _required_int(record.get("ordered_owners"), "ordered owners")
+    owners = _require_integer(record.get("owners"), "order owners")
+    support = _require_integer(record.get("ordered_owners"), "ordered owners")
     passes = SUPPORT.order_supported(owners, support)
     if support > owners or not math.isclose(
         _numeric(record, "share"), support / max(1, owners)

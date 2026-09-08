@@ -11,8 +11,8 @@ from .build_evidence import (
 )
 from .mechanics import (
     ItemGraph,
-    ability_definitions_from_kit,
     classify_item_threat_responses,
+    parse_ability_definitions,
 )
 from .policy import (
     Abstention,
@@ -40,15 +40,15 @@ if TYPE_CHECKING:
     from .snapshot import SnapshotManifest
 
 from .service_claims import (
-    _core_alternative_cards,
-    _policy_evidence,
-    _situational_annotation,
-    _situational_claim,
+    _build_core_alternative_cards,
+    _build_policy_evidence,
+    _build_situational_claim,
+    _format_situational_annotation,
 )
 from .service_types import GuideError, _HeroInputs
 
 
-def _core_policy_nodes(
+def _build_core_policy_nodes(
     guide: PurchaseGuide,
     evidence_ref: str,
 ) -> tuple[PolicyNode, ...]:
@@ -77,7 +77,7 @@ class _SituationalPolicyContext:
 type _SituationalPolicyEntry = tuple[Branch, PolicyNode, CounterCard, EvidenceClaim]
 
 
-def _situational_policy_entry(
+def _build_situational_policy_entry(
     position: int,
     branch: SituationalBranch,
     context: _SituationalPolicyContext,
@@ -103,7 +103,7 @@ def _situational_policy_entry(
             f"{context.hero_name} situational item {branch.item_id} lacks its "
             "claimed response mechanic"
         )
-    claim = _situational_claim(
+    claim = _build_situational_claim(
         branch,
         hero_id=context.hero_id,
         manifest=context.manifest,
@@ -132,7 +132,7 @@ def _situational_policy_entry(
     guards.append(Guard("clock_s", GuardOperator.AT_LEAST, earliest_time_s))
     if latest_time_s is not None:
         guards.append(Guard("clock_s", GuardOperator.AT_MOST, latest_time_s))
-    annotation = _situational_annotation(
+    annotation = _format_situational_annotation(
         branch,
         assets_by_id=context.assets_by_id,
     )
@@ -197,7 +197,7 @@ def _project_situational_policy(
         manifest,
     )
     entries = tuple(
-        _situational_policy_entry(position, branch, context)
+        _build_situational_policy_entry(position, branch, context)
         for position, branch in enumerate(source_branches, start=1)
     )
     return _SituationalPolicyProjection(
@@ -209,7 +209,7 @@ def _project_situational_policy(
     )
 
 
-def _runtime_purchase_graph(
+def _build_runtime_purchase_graph(
     core_nodes: tuple[PolicyNode, ...],
     situational: _SituationalPolicyProjection,
 ) -> tuple[str, tuple[PolicyNode, ...]]:
@@ -261,7 +261,7 @@ def _runtime_purchase_graph(
     return entry_by_position[1], tuple(nodes)
 
 
-def _ability_policy_nodes(inputs: _HeroInputs) -> tuple[PolicyNode, ...]:
+def _build_ability_policy_nodes(inputs: _HeroInputs) -> tuple[PolicyNode, ...]:
     path = inputs.analytic_guide.ability_path
     if path is None:
         raise GuideError(
@@ -282,7 +282,7 @@ def _ability_policy_nodes(inputs: _HeroInputs) -> tuple[PolicyNode, ...]:
     )
 
 
-def _policy_abstentions(
+def _build_policy_abstentions(
     inputs: _HeroInputs,
     *,
     has_situational_branches: bool,
@@ -346,7 +346,7 @@ def _build_policy(
     manifest: SnapshotManifest,
 ) -> tuple[BuildPolicy, ValidationContext]:
     guide = inputs.analytic_guide
-    definitions = ability_definitions_from_kit(inputs.kit)
+    definitions = parse_ability_definitions(inputs.kit)
     validation = ValidationContext(
         item_graph=ItemGraph.from_assets(assets),
         ability_definitions=definitions,
@@ -358,8 +358,8 @@ def _build_policy(
         or core_item_count > MAXIMUM_CORE_ITEM_COUNT
     ):
         raise GuideError(f"{guide.hero_name} does not have a supported core size")
-    evidence, core_claim = _policy_evidence(guide, definitions, manifest)
-    purchase_nodes = _core_policy_nodes(guide, core_claim.claim_id)
+    evidence, core_claim = _build_policy_evidence(guide, definitions, manifest)
+    purchase_nodes = _build_core_policy_nodes(guide, core_claim.claim_id)
     assets_by_id = {
         integer(asset["id"]): asset
         for asset in assets
@@ -367,14 +367,16 @@ def _build_policy(
     }
     situational = _project_situational_policy(inputs, assets_by_id, manifest)
     evidence.update((claim.claim_id, claim) for claim in situational.claims)
-    core_alternatives, alternative_claims = _core_alternative_cards(guide, manifest)
+    core_alternatives, alternative_claims = _build_core_alternative_cards(
+        guide, manifest
+    )
     evidence.update((claim.claim_id, claim) for claim in alternative_claims)
-    ability_nodes = _ability_policy_nodes(inputs)
+    ability_nodes = _build_ability_policy_nodes(inputs)
     description = object_dict(inputs.kit.get("description"))
     role = "evidence-grounded default"
     if description is not None and isinstance(description.get("role"), str):
         role = str(description["role"])
-    entry, runtime_nodes = _runtime_purchase_graph(purchase_nodes, situational)
+    entry, runtime_nodes = _build_runtime_purchase_graph(purchase_nodes, situational)
     nodes = (*runtime_nodes, PolicyNode("end", NodeKind.END))
     policy = BuildPolicy(
         schema_version=5,
@@ -387,7 +389,7 @@ def _build_policy(
         nodes=nodes,
         evidence=tuple(sorted(evidence.values(), key=lambda claim: claim.claim_id)),
         ability_plan=ability_nodes,
-        abstentions=_policy_abstentions(
+        abstentions=_build_policy_abstentions(
             inputs,
             has_situational_branches=bool(situational.source_branches),
         ),

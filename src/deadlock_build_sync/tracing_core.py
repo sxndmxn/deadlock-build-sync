@@ -38,7 +38,7 @@ class TraceMode(StrEnum):
             raise TraceError(f"trace mode must be one of: {choices}") from error
 
 
-# These are stable pipeline boundaries, not every internal operation in a stage.
+# Each entry identifies the function that starts an application stage.
 _STAGE_BOUNDARIES = {
     "deadlock_build_sync.cli._dispatch": "command",
     "deadlock_build_sync.build_evidence.load_build_evidence": "evidence.admission",
@@ -195,12 +195,12 @@ def _project_module(frame: FrameType) -> str | None:
     return module
 
 
-def _module_file(module: str, frame: FrameType) -> str:
+def _resolve_module_filename(module: str, frame: FrameType) -> str:
     suffix = Path(frame.f_code.co_filename).suffix or ".py"
     return module.replace(".", "/") + suffix
 
 
-def _exception_name(exception_type: object) -> str:
+def _format_exception_name(exception_type: object) -> str:
     module = getattr(exception_type, "__module__", "builtins")
     name = getattr(exception_type, "__qualname__", "Exception")
     return f"{module}.{name}"

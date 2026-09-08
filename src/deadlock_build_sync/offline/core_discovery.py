@@ -1,4 +1,4 @@
-"""Freeze Eclat cores and Leiden groups using discovery and selection only."""
+"""Select Eclat cores and Leiden groups before validation."""
 
 from __future__ import annotations
 
@@ -9,20 +9,24 @@ from operator import itemgetter
 
 from deadlock_build_sync.build_support import SUPPORT
 
-from .discovery_config import ARMS
-from .discovery_data import HeroData
-from .discovery_grouping import consolidate
-from .discovery_mining import mine
+from .discovery_config import DISCOVERY_METHODS
+from .discovery_data import HeroDiscoveryData
+from .discovery_grouping import group_core_candidates
+from .discovery_mining import mine_core_candidates
 from .discovery_quality import evaluate_core
-from .discovery_types import Candidate, Catalog, DiscoveryReport
+from .discovery_types import (
+    CoreDiscoveryCandidate,
+    DiscoveryItemCatalog,
+    DiscoveryReport,
+)
 
 
-def identity_id(hero: int, items: list[int]) -> str:
+def calculate_core_identity(hero: int, items: list[int]) -> str:
     digest = hashlib.sha256(json.dumps(sorted(items)).encode()).hexdigest()[:16]
     return f"{hero}-{digest}"
 
 
-def select(candidates: list[Candidate]) -> list[int]:
+def rank_supported_candidates(candidates: list[CoreDiscoveryCandidate]) -> list[int]:
     return sorted(
         (
             index
@@ -38,13 +42,18 @@ def select(candidates: list[Candidate]) -> list[int]:
     )
 
 
-def discover_hero(
-    data: HeroData, catalog: Catalog, *, seeds: list[Candidate] | None = None
+def discover_hero_cores(
+    data: HeroDiscoveryData,
+    catalog: DiscoveryItemCatalog,
+    *,
+    seeds: list[CoreDiscoveryCandidate] | None = None,
 ) -> DiscoveryReport:
     started = time.monotonic()
-    discovery = data.mask("discovery")
+    discovery = data.fold_mask("discovery")
     mining = (
-        mine(data.matrix[discovery], data.times[discovery], data.items, catalog)
+        mine_core_candidates(
+            data.matrix[discovery], data.times[discovery], data.items, catalog
+        )
         if seeds is None
         else {"candidates": seeds, "sizes": {}}
     )
@@ -58,10 +67,10 @@ def discover_hero(
         key=itemgetter("items"),
     )
     started = time.monotonic()
-    grouping = consolidate(candidates, data.matrix[discovery], data.items)
+    grouping = group_core_candidates(candidates, data.matrix[discovery], data.items)
     group_seconds = time.monotonic() - started
     for row in candidates:
-        row["identity_id"] = identity_id(data.hero, row["items"])
+        row["identity_id"] = calculate_core_identity(data.hero, row["items"])
         row["selection"] = evaluate_core(data, tuple(row["items"]), "selection")
         row["selection_rejections"] = SUPPORT.core_reasons(
             row["discovery_support"], row["selection"]["owners"]
@@ -74,7 +83,7 @@ def discover_hero(
         "mine_seconds": mine_seconds,
         "group_seconds": group_seconds,
         "selected": {
-            ARMS[0]: select(candidates),
-            ARMS[1]: select(candidates),
+            DISCOVERY_METHODS[0]: rank_supported_candidates(candidates),
+            DISCOVERY_METHODS[1]: rank_supported_candidates(candidates),
         },
     }

@@ -7,18 +7,18 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from .mechanics import ItemGraph, MechanicsError
-from .purchase_categories import purchase_categories
-from .purchase_decisions import decisions_at
+from .purchase_categories import build_purchase_categories
+from .purchase_decisions import build_checkpoint_decisions
 from .purchase_guidance_types import PurchaseChoice, PurchaseGuidance
 from .purchase_planner import plan_purchases
-from .purchase_purposes import purpose
+from .purchase_purposes import classify_item_purpose
 
 if TYPE_CHECKING:
     from .purchase_guidance_types import PurchaseTiming
     from .purchase_types import GuideItem, PurchaseGuide
 
 
-def _choice(
+def _build_purchase_choice(
     item: GuideItem,
     guide: PurchaseGuide,
     graph: ItemGraph,
@@ -62,7 +62,7 @@ def _choice(
         item.name,
         item.tier,
         graph.require(item.item_id).cost,
-        purpose(assets[item.item_id]),
+        classify_item_purpose(assets[item.item_id]),
         position,
         timing,
         basis,
@@ -93,14 +93,14 @@ def attach_purchase_guidance(
     ):
         raise MechanicsError("Purchase guidance differs from the admitted default path")
     choices = tuple(
-        _choice(item, guide, graph, by_id, timing.get(item.item_id))
+        _build_purchase_choice(item, guide, graph, by_id, timing.get(item.item_id))
         for tier in range(1, 5)
         for item in guide.tiers.get(tier, ())
     )
     decisions = tuple(
         decision
         for index in range(len(path) + 1)
-        for decision in decisions_at(index, choices, graph)
+        for decision in build_checkpoint_decisions(index, choices, graph)
     )
     guidance = PurchaseGuidance(
         core,
@@ -124,4 +124,4 @@ def attach_purchase_guidance(
         ),
     )
     complete = replace(guide, purchase_guidance=guidance)
-    return replace(complete, categories=purchase_categories(complete))
+    return replace(complete, categories=build_purchase_categories(complete))

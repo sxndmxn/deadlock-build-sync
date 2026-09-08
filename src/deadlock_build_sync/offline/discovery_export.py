@@ -1,27 +1,45 @@
-"""Eclat -> Leiden -> pairwise is the only normal evidence producer."""
+"""Export validated build evidence from Eclat, Leiden, and pairwise purchase ordering."""
 
 from __future__ import annotations
 
-import json
+import os
 from dataclasses import dataclass
 
 import duckdb
 from threadpoolctl import threadpool_limits
 
-from deadlock_build_sync.hero_cohort import HeroCohort, ranked_cutoffs
+from deadlock_build_sync.hero_cohort import HeroCohort, calculate_rank_cutoffs
 from deadlock_build_sync.snapshot import sha256_json
 from deadlock_build_sync.value_validation import integer, require_object_rows
 
+from .core_discovery import discover_hero_cores
 from .discovery_admission import admit_core
-from .discovery_branches import checkpoint_rows, evaluate_candidates, freeze_candidates
-from .discovery_data import HeroData, load_data, prepare_partitions
-from .discovery_fit import discover_hero
-from .discovery_guide_groups import guide_group_ids
-from .discovery_materialize import build_payload, freeze_guide
-from .discovery_orders import choose_order
-from .discovery_substitutions import freeze_substitutions, validated_candidates
-from .discovery_tactics import explain
-from .discovery_types import Catalog, DiscoveryReport, FrozenHero, Nomination
+from .discovery_artifacts import build_evidence_payload, freeze_purchase_guide
+from .discovery_branches import (
+    BranchCandidateEvaluator,
+    freeze_branch_candidates,
+    load_checkpoint_rows,
+)
+from .discovery_data import (
+    HeroDiscoveryData,
+    load_hero_discovery_data,
+    prepare_discovery_partitions,
+)
+from .discovery_guide_groups import assign_guide_group_ids
+from .discovery_orders import select_purchase_order
+from .discovery_snapshot import load_discovery_snapshot, save_discovery_snapshot
+from .discovery_substitutions import (
+    freeze_substitutions,
+    select_validated_branch_candidates,
+)
+from .discovery_tactics import describe_mechanic_overlap
+from .discovery_types import (
+    DiscoveryItemCatalog,
+    DiscoveryReport,
+    FrozenHeroDiscovery,
+    NominatedCoreBuild,
+)
+from .discovery_workers import map_discovery_jobs
 from .production_sources import _HeroExportContext
 
 
@@ -32,13 +50,31 @@ class ValidationFamily:
     frozen_hash: str
 
 
-def discover_roster(
-    heroes: list[dict[str, object]], context: _HeroExportContext
+@dataclass(frozen=True)
+class HeroDiscoveryJob:
+    hero: dict[str, object]
+    context: _HeroExportContext
+    catalog: DiscoveryItemCatalog
+
+
+@dataclass(frozen=True)
+class HeroValidationJob:
+    hero: dict[str, object]
+    context: _HeroExportContext
+    report: FrozenHeroDiscovery
+    family: ValidationFamily
+    groups: dict[str, str]
+
+
+def discover_hero_roster(
+    heroes: list[dict[str, object]],
+    context: _HeroExportContext,
+    *,
+    workers: int = 8,
+    resume: bool = False,
 ) -> list[dict[str, object]]:
-    con = duckdb.connect(str(context.paths.raw / "analysis.duckdb"), read_only=True)
-    con.execute("SET threads=2")
     graph = context.item_graph
-    catalog: Catalog = {
+    catalog: DiscoveryItemCatalog = {
         str(item): {
             "name": node.name,
             "cost": node.cost,
@@ -46,86 +82,136 @@ def discover_roster(
         }
         for item, node in graph.nodes.items()
     }
-    frozen: dict[int, FrozenHero] = {}
-    guide_groups: dict[int, dict[str, str]] = {}
-    data: dict[int, HeroData] = {}
-    try:
-        prepare_partitions(con)
-        with threadpool_limits(limits=1):
-            for hero in heroes:
-                hero_id = integer(hero["id"])
-                data[hero_id], frozen[hero_id] = _freeze_hero(
-                    con, hero, context, catalog
-                )
-                guide_groups[hero_id] = guide_group_ids(frozen[hero_id]["rows"])
+    print(f"Processing heroes with {workers} CPU workers", flush=True)
+    if resume:
+        frozen, guide_groups = load_discovery_snapshot(context.paths, heroes)
+    else:
+        reports = map_discovery_jobs(
+            _run_discovery_job,
+            [HeroDiscoveryJob(hero, context, catalog) for hero in heroes],
+            workers,
+        )
+        frozen = {
+            integer(hero["id"]): report
+            for hero, report in zip(heroes, reports, strict=True)
+        }
+        guide_groups = {
+            hero: assign_guide_group_ids(report["rows"])
+            for hero, report in frozen.items()
+        }
         # Save the entire family before accessing any validation outcome.
-        frozen_path = (
-            context.paths.run / f"discovery-nominations-{sha256_json(frozen)[:16]}.json"
-        )
-        frozen_path.write_text(json.dumps(frozen, allow_nan=False), encoding="utf-8")
-        frozen_path.with_name(
-            f"guide-groups-{sha256_json(frozen)[:16]}.json"
-        ).write_text(
-            json.dumps({"frozen_sha256": sha256_json(frozen), "groups": guide_groups}),
-            encoding="utf-8",
-        )
-        family = max(1, sum(len(value["rows"]) for value in frozen.values()))
-        branch_family = max(
+        save_discovery_snapshot(context.paths, frozen, guide_groups)
+    family = ValidationFamily(
+        max(1, sum(len(value["rows"]) for value in frozen.values())),
+        max(
             1,
             sum(
                 len(row["branch_candidates"])
                 for value in frozen.values()
                 for row in value["rows"]
             ),
-        )
-        output = []
-        for hero in heroes:
-            hero_id = integer(hero["id"])
-            result = _validate_hero(
-                con,
+        ),
+        sha256_json(frozen),
+    )
+    return map_discovery_jobs(
+        _run_validation_job,
+        [
+            HeroValidationJob(
                 hero,
-                (data[hero_id], frozen[hero_id]),
                 context,
-                ValidationFamily(family, branch_family, sha256_json(frozen)),
+                frozen[integer(hero["id"])],
+                family,
+                guide_groups[integer(hero["id"])],
             )
-            for build in require_object_rows(result["builds"]):
-                build["guide_group_id"] = guide_groups[hero_id][str(build["path_id"])]
-            output.append(result)
-            print(f"Validated {hero['name']}", flush=True)
-        return output
-    finally:
-        con.close()
+            for hero in heroes
+        ],
+        workers,
+    )
+
+
+def _open_discovery_database(context: _HeroExportContext) -> duckdb.DuckDBPyConnection:
+    spill_directory = context.paths.run / "duckdb-workers" / str(os.getpid())
+    spill_directory.mkdir(parents=True, exist_ok=True)
+    return duckdb.connect(
+        str(context.paths.raw / "analysis.duckdb"),
+        read_only=True,
+        config={
+            "threads": 1,
+            "memory_limit": "512MiB",
+            "temp_directory": str(spill_directory),
+        },
+    )
+
+
+def _run_discovery_job(job: HeroDiscoveryJob) -> FrozenHeroDiscovery:
+    with (
+        _open_discovery_database(job.context) as connection,
+        threadpool_limits(limits=1),
+    ):
+        prepare_discovery_partitions(connection)
+        _, report = _freeze_hero(connection, job.hero, job.context, job.catalog)
+        return report
+
+
+def _run_validation_job(job: HeroValidationJob) -> dict[str, object]:
+    with (
+        _open_discovery_database(job.context) as connection,
+        threadpool_limits(limits=1),
+    ):
+        prepare_discovery_partitions(connection)
+        cohort = job.report["cohort"]
+        values = load_hero_discovery_data(
+            connection,
+            integer(job.hero["id"]),
+            job.context.item_graph,
+            integer(cohort["minimum_badge"]),
+            integer(cohort["maximum_badge"]),
+        )
+        print(f"Validating {job.hero['name']}", flush=True)
+        result = _validate_hero(
+            connection, job.hero, (values, job.report), job.context, job.family
+        )
+        for build in require_object_rows(result["builds"]):
+            build["guide_group_id"] = job.groups[str(build["path_id"])]
+        print(f"Validated {job.hero['name']}", flush=True)
+        return result
 
 
 def _freeze_hero(
-    con: duckdb.DuckDBPyConnection,
+    connection: duckdb.DuckDBPyConnection,
     hero: dict[str, object],
     context: _HeroExportContext,
-    catalog: Catalog,
-) -> tuple[HeroData, FrozenHero]:
+    catalog: DiscoveryItemCatalog,
+) -> tuple[HeroDiscoveryData, FrozenHeroDiscovery]:
     hero_id, graph = integer(hero["id"]), context.item_graph
     print(f"Discovering {hero['name']}", flush=True)
     history: list[dict[str, object]] = []
     cutoffs = iter(
-        ranked_cutoffs(
+        calculate_rank_cutoffs(
             context.minimum_badge, context.maximum_badge, context.rank_expansion
         )
     )
     minimum = next(cutoffs)
     while True:
-        values = load_data(con, hero_id, graph, minimum, context.maximum_badge)
-        report = discover_hero(values, catalog)
-        rows = _usable_identities(con, hero, values, report, context)
+        values = load_hero_discovery_data(
+            connection, hero_id, graph, minimum, context.maximum_badge
+        )
+        report = discover_hero_cores(values, catalog)
+        rows = _select_usable_build_identities(
+            connection, hero, values, report, context
+        )
         candidates = list(report["candidates"])
         if not rows:
-            report = discover_hero(values, catalog, seeds=report["seeds"])
+            report = discover_hero_cores(values, catalog, seeds=report["seeds"])
             candidates.extend(report["candidates"])
-            rows = _usable_identities(con, hero, values, report, context)
+            rows = _select_usable_build_identities(
+                connection, hero, values, report, context
+            )
         history.append({
             "minimum_badge": minimum,
             "maximum_badge": context.maximum_badge,
-            "discovery_rows": int(values.mask("discovery").sum()),
-            "selection_rows": int(values.mask("selection").sum()),
+            "discovery_rows": int(values.fold_mask("discovery").sum()),
+            "selection_rows": int(values.fold_mask("selection").sum()),
             "candidate_count": len(candidates),
             "discovery_owners": max(
                 (row["discovery_support"] for row in candidates), default=0
@@ -143,14 +229,14 @@ def _freeze_hero(
             break
         minimum = following
     decisions = (
-        checkpoint_rows(con, hero_id, graph, minimum, context.maximum_badge)
+        load_checkpoint_rows(connection, hero_id, graph, minimum, context.maximum_badge)
         if rows
         else []
     )
     for row in rows:
-        row["branch_candidates"] = freeze_candidates(decisions, row, graph)
+        row["branch_candidates"] = freeze_branch_candidates(decisions, row, graph)
     freeze_substitutions(decisions, rows, graph)
-    frozen: FrozenHero = {
+    frozen: FrozenHeroDiscovery = {
         "rows": rows,
         "candidate_count": len(candidates),
         "grouping": report["grouping"],
@@ -159,32 +245,33 @@ def _freeze_hero(
             minimum, context.maximum_badge, context.rank_expansion, tuple(history)
         ).as_dict(),
     }
+    print(f"Discovered {hero['name']} ({len(rows)} build candidates)", flush=True)
     return values, frozen
 
 
-def _usable_identities(
-    con: duckdb.DuckDBPyConnection,
+def _select_usable_build_identities(
+    connection: duckdb.DuckDBPyConnection,
     hero: dict[str, object],
-    values: HeroData,
+    values: HeroDiscoveryData,
     report: DiscoveryReport,
     context: _HeroExportContext,
-) -> list[Nomination]:
+) -> list[NominatedCoreBuild]:
     membership = {
         index: group
         for group, indices in enumerate(report["grouping"]["groups"])
         for index in indices
     }
     used: set[int] = set()
-    rows: list[Nomination] = []
+    rows: list[NominatedCoreBuild] = []
     for rank, index in enumerate(report["selected"]["grouped_pairwise"]):
         if membership[index] in used:
             continue
         candidate = report["candidates"][index]
-        row: Nomination = {
+        row: NominatedCoreBuild = {
             **candidate,
             "selection_rank": rank,
             "hero_id": values.hero,
-            "path": choose_order(
+            "path": select_purchase_order(
                 values, candidate["items"], "pairwise", context.item_graph
             ),
         }
@@ -193,22 +280,26 @@ def _usable_identities(
                 row["path"]["reason"] or "No supported legal path"
             )
             continue
-        row["guide"] = freeze_guide(con, values, row, context.item_graph)
+        row["guide"] = freeze_purchase_guide(
+            connection, values, row, context.item_graph
+        )
         if not row["guide"]["ready"]:
             candidate["selection_rejections"].append(
                 row["guide"]["reason"] or "Incomplete purchase records"
             )
             continue
-        row["tactics"] = explain(hero, row["items"], context.normal_assets)
+        row["tactics"] = describe_mechanic_overlap(
+            hero, row["items"], context.normal_assets
+        )
         rows.append(row)
         used.add(membership[index])
     return rows
 
 
 def _validate_hero(
-    con: duckdb.DuckDBPyConnection,
+    connection: duckdb.DuckDBPyConnection,
     hero: dict[str, object],
-    entry: tuple[HeroData, FrozenHero],
+    entry: tuple[HeroDiscoveryData, FrozenHeroDiscovery],
     context: _HeroExportContext,
     family: ValidationFamily,
 ) -> dict[str, object]:
@@ -221,8 +312,8 @@ def _validate_hero(
     ]
     cohort = report["cohort"]
     decisions = (
-        checkpoint_rows(
-            con,
+        load_checkpoint_rows(
+            connection,
             hero_id,
             graph,
             integer(cohort["minimum_badge"]),
@@ -231,6 +322,7 @@ def _validate_hero(
         if any(not row["rejections"] and row["branch_candidates"] for row in reviewed)
         else []
     )
+    evaluator = BranchCandidateEvaluator(decisions, graph, family.branches)
     for admitted in reviewed:
         reasons = admitted["rejections"]
         if reasons:
@@ -239,16 +331,20 @@ def _validate_hero(
                 "reasons": reasons,
             })
         else:
-            admitted["automatic_choices"] = evaluate_candidates(
-                decisions,
+            admitted["automatic_choices"] = evaluator.evaluate_candidates(
                 admitted,
-                validated_candidates(admitted, reviewed),
-                graph,
-                family.branches,
+                select_validated_branch_candidates(admitted, reviewed),
             )
             builds.append(
-                build_payload(con, values, admitted, context.mechanics_assets_by_id)
+                build_evidence_payload(
+                    connection, values, admitted, context.mechanics_assets_by_id
+                )
             )
+    print(
+        f"{hero['name']}: {evaluator.contrast_cache.calculated_fits} branch fits, "
+        f"{evaluator.contrast_cache.reused_fits} identical fits reused",
+        flush=True,
+    )
     exclusion = (
         None
         if builds
@@ -257,7 +353,7 @@ def _validate_hero(
             "reason": "No supported legal build in the attempted rank ranges",
             "candidate_count": report["candidate_count"],
             "fold_observations": {
-                fold: int(values.mask(fold).sum())
+                fold: int(values.fold_mask(fold).sum())
                 for fold in ("discovery", "selection", "validation")
             },
             "candidate_rejections": rejections

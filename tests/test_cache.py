@@ -23,17 +23,17 @@ from deadlock_build_sync.cache import (
 )
 from deadlock_build_sync.kv3_binary import encode_binary_v4
 from deadlock_build_sync.protobuf import (
-    hero_build_metadata,
+    parse_hero_build_metadata,
 )
 from deadlock_build_sync.snapshot import sha256_json
 from tests.cache_fixtures import (
     SNAPSHOT_ID,
-    complete_guide,
     create_discoverable_cache,
-    guide,
+    make_complete_guide,
+    make_purchase_guide,
+    make_snapshot_manifest,
+    make_unpublished_build,
     set_deadlock_check,
-    snapshot_manifest,
-    unpublished,
 )
 
 if TYPE_CHECKING:
@@ -100,7 +100,7 @@ def test_managed_update_is_idempotent_and_preserves_other_sections() -> None:
     }
     first, ids, created, updated, removed = update_managed_builds(
         root,
-        [guide()],
+        [make_purchase_guide()],
         account_id=146293212,
         persona="Player One",
         timestamp=100,
@@ -115,15 +115,15 @@ def test_managed_update_is_idempotent_and_preserves_other_sections() -> None:
     assert first["SavedLastUsed"] == root["SavedLastUsed"]
     assert first["LastUsedBuilds"] == root["LastUsedBuilds"]
 
-    first_build = unpublished(first)[0]
+    first_build = make_unpublished_build(first)[0]
     assert isinstance(first_build, bytes)
-    first_metadata = hero_build_metadata(first_build)
+    first_metadata = parse_hero_build_metadata(first_build)
     assert first_metadata.name is not None
     assert first_metadata.name.startswith("Player One | ")
 
     second, ids2, created2, updated2, removed2 = update_managed_builds(
         first,
-        [guide()],
+        [make_purchase_guide()],
         account_id=146293212,
         persona="Player One",
         timestamp=200,
@@ -134,11 +134,11 @@ def test_managed_update_is_idempotent_and_preserves_other_sections() -> None:
     assert created2 == 0
     assert updated2 == 1
     assert removed2 == 0
-    second_builds = unpublished(second)
+    second_builds = make_unpublished_build(second)
     assert len(second_builds) == 1
     second_build = second_builds[0]
     assert isinstance(second_build, bytes)
-    assert hero_build_metadata(second_build).build_id == 2
+    assert parse_hero_build_metadata(second_build).build_id == 2
 
 
 def test_multiple_paths_get_separate_builds_and_stale_path_is_removed() -> None:
@@ -149,13 +149,13 @@ def test_multiple_paths_get_separate_builds_and_stale_path_is_removed() -> None:
         "SavedLastUsed": [b"saved"],
     }
     control = replace(
-        guide(),
+        make_purchase_guide(),
         path_id="control",
         path_label="Control Core",
         policy_id="policy/control",
     )
     damage = replace(
-        guide(),
+        make_purchase_guide(),
         path_id="damage",
         path_label="Damage Core",
         policy_id="policy/damage",
@@ -173,7 +173,7 @@ def test_multiple_paths_get_separate_builds_and_stale_path_is_removed() -> None:
 
     assert set(ids) == {(12, "control"), (12, "damage")}
     assert (created, updated, removed) == (2, 0, 0)
-    assert len(unpublished(first)) == 2
+    assert len(make_unpublished_build(first)) == 2
 
     second, second_ids, created, updated, removed = update_managed_builds(
         first,
@@ -187,7 +187,7 @@ def test_multiple_paths_get_separate_builds_and_stale_path_is_removed() -> None:
 
     assert second_ids == {(12, "control"): ids[12, "control"]}
     assert (created, updated, removed) == (0, 1, 1)
-    assert len(unpublished(second)) == 1
+    assert len(make_unpublished_build(second)) == 1
     assert second["LastUsedBuilds"] == root["LastUsedBuilds"]
     assert second["Favorites"] == root["Favorites"]
     assert second["SavedLastUsed"] == root["SavedLastUsed"]
@@ -202,7 +202,7 @@ def test_v4_cache_decodes_after_managed_update(tmp_path: Path) -> None:
     }
     updated, _, _, _, _ = update_managed_builds(
         root,
-        [guide()],
+        [make_purchase_guide()],
         account_id=146293212,
         persona="XMLJDX",
         timestamp=100,
@@ -212,7 +212,7 @@ def test_v4_cache_decodes_after_managed_update(tmp_path: Path) -> None:
     path = tmp_path / "cached_hero_builds.kv3"
     path.write_bytes(encode_binary_v4(updated))
     decoded = read_cache(path)
-    assert len(unpublished(decoded)) == 1
+    assert len(make_unpublished_build(decoded)) == 1
 
 
 def test_install_creates_backup_and_restore_recovers_original(
@@ -248,13 +248,13 @@ def test_install_creates_backup_and_restore_recovers_original(
 
     result = install_guides(
         location,
-        [complete_guide()],
+        [make_complete_guide()],
         persona="XMLJDX",
         timestamp=100,
         patch_title="Patch",
         patch_published_at="2026-01-01T00:00:00Z",
         backup_root=state_root,
-        snapshot_manifest=snapshot_manifest(),
+        snapshot_manifest=make_snapshot_manifest(),
         expected_hero_ids={12},
     )
     assert hashlib.sha256(cache_path.read_bytes()).hexdigest() == (
@@ -274,7 +274,7 @@ def test_install_creates_backup_and_restore_recovers_original(
     assert result.policy_ids == {(12, "default"): "policy/kelvin"}
     installed = read_cache(cache_path)
     assert installed["LastUsedBuilds"] == original["LastUsedBuilds"]
-    assert len(unpublished(installed)) == 1
+    assert len(make_unpublished_build(installed)) == 1
 
     restored_from = restore_latest(location, backup_root=state_root)
     assert restored_from == result.backup_directory
@@ -301,8 +301,8 @@ def test_install_rejects_incomplete_item_coverage(
     )
     location = CacheLocation(146293212, cache_path, app_directory)
     set_deadlock_check(monkeypatch, lambda: False)
-    guides = [guide()]
-    manifest = snapshot_manifest()
+    guides = [make_purchase_guide()]
+    manifest = make_snapshot_manifest()
 
     with pytest.raises(CacheError, match="incomplete policy identity/projection"):
         install_guides(

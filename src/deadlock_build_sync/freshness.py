@@ -10,7 +10,7 @@ from .artifacts import ArtifactError, validate_policy_artifact
 from .build_evidence import load_build_evidence
 from .cache import CacheError, read_cache
 from .narratives import NarrativeError, load_narrative_catalog
-from .protobuf import hero_build_metadata, is_managed_build, managed_build_path
+from .protobuf import is_managed_build, managed_build_path, parse_hero_build_metadata
 from .strategy_context import validate_strategy_context_document
 from .value_validation import object_dict, object_rows
 
@@ -121,7 +121,7 @@ def require_current_build_evidence(
     return evidence
 
 
-def _evidence_stage(
+def _check_evidence_freshness(
     path: Path,
     latest_client: int,
     latest_patch: Patch,
@@ -159,7 +159,7 @@ def _evidence_stage(
     )
 
 
-def _context_stage(
+def _check_context_freshness(
     path: Path,
     evidence: BuildEvidenceCatalog | None,
 ) -> tuple[FreshnessStage, dict[str, object] | None]:
@@ -213,7 +213,9 @@ def _context_stage(
     )
 
 
-def _policy_stage(path: Path, context: dict[str, object] | None) -> FreshnessStage:
+def _check_policy_freshness(
+    path: Path, context: dict[str, object] | None
+) -> FreshnessStage:
     if not path.is_file():
         return FreshnessStage("policies", FreshnessState.MISSING, str(path))
     try:
@@ -236,7 +238,9 @@ def _policy_stage(path: Path, context: dict[str, object] | None) -> FreshnessSta
     return FreshnessStage("policies", FreshnessState.CURRENT, "validated")
 
 
-def _narrative_stage(path: Path, context: dict[str, object] | None) -> FreshnessStage:
+def _check_narrative_freshness(
+    path: Path, context: dict[str, object] | None
+) -> FreshnessStage:
     if not path.is_file():
         return FreshnessStage("narratives", FreshnessState.MISSING, str(path))
     try:
@@ -255,7 +259,7 @@ def _narrative_stage(path: Path, context: dict[str, object] | None) -> Freshness
     return FreshnessStage("narratives", FreshnessState.CURRENT, "validated")
 
 
-def _installed_stage(
+def _check_installed_build_freshness(
     cache_path: Path | None,
     account_id: int | None,
     context: dict[str, object] | None,
@@ -293,7 +297,7 @@ def _installed_stage(
         ):
             expected[hero_id, path_id] = policy_id
     try:
-        installed = _installed_descriptions(cache_path, account_id)
+        installed = _read_installed_descriptions(cache_path, account_id)
     except (CacheError, OSError, ValueError) as error:
         return FreshnessStage("installed_cache", FreshnessState.MALFORMED, str(error))
     detail = "validated"
@@ -319,7 +323,7 @@ def _installed_stage(
     return FreshnessStage("installed_cache", state, detail)
 
 
-def _bundle_stage(artifact_directory: Path) -> FreshnessStage:
+def _check_bundle_freshness(artifact_directory: Path) -> FreshnessStage:
     paths = (
         artifact_directory / "strategy-context.json",
         artifact_directory / "policies.json",
@@ -344,7 +348,7 @@ def _bundle_stage(artifact_directory: Path) -> FreshnessStage:
     )
 
 
-def _installed_descriptions(
+def _read_installed_descriptions(
     cache_path: Path,
     account_id: int,
 ) -> dict[tuple[int, str], str]:
@@ -356,7 +360,7 @@ def _installed_descriptions(
     for blob in unpublished:
         if not isinstance(blob, bytes):
             continue
-        metadata = hero_build_metadata(blob)
+        metadata = parse_hero_build_metadata(blob)
         description = metadata.description or ""
         hero_id = metadata.hero_id
         path_id = managed_build_path(metadata)
@@ -390,21 +394,21 @@ def build_freshness_report(
     """
     latest_client = api.resolve_client_version()
     latest_patch = api.current_patch()
-    evidence_stage, evidence = _evidence_stage(
+    evidence_stage, evidence = _check_evidence_freshness(
         artifact_directory / "build-evidence.json",
         latest_client,
         latest_patch,
     )
-    context_stage, context = _context_stage(
+    context_stage, context = _check_context_freshness(
         artifact_directory / "strategy-context.json",
         evidence,
     )
     stages = (
         evidence_stage,
         context_stage,
-        _policy_stage(artifact_directory / "policies.json", context),
-        _narrative_stage(artifact_directory / "narratives.json", context),
-        _bundle_stage(artifact_directory),
-        _installed_stage(cache_path, account_id, context),
+        _check_policy_freshness(artifact_directory / "policies.json", context),
+        _check_narrative_freshness(artifact_directory / "narratives.json", context),
+        _check_bundle_freshness(artifact_directory),
+        _check_installed_build_freshness(cache_path, account_id, context),
     )
     return FreshnessReport(stages, latest_client, latest_patch)
