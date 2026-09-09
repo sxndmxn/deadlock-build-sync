@@ -259,10 +259,39 @@ def _check_narrative_freshness(
     return FreshnessStage("narratives", FreshnessState.CURRENT, "validated")
 
 
+def _expected_installed_policies(
+    heroes: list[dict[str, object]], evidence: BuildEvidenceCatalog | None
+) -> dict[tuple[int, str], str]:
+    variants = (
+        {
+            (hero_id, build.path_id)
+            for hero_id, builds in evidence.hero_builds.items()
+            for build in builds
+            if build.guide_group_id and build.path_id != build.guide_group_id
+        }
+        if evidence is not None
+        else set()
+    )
+    expected: dict[tuple[int, str], str] = {}
+    for hero in heroes:
+        hero_id = hero.get("hero_id")
+        path_id = hero.get("path_id")
+        policy_id = hero.get("policy_id")
+        if (
+            isinstance(hero_id, int)
+            and isinstance(path_id, str)
+            and isinstance(policy_id, str)
+            and (hero_id, path_id) not in variants
+        ):
+            expected[hero_id, path_id] = policy_id
+    return expected
+
+
 def _check_installed_build_freshness(
     cache_path: Path | None,
     account_id: int | None,
     context: dict[str, object] | None,
+    evidence: BuildEvidenceCatalog | None = None,
 ) -> FreshnessStage:
     if cache_path is None or account_id is None:
         return FreshnessStage(
@@ -285,17 +314,7 @@ def _check_installed_build_freshness(
             FreshnessState.MALFORMED,
             "strategy context has no hero list",
         )
-    expected: dict[tuple[int, str], str] = {}
-    for hero in heroes:
-        hero_id = hero.get("hero_id")
-        path_id = hero.get("path_id")
-        policy_id = hero.get("policy_id")
-        if (
-            isinstance(hero_id, int)
-            and isinstance(path_id, str)
-            and isinstance(policy_id, str)
-        ):
-            expected[hero_id, path_id] = policy_id
+    expected = _expected_installed_policies(heroes, evidence)
     try:
         installed = _read_installed_descriptions(cache_path, account_id)
     except (CacheError, OSError, ValueError) as error:
@@ -409,6 +428,6 @@ def build_freshness_report(
         _check_policy_freshness(artifact_directory / "policies.json", context),
         _check_narrative_freshness(artifact_directory / "narratives.json", context),
         _check_bundle_freshness(artifact_directory),
-        _check_installed_build_freshness(cache_path, account_id, context),
+        _check_installed_build_freshness(cache_path, account_id, context, evidence),
     )
     return FreshnessReport(stages, latest_client, latest_patch)

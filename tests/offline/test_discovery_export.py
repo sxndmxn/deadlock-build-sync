@@ -27,7 +27,10 @@ from tests.offline.discovery_fixtures import (
     make_item_graph,
     make_supported_mechanic_evidence,
 )
-from tests.offline.production_evidence_fixtures import make_export_context
+from tests.offline.production_evidence_fixtures import (
+    make_export_context,
+    write_discovery_source_files,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -49,6 +52,7 @@ def test_roster_freezes_all_identities_before_validation_and_reports_exclusions(
 ) -> None:
     paths = RunPaths.create(tmp_path, "frozen")
     duckdb.connect(str(paths.raw / "analysis.duckdb")).close()
+    write_discovery_source_files(paths)
     context = replace(make_export_context(paths), item_graph=make_item_graph(13))
     values = make_hero_discovery_data()
     if losing_validation:

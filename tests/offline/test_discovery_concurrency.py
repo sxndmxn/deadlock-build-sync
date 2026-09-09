@@ -18,7 +18,10 @@ from deadlock_build_sync.offline.discovery_data import prepare_discovery_partiti
 from deadlock_build_sync.offline.discovery_workers import map_discovery_jobs
 from deadlock_build_sync.snapshot import sha256_json
 from tests.offline.discovery_fixtures import make_hero_discovery_data
-from tests.offline.production_evidence_fixtures import make_export_context
+from tests.offline.production_evidence_fixtures import (
+    make_export_context,
+    write_discovery_source_files,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -142,6 +145,7 @@ def test_roster_freezes_entire_family_before_eight_concurrent_validations(
 ) -> None:
     paths = RunPaths.create(tmp_path, "concurrent-roster")
     duckdb.connect(str(paths.raw / "analysis.duckdb")).close()
+    write_discovery_source_files(paths)
     monkeypatch.setattr(producer, "map_discovery_jobs", _map_test_calculations)
     monkeypatch.setattr(producer, "threadpool_limits", lambda **_kwargs: nullcontext())
     monkeypatch.setattr(producer, "prepare_discovery_partitions", lambda _cursor: None)

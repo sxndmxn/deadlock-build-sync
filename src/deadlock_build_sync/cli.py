@@ -12,7 +12,7 @@ from scripts.generate_narratives import main as generate_narratives_main
 
 from .api import ApiError, DeadlockApi
 from .artifact_bundle import load_artifact_guide_bundle
-from .artifacts import atomic_write_json
+from .artifacts import atomic_write_bytes, atomic_write_json
 from .build_evidence import load_build_evidence
 from .cache import (
     CacheError,
@@ -104,7 +104,7 @@ def _run_build(args: argparse.Namespace) -> int:
         args, evidence, 0, all_heroes=args.all or args.hero is None
     )
     _require_complete(generated)
-    guides = _write_build_artifacts(generated, directory)
+    guides = _write_build_artifacts(generated, directory, evidence)
     if args.format == "markdown":
         print(
             "\n".join(
@@ -131,7 +131,9 @@ def _run_build(args: argparse.Namespace) -> int:
 
 
 def _write_build_artifacts(
-    generated: GeneratedGuides, artifact_directory: Path
+    generated: GeneratedGuides,
+    artifact_directory: Path,
+    evidence: BuildEvidenceCatalog,
 ) -> list[PurchaseGuide]:
     artifact_directory.parent.mkdir(parents=True, exist_ok=True)
     temporary = Path(
@@ -146,6 +148,7 @@ def _write_build_artifacts(
             shutil.copytree(artifact_directory, staged)
         else:
             staged.mkdir()
+        atomic_write_bytes(staged / _BUILD_EVIDENCE_FILENAME, evidence.raw_bytes)
         guides = _render_build_artifacts(generated, staged)
         index = json.loads((staged / "builds.json").read_text(encoding="utf-8"))
         index["directory"] = str(
@@ -214,7 +217,7 @@ def _run_sync(args: argparse.Namespace) -> int:
     )
     _require_complete(generated)
 
-    guides = _write_build_artifacts(generated, artifact_directory)
+    guides = _write_build_artifacts(generated, artifact_directory, evidence)
     result = _install_generated_guides(location, guides, generated)
     print(
         f"Synced {len(result.build_ids)} private guide(s): "

@@ -314,7 +314,7 @@ def test_sync_generates_artifacts_and_installs_without_extra_flags(
         manifest=snapshot(),
     )
     calls: dict[str, object] = {}
-    evidence = SimpleNamespace(artifact_id="e" * 64, heroes={})
+    evidence = SimpleNamespace(artifact_id="e" * 64, heroes={}, raw_bytes=b"evidence")
     api = object()
 
     monkeypatch.setattr(cli_module, "_discover_cache_location", lambda _args: location)
@@ -422,6 +422,9 @@ def test_sync_generates_artifacts_and_installs_without_extra_flags(
     assert calls["build_files"] is True
     assert (tmp_path / "artifacts/strategy-context.json").is_file()
     assert (tmp_path / "artifacts/policies.json").is_file()
+    assert (
+        tmp_path / "artifacts/build-evidence.json"
+    ).read_bytes() == evidence.raw_bytes
     generation_args = calls["generation_args"]
     assert isinstance(generation_args, list)
     assert generation_args[::2] == ["--input", "--output"]

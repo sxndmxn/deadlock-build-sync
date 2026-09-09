@@ -27,7 +27,12 @@ from .discovery_data import (
 )
 from .discovery_guide_groups import assign_guide_group_ids
 from .discovery_orders import select_purchase_order
-from .discovery_snapshot import load_discovery_snapshot, save_discovery_snapshot
+from .discovery_snapshot import (
+    calculate_discovery_source_identity,
+    load_discovery_snapshot,
+    require_discovery_source_identity,
+    save_discovery_snapshot,
+)
 from .discovery_substitutions import (
     freeze_substitutions,
     select_validated_branch_candidates,
@@ -73,6 +78,7 @@ def discover_hero_roster(
     workers: int = 8,
     resume: bool = False,
 ) -> list[dict[str, object]]:
+    source_identity = calculate_discovery_source_identity(context.paths)
     graph = context.item_graph
     catalog: DiscoveryItemCatalog = {
         str(item): {
@@ -100,7 +106,7 @@ def discover_hero_roster(
             for hero, report in frozen.items()
         }
         # Save the entire family before accessing any validation outcome.
-        save_discovery_snapshot(context.paths, frozen, guide_groups)
+        save_discovery_snapshot(context.paths, frozen, guide_groups, source_identity)
     family = ValidationFamily(
         max(1, sum(len(value["rows"]) for value in frozen.values())),
         max(
@@ -113,7 +119,7 @@ def discover_hero_roster(
         ),
         sha256_json(frozen),
     )
-    return map_discovery_jobs(
+    results = map_discovery_jobs(
         _run_validation_job,
         [
             HeroValidationJob(
@@ -127,6 +133,8 @@ def discover_hero_roster(
         ],
         workers,
     )
+    require_discovery_source_identity(context.paths, source_identity)
+    return results
 
 
 def _open_discovery_database(context: _HeroExportContext) -> duckdb.DuckDBPyConnection:

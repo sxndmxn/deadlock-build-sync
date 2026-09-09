@@ -4,6 +4,12 @@ from deadlock_build_sync.offline.production_sources import _HeroExportContext
 from tests.mechanics_fixtures import make_item_asset
 
 
+def write_discovery_source_files(paths: RunPaths) -> None:
+    (paths.run / "manifest.json").write_text("{}")
+    for name in ("heroes", "items", "items-all", "ranks", "patches"):
+        (paths.raw / f"{name}.json").write_text("[]")
+
+
 def make_export_context(paths: RunPaths) -> _HeroExportContext:
     graph = ItemGraph.from_assets([
         {

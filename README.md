@@ -135,7 +135,8 @@ Use `--workers N` to change the worker count.
 Each worker gives DuckDB a 512 MiB memory limit.
 After discovery completes, `--resume --run-id ID` validates the saved candidate set.
 Supply the original rank options when you resume a run.
-The command verifies candidate fingerprints and guide groups before it resumes validation.
+The command verifies candidate fingerprints, guide groups, source files, and the discovery method before it resumes validation.
+Checkpoints without source fingerprints require a new `--run-id`.
 Within each hero, identical statistical inputs reuse their model fits.
 The cache includes all input values and both item IDs.
 It writes its run under `$XDG_STATE_HOME/deadlock-build-sync/offline`.
@@ -381,6 +382,7 @@ Steam shows static conditions. This tool does not capture live game state.
 
 `sync` consumes four reviewable artifacts: the deterministic build evidence, exact
 strategy context, rich typed policy sidecar, and final build descriptions.
+`build` and `sync` include the exact admitted evidence bytes in the output bundle, including evidence from `--build-evidence PATH`.
 Every artifact carries the source manifest or snapshot identity. A narrative is reusable only when its
 snapshot, policy, context, narrative basis, and deterministic generator version are
 exactly compatible. Changed or malformed entries regenerate.

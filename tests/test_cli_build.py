@@ -24,11 +24,14 @@ from tests.service_fake_api import FakeApi, make_ability_rows, make_duration_sta
 
 
 @pytest.mark.parametrize("output_format", ["markdown", "json"])
+@pytest.mark.parametrize("existing_evidence", [False, True])
 def test_normal_build_generates_full_files_without_steam(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     output_format: str,
+    *,
+    existing_evidence: bool,
 ) -> None:
     class FixedDatetime:
         @staticmethod
@@ -44,12 +47,21 @@ def test_normal_build_generates_full_files_without_steam(
         if asset["id"] in {102, 104}:
             asset["description"] = "Grants bullet resist."
     evidence = make_grouped_build_evidence(api)
+    source = tmp_path.with_name(f"{tmp_path.name}-evidence.json")
+    source.write_bytes(evidence.raw_bytes)
+    if existing_evidence:
+        (tmp_path / "build-evidence.json").write_bytes(b"previous evidence")
     monkeypatch.setattr(
         cli,
         "_current_evidence",
-        lambda _args: (tmp_path / "build-evidence.json", evidence),
+        lambda _args: (source, evidence),
     )
-    monkeypatch.setattr(cli_support, "_create_evidence_api", lambda *_args: api)
+
+    def create_evidence_api(*_args: object) -> FakeApi:
+        source.write_bytes(b"source changed after admission")
+        return api
+
+    monkeypatch.setattr(cli_support, "_create_evidence_api", create_evidence_api)
 
     def forbidden(*_args: object, **_kwargs: object) -> None:
         pytest.fail("build accessed Steam")
@@ -65,30 +77,27 @@ def test_normal_build_generates_full_files_without_steam(
         output_format,
         "--artifacts",
         str(tmp_path),
+        "--build-evidence",
+        str(source),
     ])
     assert result == 0
+    assert (tmp_path / "build-evidence.json").read_bytes() == evidence.raw_bytes
+    assert source.read_bytes() == b"source changed after admission"
     files = {
         str(path.relative_to(tmp_path)): path.read_text().replace(
             str(tmp_path), "<artifacts>"
         )
         for path in tmp_path.rglob("*")
-        if path.is_file()
+        if path.is_file() and path.name != "build-evidence.json"
     }
     # Captured from PR #26 at 80b9afc before the code cleanup.
     assert sha256_json(files) == (
         "709b2be7f7122ca300801ea5374420acbce994dd3c621ee7641d638ed37e2a6a"
     )
     output = capsys.readouterr()
-    if output_format == "json":
-        emitted = require_object_dict(json.loads(output.out))
-        assert (
-            require_object_rows(emitted["guides"])[0]["purchase_guidance"] is not None
-        )
-    else:
-        assert "# Kelvin" in output.out
-        assert "## TIER 1" in output.out
-        assert "## CORE OPTIONAL" in output.out
+    _assert_build_output(output.out, output_format)
     for filename in (
+        "build-evidence.json",
         "strategy-context.json",
         "policies.json",
         "narratives.json",
@@ -109,6 +118,18 @@ def test_normal_build_generates_full_files_without_steam(
     assert all(row["timing"] is not None for row in choices)
 
 
+def _assert_build_output(output: str, output_format: str) -> None:
+    if output_format == "json":
+        emitted = require_object_dict(json.loads(output))
+        assert (
+            require_object_rows(emitted["guides"])[0]["purchase_guidance"] is not None
+        )
+    else:
+        assert "# Kelvin" in output
+        assert "## TIER 1" in output
+        assert "## CORE OPTIONAL" in output
+
+
 def test_build_alias_and_reject_missing_guidance(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -120,9 +141,10 @@ def test_build_alias_and_reject_missing_guidance(
     api = FakeApi(
         ability_rows=make_ability_rows(), duration_points=make_duration_statistics()
     )
+    evidence = make_service_build_evidence(api)
     generated = generate_guides(
         api,
-        build_evidence=make_service_build_evidence(api),
+        build_evidence=evidence,
         account_id=0,
         hero_query="Kelvin",
         all_heroes=False,
@@ -170,6 +192,8 @@ def test_failed_build_preserves_complete_current_bundle(
     monkeypatch.setattr(cli, "_render_build_artifacts", render)
     monkeypatch.setattr(Path, "rename", fail_replace)
     with pytest.raises((OSError, cli.NarrativeError), match="failed"):
-        cli._write_build_artifacts(generated, artifact)
+        cli._write_build_artifacts(
+            generated, artifact, make_service_build_evidence(api)
+        )
     assert {path.name: path.read_bytes() for path in artifact.iterdir()} == previous
     assert list(tmp_path.iterdir()) == [artifact]
