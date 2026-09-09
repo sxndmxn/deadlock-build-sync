@@ -107,6 +107,7 @@ def export_production_evidence(
             "core_economy_reference": core_economy_reference,
             "outcome_usage": "freeze candidates, ranking, orders, and pools before corrected validation; reserved test data is not used",
             "independent_evaluation": "later replay states after the frozen artifact cutoff",
+            "rejected_branch_diagnostics": "stop at the first failed balance check; later outcome diagnostics are not calculated",
         },
         "cohort": {
             **cohort,

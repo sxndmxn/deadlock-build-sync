@@ -52,6 +52,7 @@ class ItemGraph:
             item_id: tuple(sorted(item_children))
             for item_id, item_children in children.items()
         }
+        self._component_ancestors: dict[int, tuple[int, ...]] = {}
         self._validate_acyclic()
 
     @classmethod
@@ -115,6 +116,8 @@ class ItemGraph:
 
         """
         self.require(item_id)
+        if item_id in self._component_ancestors:
+            return self._component_ancestors[item_id]
         ordered: list[int] = []
         seen: set[int] = set()
 
@@ -126,7 +129,9 @@ class ItemGraph:
                     ordered.append(component_id)
 
         collect(item_id)
-        return tuple(ordered)
+        result = tuple(ordered)
+        self._component_ancestors[item_id] = result
+        return result
 
     def require(self, item_id: int) -> ItemNode:
         """Resolve one current item.

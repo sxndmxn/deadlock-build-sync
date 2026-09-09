@@ -95,3 +95,53 @@ def reconstruct_final_inventory(
         # cannot be reconstructed as present at match end.
         _apply_removal_bucket(owned, removals[timestamp])
     return tuple(sorted(owned))
+
+
+class InventoryTimeline:
+    """Reuse inventory state across successive observation times."""
+
+    def __init__(
+        self,
+        purchases: list[tuple[int, int, int]],
+        components: Mapping[int, tuple[int, ...]],
+    ) -> None:
+        self.purchases = purchases
+        self.components = components
+        self.buys: dict[int, list[int]] = defaultdict(list)
+        self.removals: dict[int, list[int]] = defaultdict(list)
+        for item, bought, sold in purchases:
+            self.buys[bought].append(item)
+            if sold > 0:
+                self.removals[sold].append(item)
+        self.timestamps = sorted(set(self.buys) | set(self.removals))
+        self.ordered_sales = all(not 0 < sold < bought for _, bought, sold in purchases)
+        self.position = 0
+        self.clock: int | None = None
+        self.owned: list[int] = []
+        self.depths: dict[int, int] = {}
+
+    def before(self, clock: int) -> tuple[int, ...]:
+        if not self.ordered_sales:
+            return reconstruct_final_inventory(
+                [
+                    (item, bought, sold if 0 < sold < clock else 0)
+                    for item, bought, sold in self.purchases
+                    if bought < clock
+                ],
+                self.components,
+            )
+        if self.clock is not None and clock < self.clock:
+            self.position = 0
+            self.owned.clear()
+        self.clock = clock
+        while (
+            self.position < len(self.timestamps)
+            and self.timestamps[self.position] < clock
+        ):
+            timestamp = self.timestamps[self.position]
+            _apply_purchase_bucket(
+                self.owned, self.buys[timestamp], self.components, self.depths
+            )
+            _apply_removal_bucket(self.owned, self.removals[timestamp])
+            self.position += 1
+        return tuple(sorted(self.owned))

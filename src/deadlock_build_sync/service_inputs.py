@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from copy import copy
 from dataclasses import dataclass, replace
+from itertools import repeat
 from typing import TYPE_CHECKING
 
 from .ability_order import LOW_ABILITY_DECISION_SUPPORT, select_ability_path
@@ -30,6 +32,7 @@ if TYPE_CHECKING:
         BuildEvidenceCatalog,
         SelectedHeroBuild,
     )
+    from .snapshot import EvidenceRecord
 
 from .service_types import (
     GuideError,
@@ -224,43 +227,65 @@ def _collect_hero_inputs(
 ) -> list[_HeroInputs]:
     if not all_heroes and len(selected) > 1:
         raise GuideError("A single-hero request cannot include multiple heroes")
+    if len(selected) < 2:
+        results = [
+            _prepare_scoped_hero_inputs(api, hero, evidence) for hero in selected
+        ]
+    else:
+        executor = ThreadPoolExecutor(max_workers=4)
+        try:
+            results = list(
+                executor.map(
+                    _prepare_scoped_hero_inputs, repeat(api), selected, repeat(evidence)
+                )
+            )
+        finally:
+            executor.shutdown(wait=True, cancel_futures=True)
     inputs_by_hero: list[_HeroInputs] = []
-    for hero in selected:
-        hero_id = integer(hero["id"])
-        exclusion = evidence.build_evidence.exclusions.get(hero_id)
-        if exclusion is not None:
-            raise GuideError(
-                f"Requested hero {hero_id} has no supported build: {exclusion}"
-            )
-        if hero_id not in evidence.build_evidence.heroes:
-            raise GuideError(f"Hero {hero_id} is missing build evidence")
-        cohort = evidence.build_evidence.heroes[hero_id].cohort
-        scoped_api = copy(api)
-        scoped_evidence = evidence
-        if cohort is not None and cohort.rank_range != api.rank_range:
-            scoped_api.rank_range = cohort.rank_range
-            scoped_evidence = replace(
-                evidence,
-                duration_curves=scoped_api.hero_stats_by_duration(
-                    min_unix_timestamp=evidence.analysis_start
-                ),
-                same_lane_matchups=_group_matchups_by_hero(
-                    scoped_api.hero_counter_stats(
-                        min_unix_timestamp=evidence.analysis_start, same_lane=True
-                    ),
-                    scope="same_lane",
-                ),
-                whole_team_matchups=_group_matchups_by_hero(
-                    scoped_api.hero_counter_stats(
-                        min_unix_timestamp=evidence.analysis_start, same_lane=False
-                    ),
-                    scope="whole_enemy_team",
-                ),
-            )
-        prepared = _prepare_hero_inputs(scoped_api, hero, scoped_evidence)
-        if isinstance(prepared, str):
-            raise GuideError(
-                f"Hero {hero_id} has incomplete generation data: {prepared}"
-            )
-        inputs_by_hero.extend(prepared)
+    for inputs, records in results:
+        inputs_by_hero.extend(inputs)
+        api.recorder.records.extend(records)
     return inputs_by_hero
+
+
+def _prepare_scoped_hero_inputs(
+    api: DeadlockApi,
+    hero: dict[str, object],
+    evidence: _GenerationEvidence,
+) -> tuple[tuple[_HeroInputs, ...], tuple[EvidenceRecord, ...]]:
+    hero_id = integer(hero["id"])
+    exclusion = evidence.build_evidence.exclusions.get(hero_id)
+    if exclusion is not None:
+        raise GuideError(
+            f"Requested hero {hero_id} has no supported build: {exclusion}"
+        )
+    if hero_id not in evidence.build_evidence.heroes:
+        raise GuideError(f"Hero {hero_id} is missing build evidence")
+    cohort = evidence.build_evidence.heroes[hero_id].cohort
+    scoped_api = copy(api)
+    scoped_api.recorder = replace(api.recorder, records=[])
+    scoped_evidence = evidence
+    if cohort is not None and cohort.rank_range != api.rank_range:
+        scoped_api.rank_range = cohort.rank_range
+        scoped_evidence = replace(
+            evidence,
+            duration_curves=scoped_api.hero_stats_by_duration(
+                min_unix_timestamp=evidence.analysis_start
+            ),
+            same_lane_matchups=_group_matchups_by_hero(
+                scoped_api.hero_counter_stats(
+                    min_unix_timestamp=evidence.analysis_start, same_lane=True
+                ),
+                scope="same_lane",
+            ),
+            whole_team_matchups=_group_matchups_by_hero(
+                scoped_api.hero_counter_stats(
+                    min_unix_timestamp=evidence.analysis_start, same_lane=False
+                ),
+                scope="whole_enemy_team",
+            ),
+        )
+    prepared = _prepare_hero_inputs(scoped_api, hero, scoped_evidence)
+    if isinstance(prepared, str):
+        raise GuideError(f"Hero {hero_id} has incomplete generation data: {prepared}")
+    return prepared, tuple(scoped_api.recorder.records)

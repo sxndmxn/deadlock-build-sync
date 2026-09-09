@@ -22,6 +22,7 @@ from tests.offline.discovery_fixtures import (
     make_hero_discovery_data,
     make_item_graph,
 )
+from tests.offline.sql_fixtures import load_fixture_sql
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -35,15 +36,11 @@ if TYPE_CHECKING:
 
 def test_whole_match_time_partitions_and_reserved_test_exclusion() -> None:
     connection = duckdb.connect()
-    connection.execute(
-        "CREATE TABLE player_matches AS SELECT i//2 AS match_id, i%2 AS hero_id, i//2 AS start_time FROM range(20) t(i)"
-    )
-    connection.execute(
-        "CREATE TABLE match_folds AS SELECT i AS match_id, CASE WHEN i<8 THEN 'train' WHEN i=8 THEN 'validation' ELSE 'test' END AS fold FROM range(10) t(i)"
-    )
+    connection.execute(load_fixture_sql("partitions/create_player_matches.sql"))
+    connection.execute(load_fixture_sql("partitions/create_match_folds.sql"))
     discovery_data.prepare_discovery_partitions(connection)
     rows = connection.execute(
-        "SELECT * FROM discovery_partitions ORDER BY match_id"
+        load_fixture_sql("select_discovery_partitions.sql")
     ).fetchall()
     assert rows == [
         (
@@ -83,7 +80,7 @@ def test_inventory_reconstruction_uses_sales_consumption_rebuys_and_latest_time(
 
 def test_missing_hero_source_is_an_error() -> None:
     connection = duckdb.connect()
-    connection.execute("CREATE TABLE player_matches(hero_id INTEGER)")
+    connection.execute(load_fixture_sql("partitions/create_empty_player_matches.sql"))
     with pytest.raises(ValueError, match="no source data; run refresh-evidence"):
         discovery_data.load_hero_discovery_data(connection, 7, make_item_graph())
     connection.close()
@@ -174,12 +171,8 @@ def test_exact_core_pool_uses_only_discovery_owners(
 
 def test_pool_sql_preserves_first_purchase_in_exact_membership(tmp_path: Path) -> None:
     connection = duckdb.connect(str(tmp_path / "pool.duckdb"))
-    connection.execute(
-        "CREATE TABLE purchases(match_id BIGINT, player_slot INT, item_id BIGINT, buy_time INT, own_net_worth_at_buy INT, state_observed_at_s INT, duration_s INT, event_order INT)"
-    )
-    connection.execute(
-        "INSERT INTO purchases VALUES (1,0,101,100,5000,99,2000,0),(1,0,101,200,7000,199,2000,1),(2,0,101,150,6000,149,2000,0),(1,0,102,2100,9000,2099,2000,2)"
-    )
+    connection.execute(load_fixture_sql("pool/create_purchases.sql"))
+    connection.execute(load_fixture_sql("pool/insert_purchase_history.sql"))
     evidence = discovery_artifacts.load_item_pool_evidence(
         connection, frozenset({(1, 0)})
     )

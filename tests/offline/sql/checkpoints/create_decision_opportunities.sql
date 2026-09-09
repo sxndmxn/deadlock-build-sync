@@ -1,0 +1,1 @@
+CREATE TABLE decision_opportunities AS SELECT 1 AS match_id,0 AS player_slot,0 AS team_id,12 AS hero_id,71 AS average_badge,7 AS item_id,600 AS buy_time,590 AS state_observed_at_s,8000 AS own_net_worth_at_buy,999999 AS own_team_net_worth,60000 AS enemy_team_net_worth,6 AS own_team_observed_players,6 AS enemy_team_observed_players,999999 AS team_net_worth_lead;

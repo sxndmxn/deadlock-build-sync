@@ -13,6 +13,8 @@ from deadlock_build_sync.value_validation import (
     number,
 )
 
+from .sql_resources import load_sql
+
 if TYPE_CHECKING:
     import duckdb
 
@@ -28,15 +30,7 @@ def _query_path_cohort_summary(
     connection.register("_build_path_members", members)
     try:
         row = connection.execute(
-            """
-            SELECT count(*),
-                   median(final_net_worth) FILTER (
-                       WHERE f.fold IN ('train', 'validation')
-                   )
-            FROM player_matches p
-            JOIN _build_path_members m USING (match_id, player_slot)
-            JOIN match_folds f USING (match_id)
-            """
+            load_sql("production/select_path_cohort_summary.sql")
         ).fetchone()
     finally:
         connection.unregister("_build_path_members")

@@ -191,10 +191,14 @@ def test_rank_expansion_stops_on_support_or_exhaustion(
         if not frozen["rows"]:
             result = producer._validate_hero(
                 connection,
-                {"id": 6, "name": "Test"},
-                (empty, frozen),
-                context,
-                producer.ValidationFamily(1, 1, "frozen"),
+                producer.HeroValidationJob(
+                    {"id": 6, "name": "Test"},
+                    context,
+                    frozen,
+                    producer.ValidationFamily(1, 1, "frozen"),
+                    {},
+                ),
+                empty,
             )
             assert "attempted rank ranges" in str(result["exclusion"])
     assert attempted == expected

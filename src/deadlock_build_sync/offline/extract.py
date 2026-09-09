@@ -4,7 +4,6 @@ import json
 import shutil
 import time
 from dataclasses import replace
-from datetime import datetime
 from pathlib import Path
 
 import duckdb
@@ -12,6 +11,7 @@ import duckdb
 from deadlock_build_sync.hero_cohort import calculate_rank_cutoffs
 
 from .config import DUCKLAKE_URL, Cohort, RunPaths
+from .sql_resources import load_sql
 
 _REMOTE_QUERY_ATTEMPTS = 4
 _RETRYABLE_REMOTE_ERRORS = (
@@ -21,70 +21,40 @@ _RETRYABLE_REMOTE_ERRORS = (
 )
 
 
-def _format_sql_timestamp(value: datetime) -> str:
-    return value.isoformat().replace("+00:00", "+00")
-
-
-def _build_cohort_filter(cohort: Cohort) -> str:
-    return f"""
-        match_mode = '{cohort.match_mode}'
-        AND game_mode = '{cohort.game_mode}'
-        AND start_time >= TIMESTAMPTZ '{_format_sql_timestamp(cohort.since)}'
-        AND start_time + duration_s * INTERVAL '1 second'
-            <= TIMESTAMPTZ '{_format_sql_timestamp(cohort.resolved_as_of())}'
-        AND average_badge BETWEEN {cohort.minimum_badge} AND {cohort.maximum_badge}
-    """
-
-
-def _build_eligible_matches_query(
-    cohort: Cohort,
-    *,
-    source: str = "remote.main.match_player",
-) -> str:
-    """Return the whole-match admission query for a trusted table reference."""
-    return f"""
-        SELECT match_id
-        FROM {source}
-        WHERE {_build_cohort_filter(cohort)}
-        GROUP BY match_id
-        HAVING count(*) = 12
-           AND count(DISTINCT player_slot) = 12
-           AND count(*) FILTER (WHERE team = 'Team0') = 6
-           AND count(*) FILTER (WHERE team = 'Team1') = 6
-           AND bool_and(rewards_eligible)
-           AND bool_and(player_match_outcome IN ('Win', 'Loss'))
-           AND count(*) FILTER (WHERE player_match_outcome = 'Win') = 6
-           AND count(*) FILTER (WHERE player_match_outcome = 'Loss') = 6
-    """
+def _build_cohort_parameters(cohort: Cohort) -> dict[str, object]:
+    return {
+        "match_mode": cohort.match_mode,
+        "game_mode": cohort.game_mode,
+        "since": cohort.since,
+        "as_of": cohort.resolved_as_of(),
+        "minimum_badge": cohort.minimum_badge,
+        "maximum_badge": cohort.maximum_badge,
+    }
 
 
 def _connect_analysis_database(paths: RunPaths) -> duckdb.DuckDBPyConnection:
     database = paths.raw / "analysis.duckdb"
     connection = duckdb.connect(str(database))
-    connection.execute("SET threads = 8")
-    connection.execute("SET memory_limit = '12GB'")
-    connection.execute(f"SET temp_directory = '{paths.raw / 'duckdb-tmp'}'")
-    connection.execute("INSTALL ducklake; LOAD ducklake; INSTALL httpfs; LOAD httpfs")
+    connection.execute(load_sql("extract/set_threads.sql"))
+    connection.execute(load_sql("extract/set_memory_limit.sql"))
     connection.execute(
-        """
-        CREATE OR REPLACE SECRET deadlock_s3 (
-            TYPE S3,
-            KEY_ID '',
-            SECRET '',
-            ENDPOINT 's3-cache.deadlock-api.com',
-            URL_STYLE 'path',
-            USE_SSL true
-        )
-        """
+        load_sql("extract/set_temp_directory.sql"),
+        {"directory": str(paths.raw / "duckdb-tmp")},
     )
-    connection.execute(f"ATTACH '{DUCKLAKE_URL}' AS remote (READ_ONLY)")
-    version = _query_count(connection, "SELECT id FROM remote.current_snapshot()")
-    connection.execute("DETACH remote")
+    connection.execute(load_sql("extract/load_extensions.sql"))
+    connection.execute(load_sql("extract/create_s3_secret.sql"))
     connection.execute(
-        f"ATTACH '{DUCKLAKE_URL}' AS remote (READ_ONLY, SNAPSHOT_VERSION {version})"
+        load_sql("extract/create_ducklake_secret.sql"),
+        {"metadata_path": DUCKLAKE_URL.removeprefix("ducklake:")},
+    )
+    connection.execute(load_sql("extract/attach_remote.sql"))
+    version = _query_count(connection, load_sql("extract/select_current_snapshot.sql"))
+    connection.execute(load_sql("extract/detach_remote.sql"))
+    connection.execute(
+        load_sql("extract/attach_remote_snapshot.sql"), {"version": version}
     )
     connection.execute(
-        f"CREATE OR REPLACE TABLE source_snapshot AS SELECT {version}::BIGINT AS version"
+        load_sql("extract/create_source_snapshot.sql"), {"version": version}
     )
     return connection
 
@@ -105,37 +75,25 @@ def _load_item_assets(connection: duckdb.DuckDBPyConnection, path: Path) -> None
         )
         for item in items
     ]
-    connection.execute("DROP TABLE IF EXISTS item_assets")
-    connection.execute(
-        """
-        CREATE TABLE item_assets (
-            item_id UBIGINT,
-            item_name VARCHAR,
-            class_name VARCHAR,
-            tier INTEGER,
-            cost INTEGER,
-            slot VARCHAR,
-            active BOOLEAN,
-            unique_item BOOLEAN,
-            component_items_json VARCHAR
-        )
-        """
-    )
-    connection.executemany(
-        "INSERT INTO item_assets VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", rows
-    )
+    connection.execute(load_sql("extract/drop_item_assets.sql"))
+    connection.execute(load_sql("extract/create_item_assets.sql"))
+    connection.executemany(load_sql("extract/insert_item_assets.sql"), rows)
 
 
 def _export_table(
     connection: duckdb.DuckDBPyConnection, table: str, path: Path
 ) -> None:
     connection.execute(
-        f"COPY {table} TO '{path}' (FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE 100000)"
+        load_sql("extract/export_table.sql"), {"table": table, "path": str(path)}
     )
 
 
-def _query_count(connection: duckdb.DuckDBPyConnection, query: str) -> int:
-    row = connection.execute(query).fetchone()
+def _query_count(
+    connection: duckdb.DuckDBPyConnection,
+    query: str,
+    parameters: dict[str, object] | None = None,
+) -> int:
+    row = connection.execute(query, parameters).fetchone()
     if row is None:
         raise RuntimeError(f"count query returned no row: {query}")
     return int(row[0])
@@ -144,12 +102,13 @@ def _query_count(connection: duckdb.DuckDBPyConnection, query: str) -> int:
 def _execute_remote_query(
     connection: duckdb.DuckDBPyConnection,
     query: str,
+    parameters: dict[str, object] | None = None,
 ) -> duckdb.DuckDBPyConnection:
     """Retry when DuckLake metadata references a data file that is not yet readable."""
     attempt = 1
     while True:
         try:
-            return connection.execute(query)
+            return connection.execute(query, parameters)
         except duckdb.Error as error:
             retryable = any(marker in str(error) for marker in _RETRYABLE_REMOTE_ERRORS)
             if not retryable or attempt >= _REMOTE_QUERY_ATTEMPTS:
@@ -167,37 +126,22 @@ def _execute_remote_query(
 def _freeze_splits(connection: duckdb.DuckDBPyConnection, cohort: Cohort) -> None:
     # Cutoffs use the starting cohort or fixed time fractions when that cohort is empty.
     connection.execute(
-        """
-        CREATE OR REPLACE TABLE split_boundaries AS
-        WITH matches AS (
-            SELECT match_id, min(start_time) AS started FROM player_matches
-            WHERE average_badge BETWEEN ? AND ? GROUP BY match_id
-        )
-        SELECT quantile_cont(epoch(started), 0.45) AS discovery_end,
-               quantile_cont(epoch(started), 0.6) AS train_end,
-               quantile_cont(epoch(started), 0.8) AS validation_end
-        FROM matches
-    """,
-        [cohort.minimum_badge, cohort.maximum_badge],
+        load_sql("extract/create_split_boundaries.sql"),
+        {"minimum_badge": cohort.minimum_badge, "maximum_badge": cohort.maximum_badge},
     )
     start, end = cohort.since.timestamp(), cohort.resolved_as_of().timestamp()
     connection.execute(
-        """
-        UPDATE split_boundaries SET
-            discovery_end=coalesce(discovery_end, ?),
-            train_end=coalesce(train_end, ?), validation_end=coalesce(validation_end, ?)
-    """,
-        [start + (end - start) * share for share in (0.45, 0.6, 0.8)],
+        load_sql("extract/fill_split_boundaries.sql"),
+        {
+            name: start + (end - start) * share
+            for name, share in (
+                ("discovery_end", 0.45),
+                ("train_end", 0.6),
+                ("validation_end", 0.8),
+            )
+        },
     )
-    connection.execute("""
-        CREATE OR REPLACE TABLE match_folds AS
-        SELECT match_id,
-               CASE WHEN epoch(min(start_time)) <= train_end THEN 'train'
-                    WHEN epoch(min(start_time)) <= validation_end THEN 'validation'
-                    ELSE 'test' END AS fold
-        FROM player_matches, split_boundaries
-        GROUP BY match_id, train_end, validation_end
-    """)
+    connection.execute(load_sql("extract/create_match_folds.sql"))
 
 
 def extract_cohort(
@@ -211,242 +155,56 @@ def extract_cohort(
     connection = _connect_analysis_database(paths)
     try:
         _load_item_assets(connection, paths.raw / "items.json")
-        connection.execute("DROP TABLE IF EXISTS eligible_matches")
+        connection.execute(load_sql("extract/drop_eligible_matches.sql"))
         _execute_remote_query(
             connection,
-            "CREATE TABLE eligible_matches AS "
-            + _build_eligible_matches_query(extraction),
+            load_sql("extract/create_eligible_matches.sql"),
+            _build_cohort_parameters(extraction),
         )
         print("Extracting deidentified player-match cohort…", flush=True)
-        connection.execute("DROP TABLE IF EXISTS player_matches")
+        connection.execute(load_sql("extract/drop_player_matches.sql"))
         _execute_remote_query(
             connection,
-            """
-            CREATE TABLE player_matches AS
-            SELECT
-                match_id,
-                player_slot,
-                CASE WHEN team = 'Team0' THEN 0 ELSE 1 END AS team_id,
-                hero_id,
-                assigned_lane,
-                average_badge,
-                won,
-                start_time,
-                duration_s,
-                net_worth AS final_net_worth,
-                coalesce(player_rank_initial_calibration_games, 0) > 0 AS calibration
-            FROM remote.main.match_player
-            INNER JOIN eligible_matches USING (match_id)
-            ORDER BY hero_id, match_id, player_slot
-            """,
+            load_sql("extract/create_player_matches.sql"),
         )
         print("Aggregating deidentified unique-player breadth…", flush=True)
-        connection.execute("DROP TABLE IF EXISTS hero_account_counts")
+        connection.execute(load_sql("extract/drop_hero_account_counts.sql"))
         _execute_remote_query(
             connection,
-            """
-            CREATE TABLE hero_account_counts AS
-            SELECT hero_id, count(DISTINCT account_id) AS unique_accounts
-            FROM remote.main.match_player
-            INNER JOIN eligible_matches USING (match_id)
-            GROUP BY hero_id
-            """,
+            load_sql("extract/create_hero_account_counts.sql"),
         )
         _freeze_splits(connection, cohort)
-        connection.execute(
-            """
-            CREATE OR REPLACE TABLE compositions AS
-            SELECT match_id, team_id, list_sort(list(hero_id)) AS hero_ids
-            FROM player_matches GROUP BY match_id, team_id
-            """
-        )
+        connection.execute(load_sql("extract/create_compositions.sql"))
 
         print("Extracting personal net-worth snapshots…", flush=True)
-        connection.execute("DROP TABLE IF EXISTS player_snapshots")
+        connection.execute(load_sql("extract/drop_player_snapshots.sql"))
         _execute_remote_query(
             connection,
-            """
-            CREATE TABLE player_snapshots AS
-            SELECT match_id, player_slot,
-                   unnest("stats.time_stamp_s") AS stat_time,
-                   unnest("stats.net_worth") AS net_worth
-            FROM remote.main.match_player
-            INNER JOIN eligible_matches USING(match_id)
-        """,
+            load_sql("extract/create_player_snapshots.sql"),
         )
 
         print("Extracting team net-worth snapshots…", flush=True)
-        connection.execute("DROP TABLE IF EXISTS team_snapshots")
+        connection.execute(load_sql("extract/drop_team_snapshots.sql"))
         _execute_remote_query(
             connection,
-            """
-            CREATE TABLE team_snapshots AS
-            WITH snapshots AS (
-                SELECT
-                    match_id,
-                    CASE WHEN team = 'Team0' THEN 0 ELSE 1 END AS team_id,
-                    unnest("stats.time_stamp_s") AS stat_time,
-                    unnest("stats.net_worth") AS player_net_worth
-                FROM remote.main.match_player
-                INNER JOIN eligible_matches USING (match_id)
-            )
-            SELECT match_id, team_id, stat_time,
-                   sum(player_net_worth) AS team_net_worth,
-                   count(*) AS observed_players
-            FROM snapshots
-            GROUP BY match_id, team_id, stat_time
-            """,
+            load_sql("extract/create_team_snapshots.sql"),
         )
 
         print(
             "Extracting upgrade purchase events and valid pre-decision state…",
             flush=True,
         )
-        connection.execute("DROP TABLE IF EXISTS purchases")
+        connection.execute(load_sql("extract/drop_purchases.sql"))
         _execute_remote_query(
             connection,
-            """
-            CREATE TABLE purchases AS
-            WITH expanded AS (
-                SELECT
-                    match_id,
-                    player_slot,
-                    CASE WHEN team = 'Team0' THEN 0 ELSE 1 END AS team_id,
-                    hero_id,
-                    assigned_lane,
-                    average_badge,
-                    won,
-                    start_time,
-                    duration_s,
-                    net_worth AS final_net_worth,
-                    coalesce(player_rank_initial_calibration_games, 0) > 0 AS calibration,
-                    unnest("items.item_id") AS item_id,
-                    unnest("items.game_time_s") AS buy_time,
-                    unnest("items.sold_time_s") AS sold_time,
-                    unnest("items.imbued_ability_id") AS imbued_ability_id,
-                    "stats.time_stamp_s" AS stat_times,
-                    "stats.net_worth" AS stat_net_worths
-                FROM remote.main.match_player
-                INNER JOIN eligible_matches USING (match_id)
-            ), valid AS (
-                SELECT e.*,
-                       a.item_name, a.class_name, a.tier, a.cost, a.slot,
-                       a.active, a.unique_item, a.component_items_json,
-                       list_last(list_transform(
-                           list_filter(
-                               list_zip(stat_times, stat_net_worths),
-                               x -> x[1] <= buy_time
-                           ),
-                           x -> x[2]
-                       )) AS own_net_worth_at_buy,
-                       list_last(list_transform(
-                           list_filter(
-                               list_zip(stat_times, stat_net_worths),
-                               x -> x[1] <= buy_time
-                           ),
-                           x -> x[1]
-                       )) AS state_observed_at_s
-                FROM expanded e
-                INNER JOIN item_assets a USING (item_id)
-                WHERE buy_time > 0
-            )
-            SELECT
-                * EXCLUDE (stat_times, stat_net_worths),
-                row_number() OVER (
-                    PARTITION BY match_id, player_slot
-                    ORDER BY buy_time, item_id
-                ) AS event_order,
-                count(*) OVER (
-                    PARTITION BY match_id, player_slot, buy_time
-                ) AS same_second_purchase_count,
-                row_number() OVER (
-                    PARTITION BY match_id, player_slot, item_id
-                    ORDER BY buy_time, sold_time
-                ) AS item_purchase_ordinal
-            FROM valid
-            ORDER BY hero_id, match_id, player_slot, buy_time, event_order
-            """,
+            load_sql("extract/create_purchases.sql"),
         )
 
         print("Joining purchase events to team state…", flush=True)
-        connection.execute("DROP TABLE IF EXISTS first_purchases")
-        connection.execute(
-            """
-            CREATE TABLE first_purchases AS
-            WITH firsts AS (
-                SELECT p.*, f.fold,
-                       CASE
-                           WHEN buy_time < 540 THEN 0
-                           WHEN buy_time < 1200 THEN 1
-                           WHEN buy_time < 1800 THEN 2
-                           ELSE 3
-                       END AS phase
-                FROM purchases p
-                JOIN match_folds f USING (match_id)
-                WHERE item_purchase_ordinal = 1
-            ), own_state AS (
-                SELECT f.*, s.team_net_worth AS own_team_net_worth,
-                       s.observed_players AS own_team_observed_players
-                FROM firsts f
-                ASOF LEFT JOIN team_snapshots s
-                    ON f.match_id = s.match_id
-                   AND f.team_id = s.team_id
-                   AND f.buy_time >= s.stat_time
-            ), both_states AS (
-                SELECT o.*, s.team_net_worth AS enemy_team_net_worth,
-                       s.observed_players AS enemy_team_observed_players
-                FROM own_state o
-                ASOF LEFT JOIN team_snapshots s
-                    ON o.match_id = s.match_id
-                   AND (1 - o.team_id) = s.team_id
-                   AND o.buy_time >= s.stat_time
-            )
-            SELECT *,
-                   own_team_net_worth - enemy_team_net_worth AS team_net_worth_lead,
-                   buy_time - state_observed_at_s AS state_age_s,
-                   sum(cost) OVER (
-                       PARTITION BY match_id, player_slot
-                       ORDER BY buy_time
-                       RANGE BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
-                   ) AS prior_catalog_spend,
-                   count(*) OVER (
-                       PARTITION BY match_id, player_slot
-                       ORDER BY buy_time
-                       RANGE BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
-                   ) AS prior_purchase_count
-            FROM both_states
-            ORDER BY hero_id, match_id, player_slot, buy_time, item_id
-            """
-        )
-        connection.execute("DROP TABLE IF EXISTS decision_opportunities")
-        connection.execute(
-            """
-            CREATE TABLE decision_opportunities AS
-            WITH realized AS (
-                SELECT *
-                FROM first_purchases
-                WHERE same_second_purchase_count = 1
-                QUALIFY row_number() OVER (
-                    PARTITION BY match_id, player_slot, phase, tier
-                    ORDER BY buy_time, item_id
-                ) = 1
-            ), slates AS (
-                SELECT tier, list_sort(list(item_id)) AS item_ids
-                FROM item_assets
-                GROUP BY tier
-            )
-            SELECT r.*,
-                   to_json(struct_pack(
-                       item_ids := s.item_ids,
-                       includes_save := true
-                   )) AS candidate_slate_json,
-                   cast(r.item_id AS VARCHAR) AS realized_action,
-                   false AS save_action_observed
-            FROM realized r
-            JOIN slates s USING (tier)
-            ORDER BY r.hero_id, r.match_id, r.player_slot, r.buy_time, r.item_id
-            """
-        )
+        connection.execute(load_sql("extract/drop_first_purchases.sql"))
+        connection.execute(load_sql("extract/create_first_purchases.sql"))
+        connection.execute(load_sql("extract/drop_decision_opportunities.sql"))
+        connection.execute(load_sql("extract/create_decision_opportunities.sql"))
 
         print("Exporting compressed analysis tables…", flush=True)
         for table in (
@@ -466,7 +224,9 @@ def extract_cohort(
             _export_table(connection, table, paths.data / f"{table}.parquet")
 
         counts: dict[str, object] = {
-            table: _query_count(connection, f"SELECT count(*) FROM {table}")
+            table: _query_count(
+                connection, load_sql("extract/count_table_rows.sql"), {"table": table}
+            )
             for table in (
                 "player_matches",
                 "match_folds",
@@ -476,20 +236,20 @@ def extract_cohort(
             )
         }
         counts["source_snapshot_version"] = _query_count(
-            connection, "SELECT version FROM source_snapshot"
+            connection, load_sql("extract/select_source_snapshot.sql")
         )
         counts["extracted_minimum_badge"] = extraction.minimum_badge
         counts["heroes"] = _query_count(
-            connection, "SELECT count(DISTINCT hero_id) FROM player_matches"
+            connection, load_sql("extract/count_heroes.sql")
         )
         counts["hero_account_rows"] = _query_count(
-            connection, "SELECT count(*) FROM hero_account_counts"
+            connection, load_sql("extract/count_hero_accounts.sql")
         )
         counts["valid_purchase_net_worth"] = _query_count(
-            connection, "SELECT count(own_net_worth_at_buy) FROM first_purchases"
+            connection, load_sql("extract/count_purchase_net_worth.sql")
         )
         counts["valid_team_lead"] = _query_count(
-            connection, "SELECT count(team_net_worth_lead) FROM first_purchases"
+            connection, load_sql("extract/count_team_lead.sql")
         )
         return counts
     finally:

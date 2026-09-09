@@ -4,11 +4,13 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
 import duckdb
+import polars as pl
 import pytest
 
 from deadlock_build_sync.offline import extract as extract_module
 from deadlock_build_sync.offline.api import write_json
 from deadlock_build_sync.offline.config import Cohort, RunPaths
+from tests.offline.sql_fixtures import load_fixture_sql
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -131,7 +133,7 @@ def test_extract_cohort_runs_all_stages_exports_and_cleanup(
     assert any("decision_opportunities" in query for query in fake.queries)
 
 
-def test_extract_helpers_load_export_count_and_format(
+def test_extract_helpers_load_export_count_and_bind_parameters(
     tmp_path: Path,
 ) -> None:
     paths = RunPaths.create(tmp_path, "helpers")
@@ -148,15 +150,22 @@ def test_extract_helpers_load_export_count_and_format(
     assert list(fake.inserted) == [
         (10, "Item 10", "", 1, 0, "unknown", False, True, "[]")
     ]
-    assert extract_module._query_count(connection, "SELECT 7") == 7
-    assert extract_module._format_sql_timestamp(_cohort().since).endswith("+00")
-    assert "average_badge BETWEEN 71 AND 115" in extract_module._build_cohort_filter(
-        _cohort()
+    assert (
+        extract_module._query_count(connection, load_fixture_sql("select_seven.sql"))
+        == 7
     )
+    assert extract_module._build_cohort_parameters(_cohort()) == {
+        "match_mode": "Ranked",
+        "game_mode": "Normal",
+        "since": _cohort().since,
+        "as_of": _cohort().as_of,
+        "minimum_badge": 71,
+        "maximum_badge": 115,
+    }
 
     empty = _connection(_FakeConnection(row=None))
     with pytest.raises(RuntimeError, match="returned no row"):
-        extract_module._query_count(empty, "SELECT 0")
+        extract_module._query_count(empty, load_fixture_sql("select_zero.sql"))
 
 
 def test_remote_query_rejects_fatal_and_exhausted_failures(
@@ -165,7 +174,7 @@ def test_remote_query_rejects_fatal_and_exhausted_failures(
     monkeypatch.setattr(extract_module.time, "sleep", lambda _delay: None)
     fatal = _connection(_FakeConnection(failures=[duckdb.Error("fatal")]))
     with pytest.raises(duckdb.Error, match="fatal"):
-        extract_module._execute_remote_query(fatal, "SELECT 1")
+        extract_module._execute_remote_query(fatal, load_fixture_sql("select_one.sql"))
 
     exhausted = _connection(
         _FakeConnection(
@@ -178,4 +187,51 @@ def test_remote_query_rejects_fatal_and_exhausted_failures(
         )
     )
     with pytest.raises(duckdb.InvalidInputException, match="HTTP GET"):
-        extract_module._execute_remote_query(exhausted, "SELECT 1")
+        extract_module._execute_remote_query(
+            exhausted, load_fixture_sql("select_one.sql")
+        )
+
+
+def test_sql_files_extract_and_export_complete_cohort(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    paths = RunPaths.create(tmp_path, "complete-extraction")
+    write_json(
+        paths.raw / "items.json",
+        [{"id": 10, "item_tier": 1}, {"id": 20, "item_tier": 2}],
+    )
+
+    def connect_source(paths: RunPaths) -> duckdb.DuckDBPyConnection:
+        connection = duckdb.connect(str(paths.raw / "analysis.duckdb"))
+        connection.execute(load_fixture_sql("extract/create_source_tables.sql"))
+        return connection
+
+    monkeypatch.setattr(extract_module, "_connect_analysis_database", connect_source)
+    counts = extract_module.extract_cohort(paths, _cohort())
+    assert counts == {
+        "player_matches": 360,
+        "match_folds": 30,
+        "purchases": 1080,
+        "first_purchases": 720,
+        "decision_opportunities": 720,
+        "source_snapshot_version": 7,
+        "extracted_minimum_badge": 71,
+        "heroes": 12,
+        "hero_account_rows": 12,
+        "valid_purchase_net_worth": 720,
+        "valid_team_lead": 720,
+    }
+    exports = sorted(paths.data.glob("*.parquet"))
+    assert len(exports) == 12
+    with duckdb.connect(
+        str(paths.raw / "analysis.duckdb"), read_only=True
+    ) as connection:
+        for path in exports:
+            exported = pl.read_parquet(path)
+            assert exported.height == connection.table(path.stem).shape[0]
+    purchases = pl.read_parquet(paths.data / "purchases.parquet").filter(
+        (pl.col("match_id") == 1) & (pl.col("player_slot") == 0)
+    )
+    assert purchases.select(
+        "item_id", "buy_time", "event_order", "item_purchase_ordinal"
+    ).rows() == [(10, 100, 1, 1), (20, 600, 2, 1), (10, 900, 3, 2)]

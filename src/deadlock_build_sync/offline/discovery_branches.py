@@ -2,16 +2,13 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    import duckdb
-
 import math
 from collections import Counter
 from dataclasses import asdict, dataclass
+from functools import cached_property
 from statistics import NormalDist
 
+import numpy as np
 import polars as pl
 
 from deadlock_build_sync.mechanics import ItemGraph, MechanicsError
@@ -28,10 +25,13 @@ from deadlock_build_sync.value_validation import (
     object_list,
 )
 
+from .contrast_feature_table import ContrastFeatureSelection, ContrastFeatureTable
+from .contrast_features import select_contrast_row
+from .contrast_screening import ContrastBalanceRejection
+from .decision_rows import DecisionRows, IndexedDecisionRows
 from .discovery_contrast_cache import BranchContrastCache
 from .discovery_types import NominatedCoreBuild
-from .doubly_robust_estimation import estimate_cross_fitted_doubly_robust_contrast
-from .inventory_reconstruction import reconstruct_final_inventory
+from .doubly_robust_estimation import estimate_admissible_contrast
 
 
 @dataclass(frozen=True)
@@ -40,142 +40,68 @@ class ChoiceObservation:
     conditions: set[tuple[str, str | int]]
 
 
-def load_decision_rows(
-    connection: duckdb.DuckDBPyConnection,
-    hero: int,
-    minimum: int = 11,
-    maximum: int = 116,
-) -> list[dict[str, object]]:
-    cursor = connection.execute(
-        """
-        SELECT p.* EXCLUDE(own_team_net_worth, enemy_team_net_worth,
-                          own_team_observed_players, enemy_team_observed_players,
-                          team_net_worth_lead),
-               d.partition, c.hero_ids AS enemy_heroes,
-               own_state.team_net_worth AS own_team_net_worth,
-               enemy_state.team_net_worth AS enemy_team_net_worth,
-               own_state.observed_players AS own_team_observed_players,
-               enemy_state.observed_players AS enemy_team_observed_players,
-               own_state.team_net_worth-enemy_state.team_net_worth AS team_net_worth_lead,
-               own_state.stat_time AS own_observed, enemy_state.stat_time AS enemy_observed
-        FROM decision_opportunities p JOIN discovery_partitions d USING(match_id)
-        JOIN compositions c ON p.match_id=c.match_id AND (1-p.team_id)=c.team_id
-        ASOF LEFT JOIN team_snapshots own_state
-          ON p.match_id=own_state.match_id AND p.team_id=own_state.team_id
-             AND p.buy_time>own_state.stat_time
-        ASOF LEFT JOIN team_snapshots enemy_state
-          ON p.match_id=enemy_state.match_id AND (1-p.team_id)=enemy_state.team_id
-             AND p.buy_time>enemy_state.stat_time
-        WHERE p.hero_id=? AND p.average_badge BETWEEN ? AND ? AND d.partition IN ('discovery','validation')
-          AND p.buy_time-p.state_observed_at_s BETWEEN 1 AND 300
-        ORDER BY p.match_id,p.player_slot,p.buy_time
-    """,
-        [hero, minimum, maximum],
-    )
-    names = [column[0] for column in cursor.description]
-    return [dict(zip(names, values, strict=True)) for values in cursor.fetchall()]
+@dataclass(frozen=True)
+class ChoiceCohort:
+    observations: list[ChoiceObservation]
+    frame: pl.DataFrame | None
+    conditions: dict[tuple[str, str | int], list[int]]
 
+    @cached_property
+    def feature_table(self) -> ContrastFeatureTable:
+        if self.frame is None:
+            raise ValueError("Shared features require consistent observation columns")
+        return ContrastFeatureTable.from_frame(self.frame)
 
-def load_purchase_event_histories(
-    connection: duckdb.DuckDBPyConnection,
-    hero: int,
-    minimum: int = 11,
-    maximum: int = 116,
-) -> dict[tuple[int, int], list[tuple[int, int, int, int]]]:
-    rows = connection.execute(
-        """
-        WITH hero_actors AS (
-            SELECT DISTINCT match_id,player_slot,team_id FROM player_matches
-            WHERE hero_id=? AND average_badge BETWEEN ? AND ?
-        )
-        SELECT p.match_id,p.player_slot,p.team_id,p.item_id,p.buy_time,p.sold_time
-        FROM purchases p JOIN discovery_partitions d USING(match_id)
-        JOIN hero_actors h ON p.match_id=h.match_id
-          AND (p.player_slot=h.player_slot OR p.team_id!=h.team_id)
-        WHERE d.partition IN ('discovery','validation')
-        ORDER BY p.match_id,p.player_slot,p.buy_time,p.event_order
-    """,
-        [hero, minimum, maximum],
-    ).fetchall()
-    result: dict[tuple[int, int], list[tuple[int, int, int, int]]] = {}
-    for match, slot, team, item, bought, sold in rows:
-        result.setdefault((int(match), int(slot)), []).append((
-            int(team),
-            int(item),
-            int(bought),
-            int(sold or 0),
-        ))
-    return result
-
-
-def reconstruct_inventory_before(
-    events: list[tuple[int, int, int, int]], clock: int, graph: ItemGraph
-) -> tuple[int, ...]:
-    return reconstruct_final_inventory(
-        [
-            (item, bought, sold if 0 < sold < clock else 0)
-            for _, item, bought, sold in events
-            if bought < clock
-        ],
-        graph.components,
-    )
-
-
-def load_checkpoint_rows(
-    connection: duckdb.DuckDBPyConnection,
-    hero: int,
-    graph: ItemGraph,
-    minimum: int = 11,
-    maximum: int = 116,
-) -> list[dict[str, object]]:
-    decisions = load_decision_rows(connection, hero, minimum, maximum)
-    histories = load_purchase_event_histories(connection, hero, minimum, maximum)
-    by_match: dict[int, list[list[tuple[int, int, int, int]]]] = {}
-    for (match, _), events in histories.items():
-        by_match.setdefault(match, []).append(events)
-    for row in decisions:
-        clock = integer(row["buy_time"])
-        match, slot, team = (
-            integer(row["match_id"]),
-            integer(row["player_slot"]),
-            integer(row["team_id"]),
-        )
-        row["owned_before"] = list(
-            reconstruct_inventory_before(histories.get((match, slot), []), clock, graph)
-        )
-        enemies = set()
-        enemy_observed = row.get("enemy_observed")
-        fresh_enemy = (
-            enemy_observed is not None and 0 < clock - integer(enemy_observed) <= 300
-        )
-        for events in by_match.get(match, []):
-            if fresh_enemy and events and events[0][0] != team:
-                enemies.update(
-                    reconstruct_inventory_before(
-                        events, integer(enemy_observed) + 1, graph
-                    )
-                )
-        if not fresh_enemy:
-            row["enemy_heroes"] = []
-        row["enemy_items"] = sorted(enemies)
-        row["fold"] = "train" if row["partition"] == "discovery" else "validation"
-        complete = (
-            row.get("own_team_observed_players") == 6
-            and row.get("enemy_team_observed_players") == 6
-            and row.get("own_observed") is not None
-            and row.get("enemy_observed") is not None
-            and 0 < clock - integer(row["own_observed"]) <= 300
-            and 0 < clock - integer(row["enemy_observed"]) <= 300
-        )
-        total = number(row.get("own_team_net_worth") or 0) + number(
-            row.get("enemy_team_net_worth") or 0
-        )
-        row["relative_wealth"] = (
-            number(row["own_net_worth_at_buy"]) * 12 / total
-            if complete and total > 0
+    @classmethod
+    def from_observations(cls, observations: list[ChoiceObservation]) -> ChoiceCohort:
+        conditions: dict[tuple[str, str | int], list[int]] = {}
+        rows = [observation.row for observation in observations]
+        for index, observation in enumerate(observations):
+            for condition in observation.conditions:
+                conditions.setdefault(condition, []).append(index)
+        frame = (
+            pl.DataFrame(rows, infer_schema_length=None, strict=False)
+            if rows and all(row.keys() == rows[0].keys() for row in rows)
             else None
         )
-    return decisions
+        return cls(observations if frame is None else [], frame, conditions)
+
+    @cached_property
+    def inventories(self) -> tuple[tuple[int, ...], ...]:
+        groups = (
+            self.frame["owned_before"].to_list()
+            if self.frame is not None and "owned_before" in self.frame.columns
+            else [None] * self.frame.height
+            if self.frame is not None
+            else [
+                observation.row.get("owned_before") for observation in self.observations
+            ]
+        )
+        shared: dict[tuple[int, ...], tuple[int, ...]] = {}
+        result = []
+        for group in groups:
+            owned = tuple(integer(value) for value in object_list(group) or [])
+            result.append(shared.setdefault(owned, owned))
+        return tuple(result)
+
+    def select_indices(
+        self, candidate: dict[str, object], graph: ItemGraph
+    ) -> list[int]:
+        condition = str(candidate["condition"]), candidate["value"]
+        indices = self.conditions.get(condition, [])
+        if object_dict(candidate.get("substitution")) is None:
+            return indices
+        legal_inventories: dict[tuple[int, ...], bool] = {}
+        selected = []
+        for index in indices:
+            owned = self.inventories[index]
+            if owned not in legal_inventories:
+                legal_inventories[owned] = is_substitution_legal(
+                    {"owned_before": list(owned)}, candidate, graph
+                )
+            if legal_inventories[owned]:
+                selected.append(index)
+        return selected
 
 
 def extract_branch_conditions(row: dict[str, object]) -> set[tuple[str, str | int]]:
@@ -221,7 +147,7 @@ def is_purchase_legal_at_checkpoint(
 
 
 def freeze_branch_candidates(
-    rows: list[dict[str, object]], nominee: NominatedCoreBuild, graph: ItemGraph
+    rows: DecisionRows, nominee: NominatedCoreBuild, graph: ItemGraph
 ) -> list[dict[str, object]]:
     if not nominee["guide"]["ready"]:
         return []
@@ -246,7 +172,7 @@ def freeze_branch_candidates(
 
 
 def freeze_choice_conditions(
-    rows: list[dict[str, object]],
+    rows: DecisionRows,
     nominee: NominatedCoreBuild,
     item: int,
     checkpoint: int,
@@ -263,18 +189,13 @@ def freeze_choice_conditions(
     except (MechanicsError, ValueError):
         return result
     comparator = nominee["guide"]["path"][checkpoint]
-    discovery = [
-        row
-        for row in rows
-        if row["fold"] == "train"
-        and row.get("relative_wealth") is not None
-        and row["item_id"] in {item, comparator}
-        and is_purchase_legal_at_checkpoint(row, nominee, item, checkpoint, graph)
-    ]
+    discovery = _select_choice_observations(
+        rows, nominee, (item, checkpoint, comparator), graph, fold="train"
+    )
     counts = Counter(
-        (condition, trigger, integer(row["item_id"]))
-        for row in discovery
-        for condition, trigger in extract_branch_conditions(row)
+        (condition, trigger, integer(observation.row["item_id"]))
+        for observation in discovery
+        for condition, trigger in observation.conditions
     )
     triggers = {(condition, trigger) for condition, trigger, _action in counts}
     for condition, trigger in sorted(triggers, key=str):
@@ -296,12 +217,10 @@ class BranchCandidateEvaluator:
     def __init__(
         self, rows: list[dict[str, object]], graph: ItemGraph, hypotheses: int
     ) -> None:
-        self.rows = rows
+        self.rows = IndexedDecisionRows(rows)
         self.graph = graph
         self.hypotheses = hypotheses
-        self.contrast_cache = BranchContrastCache(
-            estimate_cross_fitted_doubly_robust_contrast
-        )
+        self.contrast_cache = BranchContrastCache(estimate_admissible_contrast)
 
     def evaluate_candidates(
         self, nominee: NominatedCoreBuild, candidates: list[dict[str, object]]
@@ -309,17 +228,16 @@ class BranchCandidateEvaluator:
         rows, graph, hypotheses = self.rows, self.graph, self.hypotheses
         admitted, audit = [], []
         critical = NormalDist().inv_cdf(1 - 0.025 / max(1, hypotheses))
-        choice_rows: dict[tuple[int, int, int], list[ChoiceObservation]] = {}
+        choice_rows: dict[tuple[int, int, int], ChoiceCohort] = {}
         for candidate in candidates:
             item = integer(candidate["item_id"])
             comparator = integer(candidate["comparator_item_id"])
-            frame = build_comparison_frame(rows, nominee, candidate, graph, choice_rows)
+            frame, cohort, indices = _select_comparison_rows(
+                rows, nominee, candidate, graph, choice_rows
+            )
+            counts = Counter(frame.select("fold", "item_id").iter_rows())
             if any(
-                sum(
-                    row["fold"] == fold and row["item_id"] == action
-                    for row in frame.iter_rows(named=True)
-                )
-                < 20
+                counts[fold, action] < 20
                 for fold in ("train", "validation")
                 for action in (item, comparator)
             ):
@@ -331,10 +249,25 @@ class BranchCandidateEvaluator:
                 continue
             try:
                 contrast = self.contrast_cache.estimate_contrast(
-                    frame, item, comparator
+                    frame,
+                    item,
+                    comparator,
+                    feature_selection=ContrastFeatureSelection(
+                        cohort.feature_table, indices
+                    )
+                    if cohort is not None and cohort.frame is not None
+                    else None,
                 )
             except (ValueError, RuntimeError) as error:
                 audit.append({**candidate, "admitted": False, "reason": str(error)})
+                continue
+            if isinstance(contrast, ContrastBalanceRejection):
+                audit.append({
+                    **candidate,
+                    "admitted": False,
+                    "reason": "Balance check failed; later outcome diagnostics were not calculated",
+                    "balance_screening": replace_nonfinite_values(asdict(contrast)),
+                })
                 continue
             record = object_dict(replace_nonfinite_values(asdict(contrast))) or {}
             lowers, widths = [], []
@@ -428,12 +361,22 @@ def replace_nonfinite_values(value: object) -> object:
 
 
 def build_comparison_frame(
-    rows: list[dict[str, object]],
+    rows: DecisionRows,
     nominee: NominatedCoreBuild,
     candidate: dict[str, object],
     graph: ItemGraph,
-    choice_rows: dict[tuple[int, int, int], list[ChoiceObservation]],
+    choice_rows: dict[tuple[int, int, int], ChoiceCohort],
 ) -> pl.DataFrame:
+    return _select_comparison_rows(rows, nominee, candidate, graph, choice_rows)[0]
+
+
+def _select_comparison_rows(
+    rows: DecisionRows,
+    nominee: NominatedCoreBuild,
+    candidate: dict[str, object],
+    graph: ItemGraph,
+    choice_rows: dict[tuple[int, int, int], ChoiceCohort],
+) -> tuple[pl.DataFrame, ChoiceCohort | None, np.ndarray]:
     item, checkpoint, comparator = (
         integer(candidate["item_id"]),
         integer(candidate["after_step"]),
@@ -441,21 +384,12 @@ def build_comparison_frame(
     )
     key = item, checkpoint, comparator
     if key not in choice_rows:
-        choice_rows[key] = [
-            ChoiceObservation(row, extract_branch_conditions(row))
-            for row in rows
-            if row["item_id"] in {item, comparator}
-            and row.get("relative_wealth") is not None
-            and is_purchase_legal_at_checkpoint(row, nominee, item, checkpoint, graph)
-        ]
-    selected = [
-        observation.row
-        for observation in choice_rows[key]
-        if (str(candidate["condition"]), candidate["value"]) in observation.conditions
-        and is_substitution_legal(observation.row, candidate, graph)
-    ]
+        observations = _select_choice_observations(rows, nominee, key, graph)
+        choice_rows[key] = ChoiceCohort.from_observations(observations)
+    cohort = choice_rows[key]
+    selected = cohort.select_indices(candidate, graph)
     if not selected:
-        return pl.DataFrame(
+        frame = pl.DataFrame(
             schema={
                 "match_id": pl.Int64,
                 "player_slot": pl.Int64,
@@ -463,6 +397,55 @@ def build_comparison_frame(
                 "item_id": pl.Int64,
             }
         )
-    return pl.DataFrame(selected, infer_schema_length=None, strict=False).unique(
-        subset=["match_id", "player_slot"], keep="first", maintain_order=True
+        return frame, None, np.empty(0, dtype=np.intp)
+    frame = (
+        cohort.frame[selected, :]
+        if cohort.frame is not None
+        else pl.DataFrame(
+            [cohort.observations[index].row for index in selected],
+            infer_schema_length=None,
+            strict=False,
+        )
     )
+    first = frame.select(
+        pl.struct("match_id", "player_slot").is_first_distinct()
+    ).to_series()
+    indices = np.asarray(selected, dtype=np.intp)[first.to_numpy()]
+    return frame.filter(first), cohort, indices
+
+
+def _select_choice_observations(
+    rows: DecisionRows,
+    nominee: NominatedCoreBuild,
+    choice: tuple[int, int, int],
+    graph: ItemGraph,
+    *,
+    fold: str | None = None,
+) -> list[ChoiceObservation]:
+    item, checkpoint, comparator = choice
+    legal_inventories: dict[tuple[int, ...], bool] = {}
+    selected = []
+    candidates = (
+        rows.select_items(item, comparator)
+        if isinstance(rows, IndexedDecisionRows)
+        else (row for row in rows if row["item_id"] in {item, comparator})
+    )
+    for row in candidates:
+        if fold is not None and row["fold"] != fold:
+            continue
+        if row.get("relative_wealth") is None:
+            continue
+        owned = tuple(
+            integer(value) for value in object_list(row.get("owned_before")) or []
+        )
+        if owned not in legal_inventories:
+            legal_inventories[owned] = is_purchase_legal_at_checkpoint(
+                row, nominee, item, checkpoint, graph
+            )
+        if legal_inventories[owned]:
+            selected.append(
+                ChoiceObservation(
+                    select_contrast_row(row), extract_branch_conditions(row)
+                )
+            )
+    return selected

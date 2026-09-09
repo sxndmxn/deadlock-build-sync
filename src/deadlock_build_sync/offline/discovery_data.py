@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from .discovery_types import HeroLandmarkRow
+from .sql_resources import load_sql
 
 if TYPE_CHECKING:
     import duckdb
@@ -43,82 +44,19 @@ class HeroDiscoveryData:
 
 def prepare_discovery_partitions(connection: duckdb.DuckDBPyConnection) -> None:
     if connection.execute(
-        "SELECT count(*) FROM information_schema.tables WHERE table_name='split_boundaries'"
+        load_sql("discovery/count_split_boundaries.sql")
     ).fetchone() == (1,):
-        connection.execute("""
-            CREATE OR REPLACE TEMP TABLE discovery_partitions AS
-            SELECT p.match_id,
-                   CASE WHEN epoch(min(p.start_time)) <= b.discovery_end THEN 'discovery'
-                        WHEN f.fold='train' THEN 'selection' ELSE f.fold END AS partition
-            FROM player_matches p JOIN match_folds f USING(match_id), split_boundaries b
-            WHERE f.fold!='test'
-            GROUP BY p.match_id, f.fold, b.discovery_end
-        """)
+        connection.execute(load_sql("discovery/create_fixed_partitions.sql"))
         return
-    connection.execute("""
-        CREATE OR REPLACE TEMP TABLE discovery_partitions AS
-        WITH matches AS (
-            SELECT p.match_id, min(p.start_time) AS started
-            FROM player_matches p JOIN match_folds f USING(match_id)
-            WHERE f.fold='train' GROUP BY p.match_id
-        )
-        SELECT match_id,
-            CASE WHEN row_number() OVER(ORDER BY started,match_id)
-                      <= floor(count(*) OVER()*0.75)
-                 THEN 'discovery' ELSE 'selection' END AS partition
-        FROM matches
-        UNION ALL
-        SELECT match_id, 'validation' FROM match_folds WHERE fold='validation'
-    """)
+    connection.execute(load_sql("discovery/create_ranked_partitions.sql"))
 
 
 def load_landmark_rows(
     connection: duckdb.DuckDBPyConnection, hero: int
 ) -> list[HeroLandmarkRow]:
     return connection.execute(
-        """
-        WITH actors AS (
-            SELECT p.*, d.partition, 1199 AS checkpoint
-            FROM player_matches p JOIN discovery_partitions d USING(match_id)
-            WHERE p.hero_id=? AND p.duration_s>=1200
-        ), personal AS (
-            SELECT a.*, s.net_worth AS wealth, s.stat_time AS observed
-            FROM actors a ASOF LEFT JOIN player_snapshots s
-            ON a.match_id=s.match_id AND a.player_slot=s.player_slot
-               AND a.checkpoint>=s.stat_time
-        ), own_team AS (
-            SELECT p.*, t.team_net_worth AS own_wealth,
-                   t.observed_players AS own_count, t.stat_time AS own_observed
-            FROM personal p ASOF LEFT JOIN team_snapshots t
-            ON p.match_id=t.match_id AND p.team_id=t.team_id
-               AND p.checkpoint>=t.stat_time
-        ), both_teams AS (
-            SELECT p.*, t.team_net_worth AS enemy_wealth,
-                   t.observed_players AS enemy_count, t.stat_time AS enemy_observed
-            FROM own_team p ASOF LEFT JOIN team_snapshots t
-            ON p.match_id=t.match_id AND (1-p.team_id)=t.team_id
-               AND p.checkpoint>=t.stat_time
-        )
-        SELECT p.match_id, p.player_slot, p.partition, p.won,
-               CASE WHEN p.wealth>0 AND 1200-p.observed BETWEEN 1 AND 300 THEN p.wealth END,
-               CASE WHEN p.own_count=6 AND p.enemy_count=6
-                    AND 1200-p.own_observed BETWEEN 1 AND 300
-                    AND 1200-p.enemy_observed BETWEEN 1 AND 300
-                    AND p.own_wealth+p.enemy_wealth>0
-                    THEN (p.own_wealth-p.enemy_wealth)/(p.own_wealth+p.enemy_wealth) END,
-               p.average_badge,
-               CASE WHEN p.wealth>0 AND p.own_count=6 AND p.enemy_count=6
-                    AND 1200-p.observed BETWEEN 1 AND 300
-                    AND 1200-p.own_observed BETWEEN 1 AND 300
-                    AND 1200-p.enemy_observed BETWEEN 1 AND 300
-                    AND p.own_wealth+p.enemy_wealth>0
-                    THEN p.wealth*12/(p.own_wealth+p.enemy_wealth) END,
-               c.hero_ids
-        FROM both_teams p LEFT JOIN compositions c
-          ON p.match_id=c.match_id AND (1-p.team_id)=c.team_id
-        ORDER BY p.start_time, p.match_id, p.player_slot
-    """,
-        [hero],
+        load_sql("discovery/select_landmark_rows.sql"),
+        {"hero": hero},
     ).fetchall()
 
 
@@ -126,13 +64,8 @@ def load_purchase_histories(
     connection: duckdb.DuckDBPyConnection, hero: int
 ) -> dict[tuple[int, int], list[tuple[int, int, int]]]:
     rows = connection.execute(
-        """
-        SELECT p.match_id,p.player_slot,p.item_id,p.buy_time,p.sold_time
-        FROM purchases p JOIN discovery_partitions d USING(match_id)
-        WHERE p.hero_id=? AND p.buy_time<1200
-        ORDER BY p.match_id,p.player_slot,p.buy_time,p.event_order
-    """,
-        [hero],
+        load_sql("discovery/select_purchase_histories.sql"),
+        {"hero": hero},
     ).fetchall()
     histories: dict[tuple[int, int], list[tuple[int, int, int]]] = defaultdict(list)
     for match, slot, item, bought, sold in rows:
@@ -223,7 +156,7 @@ def load_hero_discovery_data(
     maximum: int = 116,
 ) -> HeroDiscoveryData:
     count = connection.execute(
-        "SELECT count(*) FROM player_matches WHERE hero_id=?", [hero]
+        load_sql("discovery/count_hero_appearances.sql"), {"hero": hero}
     ).fetchone()
     if count is None or count[0] == 0:
         raise ValueError(f"Hero {hero} has no source data; run refresh-evidence again")

@@ -322,7 +322,6 @@ max-complexity = 21
 "src/deadlock_build_sync/offline/*.py" = [
   "docstring-missing-exception",
   "docstring-missing-returns",
-  "hardcoded-sql-expression", # SQL is local and built only from pinned constants/validated integer IDs.
   "print", # The long-running producer emits CLI progress directly.
   "subprocess-without-shell-equals-true", # Git arguments are fixed and the executable path is resolved.
   "suspicious-subprocess-import", # Producer records Git identity with a resolved executable and shell disabled.
@@ -332,6 +331,12 @@ max-complexity = 21
 ]
 
 "src/deadlock_build_sync/offline/doubly_robust_estimation.py" = ["too-many-locals"]
+"src/deadlock_build_sync/offline/logistic_solver.py" = [
+  "import-private-name", # Pinned SciPy and scikit-learn provide the original solver and loss.
+]
+"src/deadlock_build_sync/offline/probability_estimation.py" = [
+  "import-private-name", # Pinned scikit-learn provides the original scaling calculations.
+]
 "src/deadlock_build_sync/offline/discovery_branches.py" = ["too-many-locals"]
 
 "src/deadlock_build_sync/offline/discovery_mining.py" = ["too-many-arguments", "too-many-positional-arguments"]

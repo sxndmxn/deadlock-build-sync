@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from .sql_resources import load_sql
+
 if TYPE_CHECKING:
     import duckdb
 
@@ -63,16 +65,9 @@ def load_item_pool_evidence(
         }),
     )
     try:
-        rows = connection.execute("""
-            SELECT p.match_id,p.player_slot,p.item_id,p.buy_time,
-                   p.own_net_worth_at_buy,p.state_observed_at_s
-            FROM purchases p JOIN _discovery_buyers b USING(match_id,player_slot)
-            WHERE p.buy_time<=p.duration_s
-            QUALIFY row_number() OVER (
-                PARTITION BY p.match_id,p.player_slot,p.item_id
-                ORDER BY p.buy_time,p.event_order
-            )=1
-        """).fetchall()
+        rows = connection.execute(
+            load_sql("discovery/select_item_pool_purchases.sql")
+        ).fetchall()
     finally:
         connection.unregister("_discovery_buyers")
     return summarize_purchase_evidence(rows, len(members))

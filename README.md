@@ -133,6 +133,8 @@ deadlock-build-sync refresh-evidence
 It uses eight concurrent hero worker processes by default.
 Use `--workers N` to change the worker count.
 Each worker gives DuckDB a 512 MiB memory limit.
+Each worker uses one Polars thread unless `POLARS_MAX_THREADS` specifies another value.
+Validation distributes candidate groups between workers and restores the original build order.
 After discovery completes, `--resume --run-id ID` validates the saved candidate set.
 Supply the original rank options when you resume a run.
 The command verifies candidate fingerprints, guide groups, source files, and the discovery method before it resumes validation.
@@ -142,6 +144,11 @@ The cache includes all input values and both item IDs.
 It writes its run under `$XDG_STATE_HOME/deadlock-build-sync/offline`.
 It atomically installs a validated `build-evidence.json` in the artifact directory.
 It does not discover, read, or write Steam data.
+
+Build generation requests analytics for four heroes concurrently.
+The API client shares a request interval of 0.31 seconds across these requests.
+The evidence recorder retains the original hero and request order.
+See [build performance verification](docs/build-performance-2026-09-09.md) for measured durations and output comparisons.
 
 Steam discovery supports native (`~/.local/share/Steam`), legacy
 (`~/.steam/steam` and `~/.steam/root`), Flatpak, and Snap installations. A

@@ -4,35 +4,18 @@ import duckdb
 
 from deadlock_build_sync.offline.production_items import _build_item_evidence_payload
 from deadlock_build_sync.offline.production_sources import _query_path_item_metrics
+from tests.offline.sql_fixtures import load_fixture_sql
 
 
 def test_test_period_cannot_change_imbue_selection() -> None:
     connection = duckdb.connect()
-    connection.execute("""
-        CREATE TABLE first_purchases AS SELECT
-            i AS match_id, 0 AS player_slot, 7 AS hero_id, j AS item_id,
-            'Item' AS item_name, 1 AS tier, 500 AS cost, 'weapon' AS slot,
-            false AS active,
-            CASE WHEN i<=25 THEN 'train' WHEN i<=50 THEN 'validation'
-                 ELSE 'test' END AS fold,
-            i%2=0 AS won, 600+j AS buy_time, 1800 AS duration_s,
-            10000+j AS own_net_worth_at_buy,
-            CASE WHEN i<=15 OR i BETWEEN 26 AND 40 THEN 40 ELSE 41 END
-                AS imbued_ability_id
-        FROM range(1,71) actors(i) CROSS JOIN range(1,8) items(j)
-        WHERE j NOT IN (2,3,4) OR (i <= 52-j) OR (j=4 AND i>50)
-    """)
-    connection.execute("CREATE TABLE purchases AS SELECT * FROM first_purchases")
+    connection.execute(load_fixture_sql("selection/create_first_purchases.sql"))
+    connection.execute(load_fixture_sql("selection/create_purchases.sql"))
     members = frozenset((match_id, 0) for match_id in range(1, 71))
     try:
         before = _query_path_item_metrics(connection, members)
-        connection.execute("""
-            UPDATE first_purchases SET imbued_ability_id=40, won=true,
-                own_net_worth_at_buy=50000 WHERE fold='test'
-        """)
-        connection.execute(
-            "DELETE FROM first_purchases WHERE fold='test' AND item_id=4"
-        )
+        connection.execute(load_fixture_sql("selection/change_test_observations.sql"))
+        connection.execute(load_fixture_sql("selection/remove_test_item.sql"))
         after = _query_path_item_metrics(connection, members)
     finally:
         connection.close()

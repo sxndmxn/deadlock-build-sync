@@ -1,8 +1,13 @@
 """Run independent hero calculations in separate CPU processes."""
 
+import os
 from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor
 from multiprocessing import get_context
+
+
+def _initialize_discovery_worker() -> None:
+    os.environ.setdefault("POLARS_MAX_THREADS", "1")
 
 
 def map_discovery_jobs[Job, Result](
@@ -15,6 +20,7 @@ def map_discovery_jobs[Job, Result](
     executor = ProcessPoolExecutor(
         max_workers=workers,
         mp_context=get_context("spawn"),
+        initializer=_initialize_discovery_worker,
     )
     try:
         return list(executor.map(operation, jobs))

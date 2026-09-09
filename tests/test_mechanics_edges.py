@@ -227,8 +227,17 @@ def test_item_graph_skips_unavailable_assets_and_handles_shared_ancestors() -> N
     ])
 
     assert graph.transitive_components(4) == (1, 2, 3)
+    separate = ItemGraph.from_assets([
+        make_item_asset(1, "base"),
+        make_item_asset(4, "top", components=["base"]),
+    ])
+    for _ in range(2):
+        assert separate.transitive_components(4) == (1,)
+        assert graph.transitive_components(4) == (1, 2, 3)
     with pytest.raises(MechanicsError, match="unknown current item"):
         graph.require(99)
+    with pytest.raises(MechanicsError, match="unknown current item"):
+        graph.transitive_components(99)
 
 
 def test_category_bonus_table_accepts_object_rows_and_validates_boundaries() -> None:

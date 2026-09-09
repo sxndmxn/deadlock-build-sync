@@ -3,13 +3,14 @@
 from deadlock_build_sync.mechanics import ItemGraph
 from deadlock_build_sync.value_validation import object_dict
 
+from .decision_rows import DecisionRows
 from .discovery_admission import build_discovery_record
 from .discovery_branches import freeze_choice_conditions
 from .discovery_types import NominatedCoreBuild
 
 
 def freeze_substitutions(
-    rows: list[dict[str, object]], nominees: list[NominatedCoreBuild], graph: ItemGraph
+    rows: DecisionRows, nominees: list[NominatedCoreBuild], graph: ItemGraph
 ) -> None:
     for base in nominees:
         if not base["guide"]["ready"]:

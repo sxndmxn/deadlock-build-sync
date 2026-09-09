@@ -22,6 +22,7 @@ from tests.offline.production_evidence_fixtures import (
     make_export_context,
     write_discovery_source_files,
 )
+from tests.offline.sql_fixtures import load_fixture_sql
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -39,26 +40,23 @@ def _read_hero_database(job: tuple[RunPaths, int, Barrier]) -> tuple[int, int]:
     paths, hero, barrier = job
     with producer._open_discovery_database(make_export_context(paths)) as connection:
         prepare_discovery_partitions(connection)
-        connection.execute("CREATE TEMP TABLE current_hero AS SELECT ? AS id", [hero])
-        connection.execute("SET memory_limit='16MiB'")
         connection.execute(
-            """
-            CREATE TEMP TABLE worker_records AS
-            SELECT range AS id, repeat(md5(? || ':' || range::VARCHAR), 4) AS payload
-            FROM range(300000)
-        """,
+            load_fixture_sql("concurrency/create_current_hero.sql"), [hero]
+        )
+        connection.execute(load_fixture_sql("concurrency/set_memory_limit.sql"))
+        connection.execute(
+            load_fixture_sql("concurrency/create_worker_records.sql"),
             [str(hero)],
         )
         barrier.wait()
-        assert connection.execute("SELECT id FROM current_hero").fetchone() == (hero,)
         assert connection.execute(
-            "SELECT * FROM discovery_partitions ORDER BY match_id"
+            load_fixture_sql("concurrency/select_current_hero.sql")
+        ).fetchone() == (hero,)
+        assert connection.execute(
+            load_fixture_sql("select_discovery_partitions.sql")
         ).fetchall() == [(1, "discovery"), (2, "selection"), (3, "validation")]
         assert connection.execute(
-            """
-            SELECT count(*) FROM worker_records
-            WHERE payload != repeat(md5(? || ':' || id::VARCHAR), 4)
-        """,
+            load_fixture_sql("concurrency/count_invalid_records.sql"),
             [str(hero)],
         ).fetchone() == (0,)
     return os.getpid(), hero
@@ -70,16 +68,8 @@ def test_eight_processes_isolate_connections_and_preserve_result_order(
     paths = RunPaths.create(tmp_path, "worker-database")
     database = str(paths.raw / "analysis.duckdb")
     with duckdb.connect(database) as connection:
-        connection.execute("""
-            CREATE TABLE player_matches AS
-            SELECT * FROM (VALUES (1, 1), (2, 2), (3, 3), (4, 4))
-                AS matches(match_id, start_time)
-        """)
-        connection.execute("""
-            CREATE TABLE match_folds AS
-            SELECT * FROM (VALUES (1, 'train'), (2, 'train'), (3, 'validation'), (4, 'test'))
-                AS folds(match_id, fold)
-        """)
+        connection.execute(load_fixture_sql("concurrency/create_player_matches.sql"))
+        connection.execute(load_fixture_sql("concurrency/create_match_folds.sql"))
     with get_context("spawn").Manager() as manager:
         barrier = manager.Barrier(8, timeout=30)
         results = map_discovery_jobs(
@@ -89,7 +79,7 @@ def test_eight_processes_isolate_connections_and_preserve_result_order(
     assert len({process for process, _ in results}) == 8
     assert os.getpid() not in {process for process, _ in results}
     with duckdb.connect(database) as connection:
-        connection.execute("CREATE TABLE after_workers AS SELECT 1 AS value")
+        connection.execute(load_fixture_sql("concurrency/create_after_workers.sql"))
 
 
 def _reject_hero_job(_hero: int) -> int:
@@ -128,7 +118,7 @@ def test_worker_failure_closes_connection_and_restores_native_limits(
             producer.HeroDiscoveryJob({"id": 1}, make_export_context(paths), {})
         )
     with pytest.raises(duckdb.ConnectionException, match="closed"):
-        connections[0].execute("SELECT 1")
+        connections[0].execute(load_fixture_sql("select_one.sql"))
     assert threadpool_info() == limits
 
 
@@ -181,19 +171,18 @@ def test_roster_freezes_entire_family_before_eight_concurrent_validations(
 
     def validate_hero_fixture(
         _cursor: duckdb.DuckDBPyConnection,
-        hero: dict[str, object],
-        _entry: tuple[HeroDiscoveryData, FrozenHeroDiscovery],
-        _context: _HeroExportContext,
-        family: producer.ValidationFamily,
+        job: producer.HeroValidationJob,
+        _values: HeroDiscoveryData,
     ) -> dict[str, object]:
         barrier.wait()
         frozen_path = next(paths.run.glob("discovery-nominations-*.json"))
         frozen = json.loads(frozen_path.read_text())
         assert len(frozen) == 8
-        assert family == producer.ValidationFamily(8, 16, sha256_json(frozen))
+        assert job.family == producer.ValidationFamily(8, 16, sha256_json(frozen))
         groups = json.loads(next(paths.run.glob("guide-groups-*.json")).read_text())
         assert len(groups["groups"]) == 8
-        assert groups["frozen_sha256"] == family.frozen_hash
+        assert groups["frozen_sha256"] == job.family.frozen_hash
+        hero = job.hero
         return {"hero_id": hero["id"], "builds": [{"path_id": str(hero["id"])}]}
 
     monkeypatch.setattr(producer, "_freeze_hero", freeze_hero_fixture)

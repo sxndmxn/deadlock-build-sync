@@ -8,6 +8,7 @@ from deadlock_build_sync.offline.production_items import (
 from tests.offline.production_evidence_fixtures import (
     make_item_metric_row,
 )
+from tests.offline.sql_fixtures import load_fixture_sql
 
 
 def test_item_payload_admits_only_supported_majority_imbue_target() -> None:
@@ -37,28 +38,10 @@ def test_item_payload_admits_only_supported_majority_imbue_target() -> None:
 def test_core_budget_summaries_ignore_test_rows() -> None:
     connection = duckdb.connect()
     try:
-        connection.execute(
-            """
-            CREATE TABLE player_matches(
-                match_id INTEGER,
-                player_slot INTEGER,
-                duration_s INTEGER,
-                final_net_worth INTEGER,
-                average_badge INTEGER
-            )
-            """
-        )
-        connection.execute(
-            "INSERT INTO player_matches VALUES "
-            "(1, 0, 1000, 10000, 90), "
-            "(2, 0, 2000, 20000, 90), "
-            "(3, 0, 9999, 1000000, 90)"
-        )
-        connection.execute("CREATE TABLE match_folds(match_id INTEGER, fold VARCHAR)")
-        connection.execute(
-            "INSERT INTO match_folds VALUES "
-            "(1, 'train'), (2, 'validation'), (3, 'test')"
-        )
+        connection.execute(load_fixture_sql("cohort/create_player_matches.sql"))
+        connection.execute(load_fixture_sql("cohort/insert_player_matches.sql"))
+        connection.execute(load_fixture_sql("cohort/create_match_folds.sql"))
+        connection.execute(load_fixture_sql("cohort/insert_match_folds.sql"))
         cohort = _query_path_cohort_summary(
             connection,
             frozenset({(1, 0), (2, 0), (3, 0)}),

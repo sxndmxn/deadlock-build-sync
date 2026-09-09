@@ -8,14 +8,13 @@ from threadpoolctl import threadpool_limits
 
 from deadlock_build_sync.offline.discovery_contrast_cache import BranchContrastCache
 from deadlock_build_sync.offline.doubly_robust_estimation import (
+    DoublyRobustContrast,
     estimate_cross_fitted_doubly_robust_contrast,
 )
 from tests.offline.production_evidence_fixtures import make_contrast_rows
 
 if TYPE_CHECKING:
-    from deadlock_build_sync.offline.doubly_robust_estimation import (
-        DoublyRobustContrast,
-    )
+    import numpy as np
 
 
 def test_cached_contrasts_match_direct_fits_and_isolate_returned_records() -> None:
@@ -25,6 +24,7 @@ def test_cached_contrasts_match_direct_fits_and_isolate_returned_records() -> No
         expected = estimate_cross_fitted_doubly_robust_contrast(frame, 10, 20)
         first = cache.estimate_contrast(frame, 10, 20)
         assert first == expected
+        assert isinstance(first, DoublyRobustContrast)
         first.fold_diagnostics["train"]["estimate"] = 99
         assert cache.estimate_contrast(frame.clone(), 10, 20) == expected
         changed = frame.with_columns((1 - pl.col("won")).alias("won"))
@@ -45,8 +45,13 @@ def test_contrast_cache_bounds_memory_and_retries_failed_fits() -> None:
     calls: list[int] = []
 
     def estimate(
-        data: pl.DataFrame, _treatment: int, _comparator: int
+        data: pl.DataFrame,
+        _treatment: int,
+        _comparator: int,
+        *,
+        features: np.ndarray | None = None,
     ) -> DoublyRobustContrast:
+        assert features is None
         identifier = int(data["id"][0])
         calls.append(identifier)
         if identifier == 0:

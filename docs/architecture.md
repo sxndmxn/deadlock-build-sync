@@ -53,6 +53,17 @@ The offline producer exposes only `refresh.main` to the main CLI.
 Its discovery and estimation functions remain private to that component.
 Runtime code does not import optional analysis dependencies through the producer.
 
+The offline producer stores complete DuckDB statements in
+[`offline/sql`](../src/deadlock_build_sync/offline/sql).
+[`sql_resources.py`](../src/deadlock_build_sync/offline/sql_resources.py) loads each SQL file once per process.
+The wheel includes these files. SQL loading does not depend on the working directory.
+Python passes query values through bound parameters.
+[`query_table`](https://duckdb.org/docs/current/guides/sql_features/query_and_query_table_functions) accepts table names for counts and exports.
+[`DuckLake secrets`](https://ducklake.select/docs/stable/duckdb/usage/connecting) accept the metadata path through a bound parameter.
+The snapshot attachment binds the snapshot version and retains read-only access.
+Fixed table names remain in the SQL files. Python does not format SQL strings.
+Test SQL files are in [`tests/offline/sql`](../tests/offline/sql).
+
 `core_discovery.py` selects supported cores.
 `discovery_artifacts.py` builds item pool evidence and purchase artifacts.
 `doubly_robust_estimation.py` estimates item outcome differences.

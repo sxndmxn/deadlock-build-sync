@@ -67,6 +67,7 @@ class DeadlockApi:
             max_attempts=3,
             transport=transport,
         )
+        self._http.set_request_interval(0.31)
         self._declare_static_routes()
 
     def close(self) -> None:

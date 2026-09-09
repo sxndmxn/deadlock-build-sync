@@ -8,9 +8,11 @@ import pytest
 from deadlock_build_sync.offline import extract
 from deadlock_build_sync.offline.config import Cohort, parse_timestamp
 from deadlock_build_sync.offline.extract import (
-    _build_eligible_matches_query,
+    _build_cohort_parameters,
     _execute_remote_query,
 )
+from deadlock_build_sync.offline.sql_resources import load_sql
+from tests.offline.sql_fixtures import load_fixture_sql
 
 
 @dataclass(frozen=True)
@@ -20,6 +22,7 @@ class _Match:
     start_time: str = "2026-08-16 23:00:00+00"
     duration_s: int = 1_800
     eligible: bool = True
+    match_mode: str = "Ranked"
 
 
 @pytest.mark.parametrize(
@@ -52,7 +55,7 @@ def _insert_match(
             "Team0" if slot < 6 else "Team1",
             "Win" if slot < 6 else "Loss",
             match.eligible,
-            "Ranked",
+            match.match_mode,
             "Normal",
             match.start_time,
             match.duration_s,
@@ -60,29 +63,12 @@ def _insert_match(
         )
         for slot in range(match.players)
     ]
-    connection.executemany(
-        "INSERT INTO match_player VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", rows
-    )
+    connection.executemany(load_fixture_sql("extract/insert_match_player.sql"), rows)
 
 
 def test_match_admission_requires_complete_eligible_twelve_player_match() -> None:
     connection = duckdb.connect()
-    connection.execute(
-        """
-        CREATE TABLE match_player (
-            match_id INTEGER,
-            player_slot INTEGER,
-            team VARCHAR,
-            player_match_outcome VARCHAR,
-            rewards_eligible BOOLEAN,
-            match_mode VARCHAR,
-            game_mode VARCHAR,
-            start_time TIMESTAMPTZ,
-            duration_s INTEGER,
-            average_badge INTEGER
-        )
-        """
-    )
+    connection.execute(load_fixture_sql("extract/create_match_player.sql"))
     _insert_match(connection, _Match(1))
     _insert_match(connection, _Match(2, players=6))
     _insert_match(connection, _Match(3, players=11))
@@ -100,9 +86,11 @@ def test_match_admission_requires_complete_eligible_twelve_player_match() -> Non
         as_of=datetime(2026, 8, 17, tzinfo=UTC),
     )
 
-    admitted = connection.execute(
-        _build_eligible_matches_query(cohort, source="match_player")
-    ).fetchall()
+    connection.execute(
+        load_sql("extract/create_eligible_matches.sql"),
+        _build_cohort_parameters(cohort),
+    )
+    admitted = connection.table("eligible_matches").fetchall()
 
     assert admitted == [(1,)]
 
@@ -113,8 +101,12 @@ def test_remote_query_retries_a_shard_that_is_still_publishing(
     class FlakyConnection:
         calls = 0
 
-        def execute(self, _query: str) -> "FlakyConnection":
+        def __init__(self) -> None:
+            self.parameters: list[object] = []
+
+        def execute(self, _query: str, parameters: object = None) -> "FlakyConnection":
             self.calls += 1
+            self.parameters.append(parameters)
             if self.calls == 1:
                 raise duckdb.InvalidInputException(
                     "No magic bytes found at end of file 'snapshot.parquet'"
@@ -126,8 +118,29 @@ def test_remote_query_retries_a_shard_that_is_still_publishing(
 
     result = _execute_remote_query(
         cast("duckdb.DuckDBPyConnection", connection),
-        "SELECT 1",
+        load_fixture_sql("select_value.sql"),
+        {"value": 1},
     )
 
     assert result is connection
     assert connection.calls == 2
+    assert connection.parameters == [{"value": 1}, {"value": 1}]
+
+
+def test_match_admission_binds_mode_text_without_sql_interpolation() -> None:
+    mode = "Ranked'; DROP TABLE remote.main.match_player; --"
+    cohort = Cohort(
+        since=datetime(2026, 8, 16, tzinfo=UTC),
+        as_of=datetime(2026, 8, 17, tzinfo=UTC),
+        match_mode=mode,
+    )
+    with duckdb.connect() as connection:
+        connection.execute(load_fixture_sql("extract/create_match_player.sql"))
+        _insert_match(connection, _Match(1, match_mode=mode))
+        _insert_match(connection, _Match(2))
+        connection.execute(
+            load_sql("extract/create_eligible_matches.sql"),
+            _build_cohort_parameters(cohort),
+        )
+        assert connection.table("eligible_matches").fetchall() == [(1,)]
+        assert len(connection.table("remote.main.match_player").fetchall()) == 24

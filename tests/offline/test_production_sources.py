@@ -10,6 +10,7 @@ import pytest
 from deadlock_build_sync.offline import production_sources as sources
 from deadlock_build_sync.offline.api import write_json
 from deadlock_build_sync.offline.config import RunPaths, sha256_json
+from tests.offline.sql_fixtures import load_fixture_sql
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -119,8 +120,8 @@ def test_path_item_metrics_aggregate_fold_and_imbue_support() -> None:
     try:
         connection.register("first_source", pl.DataFrame(rows))
         connection.register("events_source", purchases)
-        connection.execute("CREATE TABLE first_purchases AS SELECT * FROM first_source")
-        connection.execute("CREATE TABLE purchases AS SELECT * FROM events_source")
+        connection.execute(load_fixture_sql("item_metrics/create_first_purchases.sql"))
+        connection.execute(load_fixture_sql("item_metrics/create_purchases.sql"))
 
         metrics = sources._query_path_item_metrics(
             connection,

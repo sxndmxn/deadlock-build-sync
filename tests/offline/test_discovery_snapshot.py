@@ -25,7 +25,6 @@ if TYPE_CHECKING:
 
     from deadlock_build_sync.offline.discovery_data import HeroDiscoveryData
     from deadlock_build_sync.offline.discovery_types import FrozenHeroDiscovery
-    from deadlock_build_sync.offline.production_sources import _HeroExportContext
 
 
 def _frozen_report() -> FrozenHeroDiscovery:
@@ -70,14 +69,12 @@ def test_resume_preserves_candidates_groups_and_family_without_discovery(
 
     def validate_hero(
         _connection: duckdb.DuckDBPyConnection,
-        hero: dict[str, object],
-        entry: tuple[HeroDiscoveryData, FrozenHeroDiscovery],
-        _context: _HeroExportContext,
-        family: producer.ValidationFamily,
+        job: producer.HeroValidationJob,
+        _values: HeroDiscoveryData,
     ) -> dict[str, object]:
-        assert entry[1] == _frozen_report()
-        assert family == producer.ValidationFamily(2, 1, sha256_json(frozen))
-        return {"hero_id": hero["id"], "builds": [{"path_id": "build"}]}
+        assert job.report == _frozen_report()
+        assert job.family == producer.ValidationFamily(2, 1, sha256_json(frozen))
+        return {"hero_id": job.hero["id"], "builds": [{"path_id": "build"}]}
 
     monkeypatch.setattr(producer, "_run_discovery_job", reject_discovery)
     monkeypatch.setattr(producer, "_validate_hero", validate_hero)

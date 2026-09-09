@@ -9,9 +9,11 @@ import polars as pl
 from threadpoolctl import threadpool_limits
 
 from deadlock_build_sync.offline import discovery_branches as branches
+from deadlock_build_sync.offline import discovery_checkpoints as checkpoints
+from deadlock_build_sync.offline.contrast_features import (
+    build_feature_matrix as _build_feature_matrix,
+)
 from deadlock_build_sync.offline.doubly_robust_estimation import (
-    _add_context_features,
-    _build_feature_matrix,
     _calculate_maximum_weighted_standardized_difference,
     estimate_cross_fitted_doubly_robust_contrast,
 )
@@ -20,6 +22,8 @@ from deadlock_build_sync.value_validation import (
     require_object_rows,
 )
 from tests.offline.production_evidence_fixtures import make_contrast_rows
+from tests.offline.sql_fixtures import load_fixture_sql
+from tests.offline.test_contrast_arrays import add_reference_context_features
 from tests.purchase_guidance_fixtures import make_purchase_guidance
 
 if TYPE_CHECKING:
@@ -89,10 +93,10 @@ def test_choice_cohort_uses_current_inventory_and_all_context_conditions() -> No
     assert not branches.freeze_branch_candidates(
         rows, {"guide": {"ready": False}}, graph
     )
-    assert branches.reconstruct_inventory_before(
+    assert checkpoints.reconstruct_inventory_before(
         [(0, 1, 10, 0), (0, 2, 20, 40), (0, 1, 30, 0), (0, 2, 60, 0)], 50, graph
     ) == (1,)
-    assert branches.reconstruct_inventory_before([(0, 1, 50, 0)], 50, graph) == ()
+    assert checkpoints.reconstruct_inventory_before([(0, 1, 50, 0)], 50, graph) == ()
 
 
 def test_branch_estimator_uses_corrected_predecision_cohorts_without_test_rows() -> (
@@ -191,10 +195,10 @@ def test_failed_branch_estimation_keeps_manual_choices(
     rows = decisions()
     candidate = branches.freeze_branch_candidates(rows, nominee(), graph)[0]
 
-    def fail(*_args: object) -> DoublyRobustContrast:
+    def fail(*_args: object, **_kwargs: object) -> DoublyRobustContrast:
         raise ValueError("No comparison overlap")
 
-    monkeypatch.setattr(branches, "estimate_cross_fitted_doubly_robust_contrast", fail)
+    monkeypatch.setattr(branches, "estimate_admissible_contrast", fail)
     result = branches.evaluate_branch_candidates(rows, nominee(), [candidate], graph, 1)
     assert not result["branches"]
     assert "No comparison overlap" in str(result["audit"])
@@ -227,7 +231,7 @@ def test_branch_comparisons_keep_conditions_checkpoints_and_substitutions_separa
         "condition": "enemy_hero",
         "value": 42,
     }
-    cache: dict[tuple[int, int, int], list[branches.ChoiceObservation]] = {}
+    cache: dict[tuple[int, int, int], branches.ChoiceCohort] = {}
     for changes, expected in (
         ({}, [1, 4]),
         ({"value": 43}, [2, 3]),
@@ -241,7 +245,7 @@ def test_branch_comparisons_keep_conditions_checkpoints_and_substitutions_separa
 
 
 def test_context_indicators_and_constant_group_imbalance_are_checked() -> None:
-    frame = _add_context_features(pl.DataFrame(decisions()))
+    frame = add_reference_context_features(pl.DataFrame(decisions()))
     assert "context_enemy_heroes_42" in frame.columns
     assert "context_owned_before_1" in frame.columns
     assert _build_feature_matrix(frame).shape[0] == frame.height
@@ -257,49 +261,37 @@ def test_context_indicators_and_constant_group_imbalance_are_checked() -> None:
 
 def test_strict_team_snapshot_and_no_future_enemy_item_enter_branch_state() -> None:
     connection = duckdb.connect()
-    connection.execute(
-        "CREATE TABLE discovery_partitions AS SELECT 1 AS match_id, 'discovery' AS partition"
+    connection.execute(load_fixture_sql("checkpoints/create_single_partition.sql"))
+    connection.execute(load_fixture_sql("checkpoints/create_enemy_composition.sql"))
+    connection.execute(load_fixture_sql("checkpoints/create_team_snapshots.sql"))
+    connection.execute(load_fixture_sql("checkpoints/insert_team_snapshots.sql"))
+    connection.execute(load_fixture_sql("checkpoints/create_hero_appearance.sql"))
+    connection.execute(load_fixture_sql("checkpoints/create_purchases.sql"))
+    connection.execute(load_fixture_sql("checkpoints/insert_purchase_history.sql"))
+    connection.execute(load_fixture_sql("checkpoints/insert_teammate_purchase.sql"))
+    assert set(
+        checkpoints.load_purchase_event_histories(connection, 12).for_match(1)
+    ) == {0, 1}
+    assert (
+        checkpoints.load_purchase_event_histories(connection, 12, 81, 115).for_match(1)
+        == {}
     )
     connection.execute(
-        "CREATE TABLE compositions AS SELECT 1 AS match_id, 1 AS team_id, [42,43,44,45,46,47] AS hero_ids"
-    )
-    connection.execute(
-        "CREATE TABLE team_snapshots(match_id INT,team_id INT,stat_time INT,team_net_worth INT,observed_players INT)"
-    )
-    connection.execute(
-        "INSERT INTO team_snapshots VALUES(1,0,590,60000,6),(1,1,590,60000,6),(1,0,600,999999,6)"
-    )
-    connection.execute(
-        "CREATE TABLE player_matches AS SELECT 1 AS match_id, 12 AS hero_id, 71 AS average_badge, 0 AS player_slot, 0 AS team_id"
-    )
-    connection.execute(
-        "CREATE TABLE purchases(match_id INT,player_slot INT,team_id INT,item_id INT,buy_time INT,sold_time INT,event_order INT)"
-    )
-    connection.execute(
-        "INSERT INTO purchases VALUES(1,0,0,1,100,0,0),(1,0,0,3,200,0,1),(1,1,1,7,500,0,0),(1,1,1,8,595,0,1),(1,1,1,9,600,0,2)"
-    )
-    connection.execute("INSERT INTO purchases VALUES(1,2,0,9,100,0,0)")
-    assert set(branches.load_purchase_event_histories(connection, 12)) == {
-        (1, 0),
-        (1, 1),
-    }
-    assert branches.load_purchase_event_histories(connection, 12, 81, 115) == {}
-    connection.execute(
-        "CREATE TABLE decision_opportunities AS SELECT 1 AS match_id,0 AS player_slot,0 AS team_id,12 AS hero_id,71 AS average_badge,7 AS item_id,600 AS buy_time,590 AS state_observed_at_s,8000 AS own_net_worth_at_buy,999999 AS own_team_net_worth,60000 AS enemy_team_net_worth,6 AS own_team_observed_players,6 AS enemy_team_observed_players,999999 AS team_net_worth_lead"
+        load_fixture_sql("checkpoints/create_decision_opportunities.sql")
     )
     _, graph = make_purchase_guidance()
-    row = branches.load_checkpoint_rows(connection, 12, graph)[0]
+    row = checkpoints.load_checkpoint_rows(connection, 12, graph)[0]
     assert row["relative_wealth"] == 0.8
     assert row["owned_before"] == [1, 3]
     assert row["enemy_items"] == [7]
     assert row["own_team_net_worth"] == 60000
-    connection.execute("UPDATE team_snapshots SET observed_players=5 WHERE team_id=1")
+    connection.execute(load_fixture_sql("checkpoints/remove_enemy_observation.sql"))
     assert (
-        branches.load_checkpoint_rows(connection, 12, graph)[0]["relative_wealth"]
+        checkpoints.load_checkpoint_rows(connection, 12, graph)[0]["relative_wealth"]
         is None
     )
-    connection.execute("UPDATE team_snapshots SET stat_time=299 WHERE team_id=1")
-    stale = branches.load_checkpoint_rows(connection, 12, graph)[0]
+    connection.execute(load_fixture_sql("checkpoints/set_stale_enemy_snapshot.sql"))
+    stale = checkpoints.load_checkpoint_rows(connection, 12, graph)[0]
     assert stale["enemy_items"] == []
     assert stale["enemy_heroes"] == []
     connection.close()
