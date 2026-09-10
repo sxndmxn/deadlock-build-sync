@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 import deadlock_build_sync.cli as cli_module
-import deadlock_build_sync.offline.cli as offline_cli_module
+import deadlock_build_sync.offline.refresh as offline_cli_module
 from deadlock_build_sync import cli_support
 from deadlock_build_sync.api import Patch
 from deadlock_build_sync.cache import CacheError, CacheLocation
@@ -43,9 +43,14 @@ def test_status_is_read_only_and_supports_json() -> None:
     assert args.json
 
 
+@pytest.mark.parametrize(
+    ("worker_arguments", "workers"), [([], 8), (["--workers", "3"], 3)]
+)
 def test_refresh_evidence_handoff_exports_and_admits_one_artifact(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    worker_arguments: list[str],
+    workers: int,
 ) -> None:
     forwarded: list[str] = []
     loaded: list[Path] = []
@@ -66,15 +71,21 @@ def test_refresh_evidence_handoff_exports_and_admits_one_artifact(
         str(tmp_path),
         "--run-id",
         "frozen",
+        *worker_arguments,
     ])
 
     assert cli_module._run_refresh_evidence(args) == 0
-    assert forwarded[0] == "all"
+    assert forwarded[:3] == ["--rank-expansion", "auto", "--min-rank"]
     assert forwarded[forwarded.index("--output") + 1] == str(
         tmp_path / "build-evidence.json"
     )
     assert "--run-id" in forwarded
+    assert forwarded[forwarded.index("--workers") + 1] == str(workers)
     assert loaded == [tmp_path / "build-evidence.json"]
+    forwarded.clear()
+    args.resume = True
+    assert cli_module._run_refresh_evidence(args) == 0
+    assert "--resume" in forwarded
 
 
 def test_recommend_parser_requires_a_decision_state() -> None:
@@ -100,7 +111,7 @@ def test_stale_sync_stops_before_cache_discovery(
     )
     monkeypatch.setattr(
         cli_module,
-        "_location",
+        "_discover_cache_location",
         lambda _args: calls.append("cache"),
     )
     args = build_parser().parse_args([
@@ -128,7 +139,7 @@ def test_install_artifacts_refuses_before_loading_when_deadlock_is_running(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     location = CacheLocation(123, tmp_path / "cached_hero_builds.kv3", tmp_path)
-    monkeypatch.setattr(cli_module, "_location", lambda _args: location)
+    monkeypatch.setattr(cli_module, "_discover_cache_location", lambda _args: location)
     monkeypatch.setattr(cli_module, "deadlock_is_running", lambda: True)
     monkeypatch.setattr(
         cli_module,
@@ -160,7 +171,7 @@ def test_install_artifacts_loads_frozen_build_evidence_from_the_bundle(
     location = CacheLocation(123, cache_path, tmp_path)
     patch = Patch("Patch", 123, "2026-01-01T00:00:00Z")
     seen: dict[str, object] = {}
-    monkeypatch.setattr(cli_module, "_location", lambda _args: location)
+    monkeypatch.setattr(cli_module, "_discover_cache_location", lambda _args: location)
     monkeypatch.setattr(cli_module, "deadlock_is_running", lambda: False)
     monkeypatch.setattr(
         cli_module,
@@ -303,17 +314,17 @@ def test_sync_generates_artifacts_and_installs_without_extra_flags(
         manifest=snapshot(),
     )
     calls: dict[str, object] = {}
-    evidence = SimpleNamespace(artifact_id="e" * 64, heroes={})
+    evidence = SimpleNamespace(artifact_id="e" * 64, heroes={}, raw_bytes=b"evidence")
     api = object()
 
-    monkeypatch.setattr(cli_module, "_location", lambda _args: location)
+    monkeypatch.setattr(cli_module, "_discover_cache_location", lambda _args: location)
     monkeypatch.setattr(cli_module, "deadlock_is_running", lambda: False)
     monkeypatch.setattr(
         cli_module,
         "require_current_build_evidence",
         lambda *_args: evidence,
     )
-    monkeypatch.setattr(cli_support, "_api", lambda *_args: api)
+    monkeypatch.setattr(cli_support, "_create_evidence_api", lambda *_args: api)
 
     def fake_generate(*args: object, **kwargs: object) -> GeneratedGuides:
         assert args == (api,)
@@ -340,6 +351,14 @@ def test_sync_generates_artifacts_and_installs_without_extra_flags(
         path.write_text("{}\n", encoding="utf-8")
 
     monkeypatch.setattr(cli_module, "_write_policy_artifact", fake_write_policies)
+    monkeypatch.setattr(
+        cli_module,
+        "write_build_guides",
+        lambda directory, *_args: (
+            calls.update({"build_files": True}),
+            (directory / "builds.json").write_text("{}"),
+        ),
+    )
 
     def fake_narratives(argv: list[str] | None = None) -> int:
         calls["generation_args"] = argv
@@ -400,15 +419,20 @@ def test_sync_generates_artifacts_and_installs_without_extra_flags(
     ])
     assert cli_module._run_sync(args) == 0
     assert calls["all_heroes"] is True
+    assert calls["build_files"] is True
     assert (tmp_path / "artifacts/strategy-context.json").is_file()
     assert (tmp_path / "artifacts/policies.json").is_file()
+    assert (
+        tmp_path / "artifacts/build-evidence.json"
+    ).read_bytes() == evidence.raw_bytes
     generation_args = calls["generation_args"]
-    assert generation_args == [
-        "--input",
-        str(tmp_path / "artifacts/strategy-context.json"),
-        "--output",
-        str(tmp_path / "artifacts/narratives.json"),
+    assert isinstance(generation_args, list)
+    assert generation_args[::2] == ["--input", "--output"]
+    assert [Path(str(value)).name for value in generation_args[1::2]] == [
+        "strategy-context.json",
+        "narratives.json",
     ]
+    assert Path(str(generation_args[1])).parent.name == "new"
 
 
 @pytest.mark.parametrize("command", ["preview", "install"])

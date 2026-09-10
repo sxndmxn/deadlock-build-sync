@@ -6,7 +6,11 @@ from deadlock_build_sync import cache_storage
 from deadlock_build_sync.cache import CacheError
 from deadlock_build_sync.presentation import MANAGED_MARKER
 from deadlock_build_sync.protobuf import HeroBuildMetadata
-from tests.cache_fixtures import SNAPSHOT_ID, complete_guide, snapshot_manifest
+from tests.cache_fixtures import (
+    SNAPSHOT_ID,
+    make_complete_guide,
+    make_snapshot_manifest,
+)
 
 
 def _metadata(
@@ -31,7 +35,7 @@ def _metadata(
 
 
 def test_stable_cache_value_sorts_mixed_keys_by_their_text() -> None:
-    normalized = cache_storage._stable_cache_value({2: "a", "10": "z"})
+    normalized = cache_storage._normalize_cache_value({2: "a", "10": "z"})
 
     assert isinstance(normalized, dict)
     assert list(normalized) == ["10", "2"]
@@ -54,7 +58,7 @@ def test_out_of_scope_fingerprint_filters_only_unpublished_targets(
     }
 
     assert (
-        cache_storage._out_of_scope_fingerprint(
+        cache_storage._calculate_unmanaged_cache_fingerprint(
             root,
             account_id=7,
             target_hero_ids={12},
@@ -68,7 +72,7 @@ def test_target_blob_requires_both_hero_scope_and_managed_identity(
 ) -> None:
     monkeypatch.setattr(
         cache_storage,
-        "try_hero_build_metadata",
+        "try_parse_hero_build_metadata",
         lambda _value: _metadata(hero_id=13),
     )
 
@@ -95,12 +99,12 @@ def test_target_metadata_rejects_each_invalid_identity(
 ) -> None:
     monkeypatch.setattr(
         cache_storage,
-        "try_hero_build_metadata",
+        "try_parse_hero_build_metadata",
         lambda _value: metadata,
     )
 
     assert (
-        cache_storage._target_managed_metadata(
+        cache_storage._match_target_managed_metadata(
             b"blob",
             {(12, "default"): 2},
             7,
@@ -115,12 +119,14 @@ def test_target_metadata_requires_an_expected_key(
     metadata = _metadata()
     monkeypatch.setattr(
         cache_storage,
-        "try_hero_build_metadata",
+        "try_parse_hero_build_metadata",
         lambda _value: metadata,
     )
 
-    assert cache_storage._target_managed_metadata(b"blob", {}, 7) is None
-    assert cache_storage._target_managed_metadata(b"blob", {(12, "default"): 2}, 7) == (
+    assert cache_storage._match_target_managed_metadata(b"blob", {}, 7) is None
+    assert cache_storage._match_target_managed_metadata(
+        b"blob", {(12, "default"): 2}, 7
+    ) == (
         (12, "default"),
         metadata,
     )
@@ -173,7 +179,7 @@ def test_managed_entry_errors_report_exact_section_and_key(
     metadata = _metadata()
     monkeypatch.setattr(
         cache_storage,
-        "_target_managed_metadata",
+        "_match_target_managed_metadata",
         lambda _blob, _expected, _account_id: ((12, "default"), metadata),
     )
     with pytest.raises(
@@ -202,7 +208,7 @@ def test_install_coverage_reports_missing_and_extra_heroes_exactly() -> None:
 
 
 def test_install_request_rejects_each_incomplete_guide_field() -> None:
-    base = complete_guide()
+    base = make_complete_guide()
     all_optional = tuple(
         replace(category, optional=True) for category in base.rendered_categories
     )
@@ -226,16 +232,16 @@ def test_install_request_rejects_each_incomplete_guide_field() -> None:
         ):
             cache_storage._validate_install_request(
                 [invalid],
-                snapshot_manifest(),
+                make_snapshot_manifest(),
                 {12},
                 allow_subset=False,
             )
 
 
 def test_install_request_lists_each_incomplete_hero() -> None:
-    first = replace(complete_guide(), hero_name="Alpha", snapshot_id="")
+    first = replace(make_complete_guide(), hero_name="Alpha", snapshot_id="")
     second = replace(
-        complete_guide(),
+        make_complete_guide(),
         hero_id=13,
         hero_name="Beta",
         snapshot_id="",
@@ -250,18 +256,18 @@ def test_install_request_lists_each_incomplete_hero() -> None:
     ):
         cache_storage._validate_install_request(
             [first, second],
-            snapshot_manifest(),
+            make_snapshot_manifest(),
             {12, 13},
             allow_subset=False,
         )
 
 
 def test_install_request_returns_complete_identity_and_allows_a_subset() -> None:
-    guide = complete_guide()
+    guide = make_complete_guide()
 
     identity = cache_storage._validate_install_request(
         [guide],
-        snapshot_manifest(),
+        make_snapshot_manifest(),
         {12, 13},
         allow_subset=True,
     )
@@ -276,12 +282,12 @@ def test_install_request_returns_complete_identity_and_allows_a_subset() -> None
 
 
 def test_install_request_reports_other_contract_errors_exactly() -> None:
-    guide = complete_guide()
+    guide = make_complete_guide()
     duplicate = replace(guide)
 
     with pytest.raises(CacheError, match=r"^no guides were generated$"):
         cache_storage._validate_install_request(
-            [], snapshot_manifest(), {12}, allow_subset=False
+            [], make_snapshot_manifest(), {12}, allow_subset=False
         )
     with pytest.raises(
         CacheError,
@@ -289,7 +295,7 @@ def test_install_request_reports_other_contract_errors_exactly() -> None:
     ):
         cache_storage._validate_install_request(
             [guide, duplicate],
-            snapshot_manifest(),
+            make_snapshot_manifest(),
             {12},
             allow_subset=False,
         )
@@ -299,7 +305,7 @@ def test_install_request_reports_other_contract_errors_exactly() -> None:
     ):
         cache_storage._validate_install_request(
             [guide, replace(guide, hero_id=13, snapshot_id="other")],
-            snapshot_manifest(),
+            make_snapshot_manifest(),
             {12, 13},
             allow_subset=False,
         )

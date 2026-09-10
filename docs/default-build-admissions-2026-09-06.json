@@ -1,0 +1,733 @@
+{
+  "run_id": "default-integration-20260906",
+  "artifact_id": "daacd0dfe2b5853e2089ba8ee4b21bd40fd5a0de65aff488e4449a4dd7ef72ba",
+  "client_version": 6684,
+  "cohort": {
+    "as_of": "2026-09-06T21:19:47+00:00",
+    "game_mode": "Normal",
+    "match_mode": "Ranked",
+    "maximum_badge": 115,
+    "minimum_badge": 71,
+    "since": "2026-08-22T21:40:46+00:00"
+  },
+  "patch": {
+    "content_sha256": "de790f61b0ecaa5dcba85d01d304ae300dee94cea44d1e319473d673df3d4888",
+    "guid": "{\"is_perma_link\":true,\"text\":\"https://store.steampowered.com/news/app/1422450/view/676255623445218601\"}",
+    "identity": "4bee59bbcf38938f551d3454feff64f1d9a27c81ad1eca7e200f79fcf599aa59",
+    "link": "https://store.steampowered.com/news/app/1422450/view/676255623445218601",
+    "published_at": "2026-08-22T21:40:46Z",
+    "source": "steam",
+    "start_timestamp": 1787434846,
+    "title": " Minor Update - 08-22-2026"
+  },
+  "core_hypotheses": 39,
+  "test_evaluated": false,
+  "admitted_builds": [
+    {
+      "hero": "Haze",
+      "hero_id": 13,
+      "path_id": "13-74b56ad184814062",
+      "selection_rank": 0,
+      "core": [
+        "Veil Walker",
+        "Surge of Power",
+        "Burst Fire",
+        "Bullet Resist Shredder",
+        "Enchanter's Emblem",
+        "Swift Striker"
+      ],
+      "selection_owners": 258,
+      "validation_owners": 288,
+      "validation_win_rate": 0.6111111111111112,
+      "pool_counts": {
+        "1": 4,
+        "2": 6,
+        "3": 5,
+        "4": 10
+      },
+      "automatic_branches": 0
+    },
+    {
+      "hero": "Haze",
+      "hero_id": 13,
+      "path_id": "13-fb954a4b675ee6c5",
+      "selection_rank": 1,
+      "core": [
+        "Veil Walker",
+        "Surge of Power",
+        "Burst Fire",
+        "Enchanter's Emblem",
+        "Swift Striker"
+      ],
+      "selection_owners": 388,
+      "validation_owners": 416,
+      "validation_win_rate": 0.5817307692307693,
+      "pool_counts": {
+        "1": 7,
+        "2": 9,
+        "3": 6,
+        "4": 10
+      },
+      "automatic_branches": 0
+    },
+    {
+      "hero": "Haze",
+      "hero_id": 13,
+      "path_id": "13-6f319e6f5a94bb48",
+      "selection_rank": 2,
+      "core": [
+        "Veil Walker",
+        "Surge of Power",
+        "Bullet Resist Shredder",
+        "Enchanter's Emblem",
+        "Swift Striker"
+      ],
+      "selection_owners": 329,
+      "validation_owners": 373,
+      "validation_win_rate": 0.5924932975871313,
+      "pool_counts": {
+        "1": 8,
+        "2": 7,
+        "3": 7,
+        "4": 10
+      },
+      "automatic_branches": 0
+    },
+    {
+      "hero": "Shiv",
+      "hero_id": 19,
+      "path_id": "19-982ec07e4e6343c7",
+      "selection_rank": 1,
+      "core": [
+        "Compress Cooldown",
+        "Torment Pulse",
+        "Healbane",
+        "Radiant Regeneration"
+      ],
+      "selection_owners": 349,
+      "validation_owners": 458,
+      "validation_win_rate": 0.6069868995633187,
+      "pool_counts": {
+        "1": 10,
+        "2": 10,
+        "3": 10,
+        "4": 10
+      },
+      "automatic_branches": 0
+    },
+    {
+      "hero": "Lash",
+      "hero_id": 31,
+      "path_id": "31-58389102caa0e0d8",
+      "selection_rank": 0,
+      "core": [
+        "Quicksilver Reload",
+        "Siphon Bullets",
+        "Recharging Rush",
+        "Headhunter"
+      ],
+      "selection_owners": 557,
+      "validation_owners": 751,
+      "validation_win_rate": 0.6644474034620506,
+      "pool_counts": {
+        "1": 10,
+        "2": 10,
+        "3": 10,
+        "4": 10
+      },
+      "automatic_branches": 0
+    },
+    {
+      "hero": "Victor",
+      "hero_id": 66,
+      "path_id": "66-fb36a27cd74b4fb6",
+      "selection_rank": 0,
+      "core": [
+        "Torment Pulse",
+        "Infuser",
+        "Enduring Speed",
+        "Healing Booster"
+      ],
+      "selection_owners": 1193,
+      "validation_owners": 1514,
+      "validation_win_rate": 0.6169088507265522,
+      "pool_counts": {
+        "1": 10,
+        "2": 10,
+        "3": 10,
+        "4": 10
+      },
+      "automatic_branches": 0
+    }
+  ],
+  "excluded_heroes": [
+    {
+      "hero": "Infernus",
+      "hero_id": 1,
+      "candidate_count": 150,
+      "fold_observations": {
+        "discovery": 14023,
+        "selection": 4483,
+        "validation": 6200
+      },
+      "reasons": [
+        "adjusted lower bound does not exceed zero",
+        "fewer than 100 core owners",
+        "insufficient comparable-state overlap",
+        "observed win rate below 52%",
+        "win lower bound does not exceed 50%"
+      ]
+    },
+    {
+      "hero": "Seven",
+      "hero_id": 2,
+      "candidate_count": 150,
+      "fold_observations": {
+        "discovery": 12130,
+        "selection": 3951,
+        "validation": 5191
+      },
+      "reasons": [
+        "Core order conflicts with observed component wealth windows",
+        "No shared documented kit channel supported by two core items",
+        "adjusted evidence fails family correction",
+        "win evidence fails family correction"
+      ]
+    },
+    {
+      "hero": "Vindicta",
+      "hero_id": 3,
+      "candidate_count": 150,
+      "fold_observations": {
+        "discovery": 13312,
+        "selection": 4364,
+        "validation": 5673
+      },
+      "reasons": [
+        "Core order conflicts with observed component wealth windows",
+        "adjusted evidence fails family correction",
+        "win evidence fails family correction"
+      ]
+    },
+    {
+      "hero": "Lady Geist",
+      "hero_id": 4,
+      "candidate_count": 150,
+      "fold_observations": {
+        "discovery": 6519,
+        "selection": 2013,
+        "validation": 2383
+      },
+      "reasons": [
+        "adjusted lower bound does not exceed zero",
+        "fewer than 100 core owners",
+        "insufficient comparable-state overlap",
+        "observed win rate below 52%",
+        "win lower bound does not exceed 50%"
+      ]
+    },
+    {
+      "hero": "Abrams",
+      "hero_id": 6,
+      "candidate_count": 121,
+      "fold_observations": {
+        "discovery": 15184,
+        "selection": 4745,
+        "validation": 6278
+      },
+      "reasons": [
+        "adjusted evidence fails family correction"
+      ]
+    },
+    {
+      "hero": "Wraith",
+      "hero_id": 7,
+      "candidate_count": 150,
+      "fold_observations": {
+        "discovery": 16878,
+        "selection": 5763,
+        "validation": 7440
+      },
+      "reasons": [
+        "Frozen order lacks discovery, selection, or validation support",
+        "No shared documented kit channel supported by two core items",
+        "adjusted evidence fails family correction",
+        "win evidence fails family correction"
+      ]
+    },
+    {
+      "hero": "McGinnis",
+      "hero_id": 8,
+      "candidate_count": 130,
+      "fold_observations": {
+        "discovery": 6284,
+        "selection": 1870,
+        "validation": 2673
+      },
+      "reasons": [
+        "adjusted lower bound does not exceed zero",
+        "fewer than 100 core owners",
+        "insufficient comparable-state overlap",
+        "observed win rate below 52%",
+        "win lower bound does not exceed 50%"
+      ]
+    },
+    {
+      "hero": "Paradox",
+      "hero_id": 10,
+      "candidate_count": 122,
+      "fold_observations": {
+        "discovery": 16335,
+        "selection": 5599,
+        "validation": 7390
+      },
+      "reasons": [
+        "adjusted lower bound does not exceed zero",
+        "fewer than 100 core owners",
+        "insufficient comparable-state overlap",
+        "observed win rate below 52%",
+        "win lower bound does not exceed 50%"
+      ]
+    },
+    {
+      "hero": "Dynamo",
+      "hero_id": 11,
+      "candidate_count": 96,
+      "fold_observations": {
+        "discovery": 9365,
+        "selection": 3326,
+        "validation": 4304
+      },
+      "reasons": [
+        "adjusted lower bound does not exceed zero",
+        "fewer than 100 core owners",
+        "insufficient comparable-state overlap",
+        "observed win rate below 52%",
+        "win lower bound does not exceed 50%"
+      ]
+    },
+    {
+      "hero": "Kelvin",
+      "hero_id": 12,
+      "candidate_count": 125,
+      "fold_observations": {
+        "discovery": 7803,
+        "selection": 2681,
+        "validation": 3456
+      },
+      "reasons": [
+        "adjusted lower bound does not exceed zero",
+        "fewer than 100 core owners",
+        "insufficient comparable-state overlap",
+        "joint ownership lift below 1.1",
+        "observed win rate below 52%",
+        "win lower bound does not exceed 50%"
+      ]
+    },
+    {
+      "hero": "Holliday",
+      "hero_id": 14,
+      "candidate_count": 123,
+      "fold_observations": {
+        "discovery": 7781,
+        "selection": 2557,
+        "validation": 3415
+      },
+      "reasons": [
+        "adjusted lower bound does not exceed zero",
+        "fewer than 100 core owners",
+        "insufficient comparable-state overlap",
+        "joint ownership lift below 1.1",
+        "observed win rate below 52%",
+        "win lower bound does not exceed 50%"
+      ]
+    },
+    {
+      "hero": "Bebop",
+      "hero_id": 15,
+      "candidate_count": 150,
+      "fold_observations": {
+        "discovery": 19809,
+        "selection": 6727,
+        "validation": 8749
+      },
+      "reasons": [
+        "adjusted lower bound does not exceed zero",
+        "fewer than 100 core owners",
+        "insufficient comparable-state overlap",
+        "observed win rate below 52%",
+        "win lower bound does not exceed 50%"
+      ]
+    },
+    {
+      "hero": "Calico",
+      "hero_id": 16,
+      "candidate_count": 150,
+      "fold_observations": {
+        "discovery": 14989,
+        "selection": 5133,
+        "validation": 6530
+      },
+      "reasons": [
+        "adjusted lower bound does not exceed zero",
+        "fewer than 100 core owners",
+        "insufficient comparable-state overlap",
+        "observed win rate below 52%",
+        "win lower bound does not exceed 50%"
+      ]
+    },
+    {
+      "hero": "Grey Talon",
+      "hero_id": 17,
+      "candidate_count": 138,
+      "fold_observations": {
+        "discovery": 5742,
+        "selection": 1952,
+        "validation": 2566
+      },
+      "reasons": [
+        "adjusted lower bound does not exceed zero",
+        "fewer than 100 core owners",
+        "insufficient comparable-state overlap",
+        "joint ownership lift below 1.1",
+        "observed win rate below 52%",
+        "win lower bound does not exceed 50%"
+      ]
+    },
+    {
+      "hero": "Mo & Krill",
+      "hero_id": 18,
+      "candidate_count": 150,
+      "fold_observations": {
+        "discovery": 14729,
+        "selection": 4968,
+        "validation": 6574
+      },
+      "reasons": [
+        "No shared documented kit channel supported by two core items",
+        "adjusted evidence fails family correction"
+      ]
+    },
+    {
+      "hero": "Ivy",
+      "hero_id": 20,
+      "candidate_count": 114,
+      "fold_observations": {
+        "discovery": 13358,
+        "selection": 4482,
+        "validation": 5877
+      },
+      "reasons": [
+        "No shared documented kit channel supported by two core items",
+        "adjusted evidence fails family correction",
+        "observed win rate below 52%",
+        "win evidence fails family correction"
+      ]
+    },
+    {
+      "hero": "Warden",
+      "hero_id": 25,
+      "candidate_count": 150,
+      "fold_observations": {
+        "discovery": 11627,
+        "selection": 5747,
+        "validation": 8240
+      },
+      "reasons": [
+        "Core order conflicts with observed component wealth windows",
+        "Frozen order lacks discovery, selection, or validation support",
+        "No shared documented kit channel supported by two core items"
+      ]
+    },
+    {
+      "hero": "Yamato",
+      "hero_id": 27,
+      "candidate_count": 150,
+      "fold_observations": {
+        "discovery": 10274,
+        "selection": 3102,
+        "validation": 4390
+      },
+      "reasons": [
+        "No shared documented kit channel supported by two core items",
+        "adjusted evidence fails family correction",
+        "insufficient comparable-state overlap",
+        "win evidence fails family correction"
+      ]
+    },
+    {
+      "hero": "Viscous",
+      "hero_id": 35,
+      "candidate_count": 112,
+      "fold_observations": {
+        "discovery": 9104,
+        "selection": 3204,
+        "validation": 4286
+      },
+      "reasons": [
+        "adjusted lower bound does not exceed zero",
+        "fewer than 100 core owners",
+        "insufficient comparable-state overlap",
+        "observed win rate below 52%",
+        "win lower bound does not exceed 50%"
+      ]
+    },
+    {
+      "hero": "Pocket",
+      "hero_id": 50,
+      "candidate_count": 150,
+      "fold_observations": {
+        "discovery": 12761,
+        "selection": 4092,
+        "validation": 5461
+      },
+      "reasons": [
+        "adjusted lower bound does not exceed zero",
+        "fewer than 100 core owners",
+        "insufficient comparable-state overlap",
+        "observed win rate below 52%",
+        "win lower bound does not exceed 50%"
+      ]
+    },
+    {
+      "hero": "Mirage",
+      "hero_id": 52,
+      "candidate_count": 150,
+      "fold_observations": {
+        "discovery": 6331,
+        "selection": 1979,
+        "validation": 2543
+      },
+      "reasons": [
+        "adjusted lower bound does not exceed zero",
+        "fewer than 100 core owners",
+        "insufficient comparable-state overlap",
+        "joint ownership lift below 1.1",
+        "observed win rate below 52%",
+        "win lower bound does not exceed 50%"
+      ]
+    },
+    {
+      "hero": "Vyper",
+      "hero_id": 58,
+      "candidate_count": 121,
+      "fold_observations": {
+        "discovery": 7007,
+        "selection": 2259,
+        "validation": 3045
+      },
+      "reasons": [
+        "adjusted lower bound does not exceed zero",
+        "fewer than 100 core owners",
+        "insufficient comparable-state overlap",
+        "observed win rate below 52%",
+        "win lower bound does not exceed 50%"
+      ]
+    },
+    {
+      "hero": "Sinclair",
+      "hero_id": 60,
+      "candidate_count": 52,
+      "fold_observations": {
+        "discovery": 5197,
+        "selection": 1796,
+        "validation": 2362
+      },
+      "reasons": [
+        "adjusted lower bound does not exceed zero",
+        "fewer than 100 core owners",
+        "insufficient comparable-state overlap",
+        "joint ownership lift below 1.1",
+        "observed win rate below 52%",
+        "win lower bound does not exceed 50%"
+      ]
+    },
+    {
+      "hero": "Mina",
+      "hero_id": 63,
+      "candidate_count": 132,
+      "fold_observations": {
+        "discovery": 14460,
+        "selection": 4783,
+        "validation": 6306
+      },
+      "reasons": [
+        "adjusted lower bound does not exceed zero",
+        "fewer than 100 core owners",
+        "insufficient comparable-state overlap",
+        "joint ownership lift below 1.1",
+        "observed win rate below 52%",
+        "win lower bound does not exceed 50%"
+      ]
+    },
+    {
+      "hero": "Drifter",
+      "hero_id": 64,
+      "candidate_count": 150,
+      "fold_observations": {
+        "discovery": 17614,
+        "selection": 5687,
+        "validation": 7934
+      },
+      "reasons": [
+        "adjusted lower bound does not exceed zero",
+        "fewer than 100 core owners",
+        "insufficient comparable-state overlap",
+        "observed win rate below 52%",
+        "win lower bound does not exceed 50%"
+      ]
+    },
+    {
+      "hero": "Venator",
+      "hero_id": 65,
+      "candidate_count": 150,
+      "fold_observations": {
+        "discovery": 11348,
+        "selection": 3695,
+        "validation": 4790
+      },
+      "reasons": [
+        "adjusted lower bound does not exceed zero",
+        "fewer than 100 core owners",
+        "insufficient comparable-state overlap",
+        "observed win rate below 52%",
+        "win lower bound does not exceed 50%"
+      ]
+    },
+    {
+      "hero": "Paige",
+      "hero_id": 67,
+      "candidate_count": 82,
+      "fold_observations": {
+        "discovery": 10197,
+        "selection": 3443,
+        "validation": 4767
+      },
+      "reasons": [
+        "Core order conflicts with observed component wealth windows",
+        "No shared documented kit channel supported by two core items",
+        "adjusted evidence fails family correction",
+        "insufficient comparable-state overlap",
+        "win evidence fails family correction"
+      ]
+    },
+    {
+      "hero": "The Doorman",
+      "hero_id": 69,
+      "candidate_count": 70,
+      "fold_observations": {
+        "discovery": 5929,
+        "selection": 1852,
+        "validation": 2701
+      },
+      "reasons": [
+        "adjusted lower bound does not exceed zero",
+        "fewer than 100 core owners",
+        "insufficient comparable-state overlap",
+        "observed win rate below 52%",
+        "win lower bound does not exceed 50%"
+      ]
+    },
+    {
+      "hero": "Billy",
+      "hero_id": 72,
+      "candidate_count": 150,
+      "fold_observations": {
+        "discovery": 12083,
+        "selection": 3720,
+        "validation": 4890
+      },
+      "reasons": [
+        "adjusted evidence fails family correction",
+        "observed win rate below 52%",
+        "win evidence fails family correction"
+      ]
+    },
+    {
+      "hero": "Graves",
+      "hero_id": 76,
+      "candidate_count": 136,
+      "fold_observations": {
+        "discovery": 7688,
+        "selection": 2588,
+        "validation": 3495
+      },
+      "reasons": [
+        "adjusted lower bound does not exceed zero",
+        "fewer than 100 core owners",
+        "insufficient comparable-state overlap",
+        "observed win rate below 52%",
+        "win lower bound does not exceed 50%"
+      ]
+    },
+    {
+      "hero": "Apollo",
+      "hero_id": 77,
+      "candidate_count": 111,
+      "fold_observations": {
+        "discovery": 7824,
+        "selection": 2436,
+        "validation": 3220
+      },
+      "reasons": [
+        "adjusted lower bound does not exceed zero",
+        "fewer than 100 core owners",
+        "insufficient comparable-state overlap",
+        "joint ownership lift below 1.1",
+        "observed win rate below 52%",
+        "win lower bound does not exceed 50%"
+      ]
+    },
+    {
+      "hero": "Rem",
+      "hero_id": 79,
+      "candidate_count": 87,
+      "fold_observations": {
+        "discovery": 8413,
+        "selection": 2918,
+        "validation": 3827
+      },
+      "reasons": [
+        "adjusted lower bound does not exceed zero",
+        "fewer than 100 core owners",
+        "insufficient comparable-state overlap",
+        "joint ownership lift below 1.1",
+        "observed win rate below 52%",
+        "win lower bound does not exceed 50%"
+      ]
+    },
+    {
+      "hero": "Silver",
+      "hero_id": 80,
+      "candidate_count": 78,
+      "fold_observations": {
+        "discovery": 4342,
+        "selection": 1373,
+        "validation": 2061
+      },
+      "reasons": [
+        "adjusted lower bound does not exceed zero",
+        "fewer than 100 core owners",
+        "insufficient comparable-state overlap",
+        "joint ownership lift below 1.1",
+        "observed win rate below 52%",
+        "win lower bound does not exceed 50%"
+      ]
+    },
+    {
+      "hero": "Celeste",
+      "hero_id": 81,
+      "candidate_count": 121,
+      "fold_observations": {
+        "discovery": 8137,
+        "selection": 2938,
+        "validation": 3625
+      },
+      "reasons": [
+        "Core order conflicts with observed component wealth windows",
+        "adjusted evidence fails family correction",
+        "win evidence fails family correction"
+      ]
+    }
+  ]
+}

@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 
 from .build_tags import BuildTagCatalog, BuildTagError, select_build_tags
 from .narratives import apply_narrative
+from .purchase_guidance import attach_purchase_guidance
 from .renderer import ProjectionIdentity, project_policy_to_guide
 from .strategy_context import build_hero_strategy_context
 
@@ -39,12 +40,28 @@ def _project_hero_guide(
         environment.assets,
         environment.manifest,
     )
+    if inputs.analytic_guide.cohort is not None:
+        policy = replace(
+            policy,
+            evidence=tuple(
+                replace(
+                    claim,
+                    cohort={
+                        **claim.cohort,
+                        "rank_range": inputs.analytic_guide.cohort.rank_range.as_dict(),
+                    },
+                )
+                for claim in policy.evidence
+            ),
+        )
     identity = ProjectionIdentity(
         hero_name=inputs.analytic_guide.hero_name,
         hero_class_name=inputs.analytic_guide.hero_class_name,
         client_version=environment.manifest.client_version,
         match_mode=environment.manifest.match_mode.value,
-        rank_identity=environment.rank_identity,
+        rank_identity=inputs.analytic_guide.cohort.rank_range.label
+        if inputs.analytic_guide.cohort
+        else environment.rank_identity,
     )
     projected = project_policy_to_guide(
         policy,
@@ -54,6 +71,7 @@ def _project_hero_guide(
         layout_source=inputs.analytic_guide,
     )
     projected = replace(projected, ability_path=inputs.analytic_guide.ability_path)
+    projected = attach_purchase_guidance(projected, environment.assets)
     if projected.ability_path is None:
         raise GuideError(f"{projected.hero_name} has no complete ability path")
     try:
@@ -83,7 +101,9 @@ def _project_hero_guide(
         policy_id=policy.policy_id,
         client_version=environment.manifest.client_version,
         match_mode=environment.manifest.match_mode.value,
-        rank_identity=environment.rank_identity,
+        rank_identity=inputs.analytic_guide.cohort.rank_range.label
+        if inputs.analytic_guide.cohort
+        else environment.rank_identity,
         analysis_start_timestamp=environment.manifest.epochs.analysis_start_timestamp,
         as_of_timestamp=environment.manifest.as_of_timestamp,
     )
@@ -92,7 +112,7 @@ def _project_hero_guide(
         inputs.hero,
         environment.assets,
         inputs.duration_curve,
-        environment.duration_distribution,
+        inputs.duration_distribution or environment.duration_distribution,
         kit=inputs.kit,
         ability_timeline=inputs.ability_timeline,
         policy=policy,

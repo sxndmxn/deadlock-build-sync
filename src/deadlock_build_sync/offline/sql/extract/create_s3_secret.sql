@@ -1,0 +1,8 @@
+CREATE OR REPLACE SECRET deadlock_s3 (
+    TYPE S3,
+    KEY_ID '',
+    SECRET '',
+    ENDPOINT 's3-cache.deadlock-api.com',
+    URL_STYLE 'path',
+    USE_SSL true
+);

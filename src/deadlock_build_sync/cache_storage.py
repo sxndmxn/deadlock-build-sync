@@ -13,7 +13,7 @@ from .protobuf import (
     HeroBuildMetadata,
     is_managed_build,
     managed_build_path,
-    try_hero_build_metadata,
+    try_parse_hero_build_metadata,
 )
 from .value_validation import object_list
 
@@ -39,7 +39,7 @@ _CACHE_JSON_ENCODER = json.JSONEncoder(
 _O_DIRECTORY = getattr(os, "O_DIRECTORY", 0)
 
 
-def _state_root() -> Path:
+def _resolve_state_root() -> Path:
     configured = os.environ.get("XDG_STATE_HOME")
     return Path(configured).expanduser() if configured else Path.home() / ".local/state"
 
@@ -47,7 +47,7 @@ def _state_root() -> Path:
 def _create_backup(location: CacheLocation, *, root: Path | None = None) -> Path:
     timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     parent = (
-        (root or _state_root())
+        (root or _resolve_state_root())
         / "deadlock-build-sync/backups"
         / str(location.account_id)
     )
@@ -77,14 +77,14 @@ def _fsync_directory(path: Path) -> None:
         os.close(descriptor)
 
 
-def _stable_cache_value(value: object) -> object:
+def _normalize_cache_value(value: object) -> object:
     if isinstance(value, dict):
         return {
-            str(key): _stable_cache_value(nested)
+            str(key): _normalize_cache_value(nested)
             for key, nested in sorted(value.items(), key=lambda pair: str(pair[0]))
         }
     if isinstance(value, list):
-        return [_stable_cache_value(nested) for nested in value]
+        return [_normalize_cache_value(nested) for nested in value]
     if isinstance(value, (bytes, bytearray)):
         return {"bytes_sha256": hashlib.sha256(bytes(value)).hexdigest()}
     return value
@@ -96,7 +96,7 @@ def _is_target_managed_blob(
     account_id: int,
     target_hero_ids: set[int],
 ) -> bool:
-    metadata = try_hero_build_metadata(value)
+    metadata = try_parse_hero_build_metadata(value)
     if metadata is None:
         return False
     hero_id = metadata.hero_id
@@ -111,7 +111,7 @@ def _is_target_managed_blob(
     )
 
 
-def _out_of_scope_fingerprint(
+def _calculate_unmanaged_cache_fingerprint(
     root: dict[str, object],
     *,
     account_id: int,
@@ -133,17 +133,17 @@ def _out_of_scope_fingerprint(
         )
         for key, nested in root.items()
     }
-    normalized = _stable_cache_value(projection)
+    normalized = _normalize_cache_value(projection)
     encoded = _CACHE_JSON_ENCODER.encode(normalized).encode()
     return hashlib.sha256(encoded).hexdigest()
 
 
-def _target_managed_metadata(
+def _match_target_managed_metadata(
     blob: object,
     expected: dict[BuildKey, int],
     account_id: int,
 ) -> tuple[BuildKey, HeroBuildMetadata] | None:
-    metadata = try_hero_build_metadata(blob)
+    metadata = try_parse_hero_build_metadata(blob)
     if metadata is None:
         return None
     if metadata.author_account_id != account_id:
@@ -196,7 +196,7 @@ def _validate_managed_entries(
     if unpublished is None:
         raise CacheError("replacement cache Unpublished section is not an array")
     for blob in unpublished:
-        target = _target_managed_metadata(blob, expected, account_id)
+        target = _match_target_managed_metadata(blob, expected, account_id)
         if target is None:
             continue
         key, metadata = target
@@ -317,7 +317,7 @@ def _validate_replacement_cache(
         account_id=validation.account_id,
         identities=validation.identities,
     )
-    fingerprint = _out_of_scope_fingerprint(
+    fingerprint = _calculate_unmanaged_cache_fingerprint(
         root,
         account_id=validation.account_id,
         target_hero_ids=validation.hero_ids,

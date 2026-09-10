@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import UTC, datetime
 
 from deadlock_build_sync.build_evidence import (
@@ -12,6 +13,7 @@ from deadlock_build_sync.build_evidence import (
     SituationalPolicy,
     TierPolicyEvidence,
 )
+from deadlock_build_sync.purchase_guidance_types import PurchaseTiming
 from deadlock_build_sync.snapshot import (
     sha256_json,
 )
@@ -21,7 +23,7 @@ from deadlock_build_sync.value_validation import (
 from tests.service_fake_api import FakeApi
 
 
-def _item_evidence(asset: dict[str, object], eligible: int) -> ItemEvidence:
+def _make_item_evidence(asset: dict[str, object], eligible: int) -> ItemEvidence:
     item_id = integer(asset["id"])
     adopter_matches = 90 - item_id % 100
     test_adopter_matches = 20 - item_id % 100
@@ -70,7 +72,7 @@ def _item_evidence(asset: dict[str, object], eligible: int) -> ItemEvidence:
     )
 
 
-def build_evidence(
+def make_service_build_evidence(
     api: FakeApi,
     *,
     with_situational_branch: bool = False,
@@ -79,7 +81,7 @@ def build_evidence(
 ) -> BuildEvidenceCatalog:
     eligible = 100
     item_rows = tuple(
-        _item_evidence(asset, eligible)
+        _make_item_evidence(asset, eligible)
         for asset in api.items()
         if asset.get("shopable")
     )
@@ -217,3 +219,35 @@ def build_evidence(
         heroes={12: hero},
         raw_bytes=b"fixture-build-evidence",
     )
+
+
+def make_grouped_build_evidence(api: FakeApi) -> BuildEvidenceCatalog:
+    evidence = make_service_build_evidence(api)
+    hero = evidence.heroes[12]
+    timing = tuple(
+        PurchaseTiming(item, 35, (25, *(0 for _ in hero.core_policy.default_item_ids)))
+        for values in hero.tier_policy.item_ids_by_tier.values()
+        for item in values
+    )
+    hero = replace(hero, purchase_timing=timing)
+    variant = replace(
+        hero,
+        path_id="alternative",
+        guide_group_id=hero.path_id,
+        core_policy=replace(
+            hero.core_policy,
+            default_item_ids=(*hero.core_policy.default_item_ids[:-1], 402),
+        ),
+        tier_policy=replace(
+            hero.tier_policy,
+            item_ids_by_tier={
+                tier: tuple(401 if item == 402 else item for item in items)
+                for tier, items in hero.tier_policy.item_ids_by_tier.items()
+            },
+        ),
+        purchase_timing=tuple(
+            replace(point, item_id=401) if point.item_id == 402 else point
+            for point in timing
+        ),
+    )
+    return replace(evidence, heroes={12: hero}, hero_builds={12: (hero, variant)})

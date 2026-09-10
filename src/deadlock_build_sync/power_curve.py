@@ -25,7 +25,9 @@ class DurationPhase:
         return self.wins / self.matches if self.matches else 0.0
 
 
-def _phase(label: str, points: Iterable[HeroDurationStat]) -> DurationPhase:
+def _summarize_duration_phase(
+    label: str, points: Iterable[HeroDurationStat]
+) -> DurationPhase:
     selected = tuple(points)
     return DurationPhase(
         label=label,
@@ -34,7 +36,7 @@ def _phase(label: str, points: Iterable[HeroDurationStat]) -> DurationPhase:
     )
 
 
-def _ordered_duration_points(
+def _order_duration_points(
     points: tuple[HeroDurationStat, ...],
 ) -> tuple[HeroDurationStat, ...] | None:
     points_by_label = {point.label: point for point in points}
@@ -69,14 +71,14 @@ def summarize_ending_duration_profile(
     points: tuple[HeroDurationStat, ...],
     distribution: dict[str, dict[str, float | int]] | None = None,
 ) -> dict[str, object] | None:
-    ordered_points = _ordered_duration_points(points)
+    ordered_points = _order_duration_points(points)
     if ordered_points is None:
         return None
 
     phases = (
-        _phase("EARLY (<30m)", ordered_points[:2]),
-        _phase("MID (30–45m)", ordered_points[2:5]),
-        _phase("LATE (45m+)", ordered_points[5:]),
+        _summarize_duration_phase("EARLY (<30m)", ordered_points[:2]),
+        _summarize_duration_phase("MID (30–45m)", ordered_points[2:5]),
+        _summarize_duration_phase("LATE (45m+)", ordered_points[5:]),
     )
     if any(phase.matches < 50 for phase in phases):
         return None
@@ -130,7 +132,9 @@ def summarize_ending_duration_profile(
         "strongest_bucket": strongest_bucket.label,
         "weakest_bucket": weakest_bucket.label,
         "overall": {
-            "raw_win_rate": round(_phase("OVERALL", ordered_points).win_rate, 6),
+            "raw_win_rate": round(
+                _summarize_duration_phase("OVERALL", ordered_points).win_rate, 6
+            ),
             "matches": sum(point.matches for point in ordered_points),
         },
         "late_phase_tracked_game_share": round(late_share, 6),

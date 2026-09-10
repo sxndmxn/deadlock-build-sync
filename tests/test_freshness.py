@@ -130,7 +130,7 @@ def test_installed_descriptions_accept_current_marker_and_keep_each_path(
     )
     monkeypatch.setattr(
         freshness_module,
-        "hero_build_metadata",
+        "parse_hero_build_metadata",
         lambda blob: SimpleNamespace(
             hero_id=12,
             author_account_id=34,
@@ -138,7 +138,7 @@ def test_installed_descriptions_accept_current_marker_and_keep_each_path(
         ),
     )
 
-    installed = freshness_module._installed_descriptions(tmp_path / "cache", 34)
+    installed = freshness_module._read_installed_descriptions(tmp_path / "cache", 34)
 
     assert installed == {
         (12, "weapon-core"): descriptions[b"first"],

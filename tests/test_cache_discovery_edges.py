@@ -61,15 +61,15 @@ def test_steam_root_uses_the_first_candidate_when_none_exist(
 def test_account_scan_handles_explicit_and_missing_userdata(tmp_path: Path) -> None:
     userdata = tmp_path / "userdata"
 
-    assert cache_discovery._steam_accounts(userdata, 12) == [userdata / "12"]
-    assert cache_discovery._steam_accounts(userdata, None) == []
+    assert cache_discovery._find_steam_accounts(userdata, 12) == [userdata / "12"]
+    assert cache_discovery._find_steam_accounts(userdata, None) == []
 
     userdata.mkdir()
     numeric_directory = userdata / "12"
     numeric_directory.mkdir()
     (userdata / "34").touch()
     (userdata / "words").mkdir()
-    assert cache_discovery._steam_accounts(userdata, None) == [numeric_directory]
+    assert cache_discovery._find_steam_accounts(userdata, None) == [numeric_directory]
 
 
 def test_explicit_cache_path_checks_file_account_and_layout(tmp_path: Path) -> None:

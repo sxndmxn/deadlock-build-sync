@@ -7,11 +7,11 @@ from .cache import (
     deadlock_is_running,
 )
 from .cli_support import (
-    _build_evidence,
-    _catalog,
-    _generate,
+    _discover_cache_location,
+    _generate_requested_guides,
     _install_generated_guides,
-    _location,
+    _load_build_evidence,
+    _load_optional_narrative_catalog,
     _print_cohort,
     _print_install_result,
 )
@@ -21,17 +21,17 @@ if TYPE_CHECKING:
 
 
 def _run_install(args: argparse.Namespace) -> int:
-    location = _location(args)
+    location = _discover_cache_location(args)
     if deadlock_is_running():
         raise CacheError(
             "Deadlock is running; close it before installing private builds"
         )
-    evidence_path, evidence = _build_evidence(args)
-    generated = _generate(
+    evidence_path, evidence = _load_build_evidence(args)
+    generated = _generate_requested_guides(
         args,
         evidence,
         location.account_id,
-        narrative_catalog=_catalog(args),
+        narrative_catalog=_load_optional_narrative_catalog(args),
     )
     result = _install_generated_guides(location, generated.guides, generated)
     print(

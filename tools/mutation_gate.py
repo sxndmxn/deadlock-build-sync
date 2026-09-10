@@ -31,7 +31,7 @@ REJECTED_KEYS = (
 )
 
 
-def _counts(document: object) -> Mapping[str, int]:
+def _read_mutation_counts(document: object) -> Mapping[str, int]:
     if not isinstance(document, dict):
         raise TypeError("mutation summary must be an object")
     if not all(isinstance(key, str) for key in document):
@@ -46,14 +46,14 @@ def _counts(document: object) -> Mapping[str, int]:
     return values
 
 
-def mutation_issues(document: object) -> tuple[str, ...]:
+def collect_mutation_issues(document: object) -> tuple[str, ...]:
     """Return all failures in a Mutmut CI summary.
 
     Returns:
         The mutation-gate failures.
 
     """
-    counts = _counts(document)
+    counts = _read_mutation_counts(document)
     total = counts["total"]
     issues = ["no mutants were generated"] if total == 0 else []
     issues.extend(
@@ -70,7 +70,7 @@ def mutation_issues(document: object) -> tuple[str, ...]:
     return tuple(issues)
 
 
-def _parser() -> argparse.ArgumentParser:
+def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "summary",
@@ -89,10 +89,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         Zero when all mutants were killed, or one otherwise.
 
     """
-    summary_path = _parser().parse_args(argv).summary
+    summary_path = _build_parser().parse_args(argv).summary
     try:
         document = json.loads(summary_path.read_text(encoding="utf-8"))
-        issues = mutation_issues(document)
+        issues = collect_mutation_issues(document)
     except (OSError, json.JSONDecodeError, TypeError) as error:
         sys.stdout.write(f"mutation gate failed: {error}\n")
         return 1
@@ -100,7 +100,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         sys.stdout.write(f"mutation gate failed: {issue}\n")
     if issues:
         return 1
-    counts = _counts(document)
+    counts = _read_mutation_counts(document)
     sys.stdout.write(f"mutation gate passed: {counts['total']} mutants detected\n")
     return 0
 

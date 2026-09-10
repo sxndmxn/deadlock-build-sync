@@ -7,7 +7,7 @@ from .api import DeadlockApi
 from .cache import (
     CacheError,
 )
-from .cli_support import _location, _sync_artifact_directory
+from .cli_support import _discover_cache_location, _resolve_artifact_directory
 from .freshness import (
     build_freshness_report,
 )
@@ -19,11 +19,11 @@ if TYPE_CHECKING:
 
 
 def _run_status(args: argparse.Namespace) -> int:
-    artifact_directory = _sync_artifact_directory(args.artifacts)
+    artifact_directory = _resolve_artifact_directory(args.artifacts)
     cache_path: Path | None = None
     account_id: int | None = None
     try:
-        location = _location(args)
+        location = _discover_cache_location(args)
     except CacheError:
         pass
     else:

@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased
+
+- Make Eclat, Leiden, and pairwise purchase ordering the normal build producer.
+  Use exact-core discovery buyers for all item pools. Keep every supported,
+  legal discovered identity, with no build-count limit per hero.
+- Group related exact cores into one published guide with a default Queue and
+  optional variants. Preserve every variant's path, evidence, costs, and pool.
+  The v3 method groups frozen core items before validation.
+- Use CORE, CORE OPTIONAL, and TIER 1–4 for the visible guide. Combine variant
+  items without duplicate cards. Size sections for their item counts and keep
+  full purchase instructions in the build description and detailed files.
+- Use one purchase guide for Steam rows, Markdown, JSON, recommendations, and
+  installation checks. Keep only the validated component path in automatic Queue.
+- Add selected optional items, placement overrides, actual inventory planning,
+  wealth and enemy conditions, and separately admitted core substitutions.
+- Require evidence schema 12, purchase-guide schema 3, state schema 3, and context
+  schema 16. Guide indexes use schema 2 and group records use schema 1.
+  Old evidence must be refreshed and rebuilt.
+- Archive comparison code and its tests in Git history. Keep tests for shared
+  production code in the current suite. Remove unused reconstruction and producer
+  paths, and reuse the durable byte writer with unchanged JSON serialization.
+- Verify exact backup filename casing and JSON-stable guide fingerprints.
+
 All notable changes to this project are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),

@@ -7,6 +7,7 @@ from .build_evidence import (
     METHOD_VERSION,
     assert_build_evidence_compatible,
 )
+from .build_evidence_loader import BuildEvidenceIdentity
 from .build_tags import BuildTagCatalog, BuildTagError
 from .mechanics import (
     ItemGraph,
@@ -26,14 +27,14 @@ if TYPE_CHECKING:
 from .service_inputs import (
     _collect_hero_inputs,
     _GenerationEvidence,
-    _matchups_by_hero,
+    _group_matchups_by_hero,
 )
 from .service_projection import _project_hero_guides, _ProjectionEnvironment
 from .service_types import (
     GeneratedGuides,
     GuideError,
-    _duration_distribution,
-    _rank_identity,
+    _format_rank_identity,
+    _summarize_duration_distribution,
     select_heroes,
 )
 
@@ -65,15 +66,17 @@ def generate_guides(
     try:
         assert_build_evidence_compatible(
             build_evidence,
-            patch_identity=patch.identity,
-            client_version=client_version,
-            as_of_timestamp=api.as_of_timestamp,
-            match_mode=api.match_mode,
-            rank_range=api.rank_range,
-            rank_catalog=rank_catalog,
-            heroes=heroes,
-            assets=assets,
-            epochs=api.epochs_for_patch(patch),
+            BuildEvidenceIdentity(
+                patch_identity=patch.identity,
+                client_version=client_version,
+                as_of_timestamp=api.as_of_timestamp,
+                match_mode=api.match_mode,
+                rank_range=api.rank_range,
+                rank_catalog=rank_catalog,
+                heroes=heroes,
+                assets=assets,
+                epochs=api.epochs_for_patch(patch),
+            ),
         )
     except ArtifactError as error:
         raise GuideError(str(error)) from error
@@ -94,22 +97,22 @@ def generate_guides(
     )
     analysis_start = api.analysis_start_timestamp(patch)
     duration_curves = api.hero_stats_by_duration(min_unix_timestamp=analysis_start)
-    duration_distribution = _duration_distribution(heroes, duration_curves)
-    same_lane_matchups = _matchups_by_hero(
+    duration_distribution = _summarize_duration_distribution(heroes, duration_curves)
+    same_lane_matchups = _group_matchups_by_hero(
         api.hero_counter_stats(
             min_unix_timestamp=analysis_start,
             same_lane=True,
         ),
         scope="same_lane",
     )
-    whole_team_matchups = _matchups_by_hero(
+    whole_team_matchups = _group_matchups_by_hero(
         api.hero_counter_stats(
             min_unix_timestamp=analysis_start,
             same_lane=False,
         ),
         scope="whole_enemy_team",
     )
-    persona = api.steam_persona(account_id)
+    persona = api.steam_persona(account_id) if account_id else "Build Preview"
 
     generation_evidence = _GenerationEvidence(
         assets,
@@ -119,7 +122,7 @@ def generate_guides(
         same_lane_matchups,
         whole_team_matchups,
     )
-    inputs_by_hero, skipped_heroes, exclusions = _collect_hero_inputs(
+    inputs_by_hero = _collect_hero_inputs(
         api,
         selected,
         generation_evidence,
@@ -131,7 +134,7 @@ def generate_guides(
         rank_catalog=rank_catalog,
         build_tags_sha256=build_tag_catalog.sha256,
     )
-    rank_identity = _rank_identity(rank_catalog, api.rank_range)
+    rank_identity = _format_rank_identity(rank_catalog, api.rank_range)
     projection_environment = _ProjectionEnvironment(
         assets,
         manifest,
@@ -158,8 +161,8 @@ def generate_guides(
                 if isinstance(item_id, int)
             },
         ),
-        skipped_heroes=tuple(skipped_heroes),
-        exclusions=tuple(exclusions),
+        skipped_heroes=(),
+        exclusions=(),
         eligible_hero_ids=frozenset(integer(hero["id"]) for hero in heroes),
         subset_selected=not all_heroes,
         rank_range=api.rank_range,
@@ -167,4 +170,9 @@ def generate_guides(
         persona=persona,
         patch=patch,
         manifest=manifest,
+        guide_groups={
+            (hero_id, build.path_id): build.guide_group_id or build.path_id
+            for hero_id, builds in build_evidence.hero_builds.items()
+            for build in builds
+        },
     )

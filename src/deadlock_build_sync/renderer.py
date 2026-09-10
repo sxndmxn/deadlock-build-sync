@@ -12,6 +12,7 @@ from .policy import (
     ValidationContext,
     validate_policy,
 )
+from .purchase_categories import serialize_category_records
 from .purchase_guide import (
     CORE_CATEGORY_DESCRIPTION,
     OPTIONAL_CORE_CATEGORY_DESCRIPTION,
@@ -21,8 +22,8 @@ from .purchase_guide import (
     PurchaseGuide,
 )
 from .renderer_items import apply_sell_priorities as _apply_sell_priorities
-from .renderer_items import branch_label as _branch_label
-from .renderer_items import guide_item as _guide_item
+from .renderer_items import build_guide_item as _guide_item
+from .renderer_items import format_branch_label as _branch_label
 from .renderer_items import (
     project_guide_item_policy_fields as _project_guide_item_policy_fields,
 )
@@ -31,14 +32,14 @@ from .snapshot import sha256_json
 from .value_validation import integer
 
 
-def _default_branch(node: PolicyNode) -> Branch:
+def _find_default_branch(node: PolicyNode) -> Branch:
     try:
         return next(branch for branch in node.branches if branch.is_default)
     except StopIteration as error:
         raise PolicyError(f"choice {node.node_id} has no default") from error
 
 
-def _linear_projection(
+def _project_default_path(
     nodes: dict[str, PolicyNode],
     start: str,
 ) -> tuple[PolicyNode, ...]:
@@ -52,7 +53,7 @@ def _linear_projection(
         if node.kind == NodeKind.END:
             break
         if node.kind in {NodeKind.CHOICE, NodeKind.OBJECTIVE_GATE}:
-            current = _default_branch(node).next_id
+            current = _find_default_branch(node).next_id
         elif node.next_id is not None:
             current = node.next_id
         else:
@@ -85,7 +86,7 @@ def _conditional_nodes(policy: BuildPolicy) -> dict[int, PolicyNode]:
     return result
 
 
-def _evidence_core_items(
+def _project_evidence_core_items(
     layout: PurchaseGuide,
     default_path: tuple[PolicyNode, ...],
 ) -> tuple[tuple[GuideItem, ...], set[int]]:
@@ -123,12 +124,12 @@ def _project_conditional_item(
     )
 
 
-def _evidence_tiers(
+def _project_evidence_tiers(
     policy: BuildPolicy,
     layout: PurchaseGuide,
     core_purchase_ids: set[int],
 ) -> tuple[dict[int, tuple[GuideItem, ...]], set[int]]:
-    if any(not 1 <= len(layout.tiers.get(tier, ())) <= 10 for tier in range(1, 5)):
+    if any(not 0 <= len(layout.tiers.get(tier, ())) <= 10 for tier in range(1, 5)):
         raise PolicyError("evidence projection requires 1–10 items in every tier")
     tier_item_ids = {item.item_id for items in layout.tiers.values() for item in items}
     if tier_item_ids & core_purchase_ids:
@@ -147,7 +148,7 @@ def _evidence_tiers(
     return tiers, tier_item_ids
 
 
-def _evidence_optional_core(
+def _project_evidence_optional_core(
     policy: BuildPolicy,
     layout: PurchaseGuide,
     core_purchase_ids: set[int],
@@ -172,7 +173,7 @@ def _evidence_optional_core(
     )
 
 
-def _evidence_categories(
+def _build_evidence_categories(
     core_purchase_items: tuple[GuideItem, ...],
     optional_core_items: tuple[GuideItem, ...],
     tiers: dict[int, tuple[GuideItem, ...]],
@@ -207,14 +208,18 @@ def _project_evidence_layout(
     layout: PurchaseGuide,
     default_path: tuple[PolicyNode, ...],
 ) -> PurchaseGuide:
-    core_purchase_items, core_purchase_ids = _evidence_core_items(layout, default_path)
-    tiers, tier_item_ids = _evidence_tiers(policy, layout, core_purchase_ids)
-    optional_core_items = _evidence_optional_core(
+    core_purchase_items, core_purchase_ids = _project_evidence_core_items(
+        layout, default_path
+    )
+    tiers, tier_item_ids = _project_evidence_tiers(policy, layout, core_purchase_ids)
+    optional_core_items = _project_evidence_optional_core(
         policy, layout, core_purchase_ids, tier_item_ids
     )
     core_items = _apply_sell_priorities(layout.core_items, policy.nodes)
     core_purchase_items = _apply_sell_priorities(core_purchase_items, policy.nodes)
-    categories = _evidence_categories(core_purchase_items, optional_core_items, tiers)
+    categories = _build_evidence_categories(
+        core_purchase_items, optional_core_items, tiers
+    )
     return PurchaseGuide(
         hero_id=policy.hero_id,
         hero_name=identity.hero_name,
@@ -234,7 +239,9 @@ def _project_evidence_layout(
         policy_id=policy.policy_id,
         client_version=identity.client_version,
         match_mode=identity.match_mode,
-        rank_identity=identity.rank_identity,
+        rank_identity=layout.cohort.rank_range.label
+        if layout.cohort
+        else identity.rank_identity,
         core_items=core_items,
         core_purchase_items=core_purchase_items,
         backbone_items=layout.backbone_items,
@@ -246,10 +253,14 @@ def _project_evidence_layout(
         core_joint_share=layout.core_joint_share,
         median_final_net_worth=layout.median_final_net_worth,
         core_target_cost=layout.core_target_cost,
+        cohort=layout.cohort,
+        evidence_summary=layout.evidence_summary,
+        purchase_timing=layout.purchase_timing,
+        automatic_branches=layout.automatic_branches,
     )
 
 
-def _default_core_items(
+def _collect_default_core_items(
     policy: BuildPolicy,
     default_path: tuple[PolicyNode, ...],
     assets_by_id: dict[int, dict[str, object]],
@@ -265,7 +276,7 @@ def _default_core_items(
     return items
 
 
-def _branch_category(
+def _build_branch_category(
     branch: Branch,
     *,
     policy: BuildPolicy,
@@ -275,7 +286,7 @@ def _branch_category(
 ) -> GuideCategory | None:
     if branch.is_default:
         return None
-    path = _linear_projection(nodes, branch.next_id)
+    path = _project_default_path(nodes, branch.next_id)
     items = tuple(
         _guide_item(node, assets_by_id, policy, optional=True)
         for node in path
@@ -304,7 +315,7 @@ def _conditional_categories(
         if choice.kind not in {NodeKind.CHOICE, NodeKind.OBJECTIVE_GATE}:
             continue
         for branch in choice.branches:
-            category = _branch_category(
+            category = _build_branch_category(
                 branch,
                 policy=policy,
                 nodes=nodes,
@@ -329,7 +340,7 @@ def _project_without_layout(
     default_path: tuple[PolicyNode, ...],
     assets_by_id: dict[int, dict[str, object]],
 ) -> PurchaseGuide:
-    core_items = _default_core_items(policy, default_path, assets_by_id)
+    core_items = _collect_default_core_items(policy, default_path, assets_by_id)
     categories: list[GuideCategory] = [
         GuideCategory(
             "CORE — DEFAULT QUEUE",
@@ -382,7 +393,7 @@ def project_policy_to_guide(
     identity: ProjectionIdentity,
     layout_source: PurchaseGuide | None = None,
 ) -> PurchaseGuide:
-    """Validate a rich policy and create its compact executable Steam projection.
+    """Validate a build policy and create its Steam guide projection.
 
     Returns:
         A guide whose Queue contains only the default path and whose alternatives are optional.
@@ -395,7 +406,7 @@ def project_policy_to_guide(
         for asset in assets
         if isinstance(asset.get("id"), int)
     }
-    default_path = _linear_projection(nodes, policy.entry)
+    default_path = _project_default_path(nodes, policy.entry)
     if layout_source is not None:
         return _project_evidence_layout(policy, identity, layout_source, default_path)
     return _project_without_layout(policy, identity, nodes, default_path, assets_by_id)
@@ -423,24 +434,5 @@ def projection_fingerprint(guide: PurchaseGuide) -> str:
             "tag_labels": list(guide.build_tag_labels),
             "tag_catalog_sha256": guide.build_tag_catalog_sha256,
         },
-        "categories": [
-            {
-                "name": category.name,
-                "optional": category.optional,
-                "description": category.description,
-                "width": category.width,
-                "height": category.height,
-                "items": [
-                    {
-                        "item_id": item.item_id,
-                        "annotation": item.annotation,
-                        "required_flex_slots": item.required_flex_slots,
-                        "sell_priority": item.sell_priority,
-                        "imbue_target_ability_id": item.imbue_target_ability_id,
-                    }
-                    for item in category.items
-                ],
-            }
-            for category in guide.rendered_categories
-        ],
+        "categories": serialize_category_records(guide.rendered_categories),
     })

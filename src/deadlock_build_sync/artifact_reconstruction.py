@@ -1,17 +1,25 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import TYPE_CHECKING, cast
 
 from .artifact_bundle_types import (
     ArtifactBuildIdentity,
     ArtifactBundleError,
 )
-from .artifact_projection import _ability_path, _categories
+from .artifact_projection import _reconstruct_ability_path
+from .build_evidence import select_hero_build
 from .build_tags import FUNCTION_CLASSES
+from .mechanics import ItemGraph, parse_ability_definitions
+from .policy import ValidationContext
+from .purchase_categories import serialize_category_records
+from .purchase_guidance import attach_purchase_guidance
 from .purchase_guide import (
     PurchaseGuide,
-    guide_item_from_evidence,
+    build_purchase_guide_from_evidence,
 )
+from .renderer import ProjectionIdentity, project_policy_to_guide
+from .snapshot import sha256_json
 from .value_validation import integer, object_dict
 
 if TYPE_CHECKING:
@@ -19,7 +27,9 @@ if TYPE_CHECKING:
     from .policy import BuildPolicy
 
 
-def _hero_identity(hero: dict[str, object], policy: BuildPolicy) -> tuple[str, str]:
+def _parse_hero_identity(
+    hero: dict[str, object], policy: BuildPolicy
+) -> tuple[str, str]:
     hero_id = hero.get("hero_id")
     hero_name = hero.get("hero")
     mechanics = hero.get("hero_mechanics")
@@ -42,9 +52,9 @@ def _hero_identity(hero: dict[str, object], policy: BuildPolicy) -> tuple[str, s
     return hero_name.strip(), class_name.strip()
 
 
-def _core_evidence(
+def _parse_core_evidence(
     hero: dict[str, object], policy: BuildPolicy
-) -> tuple[int, float, int, int]:
+) -> tuple[int, float, int | None, int]:
     core = hero.get("core")
     if not isinstance(core, dict):
         raise ArtifactBundleError(f"hero {policy.hero_id} has no core evidence")
@@ -56,18 +66,18 @@ def _core_evidence(
         raise ArtifactBundleError(f"hero {policy.hero_id} has invalid core evidence")
     if not isinstance(joint_share, (int, float)) or not 0.0 < float(joint_share) <= 1.0:
         raise ArtifactBundleError(f"hero {policy.hero_id} has invalid core evidence")
-    if not isinstance(median_net_worth, int) or median_net_worth <= 0:
-        raise ArtifactBundleError(f"hero {policy.hero_id} has invalid core evidence")
-    if (
-        not isinstance(target_cost, int)
-        or target_cost <= 0
-        or target_cost > median_net_worth
+    if median_net_worth is not None and (
+        not isinstance(median_net_worth, int)
+        or isinstance(median_net_worth, bool)
+        or median_net_worth <= 0
     ):
+        raise ArtifactBundleError(f"hero {policy.hero_id} has invalid core evidence")
+    if not isinstance(target_cost, int) or target_cost <= 0:
         raise ArtifactBundleError(f"hero {policy.hero_id} has invalid core evidence")
     return joint_matches, float(joint_share), median_net_worth, target_cost
 
 
-def _valid_tag_list(values: object, *, integers: bool) -> bool:
+def _is_valid_tag_list(values: object, *, integers: bool) -> bool:
     if not isinstance(values, list) or len(values) != 3:
         return False
     if integers:
@@ -81,7 +91,7 @@ def _valid_tag_list(values: object, *, integers: bool) -> bool:
     return all(isinstance(value, str) and bool(value) for value in values)
 
 
-def _build_identity(
+def _parse_build_identity(
     hero: dict[str, object],
     policy: BuildPolicy,
     manifest: dict[str, object],
@@ -96,9 +106,9 @@ def _build_identity(
     catalog_sha256 = build.get("tag_catalog_sha256")
     archetype = build.get("archetype")
     if (
-        not _valid_tag_list(tag_ids, integers=True)
-        or not _valid_tag_list(classes, integers=False)
-        or not _valid_tag_list(labels, integers=False)
+        not _is_valid_tag_list(tag_ids, integers=True)
+        or not _is_valid_tag_list(classes, integers=False)
+        or not _is_valid_tag_list(labels, integers=False)
     ):
         raise ArtifactBundleError(f"hero {policy.hero_id} has invalid build tags")
     if (
@@ -127,7 +137,7 @@ def _build_identity(
     )
 
 
-def _analysis_start_timestamp(manifest: dict[str, object]) -> int:
+def _calculate_analysis_start_timestamp(manifest: dict[str, object]) -> int:
     epochs = object_dict(manifest.get("epochs"))
     starts: list[int] = []
     for value in epochs.values() if epochs is not None else ():
@@ -139,73 +149,71 @@ def _analysis_start_timestamp(manifest: dict[str, object]) -> int:
     return max(starts)
 
 
-def _guide(
+def _reconstruct_guide(
     hero: dict[str, object],
     policy: BuildPolicy,
     evidence: HeroBuildEvidence,
     *,
     manifest: dict[str, object],
     rank_identity: str,
+    assets: list[dict[str, object]],
 ) -> PurchaseGuide:
-    hero_name, class_name = _hero_identity(hero, policy)
-    categories, core_items, optional_core_items, tiers = _categories(
-        hero, policy, evidence
+    hero_name, class_name = _parse_hero_identity(hero, policy)
+    kit = object_dict(hero.get("hero_mechanics"))
+    if kit is None:
+        raise ArtifactBundleError("Artifact has no hero mechanics")
+    ability = _reconstruct_ability_path(hero, policy)
+    layout = build_purchase_guide_from_evidence(
+        {"id": policy.hero_id, "name": hero_name, "class_name": class_name},
+        select_hero_build(evidence, assets),
+        ability_path=ability,
     )
-    joint_matches, joint_share, median_net_worth, target_cost = _core_evidence(
-        hero, policy
+    validation = ValidationContext(
+        ItemGraph.from_assets(assets),
+        parse_ability_definitions(kit),
+        kit.get("level_info"),
     )
-    build_identity = _build_identity(
-        hero,
+    projected = project_policy_to_guide(
         policy,
-        manifest,
+        validation,
+        assets=assets,
+        identity=ProjectionIdentity(
+            hero_name,
+            class_name,
+            integer(manifest.get("client_version")),
+            str(manifest.get("match_mode")),
+            rank_identity,
+        ),
+        layout_source=layout,
     )
-    client_version = manifest.get("client_version")
-    match_mode = manifest.get("match_mode")
-    as_of_timestamp = manifest.get("as_of_timestamp")
+    identity = _parse_build_identity(hero, policy, manifest)
+    projected = replace(
+        projected,
+        ability_path=ability,
+        build_tag_ids=identity.tag_ids,
+        build_tag_classes=identity.tag_classes,
+        build_tag_labels=identity.tag_labels,
+        build_tag_catalog_sha256=identity.catalog_sha256,
+        build_archetype=identity.archetype,
+        analysis_start_timestamp=_calculate_analysis_start_timestamp(manifest),
+        as_of_timestamp=integer(manifest.get("as_of_timestamp")),
+    )
+    guide = attach_purchase_guidance(projected, assets)
+    raw = object_dict(hero.get("projection"))
     if (
-        not isinstance(client_version, int)
-        or not isinstance(match_mode, str)
-        or not isinstance(as_of_timestamp, int)
+        raw is None
+        or raw.get("guide_version") != 3
+        or raw.get("categories")
+        != serialize_category_records(guide.rendered_categories)
+        or sha256_json(hero.get("purchase_guidance"))
+        != sha256_json(
+            guide.purchase_guidance.as_dict() if guide.purchase_guidance else None
+        )
     ):
-        raise ArtifactBundleError("artifact snapshot has an invalid cohort")
-    return PurchaseGuide(
-        hero_id=policy.hero_id,
-        hero_name=hero_name,
-        hero_class_name=class_name,
-        tiers=tiers,
-        path_id=policy.path_id,
-        path_label=policy.path_label,
-        signature_item_ids=evidence.signature_item_ids,
-        ability_path=_ability_path(hero, policy),
-        categories=categories,
-        snapshot_id=policy.snapshot_id,
-        policy_id=policy.policy_id,
-        client_version=client_version,
-        match_mode=match_mode,
-        rank_identity=rank_identity,
-        core_items=core_items,
-        core_purchase_items=categories[0].items,
-        backbone_items=tuple(
-            guide_item_from_evidence(
-                next(item for item in evidence.items if item.item_id == item_id)
-            )
-            for item_id in evidence.core_policy.backbone_item_ids
-        ),
-        optional_core_items=optional_core_items,
-        core_alternatives=evidence.core_policy.alternatives,
-        backbone_matches=evidence.core_policy.backbone_matches,
-        backbone_share=(
-            evidence.core_policy.backbone_matches / evidence.eligible_player_matches
-        ),
-        core_joint_matches=joint_matches,
-        core_joint_share=joint_share,
-        median_final_net_worth=median_net_worth,
-        core_target_cost=target_cost,
-        build_tag_ids=build_identity.tag_ids,
-        build_tag_classes=build_identity.tag_classes,
-        build_tag_labels=build_identity.tag_labels,
-        build_tag_catalog_sha256=build_identity.catalog_sha256,
-        build_archetype=build_identity.archetype,
-        analysis_start_timestamp=_analysis_start_timestamp(manifest),
-        as_of_timestamp=as_of_timestamp,
-    )
+        raise ArtifactBundleError(
+            "Artifact categories differ from the canonical purchase guide; run deadlock-build-sync refresh-evidence, then build again"
+        )
+    _, _, _, target_cost = _parse_core_evidence(hero, policy)
+    if target_cost != guide.core_target_cost:
+        raise ArtifactBundleError("Artifact core cost differs from its canonical guide")
+    return guide

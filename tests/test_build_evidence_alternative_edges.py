@@ -16,87 +16,16 @@ from deadlock_build_sync.build_evidence_types import SituationalPolicy
 from deadlock_build_sync.offline.config import sha256_json
 from deadlock_build_sync.value_validation import require_object_dict
 from tests.build_evidence_fixtures import (
-    _document,
-    _first_item,
-    _refingerprint,
-    _situational_policy,
-    _write,
+    get_first_item,
+    get_situational_policy,
+    make_evidence_document,
+    write_evidence_document,
+    write_fingerprinted_evidence,
 )
-
-
-def _alternative() -> dict[str, object]:
-    return {
-        "item_id": 303,
-        "comparator_item_id": 302,
-        "stage": 6,
-        "support": 40,
-        "comparison_support": 50,
-        "effective_support": 30.0,
-        "overlap": 0.8,
-        "stable": True,
-        "dr_estimate": 0.03,
-        "comparative_interval": [0.01, 0.05],
-        "vs": "Heavy Spirit damage",
-        "why": "Spirit Resist",
-        "swap": "Replaces Tier 3 Item 2",
-        "when": "Before the next Spirit-heavy fight",
-        "skip": "Keep default when control matters more",
-        "mechanics_refs": ["asset:item:303:description"],
-        "comparator_mechanics_refs": ["asset:item:302:description"],
-        "fold_estimates": {
-            "train": 0.03,
-            "validation": 0.04,
-            "test": -0.03,
-        },
-        "fold_diagnostics": {
-            fold: {
-                "support": 40,
-                "comparison_support": 50,
-                "effective_support": 30.0,
-                "overlap": 0.8,
-                "maximum_standardized_mean_difference": 0.05,
-                "estimate": estimate,
-                "interval": [0.01, 0.05],
-            }
-            for fold, estimate in (("train", 0.03), ("validation", 0.04))
-        },
-    }
-
-
-def _branch() -> dict[str, object]:
-    return {
-        "threat": "healing",
-        "item_id": 103,
-        "enemy_hero_id": 7,
-        "enemy_scope": "whole_enemy_team",
-        "phase": 1,
-        "tier": 1,
-        "mechanic_ref": "item/103/healing-reduction",
-        "enemy_mechanics_refs": ["asset:ability:7:description"],
-        "comparator": "same-tier default continuation or save",
-        "comparator_item_id": 101,
-        "comparison_support": 20,
-        "same_opportunity": True,
-        "support": 20,
-        "effective_support": 20.0,
-        "overlap": 0.5,
-        "stable": True,
-        "comparative_interval": [0.01, 0.06],
-        "fold_comparative_estimates": {
-            "train": 0.03,
-            "validation": 0.04,
-            "test": 0.02,
-        },
-        "fold_support": {
-            "train": {"item": 20, "comparator": 20},
-            "validation": {"item": 20, "comparator": 20},
-            "test": {"item": 20, "comparator": 20},
-        },
-        "trigger": "Enemy healing is observed.",
-        "replacement": "Replace the next optional purchase.",
-        "execution": "Apply healing reduction after contact.",
-        "failure_condition": "Skip when healing is not material.",
-    }
+from tests.build_evidence_policy_fixtures import (
+    make_core_alternative,
+    make_situational_branch,
+)
 
 
 def _parse_alternative(value: object) -> None:
@@ -110,7 +39,7 @@ def _parse_alternative(value: object) -> None:
 
 def test_core_alternative_parser_preserves_the_complete_evidence() -> None:
     result = build_evidence_core_alternative.parse_core_alternative(
-        _alternative(),
+        make_core_alternative(),
         13,
         {101, 102, 201, 202, 301, 302, 303, 401, 402},
         {101, 102, 201, 202, 301, 302, 401, 402},
@@ -144,7 +73,7 @@ def test_core_alternative_rejects_invalid_top_level_fields(
     value: object,
     message: str,
 ) -> None:
-    alternative = _alternative()
+    alternative = make_core_alternative()
     alternative[field] = value
 
     with pytest.raises(ArtifactError, match=message):
@@ -155,14 +84,14 @@ def test_core_alternative_rejects_malformed_value_and_fold_diagnostics() -> None
     with pytest.raises(ArtifactError, match="malformed core alternative"):
         _parse_alternative([])
 
-    missing_interval = _alternative()
+    missing_interval = make_core_alternative()
     diagnostics = require_object_dict(missing_interval["fold_diagnostics"])
     train = require_object_dict(diagnostics["train"])
     train["interval"] = []
     with pytest.raises(ArtifactError, match="lacks a train interval"):
         _parse_alternative(missing_interval)
 
-    unqualified = _alternative()
+    unqualified = make_core_alternative()
     diagnostics = require_object_dict(unqualified["fold_diagnostics"])
     train = require_object_dict(diagnostics["train"])
     train["overlap"] = 0.4
@@ -171,7 +100,7 @@ def test_core_alternative_rejects_malformed_value_and_fold_diagnostics() -> None
 
 
 def test_core_alternative_rejects_temporal_instability() -> None:
-    alternative = _alternative()
+    alternative = make_core_alternative()
     estimates = require_object_dict(alternative["fold_estimates"])
     diagnostics = require_object_dict(alternative["fold_diagnostics"])
     estimates["validation"] = 0.09
@@ -184,15 +113,15 @@ def test_core_alternative_rejects_temporal_instability() -> None:
 
 
 def test_core_parser_rejects_duplicate_items_denominators_and_alternatives() -> None:
-    row = _first_item(_document())
+    row = get_first_item(make_evidence_document())
     with pytest.raises(ArtifactError, match="duplicate item evidence"):
-        build_evidence_core._hero_items([row, row], 13, 1_000)
+        build_evidence_core._parse_hero_items([row, row], 13, 1_000)
     with pytest.raises(ArtifactError, match="item denominators disagree"):
-        build_evidence_core._hero_items([row], 13, 999)
+        build_evidence_core._parse_hero_items([row], 13, 999)
 
-    alternative = _alternative()
+    alternative = make_core_alternative()
     with pytest.raises(ArtifactError, match="invalid core alternatives"):
-        build_evidence_core._core_alternatives(
+        build_evidence_core._parse_core_alternatives(
             [alternative, copy.deepcopy(alternative)],
             13,
             {101, 102, 201, 202, 301, 302, 303, 401, 402},
@@ -224,7 +153,7 @@ def test_situational_branch_rejects_invalid_fields(
     value: object,
     message: str,
 ) -> None:
-    branch = _branch()
+    branch = make_situational_branch()
     branch[field] = value
 
     with pytest.raises(ArtifactError, match=message):
@@ -232,7 +161,7 @@ def test_situational_branch_rejects_invalid_fields(
 
 
 def test_situational_branch_accepts_team_scope_without_one_enemy() -> None:
-    branch = _branch()
+    branch = make_situational_branch()
     branch["enemy_hero_id"] = None
 
     parsed = build_evidence_situational.parse_situational_branch(branch, 13)
@@ -241,7 +170,7 @@ def test_situational_branch_accepts_team_scope_without_one_enemy() -> None:
 
 
 def test_situational_branch_rejects_malformed_fold_support() -> None:
-    branch = _branch()
+    branch = make_situational_branch()
     support = require_object_dict(branch["fold_support"])
     support["train"] = []
 
@@ -253,19 +182,20 @@ def test_situational_policy_rejects_duplicate_identity_and_repeated_item(
     tmp_path: Path,
 ) -> None:
     path = tmp_path / "build-evidence.json"
-    duplicate = _document()
-    _situational_policy(duplicate)["branches"] = [_branch(), _branch()]
-    _refingerprint(duplicate)
-    _write(path, duplicate)
+    duplicate = make_evidence_document()
+    get_situational_policy(duplicate)["branches"] = [
+        make_situational_branch(),
+        make_situational_branch(),
+    ]
+    write_fingerprinted_evidence(path, duplicate)
     with pytest.raises(ArtifactError, match="duplicate situational branches"):
         load_build_evidence(path)
 
-    repeated = _document()
-    second = _branch()
+    repeated = make_evidence_document()
+    second = make_situational_branch()
     second["threat"] = "control"
-    _situational_policy(repeated)["branches"] = [_branch(), second]
-    _refingerprint(repeated)
-    _write(path, repeated)
+    get_situational_policy(repeated)["branches"] = [make_situational_branch(), second]
+    write_fingerprinted_evidence(path, repeated)
     with pytest.raises(ArtifactError, match="repeats a situational item"):
         load_build_evidence(path)
 
@@ -274,11 +204,13 @@ def test_policy_references_reject_missing_weak_and_mismatched_items(
     tmp_path: Path,
 ) -> None:
     path = tmp_path / "build-evidence.json"
-    _write(path, _document())
+    write_evidence_document(path, make_evidence_document())
     hero = load_build_evidence(path).heroes[13]
     sequence_policy = hero.sequence_policy
     assert sequence_policy is not None
-    branch = build_evidence_situational.parse_situational_branch(_branch(), 13)
+    branch = build_evidence_situational.parse_situational_branch(
+        make_situational_branch(), 13
+    )
     situational = SituationalPolicy((branch,), ())
 
     missing_sequence = replace(

@@ -46,19 +46,21 @@ def test_run_install_prints_the_complete_result(
         snapshot_id="snapshot",
         policy_ids={(13, "default"): "policy-b", (12, "default"): "policy-a"},
     )
-    monkeypatch.setattr(cli_install, "_location", lambda _args: location)
+    monkeypatch.setattr(cli_install, "_discover_cache_location", lambda _args: location)
     monkeypatch.setattr(cli_install, "deadlock_is_running", lambda: False)
     monkeypatch.setattr(
-        cli_install, "_build_evidence", lambda _args: (evidence_path, evidence)
+        cli_install, "_load_build_evidence", lambda _args: (evidence_path, evidence)
     )
-    monkeypatch.setattr(cli_install, "_catalog", lambda _args: catalog)
+    monkeypatch.setattr(
+        cli_install, "_load_optional_narrative_catalog", lambda _args: catalog
+    )
 
     def generate(*values: object, **options: object) -> object:
         assert values == (args, evidence, 7)
         assert options == {"narrative_catalog": catalog}
         return generated
 
-    monkeypatch.setattr(cli_install, "_generate", generate)
+    monkeypatch.setattr(cli_install, "_generate_requested_guides", generate)
     monkeypatch.setattr(
         cli_install,
         "_install_generated_guides",
@@ -88,7 +90,7 @@ def test_run_install_prints_the_complete_result(
 def test_run_install_stops_when_deadlock_is_running(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(cli_install, "_location", lambda _args: object())
+    monkeypatch.setattr(cli_install, "_discover_cache_location", lambda _args: object())
     monkeypatch.setattr(cli_install, "deadlock_is_running", lambda: True)
 
     with pytest.raises(CacheError, match="close it"):
@@ -112,13 +114,13 @@ def test_export_restore_and_trace_commands_use_exact_inputs(
     )
     writes: list[tuple[str, Path, object]] = []
     facts: list[tuple[tuple[object, ...], dict[str, object]]] = []
-    monkeypatch.setattr(cli_export, "_location", lambda _args: location)
+    monkeypatch.setattr(cli_export, "_discover_cache_location", lambda _args: location)
     monkeypatch.setattr(
-        cli_export, "_build_evidence", lambda _args: (evidence_path, evidence)
+        cli_export, "_load_build_evidence", lambda _args: (evidence_path, evidence)
     )
     monkeypatch.setattr(
         cli_export,
-        "_generate",
+        "_generate_requested_guides",
         lambda selected_args, selected_evidence, account_id: (
             generated
             if (selected_args, selected_evidence, account_id) == (args, evidence, 7)
@@ -204,11 +206,16 @@ def test_support_decodes_location_catalog_epochs_and_api(
     )
     monkeypatch.setattr(cli_support, "load_narrative_catalog", lambda _path: catalog)
     location_args = Namespace(account_id=7, cache_path=tmp_path / "cache")
-    assert cli_support._location(location_args) is location
+    assert cli_support._discover_cache_location(location_args) is location
     assert calls == [(7, tmp_path / "cache")]
-    assert cli_support._catalog(Namespace(narratives=None)) is None
     assert (
-        cli_support._catalog(Namespace(narratives=tmp_path / "narratives")) is catalog
+        cli_support._load_optional_narrative_catalog(Namespace(narratives=None)) is None
+    )
+    assert (
+        cli_support._load_optional_narrative_catalog(
+            Namespace(narratives=tmp_path / "narratives")
+        )
+        is catalog
     )
 
     boundary = EpochBoundary("epoch", 1)
@@ -218,9 +225,9 @@ def test_support_decodes_location_catalog_epochs_and_api(
         map_objectives_epoch=None,
         telemetry_epoch=None,
     )
-    assert cli_support._epochs(empty_epochs) is None
+    assert cli_support._parse_epoch_overrides(empty_epochs) is None
     with pytest.raises(ValueError, match="all four"):
-        cli_support._epochs(
+        cli_support._parse_epoch_overrides(
             Namespace(
                 mechanics_epoch=boundary,
                 matchmaking_epoch=None,
@@ -235,7 +242,7 @@ def test_support_decodes_location_catalog_epochs_and_api(
         telemetry_epoch=boundary,
     )
     epochs = EpochSet(boundary, boundary, boundary, boundary)
-    assert cli_support._epochs(complete_epochs) == epochs
+    assert cli_support._parse_epoch_overrides(complete_epochs) == epochs
 
     evidence = cast(
         "BuildEvidenceCatalog",
@@ -253,6 +260,7 @@ def test_support_decodes_location_catalog_epochs_and_api(
 
     monkeypatch.setattr(cli_support, "DeadlockApi", api_factory)
     api_args = Namespace(
+        rank_expansion="auto",
         api_base_url="https://example.invalid",
         min_rank=DEFAULT_RANK_RANGE.minimum,
         max_rank=DEFAULT_RANK_RANGE.maximum,
@@ -261,7 +269,7 @@ def test_support_decodes_location_catalog_epochs_and_api(
         as_of_timestamp=None,
         **vars(empty_epochs),
     )
-    assert cli_support._api(api_args, evidence) == "api"
+    assert cli_support._create_evidence_api(api_args, evidence) == "api"
     assert api_calls == [
         (
             ("https://example.invalid",),
@@ -284,7 +292,7 @@ def test_support_loads_and_writes_complete_artifacts(
     evidence = SimpleNamespace(artifact_id="artifact", heroes={12: {}})
     facts: list[tuple[tuple[object, ...], dict[str, object]]] = []
     monkeypatch.setattr(
-        cli_support, "_build_evidence_path", lambda _args: evidence_path
+        cli_support, "_resolve_build_evidence_path", lambda _args: evidence_path
     )
     monkeypatch.setattr(cli_support, "load_build_evidence", lambda _path: evidence)
     monkeypatch.setattr(
@@ -292,7 +300,7 @@ def test_support_loads_and_writes_complete_artifacts(
         "record_stage_facts",
         lambda *values, **options: facts.append((values, options)),
     )
-    assert cli_support._build_evidence(Namespace()) == (evidence_path, evidence)
+    assert cli_support._load_build_evidence(Namespace()) == (evidence_path, evidence)
     assert facts == [
         (
             ("evidence.admission",),
@@ -364,13 +372,16 @@ def test_support_loads_and_writes_complete_artifacts(
         "GeneratedGuides",
         SimpleNamespace(subset_selected=False, eligible_hero_ids=frozenset({12, 13})),
     )
-    assert cli_support._requested_hero_ids(full_generation) == {12, 13}
+    assert cli_support._collect_requested_hero_ids(full_generation) == {12, 13}
 
 
 def test_support_preview_uses_the_install_serializer(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    guide = cast("PurchaseGuide", object())
+    guide = cast("PurchaseGuide", SimpleNamespace(purchase_guidance=None))
+    monkeypatch.setattr(
+        cli_support, "build_group_record", lambda _guide: {"variants": []}
+    )
     generated = cast(
         "GeneratedGuides",
         SimpleNamespace(
@@ -402,7 +413,9 @@ def test_support_preview_uses_the_install_serializer(
     )
 
     assert cli_support._describe_preview_guide(guide, generated, account_id=7) == {
-        "guide": True
+        "guide": True,
+        "purchase_guidance": None,
+        "guide_group": {"variants": []},
     }
     assert calls == [
         (

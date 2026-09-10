@@ -37,6 +37,12 @@ jobs:
       - name: Type-check
         run: uv run ty check
 
+      - name: Check declared dependencies
+        run: uv run deptry .
+
+      - name: Check module boundaries
+        run: uv run tach check
+
       - name: Check cognitive complexity
         run: uv run complexipy
 
@@ -65,4 +71,6 @@ jobs:
         run: |
           uv venv /tmp/deadlock-build-sync-wheel
           uv pip install --python /tmp/deadlock-build-sync-wheel/bin/python dist/*.whl
+          cd /tmp
           /tmp/deadlock-build-sync-wheel/bin/deadlock-build-sync --help
+          /tmp/deadlock-build-sync-wheel/bin/build --help

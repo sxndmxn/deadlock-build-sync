@@ -1,15 +1,26 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 from .artifacts import ArtifactError
-from .build_evidence_core import _core_policy, _hero_items, _tier_policy
+from .build_evidence_core import (
+    _parse_core_policy,
+    _parse_hero_items,
+    _parse_tier_policy,
+)
+from .build_evidence_discovery import exclusion_reason, validate_discovery
+from .build_evidence_pool import validate_frozen_pool
 from .build_evidence_references import validate_policy_item_references
-from .build_evidence_sequence import _sequence_policy, _situational_policy
+from .build_evidence_sequence import _parse_sequence_policy, _parse_situational_policy
+from .build_evidence_timing import parse_purchase_timing
 from .build_evidence_types import HeroBuildEvidence, ItemEvidence
-from .build_evidence_values import _required_int
+from .build_evidence_values import _require_integer
+from .hero_cohort import HeroCohort
+from .match_choices import parse_automatic_branches
 from .value_validation import object_dict, object_list
 
 
-def _path_identity(
+def _parse_path_identity(
     document: dict[str, object], hero_id: int
 ) -> tuple[str, str, tuple[int, ...], dict[str, object]]:
     path_id = document.get("path_id")
@@ -25,7 +36,7 @@ def _path_identity(
     if any(not isinstance(item_id, int) or item_id <= 0 for item_id in raw_signature):
         raise ArtifactError(f"hero {hero_id} has an invalid build path identity")
     signature = tuple(
-        _required_int(item_id, "signature item id", minimum=1)
+        _require_integer(item_id, "signature item id", minimum=1)
         for item_id in raw_signature
     )
     if len(signature) != len(set(signature)):
@@ -33,10 +44,10 @@ def _path_identity(
     return path_id.strip(), path_label.strip(), signature, discovery
 
 
-def _path_cohort(
+def _parse_path_cohort(
     document: dict[str, object], hero_id: int
 ) -> tuple[int, int, dict[str, int]]:
-    eligible = _required_int(
+    eligible = _require_integer(
         document.get("eligible_player_matches"),
         "eligible player matches",
         minimum=1,
@@ -45,14 +56,14 @@ def _path_cohort(
     if raw_folds is None:
         raise ArtifactError(f"hero {hero_id} lacks fold cohort counts")
     folds = {
-        fold: _required_int(
+        fold: _require_integer(
             raw_folds.get(fold),
             f"{fold} eligible player matches",
-            minimum=0 if fold == "test" else 1,
+            minimum=1 if fold == "train" else 0,
         )
         for fold in ("train", "validation", "test")
     }
-    selection = _required_int(
+    selection = _require_integer(
         document.get("selection_eligible_player_matches"),
         "selection eligible player matches",
         minimum=1,
@@ -64,7 +75,7 @@ def _path_cohort(
     return eligible, selection, folds
 
 
-def _path_items(
+def _parse_path_items(
     document: dict[str, object],
     hero_id: int,
     eligible: int,
@@ -74,7 +85,7 @@ def _path_items(
     raw_items = object_list(document.get("items"))
     if raw_items is None:
         raise ArtifactError(f"hero {hero_id} has incomplete build evidence")
-    items, item_ids = _hero_items(raw_items, hero_id, eligible)
+    items, item_ids = _parse_hero_items(raw_items, hero_id, eligible)
     denominators_match = all(
         item.selection_eligible_player_matches == selection
         and item.training_eligible_player_matches == folds["train"]
@@ -87,7 +98,7 @@ def _path_items(
     return items, item_ids
 
 
-def _build_path(
+def _parse_build_path(
     value: object,
     *,
     hero_id: int,
@@ -96,17 +107,17 @@ def _build_path(
     document = object_dict(value)
     if document is None:
         raise ArtifactError(f"hero {hero_id} contains a malformed build path")
-    path_id, path_label, signature, discovery = _path_identity(document, hero_id)
-    eligible, selection, folds = _path_cohort(document, hero_id)
-    items, item_ids = _path_items(document, hero_id, eligible, selection, folds)
-    core_policy = _core_policy(
+    path_id, path_label, signature, discovery = _parse_path_identity(document, hero_id)
+    eligible, selection, folds = _parse_path_cohort(document, hero_id)
+    items, item_ids = _parse_path_items(document, hero_id, eligible, selection, folds)
+    core_policy = _parse_core_policy(
         document.get("core_policy"), hero_id, set(item_ids), eligible
     )
-    sequence_policy = _sequence_policy(document.get("sequence_policy"), hero_id)
-    situational_policy = _situational_policy(
+    sequence_policy = _parse_sequence_policy(document.get("sequence_policy"), hero_id)
+    situational_policy = _parse_situational_policy(
         document.get("situational_policy"), hero_id
     )
-    tier_policy = _tier_policy(document.get("tier_policy"), hero_id, items)
+    tier_policy = _parse_tier_policy(document.get("tier_policy"), hero_id, items)
     validate_policy_item_references(
         core_policy,
         tier_policy,
@@ -115,17 +126,27 @@ def _build_path(
         items=items,
         hero_id=hero_id,
     )
+    validate_discovery(
+        discovery, core_policy.default_item_ids, sequence_policy.default_path
+    )
+    validate_frozen_pool(document, discovery)
+    group_id = document.get("guide_group_id")
+    if not isinstance(group_id, str) or not group_id:
+        raise ArtifactError("Build has no guide group; run refresh-evidence")
     return HeroBuildEvidence(
         hero_id=hero_id,
         hero=hero_name,
+        guide_group_id=group_id,
         eligible_player_matches=eligible,
         selection_eligible_player_matches=selection,
         fold_eligible_player_matches=folds,
-        median_final_net_worth=_required_int(
+        median_final_net_worth=_require_integer(
             document.get("median_final_net_worth"),
             "median final net worth",
             minimum=1,
-        ),
+        )
+        if document.get("median_final_net_worth") is not None
+        else None,
         items=items,
         core_policy=core_policy,
         tier_policy=tier_policy,
@@ -135,25 +156,48 @@ def _build_path(
         path_label=path_label,
         signature_item_ids=signature,
         discovery=discovery,
+        automatic_branches=parse_automatic_branches(
+            document.get("automatic_choices"),
+            {item for group in tier_policy.item_ids_by_tier.values() for item in group},
+            sequence_policy.default_path,
+        ),
+        purchase_timing=parse_purchase_timing(
+            document.get("purchase_timing"), sequence_policy, tier_policy, items
+        ),
     )
 
 
-def _hero_builds(value: object) -> tuple[int, tuple[HeroBuildEvidence, ...]]:
+def _parse_hero_builds(value: object) -> tuple[int, tuple[HeroBuildEvidence, ...]]:
     document = object_dict(value)
     if document is None:
         raise ArtifactError("build evidence contains a malformed hero")
-    hero_id = _required_int(document.get("hero_id"), "hero id", minimum=1)
+    hero_id = _require_integer(document.get("hero_id"), "hero id", minimum=1)
     name = document.get("hero")
     raw_builds = object_list(document.get("builds"))
     if not isinstance(name, str) or not name.strip():
         raise ArtifactError(f"hero {hero_id} has no name")
-    if not raw_builds:
+    if raw_builds is None:
         raise ArtifactError(f"hero {hero_id} has no supported build paths")
+    if not raw_builds:
+        exclusion_reason(document.get("exclusion"))
+        return hero_id, ()
+    if document.get("exclusion") is not None:
+        raise ArtifactError(f"hero {hero_id} has conflicting build admission")
+    cohort = HeroCohort.parse(document.get("cohort"))
     builds = tuple(
-        _build_path(build, hero_id=hero_id, hero_name=name.strip())
+        replace(
+            _parse_build_path(build, hero_id=hero_id, hero_name=name.strip()),
+            cohort=cohort,
+        )
         for build in raw_builds
     )
     path_ids = [build.path_id for build in builds]
     if len(path_ids) != len(set(path_ids)):
         raise ArtifactError(f"hero {hero_id} contains duplicate build paths")
+    cores = [tuple(sorted(build.core_policy.default_item_ids)) for build in builds]
+    ranks = [build.discovery["selection_rank"] for build in builds]
+    if len(set(cores)) != len(cores) or len(set(ranks)) != len(ranks):
+        raise ArtifactError(
+            f"hero {hero_id} contains duplicate identities or selection ranks"
+        )
     return hero_id, builds

@@ -17,11 +17,11 @@ from deadlock_build_sync.recommendation import (
     recommend,
 )
 from tests.recommendation_fixtures import (
-    assets,
-    build_policy,
-    catalog,
-    expanded_assets,
-    state,
+    make_build_catalog,
+    make_decision_state,
+    make_expanded_assets,
+    make_recommendation_assets,
+    make_recommendation_policy,
 )
 
 
@@ -39,10 +39,10 @@ def test_stale_or_out_of_cohort_state_fails_closed(
     change: dict[str, object],
     message: str,
 ) -> None:
-    evidence = catalog()
-    decision_state = state(**change)
-    item_assets = assets()
-    policy = build_policy()
+    evidence = make_build_catalog()
+    decision_state = make_decision_state(**change)
+    item_assets = make_recommendation_assets()
+    policy = make_recommendation_policy()
     with pytest.raises(RecommendationError, match=message):
         recommend(evidence, policy, decision_state, item_assets)
 
@@ -50,7 +50,7 @@ def test_stale_or_out_of_cohort_state_fails_closed(
 def test_decision_state_file_requires_complete_context(tmp_path: Path) -> None:
     path = tmp_path / "state.json"
     path.write_text(
-        json.dumps({"schema_version": 2, "build_evidence_id": "a" * 64}),
+        json.dumps({"schema_version": 3, "build_evidence_id": "a" * 64}),
         encoding="utf-8",
     )
 
@@ -59,7 +59,7 @@ def test_decision_state_file_requires_complete_context(tmp_path: Path) -> None:
 
     path.write_text(
         json.dumps({
-            "schema_version": 2,
+            "schema_version": 3,
             "account_id": 123,
             "build_evidence_id": "a" * 64,
         }),
@@ -73,7 +73,7 @@ def test_decision_state_file_admits_deidentified_enemy_items(tmp_path: Path) -> 
     path = tmp_path / "state.json"
     path.write_text(
         json.dumps({
-            "schema_version": 2,
+            "schema_version": 3,
             "build_evidence_id": "a" * 64,
             "client_version": 123,
             "patch_identity": "b" * 64,
@@ -110,10 +110,10 @@ def test_decision_state_file_admits_deidentified_enemy_items(tmp_path: Path) -> 
 
 def test_situational_branch_and_unknown_threat_are_explicit() -> None:
     decision = recommend(
-        catalog(branch=True),
-        build_policy(branch=True),
-        state(threats=("healing",), liquid_souls=1_000),
-        assets(),
+        make_build_catalog(branch=True),
+        make_recommendation_policy(branch=True),
+        make_decision_state(threats=("healing",), liquid_souls=1_000),
+        make_recommendation_assets(),
     )
     assert decision.action is RecommendationAction.BUY
     assert decision.item_id == 3
@@ -121,26 +121,26 @@ def test_situational_branch_and_unknown_threat_are_explicit() -> None:
     assert decision.counter["failure_condition"] == "Skip when healing is not material."
 
     save = recommend(
-        catalog(branch=True),
-        build_policy(branch=True),
-        state(threats=("healing",), liquid_souls=999),
-        assets(),
+        make_build_catalog(branch=True),
+        make_recommendation_policy(branch=True),
+        make_decision_state(threats=("healing",), liquid_souls=999),
+        make_recommendation_assets(),
     )
     assert save.action is RecommendationAction.SAVE
     assert save.target_item_id == 3
 
     unknown = recommend(
-        catalog(branch=True),
-        build_policy(branch=True),
-        state(threats=("magic_vibes",)),
-        assets(),
+        make_build_catalog(branch=True),
+        make_recommendation_policy(branch=True),
+        make_decision_state(threats=("magic_vibes",)),
+        make_recommendation_assets(),
     )
     assert unknown.action is RecommendationAction.ABSTAIN
     assert "unknown threat" in unknown.reason
 
 
 def test_conflicting_situational_branches_fail_closed() -> None:
-    base_policy = build_policy(branch=True)
+    base_policy = make_recommendation_policy(branch=True)
     choice = next(node for node in base_policy.nodes if node.kind == NodeKind.CHOICE)
     first = choice.branches[0]
     conflicting_policy = replace(
@@ -166,11 +166,11 @@ def test_conflicting_situational_branches_fail_closed() -> None:
             for node in base_policy.nodes
         ),
     )
-    decision_state = state(threats=("healing", "control"))
-    item_assets = expanded_assets()
+    decision_state = make_decision_state(threats=("healing", "control"))
+    item_assets = make_expanded_assets()
 
     decision = recommend(
-        catalog(branch=True),
+        make_build_catalog(branch=True),
         conflicting_policy,
         decision_state,
         item_assets,
@@ -181,15 +181,15 @@ def test_conflicting_situational_branches_fail_closed() -> None:
 
 
 def test_enemy_item_mechanics_supply_an_observable_threat() -> None:
-    item_assets = expanded_assets()
+    item_assets = make_expanded_assets()
     next(row for row in item_assets if row["id"] == 4)["description"] = {
         "desc": "Restore Health to an ally."
     }
 
     decision = recommend(
-        catalog(branch=True),
-        build_policy(branch=True),
-        state(enemy_item_ids=(4,), liquid_souls=1_000),
+        make_build_catalog(branch=True),
+        make_recommendation_policy(branch=True),
+        make_decision_state(enemy_item_ids=(4,), liquid_souls=1_000),
         item_assets,
     )
 
@@ -199,7 +199,7 @@ def test_enemy_item_mechanics_supply_an_observable_threat() -> None:
 
 
 def test_full_active_bindings_supply_the_active_burden_threat() -> None:
-    base_policy = build_policy(branch=True)
+    base_policy = make_recommendation_policy(branch=True)
     choice = next(node for node in base_policy.nodes if node.kind == NodeKind.CHOICE)
     burden_policy = replace(
         base_policy,
@@ -225,15 +225,15 @@ def test_full_active_bindings_supply_the_active_burden_threat() -> None:
     )
 
     decision = recommend(
-        catalog(branch=True),
+        make_build_catalog(branch=True),
         burden_policy,
-        state(
+        make_decision_state(
             owned_items=(4, 5, 6, 7),
             open_slots=5,
             active_bindings=4,
             liquid_souls=1_000,
         ),
-        expanded_assets(active_ids=frozenset({4, 5, 6, 7})),
+        make_expanded_assets(active_ids=frozenset({4, 5, 6, 7})),
     )
 
     assert decision.action is RecommendationAction.BUY
@@ -241,9 +241,9 @@ def test_full_active_bindings_supply_the_active_burden_threat() -> None:
 
 
 def test_unknown_enemy_item_fails_closed() -> None:
-    evidence = catalog(branch=True)
-    decision_state = state(enemy_item_ids=(999,))
-    item_assets = expanded_assets()
-    policy = build_policy(branch=True)
+    evidence = make_build_catalog(branch=True)
+    decision_state = make_decision_state(enemy_item_ids=(999,))
+    item_assets = make_expanded_assets()
+    policy = make_recommendation_policy(branch=True)
     with pytest.raises(RecommendationError, match="unknown current item 999"):
         recommend(evidence, policy, decision_state, item_assets)

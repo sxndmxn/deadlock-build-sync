@@ -16,7 +16,7 @@ from deadlock_build_sync.policy import (
     ValidationContext,
 )
 from deadlock_build_sync.presentation import build_presentation
-from deadlock_build_sync.protobuf import ProtoField, encode_hero_build, parse_fields
+from deadlock_build_sync.protobuf import encode_hero_build, parse_fields
 from deadlock_build_sync.purchase_guide import GuideItem, PurchaseGuide
 from deadlock_build_sync.renderer import (
     ProjectionIdentity,
@@ -24,8 +24,9 @@ from deadlock_build_sync.renderer import (
     projection_fingerprint,
     validate_optional_annotation,
 )
-from deadlock_build_sync.renderer_items import guide_item
+from deadlock_build_sync.renderer_items import build_guide_item
 from deadlock_build_sync.snapshot import EvidenceUnit, sha256_json
+from tests.rendering_fixtures import decode_build_details
 
 SNAPSHOT = "b" * 64
 
@@ -145,7 +146,7 @@ def test_policy_item_projection_keeps_all_claim_and_node_fields() -> None:
     build_policy = policy()
     node = next(node for node in build_policy.nodes if node.node_id == "counter")
 
-    result = guide_item(
+    result = build_guide_item(
         node,
         dict(zip((1, 2), assets(), strict=True)),
         build_policy,
@@ -165,36 +166,11 @@ def test_policy_item_projection_keeps_all_claim_and_node_fields() -> None:
     )
 
 
-def _build_details(guide: PurchaseGuide) -> list[ProtoField]:
-    build = encode_hero_build(
-        build_presentation(
-            replace(
-                guide,
-                build_tag_ids=(1, 2, 3),
-                build_archetype="Spirit Damage",
-                as_of_timestamp=1_767_225_600,
-            ),
-            persona="Player",
-            patch_title="Patch",
-            patch_published_at="2026-08-08T00:00:00Z",
-        ),
-        build_id=2,
-        account_id=3,
-        timestamp=4,
-    )
-    details = next(
-        field.value
-        for field in parse_fields(build)
-        if field.number == 10 and isinstance(field.value, bytes)
-    )
-    return list(parse_fields(details))
-
-
 def test_projection_separates_default_queue_from_optional_branch() -> None:
     guide = projected_guide()
 
     assert sha256_json(asdict(guide)) == (
-        "6dcc4ae06b6efab6a330b1e664e2303d74ca8c1e336a6c305b3a85912f545234"
+        "1e2322311e4c642fdb812fb9ba6cf9b15e96d763f8195d9423a8bd12c6c5b84c"
     )
     assert [category.optional for category in guide.categories] == [False, True]
     assert [item.item_id for item in guide.categories[0].items] == [1]
@@ -204,14 +180,14 @@ def test_projection_separates_default_queue_from_optional_branch() -> None:
     assert guide.snapshot_id == SNAPSHOT
     assert guide.policy_id == policy().policy_id
     assert projection_fingerprint(guide) == (
-        "75419c12d0e75630469bdc0d4b339246d0050bc07dca3107ebbe2b88cd0ac94c"
+        "2c6876109f88e2eee335d8059861f0a5066bdbccaf239a402acd5426376d2303"
     )
 
 
 def test_protobuf_preserves_optional_sell_flex_and_omission_semantics() -> None:
     categories = [
         field.value
-        for field in _build_details(projected_guide())
+        for field in decode_build_details(projected_guide())
         if field.number == 1 and isinstance(field.value, bytes)
     ]
     core_fields = {field.number: field.value for field in parse_fields(categories[0])}

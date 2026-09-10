@@ -6,8 +6,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from deadlock_build_sync import cli_parser
-from deadlock_build_sync.cli_parser import build_parser, positive_int
-from deadlock_build_sync.offline.cli import build_parser as build_offline_parser
+from deadlock_build_sync.cli_parser import build_parser, parse_positive_integer
 from deadlock_build_sync.snapshot import EpochBoundary, sha256_json
 from deadlock_build_sync.tracing import TRACE_ENVIRONMENT_VARIABLE
 
@@ -20,16 +19,16 @@ def _namespace_values(namespace: Namespace) -> dict[str, str]:
 
 
 def test_parser_numeric_and_epoch_values_are_strict() -> None:
-    assert positive_int("7") == 7
-    assert cli_parser._epoch_boundary(" mechanics @123") == EpochBoundary(
+    assert parse_positive_integer("7") == 7
+    assert cli_parser._parse_epoch_boundary(" mechanics @123") == EpochBoundary(
         "mechanics", 123
     )
     for value in ("0", "-1"):
         with pytest.raises(ArgumentTypeError, match="at least 1"):
-            positive_int(value)
+            parse_positive_integer(value)
     for value in ("mechanics", "@123", "mechanics@bad"):
         with pytest.raises(ArgumentTypeError, match="IDENTITY@UNIX_TIMESTAMP"):
-            cli_parser._epoch_boundary(value)
+            cli_parser._parse_epoch_boundary(value)
 
 
 def test_public_parser_help_is_stable(
@@ -38,6 +37,7 @@ def test_public_parser_help_is_stable(
 ) -> None:
     monkeypatch.delenv(TRACE_ENVIRONMENT_VARIABLE, raising=False)
     commands = (
+        "build",
         "sync",
         "status",
         "refresh-evidence",
@@ -58,13 +58,14 @@ def test_public_parser_help_is_stable(
         help_text[command or "root"] = capsys.readouterr().out
 
     assert sha256_json(help_text) == (
-        "4f30dac0b14caa337fa9c27780ac6524b167ff7b37a7c38895fafb51b8728f3c"
+        "f533480790ce3981487cb6b0b18e43314fc4190352149c24070dee7da9de8d9c"
     )
 
 
 def test_public_parser_defaults_are_stable(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(TRACE_ENVIRONMENT_VARIABLE, raising=False)
     requests = (
+        ["build"],
         ["sync"],
         ["status"],
         ["refresh-evidence"],
@@ -81,31 +82,5 @@ def test_public_parser_defaults_are_stable(monkeypatch: pytest.MonkeyPatch) -> N
     ]
 
     assert sha256_json(values) == (
-        "db316528a506729e34fc1c23ff4c726feb0aba2a1726e6e6b640dca006dc3557"
-    )
-
-
-def test_offline_parser_help_and_defaults_are_stable(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    with pytest.raises(SystemExit) as caught:
-        build_offline_parser().parse_args(["--help"])
-    assert caught.value.code == 0
-    help_text = capsys.readouterr().out
-    commands = (
-        "extract",
-        "audit",
-        "analyze",
-        "report",
-        "layout",
-        "export-evidence",
-        "all",
-    )
-    values = [
-        _namespace_values(build_offline_parser().parse_args([command]))
-        for command in commands
-    ]
-
-    assert sha256_json({"help": help_text, "values": values}) == (
-        "bdab46ea086aab6c175bf8e7e1eb1ee869a5d7fcaf4a2254293bd99c1c4e715d"
+        "ced6323a3a25ae12c28f566c2480e83ce3e5b5e7e5351f00732f4da687ae9dff"
     )

@@ -6,28 +6,32 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from .artifacts import ArtifactError
+from .build_support import SUPPORT
 from .core_alternative_types import CoreAlternativeDescription
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
+    from .hero_cohort import HeroCohort
+    from .match_choices import AutomaticBranch
+    from .purchase_guidance_types import PurchaseTiming
     from .snapshot import EpochSet
 
-BUILD_EVIDENCE_SCHEMA_VERSION = 8
+BUILD_EVIDENCE_SCHEMA_VERSION = 12
 MAXIMUM_CORE_ITEM_COUNT = 9
-TIER_ITEM_COUNT = 10
-MINIMUM_TIER_SUPPORT = 20
+TIER_ITEM_COUNT = SUPPORT.pool_limit
+MINIMUM_TIER_SUPPORT = SUPPORT.pool_buyers
 MINIMUM_TIER_ADOPTION = 0.05
 MAXIMUM_TIER_ADOPTION_DRIFT = 0.10
 MINIMUM_PURCHASE_WINDOW_COVERAGE = 0.50
 MINIMUM_PURCHASE_WINDOW_OBSERVATIONS = 20
 MINIMUM_CORE_SUPPORT = 20
-METHOD_VERSION = "state-aware-multi-path-v7"
+METHOD_VERSION = "eclat-leiden-pairwise-v3"
 SEQUENCE_POLICY_VERSION = 3
 SITUATIONAL_POLICY_VERSION = 2
 CORE_POLICY_VERSION = 3
 TIER_POLICY_VERSION = 1
-MINIMUM_BACKBONE_ITEM_COUNT = 4
+MINIMUM_BACKBONE_ITEM_COUNT = 3
 MAXIMUM_BACKBONE_ITEM_COUNT = 6
 MINIMUM_IMBUE_SUPPORT = 20
 MINIMUM_IMBUE_SHARE = 0.5
@@ -124,9 +128,12 @@ def reliable_purchase_window(item: ItemEvidence) -> tuple[float, float] | None:
         < MINIMUM_PURCHASE_WINDOW_OBSERVATIONS
         or item.validation_valid_buy_net_worth_observations
         < MINIMUM_PURCHASE_WINDOW_OBSERVATIONS
-        or lower is None
-        or upper is None
-        or train_lower is None
+    ):
+        return None
+    if lower is None or upper is None:
+        return None
+    if (
+        train_lower is None
         or train_upper is None
         or validation_lower is None
         or validation_upper is None
@@ -174,6 +181,7 @@ class CorePolicyEvidence:
 @dataclass(frozen=True)
 class TierPolicyEvidence:
     item_ids_by_tier: dict[int, tuple[int, ...]]
+    discovery_pool: bool = False
 
 
 @dataclass(frozen=True)
@@ -236,7 +244,7 @@ class HeroBuildEvidence:
     eligible_player_matches: int
     selection_eligible_player_matches: int
     fold_eligible_player_matches: dict[str, int]
-    median_final_net_worth: int
+    median_final_net_worth: int | None
     items: tuple[ItemEvidence, ...]
     core_policy: CorePolicyEvidence
     tier_policy: TierPolicyEvidence
@@ -246,6 +254,10 @@ class HeroBuildEvidence:
     path_label: str = "Evidence Default"
     signature_item_ids: tuple[int, ...] = ()
     discovery: dict[str, object] = field(default_factory=dict)
+    purchase_timing: tuple[PurchaseTiming, ...] = ()
+    automatic_branches: tuple[AutomaticBranch, ...] = ()
+    cohort: HeroCohort | None = None
+    guide_group_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -264,8 +276,12 @@ class SelectedHeroBuild:
     backbone_share: float
     core_joint_matches: int
     core_joint_share: float
-    median_final_net_worth: int
+    median_final_net_worth: int | None
     core_target_cost: int
+    evidence_summary: dict[str, object] = field(default_factory=dict)
+    purchase_timing: tuple[PurchaseTiming, ...] = ()
+    automatic_branches: tuple[AutomaticBranch, ...] = ()
+    cohort: HeroCohort | None = None
 
 
 @dataclass(frozen=True)
@@ -281,6 +297,8 @@ class BuildEvidenceCatalog:
     requested_hero_ids: frozenset[int]
     heroes: dict[int, HeroBuildEvidence]
     raw_bytes: bytes
+    exclusions: dict[int, str] = field(default_factory=dict)
+    assets: tuple[dict[str, object], ...] = ()
     hero_builds: dict[int, tuple[HeroBuildEvidence, ...]] = field(default_factory=dict)
 
     @property

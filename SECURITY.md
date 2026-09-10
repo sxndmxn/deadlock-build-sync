@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Security fixes are applied to the latest release.
+The latest release receives security fixes.
 
 | Version | Supported |
 | --- | --- |
@@ -11,9 +11,8 @@ Security fixes are applied to the latest release.
 
 ## Reporting a vulnerability
 
-Use GitHub's private vulnerability reporting for this repository. Do not open
-a public issue containing exploit details, credentials, Steam account data, or
-local cache contents.
+Use GitHub's private vulnerability reporting for this repository.
+Do not include exploit details, credentials, Steam account data, or local cache contents in a public issue.
 
-Include the affected version, reproduction steps, expected impact, and any
-suggested mitigation. You should receive an acknowledgment within seven days.
+Include the affected version, reproduction steps, expected effect, and proposed correction.
+You should receive a response within seven days.

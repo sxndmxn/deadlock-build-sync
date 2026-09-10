@@ -52,6 +52,7 @@ class ItemGraph:
             item_id: tuple(sorted(item_children))
             for item_id, item_children in children.items()
         }
+        self._component_ancestors: dict[int, tuple[int, ...]] = {}
         self._validate_acyclic()
 
     @classmethod
@@ -115,6 +116,8 @@ class ItemGraph:
 
         """
         self.require(item_id)
+        if item_id in self._component_ancestors:
+            return self._component_ancestors[item_id]
         ordered: list[int] = []
         seen: set[int] = set()
 
@@ -126,7 +129,9 @@ class ItemGraph:
                     ordered.append(component_id)
 
         collect(item_id)
-        return tuple(ordered)
+        result = tuple(ordered)
+        self._component_ancestors[item_id] = result
+        return result
 
     def require(self, item_id: int) -> ItemNode:
         """Resolve one current item.
@@ -198,7 +203,9 @@ class CategoryBonusTable:
             raise MechanicsError("authoritative cost_bonuses are missing")
         categories: dict[str, tuple[CategoryBonus, ...]] = {}
         for category, rows in raw.items():
-            categories[str(category).casefold()] = _category_bonuses(category, rows)
+            categories[str(category).casefold()] = _parse_category_bonuses(
+                category, rows
+            )
         return cls(categories)
 
     def crossed(
@@ -225,7 +232,7 @@ class CategoryBonusTable:
         )
 
 
-def _category_bonus_rows(category: object, rows: object) -> list[object]:
+def _parse_category_bonus_rows(category: object, rows: object) -> list[object]:
     if isinstance(rows, dict):
         return [
             {"threshold": threshold, "value": value}
@@ -236,7 +243,7 @@ def _category_bonus_rows(category: object, rows: object) -> list[object]:
     return cast("list[object]", rows)
 
 
-def _category_bonus(category: object, row: object) -> CategoryBonus:
+def _parse_category_bonus(category: object, row: object) -> CategoryBonus:
     document = object_dict(row)
     if document is None:
         raise MechanicsError(f"malformed {category} cost bonus")
@@ -256,11 +263,13 @@ def _category_bonus(category: object, row: object) -> CategoryBonus:
     return CategoryBonus(threshold, values)
 
 
-def _category_bonuses(category: object, rows: object) -> tuple[CategoryBonus, ...]:
+def _parse_category_bonuses(
+    category: object, rows: object
+) -> tuple[CategoryBonus, ...]:
     ordered = sorted(
         (
-            _category_bonus(category, row)
-            for row in _category_bonus_rows(category, rows)
+            _parse_category_bonus(category, row)
+            for row in _parse_category_bonus_rows(category, rows)
         ),
         key=lambda bonus: bonus.threshold,
     )

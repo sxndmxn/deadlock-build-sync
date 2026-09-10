@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Independent frozen-policy replay",
+  "type": "object",
+  "required": ["schema_version", "cohort_selection", "cases"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "cohort_selection": {"const": "all_eligible_player_matches"},
+    "cases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "policy_id", "match_group", "match_start_timestamp",
+          "policy_assigned_at", "feature_as_of_timestamp", "state",
+          "observed_action", "observed_item_id", "core_completed", "behind",
+          "ambiguous_purchase"
+        ],
+        "properties": {
+          "policy_id": {"type": "string", "minLength": 1},
+          "match_group": {"type": "string", "minLength": 1},
+          "match_start_timestamp": {"type": "integer", "minimum": 1},
+          "policy_assigned_at": {"type": "integer", "minimum": 1},
+          "feature_as_of_timestamp": {"type": "integer", "minimum": 1},
+          "state": {"$ref": "decision-state.schema.json"},
+          "observed_action": {"enum": ["buy", "save", "end", "abstain"]},
+          "observed_item_id": {"type": ["integer", "null"], "minimum": 1},
+          "core_completed": {"type": "boolean"},
+          "behind": {"type": "boolean"},
+          "ambiguous_purchase": {"type": "boolean"}
+        },
+        "allOf": [{
+          "if": {"properties": {"observed_action": {"const": "buy"}}},
+          "then": {"properties": {"observed_item_id": {"type": "integer", "minimum": 1}}},
+          "else": {"properties": {"observed_item_id": {"type": "null"}}}
+        }]
+      }
+    }
+  }
+}

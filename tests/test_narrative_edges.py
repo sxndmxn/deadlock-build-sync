@@ -10,12 +10,12 @@ import pytest
 from deadlock_build_sync import narratives
 from deadlock_build_sync.narratives import NarrativeError
 from deadlock_build_sync.value_validation import object_dict, require_object_rows
-from tests.test_narratives import (
+from tests.narrative_fixtures import (
     BASIS_ID,
     CONTEXT_ID,
     PATCH,
     SNAPSHOT_ID,
-    guide,
+    make_narrative_guide,
     write_catalog,
 )
 
@@ -128,7 +128,7 @@ def test_catalog_header_rejects_incomplete_sections(
     write_catalog(path)
     data = {**_document(path), **overrides}
     with pytest.raises(NarrativeError, match="missing its snapshot"):
-        narratives._catalog_header(path, data)
+        narratives._parse_narrative_catalog_header(path, data)
 
 
 @pytest.mark.parametrize(
@@ -144,11 +144,11 @@ def test_catalog_exclusions_reject_malformed_rows(
     exclusions: list[object],
 ) -> None:
     with pytest.raises(NarrativeError, match="invalid hero exclusion"):
-        narratives._catalog_exclusions(tmp_path, exclusions)
+        narratives._parse_narrative_exclusions(tmp_path, exclusions)
 
 
 def test_catalog_exclusions_strip_reasons(tmp_path: Path) -> None:
-    assert narratives._catalog_exclusions(
+    assert narratives._parse_narrative_exclusions(
         tmp_path,
         [{"hero_id": 12, "reason": " skip "}],
     ) == {12: "skip"}
@@ -161,20 +161,20 @@ def test_catalog_heroes_rejects_row_identity_generator_and_duplicates(
     write_catalog(path)
     entry = require_object_rows(_document(path)["heroes"])[0]
     with pytest.raises(NarrativeError, match="invalid hero narrative"):
-        narratives._catalog_heroes(path, [1], SNAPSHOT_ID)
+        narratives._parse_narrative_heroes(path, [1], SNAPSHOT_ID)
 
     invalid = deepcopy(entry)
     invalid["path_id"] = ""
     with pytest.raises(NarrativeError, match="invalid hero narrative"):
-        narratives._catalog_heroes(path, [invalid], SNAPSHOT_ID)
+        narratives._parse_narrative_heroes(path, [invalid], SNAPSHOT_ID)
 
     outdated = deepcopy(entry)
     outdated["generator_version"] = 0
     with pytest.raises(NarrativeError, match="outdated description generator"):
-        narratives._catalog_heroes(path, [outdated], SNAPSHOT_ID)
+        narratives._parse_narrative_heroes(path, [outdated], SNAPSHOT_ID)
 
     with pytest.raises(NarrativeError, match="duplicate build"):
-        narratives._catalog_heroes(path, [entry, deepcopy(entry)], SNAPSHOT_ID)
+        narratives._parse_narrative_heroes(path, [entry, deepcopy(entry)], SNAPSHOT_ID)
 
 
 def test_catalog_coverage_rejects_overlap(tmp_path: Path) -> None:
@@ -198,29 +198,29 @@ def test_narrative_entry_checks_patch_snapshot_client_and_policy(
         "narrative_basis_sha256": BASIS_ID,
     }
     with pytest.raises(NarrativeError, match="patch identity"):
-        narratives._narrative_entry(
-            guide(),
+        narratives._validate_narrative_entry(
+            make_narrative_guide(),
             context,
             replace(PATCH, guid="other"),
             catalog,
         )
     with pytest.raises(NarrativeError, match="snapshot does not match"):
-        narratives._narrative_entry(
-            replace(guide(), snapshot_id="0" * 64),
+        narratives._validate_narrative_entry(
+            replace(make_narrative_guide(), snapshot_id="0" * 64),
             context,
             PATCH,
             catalog,
         )
     with pytest.raises(NarrativeError, match="client version"):
-        narratives._narrative_entry(
-            replace(guide(), client_version=999),
+        narratives._validate_narrative_entry(
+            replace(make_narrative_guide(), client_version=999),
             context,
             PATCH,
             catalog,
         )
     with pytest.raises(NarrativeError, match="policy changed"):
-        narratives._narrative_entry(
-            replace(guide(), policy_id="0" * 64),
+        narratives._validate_narrative_entry(
+            replace(make_narrative_guide(), policy_id="0" * 64),
             context,
             PATCH,
             catalog,
@@ -238,17 +238,17 @@ def test_narrative_entry_reports_missing_build_with_optional_reason(
     exclusions = {} if reason is None else {12: reason}
     missing = replace(catalog, heroes={}, exclusions=exclusions)
     with pytest.raises(NarrativeError, match="missing Kelvin"):
-        narratives._narrative_entry(guide(), {}, PATCH, missing)
+        narratives._validate_narrative_entry(make_narrative_guide(), {}, PATCH, missing)
 
 
 def test_sentence_and_first_maxed_ability_handle_sparse_values() -> None:
-    assert not narratives._sentence(None)
-    assert not narratives._sentence("  ")
-    assert narratives._sentence("Ready!") == "Ready!"
-    assert narratives._sentence("Ready") == "Ready."
-    assert not narratives._first_maxed_ability({})
-    assert not narratives._first_maxed_ability({"ability_policy": {"steps": [1]}})
-    assert not narratives._first_maxed_ability({
+    assert not narratives._normalize_sentence(None)
+    assert not narratives._normalize_sentence("  ")
+    assert narratives._normalize_sentence("Ready!") == "Ready!"
+    assert narratives._normalize_sentence("Ready") == "Ready."
+    assert not narratives._find_first_maxed_ability({})
+    assert not narratives._find_first_maxed_ability({"ability_policy": {"steps": [1]}})
+    assert not narratives._find_first_maxed_ability({
         "ability_policy": {
             "steps": [
                 {"action": "UPGRADE_2", "ability": "First"},
@@ -263,7 +263,7 @@ def test_description_supports_sparse_context_and_rejects_oversized_role() -> Non
         "hero": "Kelvin",
         "policy": {"strategic_role": "Control the fight"},
     }
-    description = narratives.deterministic_build_description(sparse)
+    description = narratives.build_deterministic_description(sparse)
     assert "Follow the shown CORE order." in description
     assert "max" not in description
 
@@ -272,7 +272,7 @@ def test_description_supports_sparse_context_and_rejects_oversized_role() -> Non
         "policy": {"strategic_role": "x" * 800},
     }
     with pytest.raises(NarrativeError, match="outside its size limit"):
-        narratives.deterministic_build_description(oversized)
+        narratives.build_deterministic_description(oversized)
 
 
 def test_description_drops_oversized_playstyle_before_return() -> None:
@@ -285,5 +285,5 @@ def test_description_drops_oversized_playstyle_before_return() -> None:
             }
         },
     }
-    description = narratives.deterministic_build_description(context)
+    description = narratives.build_deterministic_description(context)
     assert "x" * 100 not in description

@@ -19,12 +19,12 @@ from .tracing_core import (
     TRACE_SCHEMA_VERSION,
     TraceError,
     TraceMode,
-    _exception_name,
+    _format_exception_name,
     _is_inactive_trace_directory,
     _JsonLinesWriter,
-    _module_file,
     _normalize_stage_fact,
     _project_module,
+    _resolve_module_filename,
     state_directory,
 )
 
@@ -132,7 +132,7 @@ class TraceSession:
             "status": "failure" if failed else "success",
         }
         if exception_type is not None:
-            event["exception_type"] = _exception_name(exception_type)
+            event["exception_type"] = _format_exception_name(exception_type)
         self._write(event)
         if self._context_token is not None:
             _ACTIVE_TRACE.reset(self._context_token)
@@ -227,7 +227,7 @@ class TraceSession:
             details = cast("tuple[object, ...]", argument)
             exception_type = details[0] if details else None
             active.exception_pending = True
-            active.exception_type = _exception_name(exception_type)
+            active.exception_type = _format_exception_name(exception_type)
             if self.mode == TraceMode.CALLS:
                 self._write({
                     "call_id": active.span_id,
@@ -325,7 +325,7 @@ class TraceSession:
         return None
 
     def _function_id(self, module: str, function: str, frame: FrameType) -> int:
-        source_file = _module_file(module, frame)
+        source_file = _resolve_module_filename(module, frame)
         line = frame.f_code.co_firstlineno
         key = (module, function, source_file, line)
         existing = self._function_ids.get(key)

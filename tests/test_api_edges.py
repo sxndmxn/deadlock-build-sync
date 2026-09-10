@@ -8,11 +8,11 @@ from deadlock_build_sync.api import ApiError, DeadlockApi
 from deadlock_build_sync.api_models import (
     HeroDurationStat,
     Patch,
-    duration_stat,
+    calculate_patch_content_sha256,
     normalize_patch_content,
+    normalize_patch_guid,
     parse_datetime,
-    patch_content_sha256,
-    patch_guid,
+    parse_duration_statistics,
 )
 from deadlock_build_sync.http_client import JsonHttpError, JsonHttpResponse
 from deadlock_build_sync.ranks import RankCatalog
@@ -300,10 +300,10 @@ def test_epoch_and_snapshot_defaults_are_explicit() -> None:
 
 
 def test_duration_stat_and_win_rate_validate_support() -> None:
-    assert duration_stat(None, "phase", 0, 10) is None
-    assert duration_stat({"hero_id": "12"}, "phase", 0, 10) is None
+    assert parse_duration_statistics(None, "phase", 0, 10) is None
+    assert parse_duration_statistics({"hero_id": "12"}, "phase", 0, 10) is None
     assert (
-        duration_stat(
+        parse_duration_statistics(
             {"hero_id": 12, "matches": 19, "wins": 10, "losses": 9},
             "phase",
             0,
@@ -312,7 +312,7 @@ def test_duration_stat_and_win_rate_validate_support() -> None:
         is None
     )
     assert (
-        duration_stat(
+        parse_duration_statistics(
             {"hero_id": 12, "matches": 20, "wins": 10, "losses": 9},
             "phase",
             0,
@@ -320,7 +320,7 @@ def test_duration_stat_and_win_rate_validate_support() -> None:
         )
         is None
     )
-    resolved = duration_stat(
+    resolved = parse_duration_statistics(
         {"hero_id": 12, "matches": 20, "wins": 11, "losses": 9},
         "phase",
         0,
@@ -335,10 +335,10 @@ def test_patch_helpers_cover_dates_guids_and_nested_content() -> None:
     assert parse_datetime("2026-01-01T00:00:00").tzinfo == UTC
     with pytest.raises(ApiError, match="invalid current patch timestamp"):
         parse_datetime("bad")
-    assert patch_guid(" value ") == "value"
-    assert patch_guid({"key": "value"}) == '{"key":"value"}'
-    assert patch_guid([1]) == "[1]"
-    assert patch_guid(1) == "unknown"
+    assert normalize_patch_guid(" value ") == "value"
+    assert normalize_patch_guid({"key": "value"}) == '{"key":"value"}'
+    assert normalize_patch_guid([1]) == "[1]"
+    assert normalize_patch_guid(1) == "unknown"
 
     content = {
         "links": [
@@ -348,5 +348,13 @@ def test_patch_helpers_cover_dates_guids_and_nested_content() -> None:
         "count": 1,
     }
     normalized = normalize_patch_content(content)
-    assert "cdn.steamstatic.com" in str(normalized)
-    assert patch_content_sha256(content) == patch_content_sha256(normalized)
+    assert normalized == {
+        "links": [
+            "https://clan.cdn.steamstatic.com/a",
+            "https://shared.cdn.steamstatic.com/b",
+        ],
+        "count": 1,
+    }
+    assert calculate_patch_content_sha256(content) == calculate_patch_content_sha256(
+        normalized
+    )

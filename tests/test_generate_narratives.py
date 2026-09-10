@@ -68,7 +68,7 @@ def test_generator_contract_has_no_model_or_prompt_option() -> None:
 
 
 def test_deterministic_entry_copies_identity_and_uses_pinned_context() -> None:
-    entry = generate_narratives.deterministic_narrative(packet())
+    entry = generate_narratives.generate_deterministic_narrative(packet())
 
     assert entry == {
         "hero_id": 12,
@@ -91,15 +91,15 @@ def test_deterministic_entry_copies_identity_and_uses_pinned_context() -> None:
 def test_reuse_requires_the_exact_deterministic_result() -> None:
     hero = packet()
     key = (12, "default")
-    entry = generate_narratives.deterministic_narrative(hero)
+    entry = generate_narratives.generate_deterministic_narrative(hero)
 
-    assert generate_narratives.validated_reusable_entries(
+    assert generate_narratives.validate_reusable_entries(
         {key: entry},
         {key: hero},
     ) == {key: entry}
 
     edited = {**entry, "build_description": "Edited description."}
-    assert not generate_narratives.validated_reusable_entries(
+    assert not generate_narratives.validate_reusable_entries(
         {key: edited},
         {key: hero},
     )
@@ -144,10 +144,11 @@ def test_selector_rejects_unknown_hero() -> None:
     document: dict[str, object] = {"heroes": [packet()]}
 
     assert (
-        generate_narratives._selected_heroes(document, ["Kelvin"])[0]["hero_id"] == 12
+        generate_narratives._select_requested_heroes(document, ["Kelvin"])[0]["hero_id"]
+        == 12
     )
     with pytest.raises(generate_narratives.GenerationError, match="not found"):
-        generate_narratives._selected_heroes(document, ["Abrams"])
+        generate_narratives._select_requested_heroes(document, ["Abrams"])
 
 
 def test_missing_role_fails_closed() -> None:
@@ -156,7 +157,7 @@ def test_missing_role_fails_closed() -> None:
     hero["policy"] = {}
 
     with pytest.raises(generate_narratives.GenerationError, match="hero role"):
-        generate_narratives.deterministic_narrative(hero)
+        generate_narratives.generate_deterministic_narrative(hero)
 
 
 def test_load_object_wraps_read_json_and_root_errors(tmp_path: Path) -> None:
@@ -176,14 +177,16 @@ def test_load_object_wraps_read_json_and_root_errors(tmp_path: Path) -> None:
 
 def test_selected_heroes_rejects_missing_and_malformed_arrays() -> None:
     with pytest.raises(generate_narratives.GenerationError, match="heroes array"):
-        generate_narratives._selected_heroes({}, None)
+        generate_narratives._select_requested_heroes({}, None)
     with pytest.raises(generate_narratives.GenerationError, match="heroes array"):
-        generate_narratives._selected_heroes({"heroes": [packet(), 1]}, None)
-    assert generate_narratives._selected_heroes({"heroes": [packet()]}, None) == [
-        packet()
-    ]
+        generate_narratives._select_requested_heroes({"heroes": [packet(), 1]}, None)
+    assert generate_narratives._select_requested_heroes(
+        {"heroes": [packet()]}, None
+    ) == [packet()]
     assert (
-        generate_narratives._selected_heroes({"heroes": [packet()]}, ["12"])[0]["hero"]
+        generate_narratives._select_requested_heroes({"heroes": [packet()]}, ["12"])[0][
+            "hero"
+        ]
         == "Kelvin"
     )
 
@@ -197,42 +200,42 @@ def test_selected_heroes_rejects_missing_and_malformed_arrays() -> None:
     ],
 )
 def test_build_key_rejects_incomplete_identity(entry: dict[str, object]) -> None:
-    assert generate_narratives._build_key(entry) is None
+    assert generate_narratives._parse_build_key(entry) is None
 
 
 def test_existing_entries_ignores_missing_malformed_and_invalid_rows(
     tmp_path: Path,
 ) -> None:
     path = tmp_path / "narratives.json"
-    assert generate_narratives._existing_entries(path) == {}
+    assert generate_narratives._load_existing_entries(path) == {}
 
     path.write_text(json.dumps({"heroes": "bad"}), encoding="utf-8")
-    assert generate_narratives._existing_entries(path) == {}
+    assert generate_narratives._load_existing_entries(path) == {}
 
     path.write_text(
         json.dumps({"heroes": [{"hero_id": 12}, packet()]}),
         encoding="utf-8",
     )
-    assert set(generate_narratives._existing_entries(path)) == {(12, "default")}
+    assert set(generate_narratives._load_existing_entries(path)) == {(12, "default")}
 
 
 def test_deterministic_narrative_requires_every_identity_field() -> None:
     hero = packet()
     hero["policy_id"] = ""
     with pytest.raises(generate_narratives.GenerationError, match="exact description"):
-        generate_narratives.deterministic_narrative(hero)
+        generate_narratives.generate_deterministic_narrative(hero)
 
 
 def test_reusable_entries_skip_missing_and_invalid_source_heroes() -> None:
     key = (12, "default")
     hero = packet()
-    entry = generate_narratives.deterministic_narrative(hero)
+    entry = generate_narratives.generate_deterministic_narrative(hero)
     invalid = copy.deepcopy(hero)
     invalid["policy_id"] = ""
 
-    assert generate_narratives.validated_reusable_entries({key: entry}, {}) == {}
+    assert generate_narratives.validate_reusable_entries({key: entry}, {}) == {}
     assert (
-        generate_narratives.validated_reusable_entries(
+        generate_narratives.validate_reusable_entries(
             {key: entry},
             {key: invalid},
         )
@@ -244,7 +247,7 @@ def test_artifact_document_requires_manifest() -> None:
     with pytest.raises(
         generate_narratives.GenerationError, match="no snapshot manifest"
     ):
-        generate_narratives._artifact_document({}, {}, requested_hero_ids=set())
+        generate_narratives._build_artifact_document({}, {}, requested_hero_ids=set())
 
 
 def test_force_generation_does_not_reuse_and_limits_exclusions(
@@ -252,7 +255,7 @@ def test_force_generation_does_not_reuse_and_limits_exclusions(
 ) -> None:
     hero = packet()
     key = (12, "default")
-    existing = {key: generate_narratives.deterministic_narrative(hero)}
+    existing = {key: generate_narratives.generate_deterministic_narrative(hero)}
 
     document = generate_narratives.generate_document(
         source(),

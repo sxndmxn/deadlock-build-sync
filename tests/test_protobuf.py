@@ -15,8 +15,8 @@ from deadlock_build_sync.protobuf import (
     describe_guide,
     encode_hero_build,
     extract_hero_build,
-    hero_build_metadata,
     parse_fields,
+    parse_hero_build_metadata,
     wrap_hero_build,
 )
 from deadlock_build_sync.purchase_guide import GuideItem, PurchaseGuide, PurchaseWindow
@@ -117,7 +117,7 @@ def test_build_wrapper_and_metadata_round_trip() -> None:
     )
     wrapper = wrap_hero_build(build)
     assert extract_hero_build(wrapper) == build
-    metadata = hero_build_metadata(wrapper)
+    metadata = parse_hero_build_metadata(wrapper)
     assert metadata.build_id == 34
     assert metadata.hero_id == 12
     assert metadata.author_account_id == 146293212
@@ -156,7 +156,7 @@ def test_build_name_truncates_a_long_deadlock_patch_title() -> None:
         account_id=146293212,
         timestamp=1234567890,
     )
-    metadata = hero_build_metadata(build)
+    metadata = parse_hero_build_metadata(build)
     assert metadata.name is not None
     assert metadata.name == "XMLJDX | Spirit Damage | A Very Long D / 0101–0101"
 
@@ -173,7 +173,7 @@ def test_build_name_uses_core_archetype_for_dated_patch() -> None:
         timestamp=1234567890,
     )
 
-    metadata = hero_build_metadata(build)
+    metadata = parse_hero_build_metadata(build)
 
     assert metadata.name == "XMLJDX | Mini Turret / Titanic | 0812 / 0101–0101"
 
@@ -186,7 +186,7 @@ def test_build_name_does_not_let_imbue_path_label_override_weapon_core() -> None
         build_archetype="Weapon Damage",
     )
 
-    metadata = hero_build_metadata(
+    metadata = parse_hero_build_metadata(
         encode_hero_build(
             presentation(guide, "Minor Update - 08-22-2026"),
             build_id=34,
@@ -199,7 +199,7 @@ def test_build_name_does_not_let_imbue_path_label_override_weapon_core() -> None
 
 
 def test_build_name_uses_normalized_persona_prefix() -> None:
-    metadata = hero_build_metadata(
+    metadata = parse_hero_build_metadata(
         encode_hero_build(
             presentation(sample_guide(), persona="  Player   1  "),
             build_id=34,
@@ -212,7 +212,7 @@ def test_build_name_uses_normalized_persona_prefix() -> None:
 
 
 def test_build_name_truncates_unicode_persona_within_title_limit() -> None:
-    metadata = hero_build_metadata(
+    metadata = parse_hero_build_metadata(
         encode_hero_build(
             presentation(sample_guide(), persona="玩家" * 20),
             build_id=34,
@@ -266,7 +266,7 @@ def test_encodes_native_ability_order_and_descriptions() -> None:
         account_id=146293212,
         timestamp=1234567890,
     )
-    metadata = hero_build_metadata(build)
+    metadata = parse_hero_build_metadata(build)
     assert "Core profile: ability damage and uptime." in (metadata.description or "")
 
     details = _byte_field(build, 10)

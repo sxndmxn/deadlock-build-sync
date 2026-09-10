@@ -250,7 +250,7 @@ class MonitoringDecision:
     last_compatible_policy_ids: tuple[str, ...]
 
 
-def _rollback_reasons(
+def _collect_rollback_reasons(
     snapshot: MonitoringSnapshot,
     thresholds: MonitoringThresholds,
 ) -> list[str]:
@@ -268,7 +268,7 @@ def _rollback_reasons(
     return reasons
 
 
-def _refusal_reasons(
+def _collect_refusal_reasons(
     snapshot: MonitoringSnapshot,
     thresholds: MonitoringThresholds,
 ) -> list[str]:
@@ -282,7 +282,7 @@ def _refusal_reasons(
     return reasons
 
 
-def _alert_reasons(
+def _collect_alert_reasons(
     snapshot: MonitoringSnapshot,
     thresholds: MonitoringThresholds,
 ) -> list[str]:
@@ -313,7 +313,7 @@ def evaluate_monitoring(
 
     """
     resolved = thresholds or MonitoringThresholds()
-    rollback = _rollback_reasons(snapshot, resolved)
+    rollback = _collect_rollback_reasons(snapshot, resolved)
     if rollback:
         if not last_compatible_snapshot_id or not last_compatible_policy_ids:
             rollback.append("no last compatible policy is available")
@@ -323,7 +323,7 @@ def evaluate_monitoring(
             last_compatible_snapshot_id,
             last_compatible_policy_ids,
         )
-    refusal = _refusal_reasons(snapshot, resolved)
+    refusal = _collect_refusal_reasons(snapshot, resolved)
     if refusal:
         return MonitoringDecision(
             MonitorAction.REFUSE,
@@ -331,7 +331,7 @@ def evaluate_monitoring(
             last_compatible_snapshot_id,
             last_compatible_policy_ids,
         )
-    alert = _alert_reasons(snapshot, resolved)
+    alert = _collect_alert_reasons(snapshot, resolved)
     return MonitoringDecision(
         MonitorAction.ALERT if alert else MonitorAction.HEALTHY,
         tuple(alert),

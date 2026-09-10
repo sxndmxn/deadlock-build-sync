@@ -25,20 +25,21 @@ if TYPE_CHECKING:
     from .purchase_guide import GuideItem
     from .snapshot import SnapshotManifest
 
-from .service_types import GuideError, _cohort
+from .service_types import GuideError, _build_cohort_record
 
 
-def _mechanical_claim(
+def _build_mechanical_claim(
     *,
     claim_id: str,
     mechanics_ref: str,
     manifest: SnapshotManifest,
+    snapshot_id: str,
 ) -> EvidenceClaim:
     return EvidenceClaim(
         claim_id=claim_id,
         claim_class=ClaimClass.MECHANICAL,
-        snapshot_id=manifest.snapshot_id,
-        cohort=_cohort(manifest),
+        snapshot_id=snapshot_id,
+        cohort=_build_cohort_record(manifest),
         unit=EvidenceUnit.ASSET,
         support=1,
         mechanics_refs=(mechanics_ref,),
@@ -46,16 +47,17 @@ def _mechanical_claim(
     )
 
 
-def _item_claim(
+def _build_item_claim(
     item: GuideItem,
     *,
     manifest: SnapshotManifest,
+    snapshot_id: str,
 ) -> EvidenceClaim:
     return EvidenceClaim(
         claim_id=f"item/{item.item_id}/adoption",
         claim_class=ClaimClass.DESCRIPTIVE,
-        snapshot_id=manifest.snapshot_id,
-        cohort=_cohort(manifest),
+        snapshot_id=snapshot_id,
+        cohort=_build_cohort_record(manifest),
         unit=EvidenceUnit.ELIGIBLE_APPEARANCE,
         support=item.eligible_player_matches,
         mechanics_refs=(f"item/{item.item_id}",),
@@ -67,12 +69,14 @@ def _item_claim(
     )
 
 
-def _core_claim(guide: PurchaseGuide, manifest: SnapshotManifest) -> EvidenceClaim:
+def _build_core_claim(
+    guide: PurchaseGuide, manifest: SnapshotManifest, *, snapshot_id: str
+) -> EvidenceClaim:
     return EvidenceClaim(
         claim_id=f"hero/{guide.hero_id}/stable-supported-backbone",
         claim_class=ClaimClass.DESCRIPTIVE,
-        snapshot_id=manifest.snapshot_id,
-        cohort=_cohort(manifest),
+        snapshot_id=snapshot_id,
+        cohort=_build_cohort_record(manifest),
         unit=EvidenceUnit.ELIGIBLE_APPEARANCE,
         support=guide.core_items[0].eligible_player_matches,
         mechanics_refs=tuple(f"item/{item.item_id}" for item in guide.backbone_items),
@@ -83,7 +87,7 @@ def _core_claim(guide: PurchaseGuide, manifest: SnapshotManifest) -> EvidenceCla
     )
 
 
-def _core_alternative_claim(
+def _build_core_alternative_claim(
     guide: PurchaseGuide,
     alternative: CoreAlternativeEvidence,
     manifest: SnapshotManifest,
@@ -95,7 +99,7 @@ def _core_alternative_claim(
         ),
         claim_class=ClaimClass.PREDICTIVE,
         snapshot_id=manifest.snapshot_id,
-        cohort=_cohort(manifest),
+        cohort=_build_cohort_record(manifest),
         unit=EvidenceUnit.PURCHASE_EVENT,
         support=alternative.support + alternative.comparison_support,
         mechanics_refs=(
@@ -109,12 +113,12 @@ def _core_alternative_claim(
     )
 
 
-def _core_alternative_cards(
+def _build_core_alternative_cards(
     guide: PurchaseGuide,
     manifest: SnapshotManifest,
 ) -> tuple[tuple[CoreAlternativeCard, ...], tuple[EvidenceClaim, ...]]:
     claims = tuple(
-        _core_alternative_claim(guide, alternative, manifest)
+        _build_core_alternative_claim(guide, alternative, manifest)
         for alternative in guide.core_alternatives
     )
     cards = tuple(
@@ -141,7 +145,7 @@ def _core_alternative_cards(
     return cards, claims
 
 
-def _situational_claim(
+def _build_situational_claim(
     branch: SituationalBranch,
     *,
     hero_id: int,
@@ -154,7 +158,7 @@ def _situational_claim(
         ),
         claim_class=ClaimClass.DESCRIPTIVE,
         snapshot_id=manifest.snapshot_id,
-        cohort=_cohort(manifest),
+        cohort=_build_cohort_record(manifest),
         unit=EvidenceUnit.HERO_ENEMY_PAIR,
         support=branch.support,
         mechanics_refs=(branch.mechanic_ref,),
@@ -165,7 +169,7 @@ def _situational_claim(
     )
 
 
-def _situational_annotation(
+def _format_situational_annotation(
     branch: SituationalBranch,
     *,
     assets_by_id: dict[int, dict[str, object]],
@@ -200,26 +204,30 @@ def _situational_annotation(
         ) from error
 
 
-def _policy_evidence(
+def _build_policy_evidence(
     guide: PurchaseGuide,
     definitions: dict[int, AbilityDefinition],
     manifest: SnapshotManifest,
 ) -> tuple[dict[str, EvidenceClaim], EvidenceClaim]:
+    snapshot_id = manifest.snapshot_id
     item_claims = {
-        item.item_id: _item_claim(item, manifest=manifest)
+        item.item_id: _build_item_claim(
+            item, manifest=manifest, snapshot_id=snapshot_id
+        )
         for item in (
             *(item for tier_items in guide.tiers.values() for item in tier_items),
             *guide.optional_core_items,
         )
     }
     evidence = {claim.claim_id: claim for claim in item_claims.values()}
-    core_claim = _core_claim(guide, manifest)
+    core_claim = _build_core_claim(guide, manifest, snapshot_id=snapshot_id)
     evidence[core_claim.claim_id] = core_claim
     for ability_id in definitions:
-        claim = _mechanical_claim(
+        claim = _build_mechanical_claim(
             claim_id=f"ability/{ability_id}/mechanics",
             mechanics_ref=f"ability/{ability_id}",
             manifest=manifest,
+            snapshot_id=snapshot_id,
         )
         evidence[claim.claim_id] = claim
     return evidence, core_claim

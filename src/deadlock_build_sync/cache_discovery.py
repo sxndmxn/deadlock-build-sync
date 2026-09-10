@@ -30,7 +30,7 @@ def steam_root() -> Path:
     return next((root for root in roots if root.is_dir()), roots[0])
 
 
-def _steam_accounts(userdata: Path, account_id: int | None) -> list[Path]:
+def _find_steam_accounts(userdata: Path, account_id: int | None) -> list[Path]:
     if account_id is not None:
         return [userdata / str(account_id)]
     if not userdata.is_dir():
@@ -40,7 +40,7 @@ def _steam_accounts(userdata: Path, account_id: int | None) -> list[Path]:
     ]
 
 
-def _explicit_cache_location(
+def _resolve_explicit_cache_location(
     cache_path: Path,
     account_id: int | None,
 ) -> CacheLocation:
@@ -73,7 +73,7 @@ def _discover_cache_locations(
     discovered_paths: set[Path] = set()
     for steam_directory in roots:
         userdata = steam_directory.expanduser() / "userdata"
-        for account in _steam_accounts(userdata, account_id):
+        for account in _find_steam_accounts(userdata, account_id):
             candidate = account / DEADLOCK_APP_ID / CACHE_RELATIVE_PATH
             resolved = candidate.resolve()
             if candidate.is_file() and resolved not in discovered_paths:
@@ -116,7 +116,7 @@ def discover_cache(
     root: Path | None = None,
 ) -> CacheLocation:
     if cache_path is not None:
-        return _explicit_cache_location(cache_path, account_id)
+        return _resolve_explicit_cache_location(cache_path, account_id)
     roots = (root,) if root is not None else steam_roots()
     return _select_cache_location(
         _discover_cache_locations(roots, account_id), account_id

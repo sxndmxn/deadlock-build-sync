@@ -7,7 +7,7 @@ from deadlock_build_sync.mechanics import (
     classify_item_threat_responses,
     conditional_item_decision,
 )
-from tests.mechanics_fixtures import item
+from tests.mechanics_fixtures import make_item_asset
 
 
 @pytest.mark.parametrize(
@@ -24,12 +24,15 @@ from tests.mechanics_fixtures import item
 )
 def test_active_properties_skip_absent_or_zero_values(properties: object) -> None:
     assert (
-        mechanics_item_text._active_property_mechanics({"properties": properties}) == {}
+        mechanics_item_text._extract_active_property_mechanics({
+            "properties": properties
+        })
+        == {}
     )
 
 
 def test_material_mechanics_keep_direct_structured_fields() -> None:
-    asset = item(1, "structured")
+    asset = make_item_asset(1, "structured")
     asset.update({
         "description": "Deal damage.",
         "behaviour": "active",
@@ -38,7 +41,7 @@ def test_material_mechanics_keep_direct_structured_fields() -> None:
         "weapon_info": {"ammo": 10},
     })
 
-    mechanics = mechanics_item_text._material_observed_mechanics(asset)
+    mechanics = mechanics_item_text._extract_observed_mechanics(asset)
 
     assert mechanics["description"] == "Deal damage."
     assert mechanics["behaviour"] == "active"
@@ -88,7 +91,7 @@ def test_typed_properties_map_to_stable_response_copy(
     expected_response: str,
     expected_copy: str,
 ) -> None:
-    asset = item(1, "typed")
+    asset = make_item_asset(1, "typed")
     asset["properties"] = {
         "Mechanic": {
             "provided_property_type": property_type,
@@ -98,9 +101,9 @@ def test_typed_properties_map_to_stable_response_copy(
         }
     }
 
-    assert mechanics_item_text._response_mechanic_labels(asset)[expected_response] == (
-        expected_copy,
-    )
+    assert mechanics_item_text._classify_response_mechanic_labels(asset)[
+        expected_response
+    ] == (expected_copy,)
 
 
 @pytest.mark.parametrize(
@@ -115,7 +118,7 @@ def test_untyped_shield_labels_map_to_responses(
     expected_response: str,
     expected_copy: str,
 ) -> None:
-    asset = item(1, "shield")
+    asset = make_item_asset(1, "shield")
     asset["properties"] = {
         "Shield": {
             "label": label,
@@ -124,13 +127,13 @@ def test_untyped_shield_labels_map_to_responses(
         }
     }
 
-    assert mechanics_item_text._response_mechanic_labels(asset)[expected_response] == (
-        expected_copy,
-    )
+    assert mechanics_item_text._classify_response_mechanic_labels(asset)[
+        expected_response
+    ] == (expected_copy,)
 
 
 def test_response_copy_deduplicates_property_and_description_labels() -> None:
-    asset = item(1, "resist")
+    asset = make_item_asset(1, "resist")
     asset["description"] = {"desc": "Gain Bullet Resist."}
     asset["properties"] = {
         "Resist": {
@@ -140,9 +143,9 @@ def test_response_copy_deduplicates_property_and_description_labels() -> None:
         }
     }
 
-    assert mechanics_item_text._response_mechanic_labels(asset)["bullet_pressure"] == (
-        "Bullet Resist",
-    )
+    assert mechanics_item_text._classify_response_mechanic_labels(asset)[
+        "bullet_pressure"
+    ] == ("Bullet Resist",)
 
 
 @pytest.mark.parametrize(
@@ -160,14 +163,15 @@ def test_property_number_rejects_non_numeric_or_non_finite_values(
     name: str,
 ) -> None:
     assert (
-        mechanics_abilities._property_number({"properties": properties}, name) is None
+        mechanics_abilities._read_numeric_property({"properties": properties}, name)
+        is None
     )
 
 
 def test_conditional_decision_rejects_bad_response_or_comparator() -> None:
-    resist = item(1, "resist")
+    resist = make_item_asset(1, "resist")
     resist["description"] = {"desc": "Gain Spirit Resist."}
-    neutral = item(2, "neutral")
+    neutral = make_item_asset(2, "neutral")
     neutral["description"] = {"desc": "A plain item."}
 
     assert conditional_item_decision(neutral, resist) is None
@@ -176,9 +180,9 @@ def test_conditional_decision_rejects_bad_response_or_comparator() -> None:
 
 
 def test_conditional_decision_marks_ally_only_target_copy() -> None:
-    ally_resist = item(1, "ally_resist")
+    ally_resist = make_item_asset(1, "ally_resist")
     ally_resist["description"] = {"desc": "Give Spirit Resist to a friendly target."}
-    weapon = item(2, "weapon")
+    weapon = make_item_asset(2, "weapon")
     weapon["description"] = {"desc": "Gain Weapon Damage."}
 
     assert conditional_item_decision(ally_resist, weapon) == (
@@ -190,7 +194,7 @@ def test_conditional_decision_marks_ally_only_target_copy() -> None:
 
 
 def test_slow_immunity_is_not_treated_as_an_offensive_slow() -> None:
-    asset = item(1, "slow_immunity")
+    asset = make_item_asset(1, "slow_immunity")
     asset["description"] = {"desc": "Gain movement slow immunity."}
 
     assert classify_item_threat_responses(asset) == frozenset({"slow_resistance"})

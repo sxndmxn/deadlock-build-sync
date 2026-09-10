@@ -1,3 +1,9 @@
+from dataclasses import replace
+
+import pytest
+
+from deadlock_build_sync.api import HeroDurationStat
+from deadlock_build_sync.hero_cohort import HeroCohort
 from deadlock_build_sync.policy import BuildPolicy
 from deadlock_build_sync.service import generate_guides
 from deadlock_build_sync.strategy_context import (
@@ -8,25 +14,85 @@ from deadlock_build_sync.value_validation import (
     require_object_dict,
     require_object_rows,
 )
-from tests.service_evidence_fixtures import build_evidence
-from tests.service_fake_api import FakeApi, ability_rows, duration_points
+from tests.discovery_fixtures import make_hero_cohort
+from tests.service_evidence_fixtures import make_service_build_evidence
+from tests.service_fake_api import FakeApi, make_ability_rows, make_duration_statistics
+
+
+def test_all_hero_queries_and_claims_use_effective_ranks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    api = FakeApi(
+        ability_rows=make_ability_rows(), duration_points=make_duration_statistics()
+    )
+    evidence = make_service_build_evidence(api)
+    cohort = HeroCohort.parse(make_hero_cohort())
+    hero = replace(evidence.heroes[12], cohort=cohort)
+    evidence = replace(evidence, heroes={12: hero}, hero_builds={12: (hero,)})
+    queries: list[tuple[str, int]] = []
+
+    def abilities(client: FakeApi, **_kwargs: object) -> list[dict[str, object]]:
+        queries.append(("ability", client.rank_range.minimum.badge_id))
+        return make_ability_rows()
+
+    def durations(
+        client: FakeApi, **_kwargs: object
+    ) -> dict[int, tuple[HeroDurationStat, ...]]:
+        queries.append(("duration", client.rank_range.minimum.badge_id))
+        return {12: make_duration_statistics()}
+
+    def matchups(client: FakeApi, **_kwargs: object) -> list[dict[str, object]]:
+        queries.append(("matchup", client.rank_range.minimum.badge_id))
+        return []
+
+    monkeypatch.setattr(FakeApi, "ability_order_stats", abilities)
+    monkeypatch.setattr(FakeApi, "hero_stats_by_duration", durations)
+    monkeypatch.setattr(FakeApi, "hero_counter_stats", matchups)
+    generated = generate_guides(
+        api,
+        build_evidence=evidence,
+        account_id=0,
+        hero_query="Kelvin",
+        all_heroes=False,
+    )
+    assert [(name, rank) for name, rank in queries if name == "ability"] == [
+        ("ability", 61)
+    ] * 2
+    assert ("duration", 61) in queries and queries.count(("matchup", 61)) == 2
+    assert api.rank_range.minimum.badge_id == 71
+    guide = generated.guides[0]
+    assert guide.rank_identity == cohort.rank_range.label
+    assert guide.cohort == cohort
+    assert guide.purchase_guidance is not None
+    assert guide.purchase_guidance.cohort == cohort.as_dict()
+    assert all(
+        claim.cohort["rank_range"] == cohort.rank_range.as_dict()
+        for claim in generated.policies[0].evidence
+    )
 
 
 def test_required_components_join_core_queue_and_leave_optional_rows() -> None:
-    api = FakeApi(ability_rows=ability_rows(), duration_points=duration_points())
+    api = FakeApi(
+        ability_rows=make_ability_rows(), duration_points=make_duration_statistics()
+    )
     parent = next(item for item in api._assets if item.get("id") == 200)
     parent["component_items"] = ["item_1_2"]
 
     generated = generate_guides(
         api,
-        build_evidence=build_evidence(api, with_component_path=True),
+        build_evidence=make_service_build_evidence(api, with_component_path=True),
         account_id=123,
         hero_query="Kelvin",
         all_heroes=False,
     )
 
     guide = generated.guides[0]
-    assert [item.item_id for item in guide.categories[0].items] == [
+    assert [
+        item.item_id
+        for row in guide.categories
+        if not row.optional
+        for item in row.items
+    ] == [
         100,
         101,
         102,
@@ -50,15 +116,22 @@ def test_required_components_join_core_queue_and_leave_optional_rows() -> None:
     assert 102 not in {item.item_id for item in guide.categories[1].items}
     projection = require_object_dict(generated.contexts[0]["projection"])
     categories = require_object_rows(projection["categories"])
-    projected_items = require_object_rows(categories[0]["items"])
+    projected_items = [
+        item
+        for row in categories
+        if not row["optional"]
+        for item in require_object_rows(row["items"])
+    ]
     assert projected_items[2]["item_id"] == 102
 
 
 def test_admitted_situational_branch_reaches_policy_sidecar_and_tier_card() -> None:
-    api = FakeApi(ability_rows=ability_rows(), duration_points=duration_points())
+    api = FakeApi(
+        ability_rows=make_ability_rows(), duration_points=make_duration_statistics()
+    )
     generated = generate_guides(
         api,
-        build_evidence=build_evidence(api, with_situational_branch=True),
+        build_evidence=make_service_build_evidence(api, with_situational_branch=True),
         account_id=123,
         hero_query="Kelvin",
         all_heroes=False,
@@ -89,20 +162,10 @@ def test_admitted_situational_branch_reaches_policy_sidecar_and_tier_card() -> N
     tier_item = next(item for item in guide.tiers[1] if item.item_id == 103)
     assert tier_item.annotation.startswith("SOUL WINDOW: ")
     assert "VS: " not in tier_item.annotation
-    assert [category.name for category in guide.categories] == [
-        "CORE ITEMS",
-        "TIER 1",
-        "TIER 2",
-        "TIER 3",
-        "TIER 4",
+    assert [row.name for row in guide.categories[-4:]] == [
+        f"ITEM POOL | TIER {tier}" for tier in range(1, 5)
     ]
-    assert [category.optional for category in guide.categories] == [
-        False,
-        True,
-        True,
-        True,
-        True,
-    ]
+    assert all(row.optional for row in guide.categories[-4:])
     actions = require_object_rows(generated.contexts[0]["explainable_actions"])
     action = next(row for row in actions if row["node_id"] == "situational-1")
     contract = require_object_dict(action["conditional_contract"])
@@ -110,10 +173,12 @@ def test_admitted_situational_branch_reaches_policy_sidecar_and_tier_card() -> N
 
 
 def test_every_item_card_is_the_two_line_statistics_block() -> None:
-    api = FakeApi(ability_rows=ability_rows(), duration_points=duration_points())
+    api = FakeApi(
+        ability_rows=make_ability_rows(), duration_points=make_duration_statistics()
+    )
     generated = generate_guides(
         api,
-        build_evidence=build_evidence(api),
+        build_evidence=make_service_build_evidence(api),
         account_id=123,
         hero_query="Kelvin",
         all_heroes=False,
@@ -136,10 +201,12 @@ def test_every_item_card_is_the_two_line_statistics_block() -> None:
 
 
 def test_admitted_core_alternative_is_a_non_queue_policy_card() -> None:
-    api = FakeApi(ability_rows=ability_rows(), duration_points=duration_points())
+    api = FakeApi(
+        ability_rows=make_ability_rows(), duration_points=make_duration_statistics()
+    )
     generated = generate_guides(
         api,
-        build_evidence=build_evidence(api, with_core_alternative=True),
+        build_evidence=make_service_build_evidence(api, with_core_alternative=True),
         account_id=123,
         hero_query="Kelvin",
         all_heroes=False,
@@ -149,22 +216,16 @@ def test_admitted_core_alternative_is_a_non_queue_policy_card() -> None:
     policy = generated.policies[0]
     assert policy.schema_version == 5
     assert [card.item_id for card in policy.core_alternatives] == [103]
-    assert [category.name for category in guide.categories] == [
-        "CORE ITEMS",
-        "OPTIONAL CORE",
-        "TIER 1",
-        "TIER 2",
-        "TIER 3",
-        "TIER 4",
-    ]
-    assert [item.item_id for item in guide.categories[1].items] == [103]
+    optional = next(row for row in guide.categories if row.name == "OPTIONAL CORE")
+    assert optional.optional
+    assert [item.item_id for item in optional.items] == [103]
     card = policy.core_alternatives[0]
     assert (card.vs, card.why, card.swap) == (
         "Heavy enemy healing",
         "Healing Reduction",
         "Replaces Tier 1 Item 1",
     )
-    assert guide.categories[1].items[0].annotation.startswith("SOUL WINDOW: ")
+    assert optional.items[0].annotation.startswith("SOUL WINDOW: ")
     assert 103 not in {item.item_id for item in guide.tiers[1]}
     assert all(node.item_id != 103 for node in policy.nodes)
     assert BuildPolicy.from_dict(policy.as_dict()) == policy

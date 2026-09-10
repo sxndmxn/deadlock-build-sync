@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from concurrent.futures import ThreadPoolExecutor
+from copy import copy
+from dataclasses import dataclass, replace
+from itertools import repeat
 from typing import TYPE_CHECKING
 
 from .ability_order import LOW_ABILITY_DECISION_SUPPORT, select_ability_path
@@ -11,11 +14,12 @@ from .build_evidence import (
 from .mechanics import (
     AbilityDefinition,
     MechanicsError,
-    ability_definitions_from_kit,
     build_hero_mechanics,
+    parse_ability_definitions,
     schedule_ability_path,
     validate_ability_timeline,
 )
+from .power_curve import summarize_duration_distribution
 from .purchase_guide import (
     build_purchase_guide_from_evidence,
 )
@@ -28,15 +32,15 @@ if TYPE_CHECKING:
         BuildEvidenceCatalog,
         SelectedHeroBuild,
     )
+    from .snapshot import EvidenceRecord
 
 from .service_types import (
     GuideError,
-    _handle_incomplete_analytics,
     _HeroInputs,
 )
 
 
-def _matchups_by_hero(
+def _group_matchups_by_hero(
     rows: list[dict[str, object]],
     *,
     scope: str,
@@ -65,17 +69,14 @@ class _GenerationEvidence:
     whole_team_matchups: dict[int, list[dict[str, object]]]
 
 
-def _ability_path_for_build(
+def _select_build_ability_path(
     api: DeadlockApi,
     *,
     hero_id: int,
     analysis_start: int,
     selected_build: SelectedHeroBuild,
     global_path: AbilityPath,
-    use_item_filter: bool,
 ) -> AbilityPath:
-    if not use_item_filter:
-        return global_path
     filter_item_ids = tuple(item.item_id for item in selected_build.backbone)
     filtered_rows = api.ability_order_stats(
         hero_id=hero_id,
@@ -92,10 +93,17 @@ def _ability_path_for_build(
         and filtered_path.minimum_decision_support >= LOW_ABILITY_DECISION_SUPPORT
     ):
         return filtered_path
-    return global_path
+    return replace(
+        global_path,
+        fallback_reason=(
+            "build-conditioned ability telemetry has no complete order"
+            if filtered_path is None
+            else "build-conditioned ability order has a decision supported by fewer than 20 observations"
+        ),
+    )
 
 
-def _invalid_imbue_target(
+def _find_invalid_imbue_target(
     selected_build: SelectedHeroBuild,
     definitions: dict[int, AbilityDefinition],
 ) -> str | None:
@@ -147,7 +155,7 @@ def _prepare_hero_inputs(
     duration_curve = evidence.duration_curves.get(hero_id, ())
     try:
         kit = build_hero_mechanics(hero, evidence.assets)
-        definitions = ability_definitions_from_kit(kit)
+        definitions = parse_ability_definitions(kit)
     except MechanicsError as error:
         return f"complete current mechanics: {error}"
     prepared: list[_HeroInputs] = []
@@ -159,16 +167,15 @@ def _prepare_hero_inputs(
                 f"{hero_name} path {build_evidence.path_id} has invalid build "
                 f"evidence: {error}"
             ) from error
-        invalid_imbue = _invalid_imbue_target(selected_build, definitions)
+        invalid_imbue = _find_invalid_imbue_target(selected_build, definitions)
         if invalid_imbue is not None:
             return f"path {build_evidence.path_label} with valid imbue data: {invalid_imbue}"
-        ability_path = _ability_path_for_build(
+        ability_path = _select_build_ability_path(
             api,
             hero_id=hero_id,
             analysis_start=evidence.analysis_start,
             selected_build=selected_build,
             global_path=global_ability_path,
-            use_item_filter=len(hero_builds) > 1,
         )
         analytic_guide = build_purchase_guide_from_evidence(
             hero,
@@ -205,6 +212,7 @@ def _prepare_hero_inputs(
                     "whole_enemy_team": evidence.whole_team_matchups.get(hero_id, []),
                 },
                 build_evidence.situational_policy,
+                summarize_duration_distribution(evidence.duration_curves),
             )
         )
     return tuple(prepared)
@@ -216,22 +224,68 @@ def _collect_hero_inputs(
     evidence: _GenerationEvidence,
     *,
     all_heroes: bool,
-) -> tuple[list[_HeroInputs], list[str], list[tuple[int, str]]]:
-    inputs_by_hero: list[_HeroInputs] = []
-    skipped_heroes: list[str] = []
-    exclusions: list[tuple[int, str]] = []
-    for hero in selected:
-        prepared = _prepare_hero_inputs(api, hero, evidence)
-        if isinstance(prepared, str):
-            hero_id = integer(hero["id"])
-            _handle_incomplete_analytics(
-                all_heroes=all_heroes,
-                skipped_heroes=skipped_heroes,
-                exclusions=exclusions,
-                hero_id=hero_id,
-                hero_name=str(hero.get("name") or hero_id),
-                reason=prepared,
+) -> list[_HeroInputs]:
+    if not all_heroes and len(selected) > 1:
+        raise GuideError("A single-hero request cannot include multiple heroes")
+    if len(selected) < 2:
+        results = [
+            _prepare_scoped_hero_inputs(api, hero, evidence) for hero in selected
+        ]
+    else:
+        executor = ThreadPoolExecutor(max_workers=4)
+        try:
+            results = list(
+                executor.map(
+                    _prepare_scoped_hero_inputs, repeat(api), selected, repeat(evidence)
+                )
             )
-            continue
-        inputs_by_hero.extend(prepared)
-    return inputs_by_hero, skipped_heroes, exclusions
+        finally:
+            executor.shutdown(wait=True, cancel_futures=True)
+    inputs_by_hero: list[_HeroInputs] = []
+    for inputs, records in results:
+        inputs_by_hero.extend(inputs)
+        api.recorder.records.extend(records)
+    return inputs_by_hero
+
+
+def _prepare_scoped_hero_inputs(
+    api: DeadlockApi,
+    hero: dict[str, object],
+    evidence: _GenerationEvidence,
+) -> tuple[tuple[_HeroInputs, ...], tuple[EvidenceRecord, ...]]:
+    hero_id = integer(hero["id"])
+    exclusion = evidence.build_evidence.exclusions.get(hero_id)
+    if exclusion is not None:
+        raise GuideError(
+            f"Requested hero {hero_id} has no supported build: {exclusion}"
+        )
+    if hero_id not in evidence.build_evidence.heroes:
+        raise GuideError(f"Hero {hero_id} is missing build evidence")
+    cohort = evidence.build_evidence.heroes[hero_id].cohort
+    scoped_api = copy(api)
+    scoped_api.recorder = replace(api.recorder, records=[])
+    scoped_evidence = evidence
+    if cohort is not None and cohort.rank_range != api.rank_range:
+        scoped_api.rank_range = cohort.rank_range
+        scoped_evidence = replace(
+            evidence,
+            duration_curves=scoped_api.hero_stats_by_duration(
+                min_unix_timestamp=evidence.analysis_start
+            ),
+            same_lane_matchups=_group_matchups_by_hero(
+                scoped_api.hero_counter_stats(
+                    min_unix_timestamp=evidence.analysis_start, same_lane=True
+                ),
+                scope="same_lane",
+            ),
+            whole_team_matchups=_group_matchups_by_hero(
+                scoped_api.hero_counter_stats(
+                    min_unix_timestamp=evidence.analysis_start, same_lane=False
+                ),
+                scope="whole_enemy_team",
+            ),
+        )
+    prepared = _prepare_hero_inputs(scoped_api, hero, scoped_evidence)
+    if isinstance(prepared, str):
+        raise GuideError(f"Hero {hero_id} has incomplete generation data: {prepared}")
+    return prepared, tuple(scoped_api.recorder.records)

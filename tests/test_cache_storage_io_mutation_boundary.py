@@ -7,7 +7,7 @@ import pytest
 
 from deadlock_build_sync import cache_storage
 from deadlock_build_sync.cache import CacheError
-from tests.cache_fixtures import isolated_location
+from tests.cache_fixtures import make_isolated_cache_location
 
 
 def _validation() -> cache_storage._ReplacementValidation:
@@ -24,7 +24,7 @@ def test_backup_uses_utc_timestamp_and_sequential_suffixes(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    location, _ = isolated_location(tmp_path)
+    location, _ = make_isolated_cache_location(tmp_path)
     location.remote_cache_path.write_text("remote", encoding="utf-8")
 
     class FixedDatetime:
@@ -47,6 +47,10 @@ def test_backup_uses_utc_timestamp_and_sequential_suffixes(
     ]
     assert all((path / "cached_hero_builds.kv3").is_file() for path in backups)
     assert all((path / "remotecache.vdf").is_file() for path in backups)
+    assert all(
+        "remotecache.vdf" in {entry.name for entry in path.iterdir()}
+        for path in backups
+    )
 
 
 def test_directory_fsync_uses_directory_flags_and_always_closes(
@@ -96,7 +100,7 @@ def test_restore_uses_a_local_persistent_temporary_file(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    location, _ = isolated_location(tmp_path)
+    location, _ = make_isolated_cache_location(tmp_path)
     source = tmp_path / "backup.kv3"
     source.write_bytes(b"backup")
     calls: list[dict[str, object]] = []
@@ -140,7 +144,7 @@ def test_restore_preserves_the_first_error_if_temporary_creation_fails(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    location, _ = isolated_location(tmp_path)
+    location, _ = make_isolated_cache_location(tmp_path)
 
     def fail(**_kwargs: object) -> object:
         raise OSError("temporary creation failed")
@@ -155,7 +159,7 @@ def test_restore_cleanup_allows_a_missing_temporary_file(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    location, _ = isolated_location(tmp_path)
+    location, _ = make_isolated_cache_location(tmp_path)
     source = tmp_path / "backup.kv3"
     source.write_bytes(b"backup")
 
@@ -188,7 +192,7 @@ def test_replacement_validation_passes_expected_identities(
     monkeypatch.setattr(cache_storage, "_validate_managed_entries", validate_entries)
     monkeypatch.setattr(
         cache_storage,
-        "_out_of_scope_fingerprint",
+        "_calculate_unmanaged_cache_fingerprint",
         lambda _root, **_kwargs: "fingerprint",
     )
 
@@ -201,7 +205,7 @@ def test_install_replacement_uses_local_temp_and_both_scope_messages(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    location, _ = isolated_location(tmp_path)
+    location, _ = make_isolated_cache_location(tmp_path)
     calls: list[dict[str, object]] = []
     scopes: list[str] = []
     original = tempfile.NamedTemporaryFile
@@ -257,7 +261,7 @@ def test_install_replacement_preserves_temporary_creation_error(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    location, _ = isolated_location(tmp_path)
+    location, _ = make_isolated_cache_location(tmp_path)
 
     def fail(**_kwargs: object) -> object:
         raise OSError("temporary creation failed")
@@ -272,7 +276,7 @@ def test_install_replacement_cleanup_allows_a_missing_temporary_file(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    location, _ = isolated_location(tmp_path)
+    location, _ = make_isolated_cache_location(tmp_path)
 
     def reject(path: Path) -> dict[str, object]:
         path.unlink()
@@ -288,7 +292,7 @@ def test_install_replacement_reports_a_late_deadlock_start_exactly(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    location, _ = isolated_location(tmp_path)
+    location, _ = make_isolated_cache_location(tmp_path)
     monkeypatch.setattr(cache_storage, "read_cache", lambda _path: {})
     monkeypatch.setattr(
         cache_storage,

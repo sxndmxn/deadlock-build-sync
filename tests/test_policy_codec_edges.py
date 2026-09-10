@@ -4,7 +4,7 @@ import pytest
 
 from deadlock_build_sync import policy_codec
 from deadlock_build_sync.policy import Branch, Guard, GuardOperator, PolicyError
-from tests.test_policy import branching_policy
+from tests.policy_fixtures import make_branching_policy
 
 
 def test_codec_primitive_and_json_structure_is_strict() -> None:
@@ -70,7 +70,7 @@ def test_codec_branches_cover_default_single_multiple_and_invalid_forms() -> Non
 
 
 def test_codec_policy_id_type_and_optional_fingerprint_are_strict() -> None:
-    policy = branching_policy()
+    policy = make_branching_policy()
     payload = policy_codec.unstructure_build_policy(policy, include_policy_id=False)
     assert "policy_id" not in payload
     payload["policy_id"] = 1

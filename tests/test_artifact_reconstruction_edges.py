@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from deadlock_build_sync import artifact_reconstruction
+from deadlock_build_sync.artifact_bundle import load_artifact_guide_bundle
 from deadlock_build_sync.artifact_bundle_types import ArtifactBundleError
 from deadlock_build_sync.artifacts import load_policy_artifact
 from deadlock_build_sync.build_evidence import HeroBuildEvidence, load_build_evidence
@@ -13,16 +14,20 @@ from deadlock_build_sync.value_validation import (
     require_object_dict,
     require_object_rows,
 )
-from tests.artifact_bundle_fixtures import _write_bundle
+from tests.artifact_bundle_fixtures import (
+    make_artifact_projection,
+    write_artifact_bundle,
+)
 
 
 def _inputs(
     root: Path,
 ) -> tuple[dict[str, object], BuildPolicy, HeroBuildEvidence, dict[str, object]]:
-    context_path, policy_path, _, evidence_path = _write_bundle(root)
+    context_path, policy_path, _, evidence_path = write_artifact_bundle(root)
     loaded: object = json.loads(context_path.read_text(encoding="utf-8"))
     context = require_object_dict(loaded)
     hero = require_object_rows(context["heroes"])[0]
+    hero["projection"] = make_artifact_projection()
     manifest, policies = load_policy_artifact(policy_path)
     policy = policies[12, "default"]
     evidence = load_build_evidence(evidence_path).heroes[12]
@@ -50,7 +55,7 @@ def test_reconstruction_rejects_inconsistent_hero_identity(
     hero[field] = value
 
     with pytest.raises(ArtifactBundleError, match="inconsistent identity"):
-        artifact_reconstruction._hero_identity(hero, policy)
+        artifact_reconstruction._parse_hero_identity(hero, policy)
 
 
 def test_reconstruction_requires_a_nonempty_hero_class(tmp_path: Path) -> None:
@@ -59,7 +64,7 @@ def test_reconstruction_requires_a_nonempty_hero_class(tmp_path: Path) -> None:
     mechanics["class_name"] = ""
 
     with pytest.raises(ArtifactBundleError, match="inconsistent identity"):
-        artifact_reconstruction._hero_identity(hero, policy)
+        artifact_reconstruction._parse_hero_identity(hero, policy)
 
 
 @pytest.mark.parametrize(
@@ -71,8 +76,8 @@ def test_reconstruction_requires_a_nonempty_hero_class(tmp_path: Path) -> None:
         ("joint_share", 0.0, "invalid core evidence"),
         ("joint_share", 1.1, "invalid core evidence"),
         ("median_final_net_worth", 0, "invalid core evidence"),
+        ("core_target_cost", 0.5, "invalid core evidence"),
         ("core_target_cost", 0, "invalid core evidence"),
-        ("core_target_cost", 40_000, "invalid core evidence"),
     ],
 )
 def test_reconstruction_rejects_invalid_core_summary(
@@ -88,7 +93,7 @@ def test_reconstruction_rejects_invalid_core_summary(
         require_object_dict(hero["core"])[field] = value
 
     with pytest.raises(ArtifactBundleError, match=message):
-        artifact_reconstruction._core_evidence(hero, policy)
+        artifact_reconstruction._parse_core_evidence(hero, policy)
 
 
 @pytest.mark.parametrize(
@@ -114,7 +119,7 @@ def test_reconstruction_rejects_invalid_build_identity_fields(
     build[field] = value
 
     with pytest.raises(ArtifactBundleError, match="invalid build tags"):
-        artifact_reconstruction._build_identity(hero, policy, manifest)
+        artifact_reconstruction._parse_build_identity(hero, policy, manifest)
 
 
 def test_reconstruction_rejects_missing_projection_and_bad_function_tag(
@@ -124,14 +129,14 @@ def test_reconstruction_rejects_missing_projection_and_bad_function_tag(
     missing = copy.deepcopy(hero)
     missing["projection"] = None
     with pytest.raises(ArtifactBundleError, match="no build identity"):
-        artifact_reconstruction._build_identity(missing, policy, manifest)
+        artifact_reconstruction._parse_build_identity(missing, policy, manifest)
 
     bad_class = copy.deepcopy(hero)
     projection = require_object_dict(bad_class["projection"])
     build = require_object_dict(projection["build"])
     build["tag_classes"] = ["ability_10", "item_1005", "not-a-function"]
     with pytest.raises(ArtifactBundleError, match="invalid build tags"):
-        artifact_reconstruction._build_identity(bad_class, policy, manifest)
+        artifact_reconstruction._parse_build_identity(bad_class, policy, manifest)
 
 
 def test_reconstruction_rejects_incomplete_epoch_boundaries(tmp_path: Path) -> None:
@@ -140,7 +145,7 @@ def test_reconstruction_rejects_incomplete_epoch_boundaries(tmp_path: Path) -> N
     epochs.pop("telemetry")
 
     with pytest.raises(ArtifactBundleError, match="invalid epoch boundaries"):
-        artifact_reconstruction._analysis_start_timestamp(manifest)
+        artifact_reconstruction._calculate_analysis_start_timestamp(manifest)
 
 
 @pytest.mark.parametrize(
@@ -156,14 +161,9 @@ def test_reconstruction_rejects_invalid_snapshot_cohort(
     field: str,
     value: object,
 ) -> None:
-    hero, policy, evidence, manifest = _inputs(tmp_path)
-    manifest[field] = value
-
-    with pytest.raises(ArtifactBundleError, match="invalid cohort"):
-        artifact_reconstruction._guide(
-            hero,
-            policy,
-            evidence,
-            manifest=manifest,
-            rank_identity="Rank 7–11",
-        )
+    paths = write_artifact_bundle(tmp_path)
+    document = json.loads(paths[1].read_text())
+    document["snapshot_manifest"][field] = value
+    paths[1].write_text(json.dumps(document))
+    with pytest.raises(ArtifactBundleError, match="snapshot manifests differ"):
+        load_artifact_guide_bundle(*paths)

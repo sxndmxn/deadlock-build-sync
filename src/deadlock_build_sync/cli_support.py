@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .api import DeadlockApi
-from .artifacts import atomic_write_json, build_policy_artifact
+from .artifacts import ArtifactError, atomic_write_json, build_policy_artifact
 from .build_evidence import BuildEvidenceCatalog, load_build_evidence
 from .cache import (
     CacheLocation,
@@ -16,6 +16,7 @@ from .cache import (
     discover_cache,
     install_guides,
 )
+from .guide_groups import build_group_record, group_guides
 from .narratives import (
     NarrativeCatalog,
     load_narrative_catalog,
@@ -42,7 +43,7 @@ _POLICIES_PREFIX = "Policies: "
 
 
 @dataclass(frozen=True)
-class _InstallSpec:
+class _InstallationParameters:
     persona: str
     patch_title: str
     patch_published_at: str
@@ -52,19 +53,21 @@ class _InstallSpec:
     allow_subset: bool
 
 
-def _location(args: argparse.Namespace) -> CacheLocation:
+def _discover_cache_location(args: argparse.Namespace) -> CacheLocation:
     return discover_cache(account_id=args.account_id, cache_path=args.cache_path)
 
 
-def _catalog(args: argparse.Namespace) -> NarrativeCatalog | None:
+def _load_optional_narrative_catalog(
+    args: argparse.Namespace,
+) -> NarrativeCatalog | None:
     return load_narrative_catalog(args.narratives) if args.narratives else None
 
 
-def _rank_range(args: argparse.Namespace) -> RankRange:
+def _parse_rank_range(args: argparse.Namespace) -> RankRange:
     return RankRange(args.min_rank, args.max_rank)
 
 
-def _epochs(args: argparse.Namespace) -> EpochSet | None:
+def _parse_epoch_overrides(args: argparse.Namespace) -> EpochSet | None:
     values = (
         args.mechanics_epoch,
         args.matchmaking_epoch,
@@ -79,21 +82,30 @@ def _epochs(args: argparse.Namespace) -> EpochSet | None:
     return EpochSet(mechanics, matchmaking, map_objectives, telemetry)
 
 
-def _api(args: argparse.Namespace, evidence: BuildEvidenceCatalog) -> DeadlockApi:
+def _create_evidence_api(
+    args: argparse.Namespace, evidence: BuildEvidenceCatalog
+) -> DeadlockApi:
+    if args.rank_expansion == "off" and any(
+        build.cohort is not None and build.cohort.minimum_badge < args.min_rank.badge_id
+        for build in evidence.heroes.values()
+    ):
+        raise ArtifactError(
+            "Evidence uses expanded ranks. Run deadlock-build-sync refresh-evidence --rank-expansion off, then build again."
+        )
     return DeadlockApi(
         args.api_base_url,
-        rank_range=_rank_range(args),
+        rank_range=_parse_rank_range(args),
         match_mode=args.match_mode,
         client_version=args.client_version or evidence.client_version,
         as_of_timestamp=args.as_of_timestamp or evidence.as_of_timestamp,
-        epochs=_epochs(args) or evidence.epochs,
+        epochs=_parse_epoch_overrides(args) or evidence.epochs,
     )
 
 
 def _report_skipped(generated: GeneratedGuides) -> None:
     if generated.skipped_heroes:
         print(
-            "Skipped heroes with incomplete analytics: "
+            "Skipped heroes with evidence exclusions: "
             + ", ".join(generated.skipped_heroes),
             file=sys.stderr,
         )
@@ -106,7 +118,7 @@ def _report_skipped(generated: GeneratedGuides) -> None:
             )
 
 
-def _sync_artifact_directory(configured: Path | None) -> Path:
+def _resolve_artifact_directory(configured: Path | None) -> Path:
     if configured is not None:
         return configured.expanduser().resolve()
     state_home = os.environ.get("XDG_STATE_HOME")
@@ -114,15 +126,15 @@ def _sync_artifact_directory(configured: Path | None) -> Path:
     return root / "deadlock-build-sync/artifacts"
 
 
-def _build_evidence_path(args: argparse.Namespace) -> Path:
+def _resolve_build_evidence_path(args: argparse.Namespace) -> Path:
     if args.build_evidence is not None:
         return args.build_evidence.expanduser().resolve()
-    configured = args.artifacts if args.command == "sync" else None
-    return _sync_artifact_directory(configured) / _BUILD_EVIDENCE_FILENAME
+    configured = args.artifacts if args.command in {"sync", "build"} else None
+    return _resolve_artifact_directory(configured) / _BUILD_EVIDENCE_FILENAME
 
 
-def _build_evidence(args: argparse.Namespace) -> tuple[Path, BuildEvidenceCatalog]:
-    path = _build_evidence_path(args)
+def _load_build_evidence(args: argparse.Namespace) -> tuple[Path, BuildEvidenceCatalog]:
+    path = _resolve_build_evidence_path(args)
     evidence = load_build_evidence(path)
     record_stage_facts(
         "evidence.admission",
@@ -142,7 +154,7 @@ def _record_fresh_evidence(path: Path, evidence: BuildEvidenceCatalog) -> None:
     )
 
 
-def _generate(
+def _generate_requested_guides(
     args: argparse.Namespace,
     evidence: BuildEvidenceCatalog,
     account_id: int,
@@ -151,7 +163,7 @@ def _generate(
     narrative_catalog: NarrativeCatalog | None = None,
 ) -> GeneratedGuides:
     generated = generate_guides(
-        _api(args, evidence),
+        _create_evidence_api(args, evidence),
         build_evidence=evidence,
         account_id=account_id,
         hero_query=args.hero,
@@ -166,7 +178,7 @@ def _generate(
 def _install_and_record(
     location: CacheLocation,
     guides: list[PurchaseGuide],
-    spec: _InstallSpec,
+    spec: _InstallationParameters,
 ) -> InstallResult:
     result = install_guides(
         location,
@@ -196,16 +208,18 @@ def _install_generated_guides(
     guides: list[PurchaseGuide],
     generated: GeneratedGuides,
 ) -> InstallResult:
+    guides = group_guides(guides, generated.guide_groups)
     return _install_and_record(
         location,
         guides,
-        _InstallSpec(
+        _InstallationParameters(
             persona=generated.persona,
             patch_title=generated.patch.title,
             patch_published_at=generated.patch.published_at,
             rank_range=generated.rank_range,
             snapshot_manifest=generated.manifest.as_dict(),
-            expected_hero_ids=set(generated.eligible_hero_ids),
+            expected_hero_ids=set(generated.eligible_hero_ids)
+            - {hero for hero, _ in generated.exclusions},
             allow_subset=generated.subset_selected,
         ),
     )
@@ -236,13 +250,13 @@ def _write_strategy_context(path: Path, generated: GeneratedGuides) -> None:
         generated.contexts,
         manifest=generated.manifest,
         item_mechanics=generated.item_mechanics,
-        requested_hero_ids=_requested_hero_ids(generated),
+        requested_hero_ids=_collect_requested_hero_ids(generated),
         exclusions=generated.exclusions,
     )
     atomic_write_json(path, document, compact=True)
 
 
-def _requested_hero_ids(generated: GeneratedGuides) -> set[int]:
+def _collect_requested_hero_ids(generated: GeneratedGuides) -> set[int]:
     if generated.subset_selected:
         return {guide.hero_id for guide in generated.guides}
     return set(generated.eligible_hero_ids)
@@ -252,7 +266,7 @@ def _write_policy_artifact(path: Path, generated: GeneratedGuides) -> None:
     document = build_policy_artifact(
         generated.policies,
         snapshot_manifest=generated.manifest.as_dict(),
-        requested_hero_ids=_requested_hero_ids(generated),
+        requested_hero_ids=_collect_requested_hero_ids(generated),
         exclusions=generated.exclusions,
     )
     atomic_write_json(path, document)
@@ -282,12 +296,17 @@ def _describe_preview_guide(
         patch_published_at=generated.patch.published_at,
         rank_range=generated.rank_range,
     )
-    # Preview traverses the pure serializer so it validates the same presentation
-    # boundary as installation without reading or changing Steam data.
+    # Preview and installation use the same serializer and presentation checks.
+    # Preview does not read or change Steam data.
     encode_hero_build(
         presentation,
         build_id=1,
         account_id=account_id,
         timestamp=0,
     )
-    return describe_guide(guide, presentation=presentation)
+    described = describe_guide(guide, presentation=presentation)
+    described["purchase_guidance"] = (
+        guide.purchase_guidance.as_dict() if guide.purchase_guidance else None
+    )
+    described["guide_group"] = build_group_record(guide)
+    return described

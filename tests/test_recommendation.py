@@ -9,35 +9,40 @@ from deadlock_build_sync.recommendation import (
     recommend,
 )
 from tests.recommendation_fixtures import (
-    assets,
-    build_policy,
-    catalog,
-    expanded_assets,
-    state,
+    make_build_catalog,
+    make_decision_state,
+    make_expanded_assets,
+    make_recommendation_assets,
+    make_recommendation_policy,
 )
 
 
 def test_recommendation_expands_components_then_saves_for_parent() -> None:
-    first = recommend(catalog(), build_policy(), state(), assets())
+    first = recommend(
+        make_build_catalog(),
+        make_recommendation_policy(),
+        make_decision_state(),
+        make_recommendation_assets(),
+    )
     assert first.action is RecommendationAction.BUY
     assert first.item_id == 1
     assert first.target_item_id == 2
     assert first.incremental_cost == 500
     assert sha256_json(first.as_dict()) == (
-        "f670e055da915d49d270f73870722b32a34da1ad883eb98936c6f1c6218fb5d3"
+        "8712d5362c1959c6d379d9ee1735d909b92b679fe0046ec0350eb5753749e25d"
     )
 
     second = recommend(
-        catalog(),
-        build_policy(),
-        state(
+        make_build_catalog(),
+        make_recommendation_policy(),
+        make_decision_state(
             purchases=(1,),
             owned_items=(1,),
             owned_components=(1,),
             open_slots=8,
             liquid_souls=500,
         ),
-        assets(),
+        make_recommendation_assets(),
     )
     assert second.action is RecommendationAction.SAVE
     assert second.item_id == 2
@@ -46,10 +51,10 @@ def test_recommendation_expands_components_then_saves_for_parent() -> None:
 
 def test_manual_deviation_uses_supported_backoff() -> None:
     decision = recommend(
-        catalog(),
-        build_policy(),
-        state(purchases=(99,), liquid_souls=2_000),
-        assets(),
+        make_build_catalog(),
+        make_recommendation_policy(),
+        make_decision_state(purchases=(99,), liquid_souls=2_000),
+        make_recommendation_assets(),
     )
 
     assert decision.action is RecommendationAction.BUY
@@ -59,10 +64,10 @@ def test_manual_deviation_uses_supported_backoff() -> None:
 
 def test_sold_item_history_recalculates_from_actual_ownership() -> None:
     decision = recommend(
-        catalog(),
-        build_policy(),
-        state(purchases=(3,), liquid_souls=500),
-        assets(),
+        make_build_catalog(),
+        make_recommendation_policy(),
+        make_decision_state(purchases=(3,), liquid_souls=500),
+        make_recommendation_assets(),
     )
 
     assert decision.action is RecommendationAction.BUY
@@ -71,33 +76,36 @@ def test_sold_item_history_recalculates_from_actual_ownership() -> None:
 
 
 def test_full_slots_abstain_and_a_flex_unlock_restores_legality() -> None:
-    full = state(
+    full = make_decision_state(
         owned_items=tuple(range(3, 12)),
         open_slots=0,
         liquid_souls=500,
     )
-    assert recommend(catalog(), build_policy(), full, expanded_assets()).action is (
-        RecommendationAction.ABSTAIN
-    )
+    assert recommend(
+        make_build_catalog(), make_recommendation_policy(), full, make_expanded_assets()
+    ).action is (RecommendationAction.ABSTAIN)
 
     with_flex = replace(full, unlocked_flex_slots=1, open_slots=1)
     assert recommend(
-        catalog(), build_policy(), with_flex, expanded_assets()
+        make_build_catalog(),
+        make_recommendation_policy(),
+        with_flex,
+        make_expanded_assets(),
     ).action is (RecommendationAction.BUY)
 
 
 def test_fifth_active_counter_is_rejected_before_default_recovery() -> None:
     decision = recommend(
-        catalog(branch=True),
-        build_policy(branch=True),
-        state(
+        make_build_catalog(branch=True),
+        make_recommendation_policy(branch=True),
+        make_decision_state(
             threats=("healing",),
             owned_items=(4, 5, 6, 7),
             open_slots=5,
             active_bindings=4,
             liquid_souls=500,
         ),
-        expanded_assets(active_ids=frozenset({3, 4, 5, 6, 7})),
+        make_expanded_assets(active_ids=frozenset({3, 4, 5, 6, 7})),
     )
 
     assert decision.action is RecommendationAction.ABSTAIN
@@ -105,7 +113,7 @@ def test_fifth_active_counter_is_rejected_before_default_recovery() -> None:
 
 
 def test_observational_sequence_transitions_do_not_control_runtime() -> None:
-    base = catalog()
+    base = make_build_catalog()
     hero = base.heroes[12]
     assert hero.sequence_policy is not None
     sparse_policy = replace(
@@ -114,7 +122,12 @@ def test_observational_sequence_transitions_do_not_control_runtime() -> None:
     )
     sparse = replace(base, heroes={12: replace(hero, sequence_policy=sparse_policy)})
 
-    decision = recommend(sparse, build_policy(), state(), assets())
+    decision = recommend(
+        sparse,
+        make_recommendation_policy(),
+        make_decision_state(),
+        make_recommendation_assets(),
+    )
 
     assert decision.action is RecommendationAction.BUY
     assert decision.item_id == 1
@@ -123,7 +136,7 @@ def test_observational_sequence_transitions_do_not_control_runtime() -> None:
 
 def test_owned_intermediate_upgrade_stops_prerequisite_recursion() -> None:
     item_assets: list[dict[str, object]] = [
-        *assets(),
+        *make_recommendation_assets(),
         {
             "id": 4,
             "class_name": "final",
@@ -136,7 +149,7 @@ def test_owned_intermediate_upgrade_stops_prerequisite_recursion() -> None:
             "component_items": ["parent"],
         },
     ]
-    base_policy = build_policy()
+    base_policy = make_recommendation_policy()
     core = next(node for node in base_policy.nodes if node.node_id == "core-1")
     nested_policy = replace(
         base_policy,
@@ -147,9 +160,9 @@ def test_owned_intermediate_upgrade_stops_prerequisite_recursion() -> None:
     )
 
     decision = recommend(
-        catalog(),
+        make_build_catalog(),
         nested_policy,
-        state(
+        make_decision_state(
             purchases=(1, 2),
             owned_items=(2,),
             owned_components=(2,),
@@ -166,16 +179,16 @@ def test_owned_intermediate_upgrade_stops_prerequisite_recursion() -> None:
 
 def test_complete_core_ends_before_optional_threat_branch() -> None:
     decision = recommend(
-        catalog(branch=True),
-        build_policy(branch=True),
-        state(
+        make_build_catalog(branch=True),
+        make_recommendation_policy(branch=True),
+        make_decision_state(
             threats=("healing",),
             purchases=(1, 2),
             owned_items=(2,),
             open_slots=8,
             liquid_souls=2_000,
         ),
-        assets(),
+        make_recommendation_assets(),
     )
 
     assert decision.action is RecommendationAction.END
@@ -183,15 +196,15 @@ def test_complete_core_ends_before_optional_threat_branch() -> None:
 
 def test_owned_counter_persists_the_opportunity_replacement() -> None:
     decision = recommend(
-        catalog(branch=True),
-        build_policy(branch=True),
-        state(
+        make_build_catalog(branch=True),
+        make_recommendation_policy(branch=True),
+        make_decision_state(
             purchases=(3,),
             owned_items=(3,),
             open_slots=8,
             liquid_souls=2_000,
         ),
-        assets(),
+        make_recommendation_assets(),
     )
 
     assert decision.action is RecommendationAction.END

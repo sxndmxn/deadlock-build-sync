@@ -6,9 +6,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from deadlock_build_sync.mechanics import (
-    AbilityDefinition,
     InventoryState,
-    ItemGraph,
 )
 from deadlock_build_sync.policy import (
     Branch,
@@ -17,24 +15,25 @@ from deadlock_build_sync.policy import (
     CoreAlternativeCard,
     CounterCard,
     EvaluationState,
-    EvidenceClaim,
     Guard,
     GuardOperator,
     NodeKind,
     PolicyError,
     PolicyNode,
     SpikeCard,
-    ValidationContext,
     next_policy_decision,
     validate_policy,
 )
-from deadlock_build_sync.snapshot import EvidenceUnit
 from deadlock_build_sync.value_validation import require_object_rows
+from tests.policy_fixtures import (
+    SNAPSHOT_ID,
+    make_branching_policy,
+    make_evidence_claim,
+    make_validation_context,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-
-SNAPSHOT_ID = "a" * 64
 
 
 def test_core_alternative_accepts_the_ninth_universal_slot() -> None:
@@ -60,120 +59,8 @@ def test_core_alternative_accepts_the_ninth_universal_slot() -> None:
     assert card.stage == 9
 
 
-def assets(count: int = 10, *, active: bool = False) -> list[dict[str, object]]:
-    return [
-        {
-            "id": item_id,
-            "class_name": f"item_{item_id}",
-            "name": f"Item {item_id}",
-            "cost": 500,
-            "component_items": [],
-            "item_slot_type": "weapon",
-            "item_tier": 1,
-            "shopable": True,
-            "disabled": False,
-            "is_active_item": active,
-        }
-        for item_id in range(1, count + 1)
-    ]
-
-
-def claim(
-    claim_id: str,
-    claim_class: ClaimClass = ClaimClass.DESCRIPTIVE,
-) -> EvidenceClaim:
-    return EvidenceClaim(
-        claim_id=claim_id,
-        claim_class=claim_class,
-        snapshot_id=SNAPSHOT_ID,
-        cohort={"match_mode": "ranked", "rank_badges": [91, 116]},
-        unit=(
-            EvidenceUnit.ASSET
-            if claim_class == ClaimClass.MECHANICAL
-            else EvidenceUnit.ELIGIBLE_APPEARANCE
-        ),
-        support=100,
-        mechanics_refs=("asset/10",),
-        language_ceiling=frozenset(
-            {"grants"} if claim_class == ClaimClass.MECHANICAL else {"observed"}
-        ),
-        numerator=60 if claim_class != ClaimClass.MECHANICAL else None,
-        denominator=100 if claim_class != ClaimClass.MECHANICAL else None,
-        estimate=0.6 if claim_class != ClaimClass.MECHANICAL else None,
-        interval=(0.5, 0.69) if claim_class != ClaimClass.MECHANICAL else None,
-        comparison_baseline=0.5 if claim_class != ClaimClass.MECHANICAL else None,
-    )
-
-
-def context(item_assets: list[dict[str, object]] | None = None) -> ValidationContext:
-    return ValidationContext(
-        ItemGraph.from_assets(item_assets or assets()),
-        {10: AbilityDefinition(10, unlock_level=1)},
-        {"1": {"bonus_currencies": ["EAbilityUnlocks"]}},
-    )
-
-
-def branching_policy() -> BuildPolicy:
-    return BuildPolicy(
-        schema_version=1,
-        hero_id=12,
-        variant="control-utility",
-        invariant_kit_id="kit/12",
-        strategic_role="space control",
-        snapshot_id=SNAPSHOT_ID,
-        entry="unlock",
-        nodes=(
-            PolicyNode(
-                "unlock",
-                NodeKind.ABILITY,
-                next_id="counter_check",
-                evidence_ref="mechanic/ability",
-                ability_id=10,
-                level=1,
-            ),
-            PolicyNode(
-                "counter_check",
-                NodeKind.CHOICE,
-                branches=(
-                    Branch(
-                        "counter",
-                        Guard(
-                            "enemy.threats",
-                            GuardOperator.CONTAINS,
-                            "hard_control",
-                        ),
-                    ),
-                    Branch("core"),
-                ),
-            ),
-            PolicyNode(
-                "counter",
-                NodeKind.PURCHASE,
-                next_id="end",
-                evidence_ref="item/counter",
-                item_id=2,
-                optional=True,
-                annotation="If hard control is observed, choose this over core; activate before commitment; skip if the threat is absent.",
-            ),
-            PolicyNode(
-                "core",
-                NodeKind.PURCHASE,
-                next_id="end",
-                evidence_ref="item/core",
-                item_id=1,
-            ),
-            PolicyNode("end", NodeKind.END),
-        ),
-        evidence=(
-            claim("mechanic/ability", ClaimClass.MECHANICAL),
-            claim("item/counter"),
-            claim("item/core"),
-        ),
-    )
-
-
 def test_policy_round_trips_all_typed_nodes_and_fingerprint() -> None:
-    policy = branching_policy()
+    policy = make_branching_policy()
 
     decoded = BuildPolicy.from_dict(policy.as_dict())
 
@@ -207,7 +94,7 @@ def test_policy_validates_ability_plan_separately_from_runtime_graph() -> None:
         snapshot_id=SNAPSHOT_ID,
         entry="end",
         nodes=(PolicyNode("end", NodeKind.END),),
-        evidence=(claim("mechanic/ability", ClaimClass.MECHANICAL),),
+        evidence=(make_evidence_claim("mechanic/ability", ClaimClass.MECHANICAL),),
         ability_plan=(
             PolicyNode(
                 "ability-1",
@@ -219,7 +106,7 @@ def test_policy_validates_ability_plan_separately_from_runtime_graph() -> None:
         ),
     )
 
-    validate_policy(policy, context())
+    validate_policy(policy, make_validation_context())
     assert BuildPolicy.from_dict(policy.as_dict()).ability_plan == policy.ability_plan
     assert policy.entry == "end"
 
@@ -236,19 +123,19 @@ def test_policy_validates_ability_plan_separately_from_runtime_graph() -> None:
             ),
         ),
     )
-    validation_context = context()
+    validation_context = make_validation_context()
     with pytest.raises(PolicyError, match="ability plan"):
         validate_policy(invalid, validation_context)
 
 
 def test_policy_rejects_unknown_kind_and_edited_fingerprint() -> None:
-    payload = branching_policy().as_dict()
+    payload = make_branching_policy().as_dict()
     nodes = require_object_rows(payload["nodes"])
     nodes[0]["kind"] = "teleport"
     with pytest.raises(PolicyError, match="malformed policy node"):
         BuildPolicy.from_dict(payload)
 
-    payload = branching_policy().as_dict()
+    payload = make_branching_policy().as_dict()
     payload["variant"] = "edited"
     with pytest.raises(PolicyError, match="fingerprint"):
         BuildPolicy.from_dict(payload)
@@ -273,7 +160,7 @@ def test_policy_codec_rejects_extra_fields_and_primitive_coercion(
     mutation: Callable[[dict[str, object]], None],
     error: str,
 ) -> None:
-    payload = branching_policy().as_dict()
+    payload = make_branching_policy().as_dict()
     mutation(payload)
 
     with pytest.raises(PolicyError, match=error):
@@ -281,9 +168,9 @@ def test_policy_codec_rejects_extra_fields_and_primitive_coercion(
 
 
 def test_validate_policy_checks_every_branch_and_terminates() -> None:
-    policy = branching_policy()
+    policy = make_branching_policy()
 
-    validate_policy(policy, context())
+    validate_policy(policy, make_validation_context())
 
     changed = list(policy.nodes)
     changed[2] = PolicyNode(
@@ -294,18 +181,8 @@ def test_validate_policy_checks_every_branch_and_terminates() -> None:
         item_id=2,
         optional=True,
     )
-    invalid = BuildPolicy(
-        policy.schema_version,
-        policy.hero_id,
-        policy.variant,
-        policy.invariant_kit_id,
-        policy.strategic_role,
-        policy.snapshot_id,
-        policy.entry,
-        tuple(changed),
-        policy.evidence,
-    )
-    validation_context = context()
+    invalid = replace(policy, nodes=tuple(changed))
+    validation_context = make_validation_context()
     with pytest.raises(PolicyError, match="missing successor"):
         validate_policy(invalid, validation_context)
 
@@ -321,22 +198,12 @@ def test_choice_requires_default_and_rejects_ambiguous_overlap() -> None:
             Branch("core"),
         ),
     )
-    policy = branching_policy()
+    policy = make_branching_policy()
     nodes = tuple(
         choice if node.node_id == "counter_check" else node for node in policy.nodes
     )
-    invalid = BuildPolicy(
-        policy.schema_version,
-        policy.hero_id,
-        policy.variant,
-        policy.invariant_kit_id,
-        policy.strategic_role,
-        policy.snapshot_id,
-        policy.entry,
-        nodes,
-        policy.evidence,
-    )
-    validation_context = context()
+    invalid = replace(policy, nodes=nodes)
+    validation_context = make_validation_context()
 
     with pytest.raises(PolicyError, match="overlapping guards"):
         validate_policy(invalid, validation_context)
@@ -383,16 +250,16 @@ def test_all_path_validation_finds_slot_error_hidden_in_one_branch() -> None:
         SNAPSHOT_ID,
         "buy-1",
         tuple(nodes),
-        (claim("item/core"),),
+        (make_evidence_claim("item/core"),),
     )
-    validation_context = context()
+    validation_context = make_validation_context()
 
     with pytest.raises(PolicyError, match="exceeds 9 available item slots"):
         validate_policy(policy, validation_context)
 
 
 def test_recalculation_skips_owned_and_handles_missed_timing() -> None:
-    policy = branching_policy()
+    policy = make_branching_policy()
     state = EvaluationState(
         {"enemy.threats": []},
         inventory=InventoryState((1,)),
@@ -401,32 +268,14 @@ def test_recalculation_skips_owned_and_handles_missed_timing() -> None:
     assert next_policy_decision(policy, state).kind == NodeKind.END
 
     nodes = tuple(
-        PolicyNode(
-            node.node_id,
-            node.kind,
-            next_id=node.next_id,
-            evidence_ref=node.evidence_ref,
-            item_id=node.item_id,
-            ability_id=node.ability_id,
-            level=node.level,
-            branches=node.branches,
-            optional=node.optional,
+        replace(
+            node,
             latest_time_s=100 if node.node_id == "core" else None,
             recalculation_next="end" if node.node_id == "core" else None,
         )
         for node in policy.nodes
     )
-    missed = BuildPolicy(
-        policy.schema_version,
-        policy.hero_id,
-        policy.variant,
-        policy.invariant_kit_id,
-        policy.strategic_role,
-        policy.snapshot_id,
-        policy.entry,
-        nodes,
-        policy.evidence,
-    )
+    missed = replace(policy, nodes=nodes)
     decision = next_policy_decision(
         missed,
         EvaluationState(
@@ -439,7 +288,7 @@ def test_recalculation_skips_owned_and_handles_missed_timing() -> None:
 
 
 def test_claim_language_counter_and_spike_contracts_fail_closed() -> None:
-    descriptive = claim("item/core")
+    descriptive = make_evidence_claim("item/core")
     descriptive.validate_sentence("This item was observed more often in this cohort.")
     with pytest.raises(PolicyError, match="exceeds descriptive"):
         descriptive.validate_sentence("This item improves win rate.")

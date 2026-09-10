@@ -12,7 +12,7 @@ from deadlock_build_sync.narratives import (
     NARRATIVE_GENERATOR_VERSION,
     NARRATIVE_SCHEMA_VERSION,
     NarrativeError,
-    deterministic_build_description,
+    build_deterministic_description,
 )
 from deadlock_build_sync.strategy_context import (
     StrategyContextError,
@@ -61,7 +61,7 @@ def _load_object(path: Path) -> dict[str, object]:
     return document
 
 
-def _selected_heroes(
+def _select_requested_heroes(
     document: dict[str, object],
     selectors: list[str] | None,
 ) -> list[dict[str, object]]:
@@ -88,13 +88,11 @@ def _selected_heroes(
     }
     missing = normalized - matched
     if missing:
-        raise GenerationError(
-            f"hero selector(s) not found: {', '.join(sorted(missing))}"
-        )
+        raise GenerationError(f"hero selectors not found: {', '.join(sorted(missing))}")
     return selected
 
 
-def _build_key(entry: dict[str, object]) -> BuildKey | None:
+def _parse_build_key(entry: dict[str, object]) -> BuildKey | None:
     hero_id = entry.get("hero_id")
     path_id = entry.get("path_id")
     if not isinstance(hero_id, int) or not isinstance(path_id, str) or not path_id:
@@ -102,7 +100,7 @@ def _build_key(entry: dict[str, object]) -> BuildKey | None:
     return hero_id, path_id
 
 
-def _existing_entries(path: Path) -> dict[BuildKey, dict[str, object]]:
+def _load_existing_entries(path: Path) -> dict[BuildKey, dict[str, object]]:
     if not path.is_file():
         return {}
     heroes = object_rows(_load_object(path).get("heroes"))
@@ -110,13 +108,13 @@ def _existing_entries(path: Path) -> dict[BuildKey, dict[str, object]]:
         return {}
     entries: dict[BuildKey, dict[str, object]] = {}
     for entry in heroes:
-        key = _build_key(entry)
+        key = _parse_build_key(entry)
         if key is not None:
             entries[key] = entry
     return entries
 
 
-def deterministic_narrative(hero: dict[str, object]) -> dict[str, object]:
+def generate_deterministic_narrative(hero: dict[str, object]) -> dict[str, object]:
     """Create one exact-identity build description entry.
 
     Returns:
@@ -137,7 +135,7 @@ def deterministic_narrative(hero: dict[str, object]) -> dict[str, object]:
     if any(hero.get(field) in {None, ""} for field in identity_fields):
         raise GenerationError("strategy context omitted exact description identity")
     try:
-        description = deterministic_build_description(hero)
+        description = build_deterministic_description(hero)
     except NarrativeError as error:
         raise GenerationError(str(error)) from error
     return {
@@ -153,7 +151,7 @@ def deterministic_narrative(hero: dict[str, object]) -> dict[str, object]:
     }
 
 
-def validated_reusable_entries(
+def validate_reusable_entries(
     existing: dict[BuildKey, dict[str, object]],
     source_heroes: dict[BuildKey, dict[str, object]],
 ) -> dict[BuildKey, dict[str, object]]:
@@ -169,7 +167,7 @@ def validated_reusable_entries(
         if hero is None:
             continue
         try:
-            expected = deterministic_narrative(hero)
+            expected = generate_deterministic_narrative(hero)
         except GenerationError:
             continue
         if entry == expected:
@@ -177,7 +175,7 @@ def validated_reusable_entries(
     return reusable
 
 
-def _artifact_document(
+def _build_artifact_document(
     source: dict[str, object],
     generated: dict[BuildKey, dict[str, object]],
     *,
@@ -240,18 +238,18 @@ def generate_document(
     source_heroes = {
         (integer(hero["hero_id"]), str(hero["path_id"])): hero for hero in selected
     }
-    generated = {} if force else validated_reusable_entries(existing, source_heroes)
+    generated = {} if force else validate_reusable_entries(existing, source_heroes)
     for index, hero in enumerate(selected, start=1):
         build_key = integer(hero["hero_id"]), str(hero["path_id"])
         action = "reuse" if build_key in generated else "write"
         if build_key not in generated:
-            generated[build_key] = deterministic_narrative(hero)
+            generated[build_key] = generate_deterministic_narrative(hero)
         print(
             f"[{index}/{len(selected)}] {action} {hero.get('hero')} / "
             f"{hero.get('path_label') or hero.get('path_id')}",
             file=sys.stderr,
         )
-    return _artifact_document(
+    return _build_artifact_document(
         source,
         generated,
         requested_hero_ids=requested_hero_ids,
@@ -266,11 +264,11 @@ def main(argv: list[str] | None = None) -> int:
             validate_strategy_context_document(source)
         except StrategyContextError as error:
             raise GenerationError(str(error)) from error
-        selected = _selected_heroes(source, args.hero)
+        selected = _select_requested_heroes(source, args.hero)
         document = generate_document(
             source,
             selected,
-            _existing_entries(args.output),
+            _load_existing_entries(args.output),
             include_all_exclusions=args.hero is None,
             force=args.force,
         )

@@ -77,7 +77,7 @@ _OBSERVED_ITEM_THREAT_PHRASES = {
 }
 
 
-def _active_property_mechanics(
+def _extract_active_property_mechanics(
     asset: dict[str, object],
 ) -> dict[str, dict[str, object]]:
     raw_properties = object_dict(asset.get("properties"))
@@ -114,7 +114,7 @@ def _active_property_mechanics(
     return active
 
 
-def _base_description(asset: dict[str, object]) -> object:
+def _extract_base_description(asset: dict[str, object]) -> object:
     description = asset.get("description")
     description_object = object_dict(description)
     if description_object is not None:
@@ -126,12 +126,12 @@ def _base_description(asset: dict[str, object]) -> object:
     return description
 
 
-def _important_property_mechanics(
+def _extract_important_property_mechanics(
     asset: dict[str, object],
 ) -> dict[str, dict[str, object]]:
     return {
         name: value
-        for name, value in _active_property_mechanics(asset).items()
+        for name, value in _extract_active_property_mechanics(asset).items()
         if value.get("tooltip_is_important") is True
     }
 
@@ -147,26 +147,26 @@ def _is_resistance_reduction_property(name: str, value: dict[str, object]) -> bo
     )
 
 
-def _response_property_mechanics(
+def _extract_response_property_mechanics(
     asset: dict[str, object],
 ) -> dict[str, dict[str, object]]:
     return {
         name: value
-        for name, value in _important_property_mechanics(asset).items()
+        for name, value in _extract_important_property_mechanics(asset).items()
         if not _is_resistance_reduction_property(name, value)
     }
 
 
-def _material_observed_mechanics(asset: dict[str, object]) -> dict[str, object]:
+def _extract_observed_mechanics(asset: dict[str, object]) -> dict[str, object]:
     mechanics = extract_asset_mechanics(asset)
     observed: dict[str, object] = {}
-    description = _base_description(asset)
+    description = _extract_base_description(asset)
     if _is_populated(description):
         observed["description"] = normalize_mechanical_value(description)
     for key in ("behaviour", "damage_type", "targeting", "weapon_info"):
         if key in mechanics:
             observed[key] = mechanics[key]
-    important_properties = _response_property_mechanics(asset)
+    important_properties = _extract_response_property_mechanics(asset)
     if important_properties:
         observed["properties"] = normalize_mechanical_value(important_properties)
     return observed
@@ -236,12 +236,14 @@ def _has_offensive_response_phrase(text: str, phrase: str) -> bool:
     return False
 
 
-def _important_property_labels(asset: dict[str, object]) -> dict[str, tuple[str, ...]]:
+def _classify_important_property_labels(
+    asset: dict[str, object],
+) -> dict[str, tuple[str, ...]]:
     labels: dict[str, list[str]] = {}
-    for prop in _response_property_mechanics(asset).values():
+    for prop in _extract_response_property_mechanics(asset).values():
         property_type = str(prop.get("provided_property_type") or "").upper()
         label = clean_mechanical_text(prop.get("label"))
-        normalized = canonical_mechanics_text(prop)
+        normalized = serialize_mechanics_text(prop)
         response: str | None = None
         copy = label
         if "RESIST_REDUCTION" in property_type:
@@ -265,10 +267,13 @@ def _important_property_labels(asset: dict[str, object]) -> dict[str, tuple[str,
     return {response: tuple(values) for response, values in labels.items()}
 
 
-def _response_mechanic_labels(asset: dict[str, object]) -> dict[str, tuple[str, ...]]:
-    text = canonical_mechanics_text(_material_observed_mechanics(asset))
+def _classify_response_mechanic_labels(
+    asset: dict[str, object],
+) -> dict[str, tuple[str, ...]]:
+    text = serialize_mechanics_text(_extract_observed_mechanics(asset))
     labels = {
-        key: list(value) for key, value in _important_property_labels(asset).items()
+        key: list(value)
+        for key, value in _classify_important_property_labels(asset).items()
     }
     if _has_positive_resistance_text(text, "bullet resist"):
         labels.setdefault("bullet_pressure", []).append("Bullet Resist")
@@ -313,7 +318,7 @@ def classify_observed_item_threats(asset: dict[str, object]) -> frozenset[str]:
         Conservative threat labels supported by the pinned item text.
 
     """
-    normalized = canonical_mechanics_text(_material_observed_mechanics(asset))
+    normalized = serialize_mechanics_text(_extract_observed_mechanics(asset))
     threats = {
         threat
         for threat, phrases in _OBSERVED_ITEM_THREAT_PHRASES.items()
@@ -332,7 +337,7 @@ def classify_observed_item_threats(asset: dict[str, object]) -> frozenset[str]:
     return frozenset(threats)
 
 
-def canonical_mechanics_text(mechanics: dict[str, object]) -> str:
+def serialize_mechanics_text(mechanics: dict[str, object]) -> str:
     """Flatten normalized mechanics for conservative phrase classification.
 
     Returns:

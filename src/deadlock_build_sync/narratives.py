@@ -88,7 +88,9 @@ type _CatalogHeader = tuple[
 ]
 
 
-def _catalog_header(path: Path, data: dict[str, object]) -> _CatalogHeader:
+def _parse_narrative_catalog_header(
+    path: Path, data: dict[str, object]
+) -> _CatalogHeader:
     snapshot_id = _require_sha(path, data.get("snapshot_id"), "snapshot")
     source_context = _require_sha(
         path,
@@ -129,7 +131,7 @@ def _catalog_header(path: Path, data: dict[str, object]) -> _CatalogHeader:
     )
 
 
-def _catalog_exclusions(path: Path, exclusions: list[object]) -> dict[int, str]:
+def _parse_narrative_exclusions(path: Path, exclusions: list[object]) -> dict[int, str]:
     exclusion_map: dict[int, str] = {}
     for exclusion in exclusions:
         row = object_dict(exclusion)
@@ -147,7 +149,7 @@ def _catalog_exclusions(path: Path, exclusions: list[object]) -> dict[int, str]:
     return exclusion_map
 
 
-def _catalog_heroes(
+def _parse_narrative_heroes(
     path: Path,
     entries: list[object],
     snapshot_id: str,
@@ -208,9 +210,9 @@ def load_narrative_catalog(path: Path) -> NarrativeCatalog:
         requested,
         exclusions,
         entries,
-    ) = _catalog_header(path, data)
-    exclusion_map = _catalog_exclusions(path, exclusions)
-    heroes = _catalog_heroes(path, entries, snapshot_id)
+    ) = _parse_narrative_catalog_header(path, data)
+    exclusion_map = _parse_narrative_exclusions(path, exclusions)
+    heroes = _parse_narrative_heroes(path, entries, snapshot_id)
     requested_ids = set(requested)
     _validate_catalog_coverage(path, heroes, exclusion_map, requested_ids)
     return NarrativeCatalog(
@@ -226,7 +228,7 @@ def load_narrative_catalog(path: Path) -> NarrativeCatalog:
     )
 
 
-def _narrative_entry(
+def _validate_narrative_entry(
     guide: PurchaseGuide,
     context: dict[str, object],
     patch: Patch,
@@ -280,14 +282,14 @@ def apply_narrative(
         NarrativeError: If the description is missing or incompatible.
 
     """
-    entry = _narrative_entry(guide, context, patch, catalog)
+    entry = _validate_narrative_entry(guide, context, patch, catalog)
     description = entry.get("build_description")
     if not isinstance(description, str) or not description.strip():
         raise NarrativeError(f"narrative for {guide.hero_name} is incomplete")
     return replace(guide, summary=description.strip(), tactical_profile=None)
 
 
-def _sentence(value: object) -> str:
+def _normalize_sentence(value: object) -> str:
     if not isinstance(value, str):
         return ""
     text = " ".join(value.split()).strip()
@@ -296,7 +298,7 @@ def _sentence(value: object) -> str:
     return text if text[-1] in ".!?" else text + "."
 
 
-def _first_maxed_ability(context: dict[str, object]) -> str:
+def _find_first_maxed_ability(context: dict[str, object]) -> str:
     policy = object_dict(context.get("ability_policy"))
     steps = object_list(policy.get("steps")) if policy is not None else None
     if steps is None:
@@ -312,7 +314,7 @@ def _first_maxed_ability(context: dict[str, object]) -> str:
     return ""
 
 
-def deterministic_build_description(context: dict[str, object]) -> str:
+def build_deterministic_description(context: dict[str, object]) -> str:
     """Build one stable player-facing description from pinned context fields.
 
     Returns:
@@ -335,11 +337,11 @@ def deterministic_build_description(context: dict[str, object]) -> str:
     projection = context.get("projection")
     build = projection.get("build") if isinstance(projection, dict) else None
     archetype = build.get("archetype") if isinstance(build, dict) else None
-    first_maxed = _first_maxed_ability(context)
+    first_maxed = _find_first_maxed_ability(context)
     if not hero or not isinstance(role, str) or not role.strip():
         raise NarrativeError("description context has no hero role")
 
-    role_sentence = _sentence(f"{hero}: {role}")
+    role_sentence = _normalize_sentence(f"{hero}: {role}")
     plan = (
         f"Follow the shown {str(archetype).strip()} CORE order"
         if archetype
@@ -347,7 +349,7 @@ def deterministic_build_description(context: dict[str, object]) -> str:
     )
     if first_maxed:
         plan += f" and max {first_maxed} first"
-    plan_sentence = _sentence(plan)
+    plan_sentence = _normalize_sentence(plan)
     queue_sentence = (
         "Use conditional cards only when their VS line applies; all optional rows "
         "stay outside Queue."
@@ -355,7 +357,7 @@ def deterministic_build_description(context: dict[str, object]) -> str:
     fixed = [role_sentence, plan_sentence, queue_sentence]
     with_playstyle = [
         role_sentence,
-        _sentence(playstyle),
+        _normalize_sentence(playstyle),
         plan_sentence,
         queue_sentence,
     ]

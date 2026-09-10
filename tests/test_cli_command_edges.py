@@ -33,7 +33,7 @@ def test_run_recommend_emits_a_compatible_default_policy(
         patch={"identity": "patch"},
         epochs=SimpleNamespace(as_dict=lambda: epochs),
     )
-    state = SimpleNamespace(hero_id=12)
+    state = SimpleNamespace(hero_id=12, path_id=None)
     policy = SimpleNamespace(policy_id="policy")
     manifest = {
         "client_version": 123,
@@ -96,6 +96,7 @@ def test_run_recommend_emits_a_compatible_default_policy(
     )
     monkeypatch.setattr(cli_recommend, "record_stage_facts", lambda *_args, **_kw: None)
     args = Namespace(
+        format="json",
         build_evidence=tmp_path / "evidence.json",
         artifacts=None,
         policies=tmp_path / "policies.json",
@@ -134,22 +135,26 @@ def test_run_preview_emits_generated_guides(
         exclusions=((13, "missing evidence"),),
         policies=(SimpleNamespace(as_dict=lambda: {"policy_id": "policy"}),),
         guides=("guide",),
+        guide_groups={},
     )
     location = SimpleNamespace(account_id=7)
+    monkeypatch.setattr(cli_recommend, "group_guides", lambda guides, _groups: guides)
     api = object()
     catalog = object()
     monkeypatch.setattr(
         cli_recommend,
-        "_location",
+        "_discover_cache_location",
         lambda _args: location,
     )
     monkeypatch.setattr(
         cli_recommend,
-        "_build_evidence",
+        "_load_build_evidence",
         lambda _args: (evidence_path, evidence),
     )
-    monkeypatch.setattr(cli_support, "_api", lambda *_args: api)
-    monkeypatch.setattr(cli_recommend, "_catalog", lambda _args: catalog)
+    monkeypatch.setattr(cli_support, "_create_evidence_api", lambda *_args: api)
+    monkeypatch.setattr(
+        cli_recommend, "_load_optional_narrative_catalog", lambda _args: catalog
+    )
 
     def generate(*args: object, **kwargs: object) -> SimpleNamespace:
         assert args == (api,)
@@ -172,7 +177,7 @@ def test_run_preview_emits_generated_guides(
 
     monkeypatch.setattr(cli_recommend, "_describe_preview_guide", describe)
     monkeypatch.setattr(cli_recommend, "record_stage_facts", lambda *_args, **_kw: None)
-    args = Namespace(narratives=None, hero=None, all=True)
+    args = Namespace(narratives=None, hero=None, all=True, format="json", details=False)
 
     assert cli_recommend._run_preview(args) == 0
     assert json.loads(capsys.readouterr().out) == {
@@ -208,7 +213,7 @@ def test_run_status_emits_json_with_cache_location(
     monkeypatch.setattr(cli_status, "DeadlockApi", _FakeApi)
     monkeypatch.setattr(
         cli_status,
-        "_location",
+        "_discover_cache_location",
         lambda _args: SimpleNamespace(cache_path=tmp_path / "cache.kv3", account_id=7),
     )
 
@@ -252,7 +257,7 @@ def test_run_status_emits_text_without_cache_location(
     monkeypatch.setattr(cli_status, "DeadlockApi", _FakeApi)
     monkeypatch.setattr(
         cli_status,
-        "_location",
+        "_discover_cache_location",
         lambda _args: (_ for _ in ()).throw(CacheError("missing cache")),
     )
     monkeypatch.setattr(

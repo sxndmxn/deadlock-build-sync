@@ -1,4 +1,4 @@
-"""Guide generation orchestration."""
+"""Public interfaces for guide generation."""
 
 from .service_generation import generate_guides
 from .service_types import GeneratedGuides, GuideError, select_heroes

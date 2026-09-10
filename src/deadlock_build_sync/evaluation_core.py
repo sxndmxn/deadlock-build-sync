@@ -258,7 +258,7 @@ class CalibrationReport:
     by_segment: dict[str, CalibrationSlice]
 
 
-def _calibration_slice(
+def _calculate_calibration_slice(
     records: list[PredictionRecord],
     *,
     threshold: float,
@@ -328,9 +328,9 @@ def calibration_report(
             groups[label].append(row)
     return CalibrationReport(
         threshold,
-        _calibration_slice(records, threshold=threshold),
+        _calculate_calibration_slice(records, threshold=threshold),
         {
-            name: _calibration_slice(group, threshold=threshold)
+            name: _calculate_calibration_slice(group, threshold=threshold)
             for name, group in sorted(groups.items())
         },
     )
@@ -359,7 +359,7 @@ def select_abstention_threshold(
         )
     eligible: list[tuple[float, float]] = []
     for threshold in candidates:
-        result = _calibration_slice(validation_records, threshold=threshold)
+        result = _calculate_calibration_slice(validation_records, threshold=threshold)
         if result.selective_risk is not None and result.selective_risk <= maximum_risk:
             eligible.append((result.coverage, threshold))
     if not eligible:

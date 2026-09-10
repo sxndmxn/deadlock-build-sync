@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass
+from threading import Lock
 from typing import TYPE_CHECKING, Self
 
 import httpx
@@ -49,6 +50,9 @@ class JsonHttpClient:
         self.base_url = base_url.rstrip("/")
         self.max_attempts = max_attempts
         self._sleeper = sleeper
+        self._minimum_interval = 0.0
+        self._request_lock = Lock()
+        self._next_request_at = 0.0
         self._client = httpx.Client(
             base_url=f"{self.base_url}/",
             timeout=timeout,
@@ -62,6 +66,12 @@ class JsonHttpClient:
 
     def close(self) -> None:
         self._client.close()
+
+    def set_request_interval(self, minimum_interval: float) -> None:
+        if minimum_interval < 0:
+            raise ValueError("Request interval must not be negative")
+        with self._request_lock:
+            self._minimum_interval = minimum_interval
 
     def __enter__(self) -> Self:
         """Return this open connection pool.
@@ -86,6 +96,19 @@ class JsonHttpClient:
             else:
                 return min(30.0, max(0.0, retry_after))
         return float(2**attempt)
+
+    def _wait_for_request_slot(self) -> None:
+        if not self._minimum_interval:
+            return
+        with self._request_lock:
+            delay = self._next_request_at - time.monotonic()
+            if delay > 0:
+                self._sleeper(delay)
+            self._next_request_at = time.monotonic() + self._minimum_interval
+
+    def _postpone_requests(self, delay: float) -> None:
+        with self._request_lock:
+            self._next_request_at = max(self._next_request_at, time.monotonic() + delay)
 
     @staticmethod
     def _query_params(
@@ -132,6 +155,7 @@ class JsonHttpClient:
         )
         last_error: Exception | None = None
         for attempt in range(self.max_attempts):
+            self._wait_for_request_slot()
             response: httpx.Response | None = None
             retryable = True
             try:
@@ -151,6 +175,9 @@ class JsonHttpClient:
 
             if not retryable or attempt + 1 == self.max_attempts:
                 break
-            self._sleeper(self._retry_delay(attempt, response))
+            delay = self._retry_delay(attempt, response)
+            if response is not None and response.status_code == 429:
+                self._postpone_requests(delay)
+            self._sleeper(delay)
 
         raise JsonHttpError(f"GET {request.url} failed: {last_error}") from last_error

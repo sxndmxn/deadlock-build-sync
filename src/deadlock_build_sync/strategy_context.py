@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from .artifacts import FingerprintLayers
 from .mechanics import build_hero_mechanics
 from .power_curve import summarize_ending_duration_profile
+from .purchase_categories import serialize_category_records
 from .purchase_guide import format_purchase_window
 from .value_validation import integer, object_rows
 
@@ -48,7 +49,7 @@ __all__ = [
 ]
 
 
-def _ability_policy(
+def _describe_ability_policy(
     guide: PurchaseGuide,
     kit: dict[str, object],
     timeline: tuple[AbilityTimelineStep, ...],
@@ -87,6 +88,7 @@ def _ability_policy(
     return {
         "selection": path.selection,
         "filter_item_ids": list(path.filter_item_ids),
+        "quality": path.quality_assessment(),
         "language_ceiling": "descriptive default projection, not a universal path",
         "all_valid_telemetry_appearances": path.cohort_matches,
         "complete_path_appearances": path.complete_path_matches,
@@ -96,7 +98,7 @@ def _ability_policy(
     }
 
 
-def _explainable_actions(
+def _describe_policy_actions(
     policy: BuildPolicy | None,
     assets_by_id: dict[int, dict[str, object]],
 ) -> list[dict[str, object]]:
@@ -135,7 +137,7 @@ def _explainable_actions(
     return result
 
 
-def _ending_duration_evidence(
+def _build_ending_duration_evidence(
     points: tuple[HeroDurationStat, ...],
     distribution: dict[str, dict[str, float | int]] | None,
 ) -> dict[str, object]:
@@ -163,7 +165,7 @@ def _ending_duration_evidence(
     }
 
 
-def _tier_item_context(
+def _build_tier_item_context(
     item: GuideItem,
     rank: int,
     assets_by_id: dict[int, dict[str, object]],
@@ -210,14 +212,14 @@ def _tier_item_context(
     return context
 
 
-def _strategy_tiers(
+def _build_strategy_tiers(
     guide: PurchaseGuide,
     assets_by_id: dict[int, dict[str, object]],
 ) -> dict[str, list[dict[str, object]]]:
     tiers: dict[str, list[dict[str, object]]] = {}
     for tier in range(1, 5):
         tiers[TIER_LABELS[tier]] = [
-            _tier_item_context(item, rank, assets_by_id)
+            _build_tier_item_context(item, rank, assets_by_id)
             for rank, item in enumerate(guide.tiers.get(tier, ()), start=1)
         ]
     return tiers
@@ -248,10 +250,12 @@ def build_hero_strategy_context(
         for asset in assets
         if isinstance(asset.get("id"), int)
     }
-    tiers = _strategy_tiers(guide, assets_by_id)
+    tiers = _build_strategy_tiers(guide, assets_by_id)
 
-    ending_profile = _ending_duration_evidence(duration_curve, duration_distribution)
-    explainable_actions = _explainable_actions(policy, assets_by_id)
+    ending_profile = _build_ending_duration_evidence(
+        duration_curve, duration_distribution
+    )
+    explainable_actions = _describe_policy_actions(policy, assets_by_id)
     item_mechanics_ids = sorted(
         {item.item_id for tier_items in guide.tiers.values() for item in tier_items}
         | {item.item_id for item in guide.core_items}
@@ -273,31 +277,12 @@ def build_hero_strategy_context(
             "tag_labels": list(projected.build_tag_labels),
             "tag_catalog_sha256": projected.build_tag_catalog_sha256,
         },
-        "categories": [
-            {
-                "name": category.name,
-                "optional": category.optional,
-                "width": category.width,
-                "height": category.height,
-                "items": [
-                    {
-                        "item_id": item.item_id,
-                        "item": item.name,
-                        "annotation": item.annotation,
-                        "required_flex_slots": item.required_flex_slots,
-                        "sell_priority": item.sell_priority,
-                        "imbue_target_ability_id": item.imbue_target_ability_id,
-                    }
-                    for item in category.items
-                ],
-            }
-            for category in projected.rendered_categories
-        ],
+        "guide_version": 3,
+        "categories": serialize_category_records(projected.rendered_categories),
         "semantics": (
-            "CORE ITEMS is the component-expanded non-optional Queue path. "
-            "OPTIONAL CORE contains only admitted like-state non-backbone CORE "
-            "substitutions. "
-            "OPTIONAL CORE and TIER 1–4 never enter the automatic Queue."
+            "CORE steps are the validated component path in automatic Queue. "
+            "OPTIONAL, PICK ONE, UPGRADE, and ITEM POOL rows are optional. "
+            "Core substitutions require separate core and branch admission."
         ),
     }
     context: dict[str, object] = {
@@ -310,10 +295,10 @@ def build_hero_strategy_context(
         "hero_mechanics": kit,
         "item_mechanics_ids": item_mechanics_ids,
         "item_mechanics_sha256": item_mechanics_sha256,
-        "ability_policy": _ability_policy(guide, kit, ability_timeline),
+        "ability_policy": _describe_ability_policy(guide, kit, ability_timeline),
         "ending_duration_profile": ending_profile,
         "core": {
-            "selection": "temporally stable supported backbone with a mechanically legal conditional-support completion",
+            "selection": "frozen Eclat identity, Leiden group, and supported pairwise component path",
             "backbone_item_ids": [item.item_id for item in guide.backbone_items],
             "backbone_player_matches": guide.backbone_matches,
             "backbone_share": guide.backbone_share,
@@ -352,12 +337,15 @@ def build_hero_strategy_context(
         "policy": policy.as_dict() if policy is not None else None,
         "explainable_actions": explainable_actions,
         "projection": projection_context,
+        "purchase_guidance": projected.purchase_guidance.as_dict()
+        if projected.purchase_guidance
+        else None,
         "interpretation_constraints": [
             "Tier membership is player-match first-ownership adoption; left-to-right display order is observed net-worth timing, not outcome rate.",
             "Observed adopter outcomes and ending-duration profiles are descriptive associations, not item effects or live power curves.",
             "Ability actions use reached-state support and exact legal levels; price tiers are not ability quarters.",
             "Only mechanics-backed, state-observable policy branches may be explained.",
-            "CORE ITEMS is the component-expanded automatic Queue path; OPTIONAL CORE contains gated non-backbone CORE substitutions, and all optional rows remain outside Queue.",
+            "Only the validated CORE component steps enter automatic Queue; all choice and ITEM POOL rows remain optional.",
             "Cross-fitted doubly robust contrasts are assumption-dependent like-state estimates, not proof that an item causes wins.",
             "Conditional item cards must use VS, WHY, SWAP, WHEN, and SKIP lines grounded in both item mechanics; they must not state an outcome effect.",
             "Do not invent mechanics, numeric effects, threats, combos, or matchups absent from this packet.",

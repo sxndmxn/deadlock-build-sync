@@ -1,0 +1,62 @@
+{
+  "guide_checks": [
+    {
+      "hero": "Haze",
+      "path_id": "13-6f319e6f5a94bb48",
+      "queue_steps": 8,
+      "pool_items": 32,
+      "steam_rows": 44
+    },
+    {
+      "hero": "Haze",
+      "path_id": "13-74b56ad184814062",
+      "queue_steps": 10,
+      "pool_items": 25,
+      "steam_rows": 40
+    },
+    {
+      "hero": "Haze",
+      "path_id": "13-fb954a4b675ee6c5",
+      "queue_steps": 9,
+      "pool_items": 32,
+      "steam_rows": 46
+    },
+    {
+      "hero": "Shiv",
+      "path_id": "19-982ec07e4e6343c7",
+      "queue_steps": 5,
+      "pool_items": 40,
+      "steam_rows": 49
+    },
+    {
+      "hero": "Lash",
+      "path_id": "31-58389102caa0e0d8",
+      "queue_steps": 5,
+      "pool_items": 40,
+      "steam_rows": 49
+    },
+    {
+      "hero": "Victor",
+      "path_id": "66-fb36a27cd74b4fb6",
+      "queue_steps": 7,
+      "pool_items": 40,
+      "steam_rows": 52
+    }
+  ],
+  "excluded_heroes": 34,
+  "first_install_created": 6,
+  "second_install_updated": 6,
+  "preserved_excluded_managed_build": true,
+  "preserved_user_data": true,
+  "restore_verified": true,
+  "cache": "<temporary>/temporary-cache/userdata/7/1422450/remote/cfg/cached_hero_builds.kv3",
+  "backup": "<temporary>/backups/deadlock-build-sync/backups/7",
+  "analysis_packages_installed": false,
+  "process_check": "stubbed: macOS has no /proc",
+  "wheel_sha256": "3929407aaca4d128f9a3efc61e0273df46f1aabb366765c29d97ac55aa34385b",
+  "packaged_build_guides": 6,
+  "recommendation_formats": [
+    "json",
+    "markdown"
+  ]
+}

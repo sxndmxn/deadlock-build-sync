@@ -58,7 +58,7 @@ class OpeReport:
     clipped_sensitivity: dict[str, dict[str, float]]
 
 
-def _ope_estimates(
+def _calculate_off_policy_estimates(
     rows: list[LoggedDecision],
     *,
     clip: float | None,
@@ -133,10 +133,12 @@ def off_policy_evaluation(
             doubly_robust=None,
             clipped_sensitivity={},
         )
-    ips, snips, dr, ess, maximum = _ope_estimates(rows, clip=None)
+    ips, snips, dr, ess, maximum = _calculate_off_policy_estimates(rows, clip=None)
     sensitivity = {}
     for clip in clips:
-        clipped_ips, clipped_snips, clipped_dr, _, _ = _ope_estimates(rows, clip=clip)
+        clipped_ips, clipped_snips, clipped_dr, _, _ = _calculate_off_policy_estimates(
+            rows, clip=clip
+        )
         sensitivity[f"clip={clip:g}"] = {
             "ips": clipped_ips,
             "self_normalized_ips": clipped_snips,

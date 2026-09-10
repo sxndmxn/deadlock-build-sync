@@ -1,9 +1,9 @@
 import hashlib
 import json
-import math
 from datetime import UTC, datetime
 from pathlib import Path
 
+from deadlock_build_sync.ability_order import AbilityPath
 from deadlock_build_sync.api import Patch
 from deadlock_build_sync.artifacts import build_policy_artifact
 from deadlock_build_sync.narratives import (
@@ -12,6 +12,8 @@ from deadlock_build_sync.narratives import (
 )
 from deadlock_build_sync.policy import (
     BuildPolicy,
+    ClaimClass,
+    EvidenceClaim,
     NodeKind,
     PolicyNode,
 )
@@ -37,11 +39,18 @@ from deadlock_build_sync.value_validation import (
     integer,
     require_object_rows,
 )
+from tests.artifact_projection_fixtures import make_artifact_projection
+from tests.canonical_bundle_fixtures import make_canonical_projection, make_hero_kit
+from tests.discovery_fixtures import make_current_evidence_document
+
+__all__ = ["make_artifact_projection"]
 
 PATCH = Patch("Patch", 100, "2026-01-01T00:00:00Z")
 
 
-def _manifest(evidence: dict[str, object], raw_evidence: bytes) -> SnapshotManifest:
+def make_snapshot_manifest(
+    evidence: dict[str, object], raw_evidence: bytes
+) -> SnapshotManifest:
     boundary = EpochBoundary(PATCH.identity, 100)
     rank_range = DEFAULT_RANK_RANGE.as_dict()
     rank_range["labels_sha256"] = "a" * 64
@@ -74,7 +83,7 @@ def _manifest(evidence: dict[str, object], raw_evidence: bytes) -> SnapshotManif
                 {
                     "artifact_id": evidence["artifact_id"],
                     "hero_count": 1,
-                    "method": "state-aware-multi-path-v7",
+                    "method": "state-aware-multi-path-v8",
                 },
                 datetime.now(UTC).isoformat(),
                 hashlib.sha256(raw_evidence).hexdigest(),
@@ -87,29 +96,30 @@ def _manifest(evidence: dict[str, object], raw_evidence: bytes) -> SnapshotManif
     )
 
 
-def _policy(snapshot_id: str) -> BuildPolicy:
-    core_ids = tuple(range(1001, 1009))
+def make_build_policy(snapshot_id: str) -> BuildPolicy:
+    core_ids = tuple(range(1001, 1007))
     nodes = (
         *(
             PolicyNode(
                 f"core-{index}",
                 NodeKind.PURCHASE,
-                next_id=f"core-{index + 1}" if index < 8 else "end",
+                next_id=f"core-{index + 1}" if index < 6 else "end",
                 item_id=item_id,
+                evidence_ref="fixture",
             )
             for index, item_id in enumerate(core_ids, start=1)
         ),
         PolicyNode("end", NodeKind.END),
     )
-    ability_ids = (10, 20, 30, 40) * 4
     ability_plan = tuple(
         PolicyNode(
             f"ability-{index}",
             NodeKind.ABILITY,
             ability_id=ability_id,
             level=index,
+            evidence_ref="fixture",
         )
-        for index, ability_id in enumerate(ability_ids, start=1)
+        for index, ability_id in enumerate((10, 20, 30, 40) * 4, start=1)
     )
     return BuildPolicy(
         schema_version=5,
@@ -120,85 +130,25 @@ def _policy(snapshot_id: str) -> BuildPolicy:
         snapshot_id=snapshot_id,
         entry="core-1",
         nodes=nodes,
-        evidence=(),
+        evidence=(
+            EvidenceClaim(
+                "fixture",
+                ClaimClass.DESCRIPTIVE,
+                snapshot_id,
+                {"match_mode": "ranked"},
+                EvidenceUnit.ELIGIBLE_APPEARANCE,
+                200,
+                (),
+                frozenset(),
+            ),
+        ),
         ability_plan=ability_plan,
     )
 
 
-def _fixture_card(tier: int, offset: int) -> str:
-    """Build the item card the projection must carry for a fixture item.
-
-    Returns:
-        The two-line card derived from the values the evidence fixture writes.
-
-    """
-    adopters = 80 - offset
-    lower = math.floor((4_000 * tier + offset * 100) / 1000 + 0.5)
-    return (
-        f"SOUL WINDOW: {lower}k - {lower + 10}k\n"
-        f"PR: 80.0% | WR: {(adopters // 2) / adopters * 100:.1f}% "
-        f"| TOTAL GAMES: 60"
-    )
-
-
-def _projection() -> dict[str, object]:
-    rows: list[dict[str, object]] = []
-    for row_index, (name, count) in enumerate((
-        ("CORE ITEMS", 8),
-        ("TIER 1", 10),
-        ("TIER 2", 10),
-        ("TIER 3", 10),
-        ("TIER 4", 10),
-    )):
-        start = 1001 if row_index == 0 else 2000 + row_index * 100
-        columns = 6 if name == "CORE ITEMS" else 10 if name == "TIER 4" else 5
-        width = {
-            "CORE ITEMS": 567.0,
-            "TIER 1": 465.75,
-            "TIER 2": 562.5,
-            "TIER 3": 465.75,
-            "TIER 4": 1039.5,
-        }[name]
-        rows.append({
-            "name": name,
-            "optional": row_index > 0,
-            "width": width,
-            "height": 164.0 + 155.5 * ((count - 1) // columns),
-            "items": [
-                {
-                    "item_id": start + offset,
-                    "item": f"Item {start + offset}",
-                    "annotation": _fixture_card(
-                        (offset // 2) + 1 if row_index == 0 else row_index,
-                        offset,
-                    ),
-                    "required_flex_slots": None,
-                    "sell_priority": None,
-                    "imbue_target_ability_id": None,
-                }
-                for offset in range(count)
-            ],
-        })
-    return {
-        "build": {
-            "archetype": "Weapon Damage",
-            "tag_ids": [10, 1005, 3],
-            "tag_classes": [
-                "ability_10",
-                "item_1005",
-                "citadel_build_tag_damage",
-            ],
-            "tag_labels": ["Ability 10", "Item 1005", "Damage"],
-            "tag_catalog_sha256": "b" * 64,
-        },
-        "categories": rows,
-        "semantics": "CORE only; tiers are optional.",
-    }
-
-
-def _build_evidence() -> dict[str, object]:
+def make_build_evidence() -> dict[str, object]:
     items: list[dict[str, object]] = []
-    rows = require_object_rows(_projection()["categories"])
+    rows = require_object_rows(make_artifact_projection()["categories"])
     for row_index, row in enumerate(rows):
         for offset, projected in enumerate(require_object_rows(row["items"])):
             tier = (offset // 2) + 1 if row_index == 0 else row_index
@@ -260,10 +210,10 @@ def _build_evidence() -> dict[str, object]:
             })
     boundary = EpochBoundary(PATCH.identity, 100)
     payload = {
-        "schema_version": 8,
+        "schema_version": 9,
         "producer": "fixture",
         "method": {
-            "version": "state-aware-multi-path-v7",
+            "version": "state-aware-multi-path-v8",
             "minimum_core_item_count": 4,
             "maximum_core_item_count": 9,
             "minimum_core_support": 20,
@@ -305,7 +255,7 @@ def _build_evidence() -> dict[str, object]:
                 "core_policy": {
                     "version": 3,
                     "backbone_item_ids": list(range(1001, 1005)),
-                    "default_item_ids": list(range(1001, 1009)),
+                    "default_item_ids": list(range(1001, 1007)),
                     "backbone_matches": 40,
                     "backbone_fold_matches": {
                         "train": 20,
@@ -337,7 +287,7 @@ def _build_evidence() -> dict[str, object]:
                     "version": 3,
                     "minimum_support": 20,
                     "production_model": "deterministic_backoff",
-                    "component_expanded_default_path": list(range(1001, 1009)),
+                    "component_expanded_default_path": list(range(1001, 1007)),
                     "transitions": [
                         {
                             "level": "popularity",
@@ -389,29 +339,46 @@ def _build_evidence() -> dict[str, object]:
             ],
         }
     ]
-    return {**payload, "artifact_id": sha256_json(payload)}
+    assets = [
+        {
+            "id": item["item_id"],
+            "name": item["item"],
+            "class_name": f"item_{item['item_id']}",
+            "cost": item["cost"],
+            "item_tier": item["tier"],
+            "item_slot_type": item["slot"],
+            "shopable": True,
+            "is_active_item": item["active"],
+            "component_items": [],
+        }
+        for item in items
+    ]
+    return make_current_evidence_document(payload, assets)
 
 
-def _write_bundle(root: Path) -> tuple[Path, Path, Path, Path]:
-    evidence = _build_evidence()
+def write_artifact_bundle(root: Path) -> tuple[Path, Path, Path, Path]:
+    evidence = make_build_evidence()
     raw_evidence = json.dumps(evidence).encode()
     evidence_path = root / "build-evidence.json"
     evidence_path.write_bytes(raw_evidence)
-    manifest = _manifest(evidence, raw_evidence)
-    policy = _policy(manifest.snapshot_id)
-    ability_ids = (10, 20, 30, 40) * 4
+    manifest = make_snapshot_manifest(evidence, raw_evidence)
+    policy = make_build_policy(manifest.snapshot_id)
+    categories, cost, guidance = make_canonical_projection(evidence_path, policy)
     hero: dict[str, object] = {
         "hero_id": 12,
         "path_id": "default",
         "path_label": "Evidence Default",
         "hero": "Kelvin",
-        "hero_mechanics": {"class_name": "hero_kelvin"},
+        "hero_mechanics": make_hero_kit(),
         "item_mechanics_ids": [],
         "item_mechanics_sha256": sha256_json({}),
         "snapshot_id": manifest.snapshot_id,
         "policy_id": policy.policy_id,
         "ability_policy": {
             "selection": "MOST_SUPPORTED_LEGAL_STATE",
+            "quality": AbilityPath(
+                (10, 20, 30, 40) * 4, 235, 135, 100, 250
+            ).quality_assessment(),
             "all_valid_telemetry_appearances": 250,
             "complete_path_appearances": 150,
             "final_branch_support": 100,
@@ -421,16 +388,21 @@ def _write_bundle(root: Path) -> tuple[Path, Path, Path, Path]:
                     "ability_id": ability_id,
                     "decision_reached_support": 250 - index,
                 }
-                for index, ability_id in enumerate(ability_ids)
+                for index, ability_id in enumerate((10, 20, 30, 40) * 4)
             ],
         },
         "core": {
             "joint_player_matches": 50,
             "joint_share": 0.1,
             "median_final_net_worth": 38_000,
-            "core_target_cost": 27_200,
+            "core_target_cost": cost,
         },
-        "projection": _projection(),
+        "projection": {
+            **make_artifact_projection(),
+            "guide_version": 3,
+            "categories": categories,
+        },
+        "purchase_guidance": guidance,
         "explainable_actions": [
             {
                 "node_id": f"core-{index}",
@@ -438,7 +410,7 @@ def _write_bundle(root: Path) -> tuple[Path, Path, Path, Path]:
                 "action": f"Item {item_id}",
                 "evidence_ref": f"core-evidence-{index}",
             }
-            for index, item_id in enumerate(range(1001, 1009), start=1)
+            for index, item_id in enumerate(range(1001, 1007), start=1)
         ],
     }
     hero["kit_basis_sha256"] = calculate_kit_basis_sha256(hero)

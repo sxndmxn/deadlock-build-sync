@@ -1,4 +1,4 @@
-def item(
+def make_item_asset(
     item_id: int,
     class_name: str,
     *,

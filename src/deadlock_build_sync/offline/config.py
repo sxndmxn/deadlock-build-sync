@@ -9,12 +9,6 @@ from pathlib import Path
 API_BASE_URL = "https://api.deadlock-api.com"
 DUCKLAKE_URL = "ducklake:https://s3-cache.deadlock-api.com/fast/db_snapshot.ducklake"
 RANK_RESET_AT = datetime(2026, 7, 30, 19, 14, 37, tzinfo=UTC)
-PHASES = (
-    (0, 0, 540, "0–9m"),
-    (1, 540, 1200, "9–20m"),
-    (2, 1200, 1800, "20–30m"),
-    (3, 1800, 7000, "30m+"),
-)
 
 
 @dataclass(frozen=True)

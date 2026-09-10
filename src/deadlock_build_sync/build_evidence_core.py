@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, cast
 
 from .artifacts import ArtifactError
 from .build_evidence_core_alternative import parse_core_alternative
-from .build_evidence_item import _item
+from .build_evidence_item import _parse_item_evidence
 from .build_evidence_types import (
     CORE_POLICY_VERSION,
     MAXIMUM_BACKBONE_ITEM_COUNT,
@@ -23,8 +23,8 @@ from .build_evidence_types import (
     TierPolicyEvidence,
 )
 from .build_evidence_values import (
-    _document,
-    _required_int,
+    _require_evidence_document,
+    _require_integer,
 )
 from .value_validation import object_dict, object_list
 
@@ -32,12 +32,12 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 
-def _hero_items(
+def _parse_hero_items(
     raw_items: Sequence[object],
     hero_id: int,
     eligible: int,
 ) -> tuple[tuple[ItemEvidence, ...], list[int]]:
-    items = tuple(_item(row, hero_id) for row in raw_items)
+    items = tuple(_parse_item_evidence(row, hero_id) for row in raw_items)
     item_ids = [item.item_id for item in items]
     if len(item_ids) != len(set(item_ids)):
         raise ArtifactError(f"hero {hero_id} has duplicate item evidence")
@@ -46,7 +46,7 @@ def _hero_items(
     return items, item_ids
 
 
-def _core_alternative(
+def _parse_core_alternative(
     value: object,
     hero_id: int,
     item_ids: set[int],
@@ -55,21 +55,23 @@ def _core_alternative(
     return parse_core_alternative(value, hero_id, item_ids, default_item_ids)
 
 
-def _core_policy_document(value: object, hero_id: int) -> dict[str, object]:
+def _parse_core_policy_document(value: object, hero_id: int) -> dict[str, object]:
     document = object_dict(value)
     if document is None or document.get("version") != CORE_POLICY_VERSION:
         raise ArtifactError(f"hero {hero_id} has no supported core policy")
     return document
 
 
-def _policy_list(document: dict[str, object], field: str, hero_id: int) -> list[object]:
+def _require_policy_list(
+    document: dict[str, object], field: str, hero_id: int
+) -> list[object]:
     value = object_list(document.get(field))
     if value is None:
         raise ArtifactError(f"hero {hero_id} has an incomplete core policy")
     return value
 
 
-def _policy_mapping(
+def _require_policy_mapping(
     document: dict[str, object], field: str, hero_id: int
 ) -> dict[str, object]:
     value = object_dict(document.get(field))
@@ -78,18 +80,18 @@ def _policy_mapping(
     return value
 
 
-def _core_membership(
+def _parse_core_membership(
     raw_backbone: list[object],
     raw_default: list[object],
     hero_id: int,
     item_ids: set[int],
 ) -> tuple[tuple[int, ...], tuple[int, ...]]:
     backbone = tuple(
-        _required_int(item_id, "backbone item id", minimum=1)
+        _require_integer(item_id, "backbone item id", minimum=1)
         for item_id in raw_backbone
     )
     default = tuple(
-        _required_int(item_id, "default core item id", minimum=1)
+        _require_integer(item_id, "default core item id", minimum=1)
         for item_id in raw_default
     )
     valid = (
@@ -104,7 +106,7 @@ def _core_membership(
     return backbone, default
 
 
-def _policy_support(
+def _parse_policy_support(
     document: dict[str, object],
     raw_folds: dict[str, object],
     hero_id: int,
@@ -112,14 +114,14 @@ def _policy_support(
     label: str,
 ) -> tuple[int, dict[str, int]]:
     folds = {
-        fold: _required_int(
+        fold: _require_integer(
             raw_folds.get(fold),
             f"{fold} {label} support",
-            minimum=0 if fold == "test" else MINIMUM_CORE_SUPPORT,
+            minimum=MINIMUM_CORE_SUPPORT if fold == "train" else 0,
         )
         for fold in ("train", "validation", "test")
     }
-    matches = _required_int(
+    matches = _require_integer(
         document.get(f"{label}_matches"),
         f"{label} support",
         minimum=folds["train"] + folds["validation"] if label == "backbone" else 0,
@@ -130,14 +132,14 @@ def _policy_support(
     return matches, folds
 
 
-def _core_alternatives(
+def _parse_core_alternatives(
     rows: list[object],
     hero_id: int,
     item_ids: set[int],
     default: tuple[int, ...],
 ) -> tuple[CoreAlternativeEvidence, ...]:
     alternatives = tuple(
-        _core_alternative(row, hero_id, item_ids, set(default)) for row in rows
+        _parse_core_alternative(row, hero_id, item_ids, set(default)) for row in rows
     )
     valid = (
         len(alternatives) <= MAXIMUM_CORE_ALTERNATIVES
@@ -150,35 +152,47 @@ def _core_alternatives(
     return alternatives
 
 
-def _candidate_audit(rows: list[object], hero_id: int) -> tuple[dict[str, object], ...]:
+def _parse_candidate_audit(
+    rows: list[object], hero_id: int
+) -> tuple[dict[str, object], ...]:
     if any(not isinstance(row, dict) for row in rows):
         raise ArtifactError(f"hero {hero_id} has a malformed core candidate audit")
     return tuple(
-        _document(row, f"hero {hero_id} has a malformed core candidate audit")
+        _require_evidence_document(
+            row, f"hero {hero_id} has a malformed core candidate audit"
+        )
         for row in rows
     )
 
 
-def _core_policy(
+def _parse_core_policy(
     value: object,
     hero_id: int,
     item_ids: set[int],
     eligible: int,
 ) -> CorePolicyEvidence:
-    document = _core_policy_document(value, hero_id)
-    raw_backbone = _policy_list(document, "backbone_item_ids", hero_id)
-    raw_default = _policy_list(document, "default_item_ids", hero_id)
-    raw_alternatives = _policy_list(document, "alternatives", hero_id)
-    raw_audit = _policy_list(document, "candidate_audit", hero_id)
-    raw_fold_matches = _policy_mapping(document, "backbone_fold_matches", hero_id)
-    raw_default_folds = _policy_mapping(document, "default_fold_matches", hero_id)
-    evaluation = _policy_mapping(document, "evaluation", hero_id)
-    backbone, default = _core_membership(raw_backbone, raw_default, hero_id, item_ids)
-    backbone_matches, fold_matches = _policy_support(
+    document = _parse_core_policy_document(value, hero_id)
+    raw_backbone = _require_policy_list(document, "backbone_item_ids", hero_id)
+    raw_default = _require_policy_list(document, "default_item_ids", hero_id)
+    raw_alternatives = _require_policy_list(document, "alternatives", hero_id)
+    raw_audit = _require_policy_list(document, "candidate_audit", hero_id)
+    raw_fold_matches = _require_policy_mapping(
+        document, "backbone_fold_matches", hero_id
+    )
+    raw_default_folds = _require_policy_mapping(
+        document, "default_fold_matches", hero_id
+    )
+    evaluation = _require_policy_mapping(document, "evaluation", hero_id)
+    backbone, default = _parse_core_membership(
+        raw_backbone, raw_default, hero_id, item_ids
+    )
+    backbone_matches, fold_matches = _parse_policy_support(
         document, raw_fold_matches, hero_id, eligible, "backbone"
     )
-    alternatives = _core_alternatives(raw_alternatives, hero_id, item_ids, default)
-    default_matches, default_fold_matches = _policy_support(
+    alternatives = _parse_core_alternatives(
+        raw_alternatives, hero_id, item_ids, default
+    )
+    default_matches, default_fold_matches = _parse_policy_support(
         document, raw_default_folds, hero_id, eligible, "default"
     )
     return CorePolicyEvidence(
@@ -189,12 +203,12 @@ def _core_policy(
         default_matches=default_matches,
         default_fold_matches=default_fold_matches,
         alternatives=alternatives,
-        candidate_audit=_candidate_audit(raw_audit, hero_id),
+        candidate_audit=_parse_candidate_audit(raw_audit, hero_id),
         evaluation=evaluation,
     )
 
 
-def _tier_policy(
+def _parse_tier_policy(
     value: object,
     hero_id: int,
     items: tuple[ItemEvidence, ...],
@@ -210,6 +224,7 @@ def _tier_policy(
     }:
         raise ArtifactError(f"hero {hero_id} has an incomplete tier policy")
     raw_membership = cast("dict[str, object]", raw_membership_value)
+    discovery_pool = value.get("source_fold") == "discovery"
     by_id = {item.item_id: item for item in items}
     item_ids_by_tier: dict[int, tuple[int, ...]] = {}
     for tier in range(1, 5):
@@ -217,27 +232,36 @@ def _tier_policy(
         if not isinstance(raw_item_ids, list):
             raise ArtifactError(f"hero {hero_id} has a malformed Tier {tier} policy")
         item_ids = tuple(
-            _required_int(item_id, "tier policy item id", minimum=1)
+            _require_integer(item_id, "tier policy item id", minimum=1)
             for item_id in raw_item_ids
         )
-        if not 1 <= len(item_ids) <= TIER_ITEM_COUNT or len(item_ids) != len(
-            set(item_ids)
-        ):
+        if not (0 if discovery_pool else 1) <= len(item_ids) <= TIER_ITEM_COUNT or len(
+            item_ids
+        ) != len(set(item_ids)):
             raise ArtifactError(f"hero {hero_id} has invalid Tier {tier} membership")
         for item_id in item_ids:
             item = by_id.get(item_id)
-            if (
-                item is None
-                or item.tier != tier
-                or item.training_adopter_matches < MINIMUM_TIER_SUPPORT
-                or item.validation_adopter_matches < MINIMUM_TIER_SUPPORT
-                or item.training_adoption < MINIMUM_TIER_ADOPTION
-                or item.validation_adoption < MINIMUM_TIER_ADOPTION
-                or abs(item.training_adoption - item.validation_adoption)
-                > MAXIMUM_TIER_ADOPTION_DRIFT
-            ):
+            if not _is_supported_pool_item(item, tier, discovery=discovery_pool):
                 raise ArtifactError(
                     f"hero {hero_id} has an unsupported Tier {tier} item"
                 )
         item_ids_by_tier[tier] = item_ids
-    return TierPolicyEvidence(item_ids_by_tier)
+    return TierPolicyEvidence(item_ids_by_tier, discovery_pool)
+
+
+def _is_supported_pool_item(
+    item: ItemEvidence | None, tier: int, *, discovery: bool
+) -> bool:
+    if (
+        item is None
+        or item.tier != tier
+        or item.training_adopter_matches < MINIMUM_TIER_SUPPORT
+    ):
+        return False
+    return discovery or (
+        item.validation_adopter_matches >= MINIMUM_TIER_SUPPORT
+        and min(item.training_adoption, item.validation_adoption)
+        >= MINIMUM_TIER_ADOPTION
+        and abs(item.training_adoption - item.validation_adoption)
+        <= MAXIMUM_TIER_ADOPTION_DRIFT
+    )

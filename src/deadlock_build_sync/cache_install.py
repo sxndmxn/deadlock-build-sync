@@ -18,11 +18,11 @@ if TYPE_CHECKING:
 from .cache_discovery import deadlock_is_running
 from .cache_projection import read_cache, update_managed_builds
 from .cache_storage import (
+    _calculate_unmanaged_cache_fingerprint,
     _create_backup,
     _install_replacement,
-    _out_of_scope_fingerprint,
+    _resolve_state_root,
     _restore_cache_file,
-    _state_root,
     _validate_install_request,
 )
 from .cache_types import (
@@ -60,7 +60,7 @@ def install_guides(
     )
 
     original = read_cache(location.cache_path)
-    original_out_of_scope = _out_of_scope_fingerprint(
+    original_out_of_scope = _calculate_unmanaged_cache_fingerprint(
         original,
         account_id=location.account_id,
         target_hero_ids=identity.hero_ids,
@@ -148,7 +148,7 @@ def restore_latest(
             "Deadlock is running; close it before restoring a cache backup"
         )
     parent = (
-        (backup_root or _state_root())
+        (backup_root or _resolve_state_root())
         / "deadlock-build-sync/backups"
         / str(location.account_id)
     )

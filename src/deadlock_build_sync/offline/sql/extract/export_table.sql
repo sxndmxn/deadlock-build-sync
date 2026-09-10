@@ -1,0 +1,5 @@
+COPY (SELECT * FROM query_table($table)) TO $path (
+    FORMAT PARQUET,
+    COMPRESSION ZSTD,
+    ROW_GROUP_SIZE 100000
+);

@@ -16,31 +16,34 @@ from deadlock_build_sync.value_validation import (
     integer,
 )
 from tests.build_evidence_fixtures import (
-    _assets,
-    _document,
-    _first_item,
-    _refingerprint,
-    _write,
+    get_first_item,
+    make_evidence_document,
+    make_item_assets,
+    write_evidence_document,
+    write_fingerprinted_evidence,
 )
+from tests.build_evidence_policy_fixtures import make_core_alternative
 
 if TYPE_CHECKING:
     from pathlib import Path
 
 
-def test_rejects_previous_build_evidence_schema(tmp_path: Path) -> None:
+@pytest.mark.parametrize("schema", [6, 10])
+def test_rejects_previous_build_evidence_schema(tmp_path: Path, schema: int) -> None:
     path = tmp_path / "build-evidence.json"
-    document = _document()
-    document["schema_version"] = 6
-    _refingerprint(document)
-    _write(path, document)
+    document = make_evidence_document()
+    document["schema_version"] = schema
+    write_fingerprinted_evidence(path, document)
 
-    with pytest.raises(ArtifactError, match="unsupported build-evidence schema"):
+    with pytest.raises(
+        ArtifactError, match=r"unsupported build-evidence schema.*refresh-evidence"
+    ):
         load_build_evidence(path)
 
 
 def test_purchase_window_requires_fold_support_and_overlap(tmp_path: Path) -> None:
     path = tmp_path / "build-evidence.json"
-    _write(path, _document())
+    write_evidence_document(path, make_evidence_document())
     item = load_build_evidence(path).heroes[13].items[0]
 
     assert reliable_purchase_window(item) == (
@@ -74,10 +77,12 @@ def test_unavailable_purchase_window_does_not_constrain_route() -> None:
 
 def test_load_and_select_exact_build_layout(tmp_path: Path) -> None:
     path = tmp_path / "build-evidence.json"
-    _write(path, _document())
+    write_evidence_document(path, make_evidence_document())
 
     catalog = load_build_evidence(path)
-    selected = select_hero_build(catalog.heroes[13], _assets())
+    selected = select_hero_build(catalog.heroes[13], make_item_assets())
+
+    assert catalog.heroes[13].core_policy.candidate_audit == ()
 
     assert [item.item_id for item in selected.core] == [
         101,
@@ -86,17 +91,15 @@ def test_load_and_select_exact_build_layout(tmp_path: Path) -> None:
         202,
         301,
         302,
-        401,
-        402,
     ]
     assert selected.core_joint_matches == 80
     assert selected.core_joint_share == 0.10
-    assert selected.core_target_cost == 20_000
+    assert selected.core_target_cost == 12_000
     assert {tier: len(items) for tier, items in selected.tiers.items()} == {
         1: 9,
         2: 9,
         3: 9,
-        4: 9,
+        4: 10,
     }
     assert [item.item_id for item in selected.tiers[1]] == [
         103,
@@ -121,8 +124,8 @@ def test_load_and_select_exact_build_layout(tmp_path: Path) -> None:
 
 
 def test_loads_supported_observed_imbue_target(tmp_path: Path) -> None:
-    document = _document()
-    item = _first_item(document)
+    document = make_evidence_document()
+    item = get_first_item(document)
     item.update({
         "imbue_target_ability_id": 40,
         "imbue_target_ability": "Bullet Dance",
@@ -130,9 +133,8 @@ def test_loads_supported_observed_imbue_target(tmp_path: Path) -> None:
         "imbue_observations": 100,
         "imbue_target_share": 0.75,
     })
-    _refingerprint(document)
     path = tmp_path / "build-evidence.json"
-    _write(path, document)
+    write_fingerprinted_evidence(path, document)
 
     loaded = load_build_evidence(path).heroes[13].items[0]
 
@@ -141,32 +143,36 @@ def test_loads_supported_observed_imbue_target(tmp_path: Path) -> None:
     assert loaded.imbue_target_share == 0.75
 
 
-def test_selection_rejects_policy_core_above_median_final_net_worth(
+def test_selection_keeps_supported_core_when_median_wealth_is_lower(
     tmp_path: Path,
 ) -> None:
     path = tmp_path / "build-evidence.json"
-    _write(path, _document(median_final_net_worth=10_000))
+    write_evidence_document(path, make_evidence_document(median_final_net_worth=10_000))
 
     catalog = load_build_evidence(path)
     hero = catalog.heroes[13]
-    assets = _assets()
-    with pytest.raises(ArtifactError, match="exceeds cohort wealth"):
-        select_hero_build(hero, assets)
+    assets = make_item_assets()
+    selected = select_hero_build(hero, assets)
+    assert selected.core_target_cost > 10_000
 
 
 def test_sparse_supported_tiers_do_not_require_filler(tmp_path: Path) -> None:
     path = tmp_path / "build-evidence.json"
-    sparse_assets = [asset for asset in _assets() if integer(asset["id"]) % 100 <= 3]
-    document = _document(assets=sparse_assets)
-    _write(path, document)
+    sparse_assets = [
+        asset for asset in make_item_assets() if integer(asset["id"]) % 100 <= 3
+    ]
+    document = make_evidence_document(assets=sparse_assets)
+    write_evidence_document(path, document)
 
-    selected = select_hero_build(load_build_evidence(path).heroes[13], _assets())
+    selected = select_hero_build(
+        load_build_evidence(path).heroes[13], make_item_assets()
+    )
 
     assert {tier: len(items) for tier, items in selected.tiers.items()} == {
         1: 1,
         2: 1,
         3: 1,
-        4: 1,
+        4: 3,
     }
 
 
@@ -174,7 +180,7 @@ def test_optional_component_requires_its_upgrade_in_a_higher_tier_menu(
     tmp_path: Path,
 ) -> None:
     path = tmp_path / "build-evidence.json"
-    assets = _assets()
+    assets = make_item_assets()
     next(asset for asset in assets if asset["id"] == 203)["component_items"] = [
         "item_t1_4"
     ]
@@ -191,7 +197,7 @@ def test_optional_component_requires_its_upgrade_in_a_higher_tier_menu(
         }
         for item_id in (212, 213)
     ])
-    _write(path, _document(assets=assets))
+    write_evidence_document(path, make_evidence_document(assets=assets))
 
     selected = select_hero_build(load_build_evidence(path).heroes[13], assets)
 
@@ -207,45 +213,14 @@ def test_admitted_core_alternative_moves_out_of_its_tier_row(
     tmp_path: Path,
 ) -> None:
     path = tmp_path / "build-evidence.json"
-    alternative: dict[str, object] = {
-        "item_id": 303,
-        "comparator_item_id": 302,
-        "stage": 6,
-        "support": 40,
-        "comparison_support": 50,
-        "effective_support": 30.0,
-        "overlap": 0.8,
-        "stable": True,
-        "dr_estimate": 0.03,
-        "comparative_interval": [0.01, 0.05],
-        "vs": "Heavy Spirit damage",
-        "why": "Spirit Resist",
-        "swap": "Replaces Tier 3 Item 2",
-        "when": "Before the next Spirit-heavy fight",
-        "skip": "Keep default when control matters more",
-        "mechanics_refs": ["asset:item:303:description"],
-        "comparator_mechanics_refs": ["asset:item:302:description"],
-        "fold_estimates": {
-            "train": 0.03,
-            "validation": 0.04,
-            "test": -0.03,
-        },
-        "fold_diagnostics": {
-            fold: {
-                "support": 40,
-                "comparison_support": 50,
-                "effective_support": 30.0,
-                "overlap": 0.8,
-                "maximum_standardized_mean_difference": 0.05,
-                "estimate": estimate,
-                "interval": [0.01, 0.05],
-            }
-            for fold, estimate in (("train", 0.03), ("validation", 0.04))
-        },
-    }
-    _write(path, _document(core_alternatives=[alternative]))
+    alternative = make_core_alternative()
+    write_evidence_document(
+        path, make_evidence_document(core_alternatives=[alternative])
+    )
 
-    selected = select_hero_build(load_build_evidence(path).heroes[13], _assets())
+    selected = select_hero_build(
+        load_build_evidence(path).heroes[13], make_item_assets()
+    )
 
     assert [item.item_id for item in selected.optional_core] == [303]
     assert 303 not in {

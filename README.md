@@ -13,43 +13,54 @@ Design evidence and implementation contracts:
 - [Build-policy requirements](docs/deadlock-build-policy-requirements.md) — staged normative requirements, acceptance criteria, and verification evidence.
 - [Build usage audit](docs/deadlock-build-usage-audit.md) — live-client findings and the five linked implementation phase briefs.
 
-Every run resolves one client version, freezes one as-of cutoff, and records
-Ranked or Unranked as an explicit cohort identity. Exact response bytes, patch
-identity, independent mechanics/matchmaking/map/telemetry epochs, rank-label
-mapping, route grain, and fallback behavior are captured in a reusable snapshot
-manifest.
+Each run uses one client version and one fixed cutoff time.
+It records Ranked or Unranked as the cohort identity.
+The snapshot manifest records exact response bytes, patch identity, independent epochs, rank labels, API record units, and fallback behavior.
 
-The rich output is a typed, snapshot-bound policy graph:
+The output is a typed policy graph with a snapshot identity:
 
 - A mechanically legal level/AP ability timeline selected from equivalent reached
   legal states, with support reported at each decision. Price tiers are never treated
   as equal “quarters” of that timeline.
-- A mechanics-compatible, temporally stable four-to-six-item backbone completed to
-  a deterministic four-to-nine-item default. The selector targets the Oracle I+
-  median ending inventory economy after reserving three situational item equivalents,
-  requires joint support across time splits, and never optimizes exact-eight frequency.
-- Cross-fitted doubly robust non-backbone CORE substitutions admitted only after support,
-  effective-sample-size, overlap, balance, uncertainty, and temporal-stability gates.
-- Four compact price-tier reference menus selected by true player-match adoption and
-  ordered left to right by observed first-ownership net worth. They exclude CORE,
-  require at least 20 buyer matches, and stay sparse when fewer than ten choices pass.
-  Outcome rate is descriptive only and never selects or orders an item.
-- Evidence objects that name their actual unit and claim class. Item adoption uses
-  unique first ownership over eligible player-matches; adopter outcome rate remains
-  descriptive—not an item effect or causal win-rate improvement.
+- Eclat first discovers exact four-to-six-item cores, then uses existing three-item
+  seeds if no supported legal path is available. Leiden groups related cores.
+  Pairwise purchase ordering supplies the component path. Whole matches are split
+  by time. Candidates, ranking, paths, pools, and branch conditions are frozen
+  before validation. The reserved test split is not used for admission.
+- Each distinct identity group can supply a build that passes support,
+  purchase-order, and mechanics checks. There is no fixed build-count limit per
+  hero. Each core needs 100 owners in discovery and 100 in selection.
+  The first usable identity in the frozen selection ranking is the default.
+  Separate outcome checks set `outcome_supported` or `observed` evidence status.
+  Weak or negative outcome estimates do not remove a supported legal build.
+- Related exact cores appear in one guide group with a default Queue and compact
+  variant choices. Shared core items determine the groups. Item mechanics explain
+  their names. Each variant keeps its own complete path, evidence, and item pool.
+  There is no fixed limit on groups or variants.
+- Four item pools use discovery buyers who owned that exact core. Each item needs
+  at least 20 buyers. Each tier has up to ten items. Every matching option stays
+  visible. Buyer win rates describe the data; they do not rank pool items.
+- Automatic choices need separate evidence at the current purchase checkpoint.
+  Failed branch checks leave the manual options available.
+- Evidence objects name their unit and claim class.
+  Item adoption divides unique first ownership records by eligible player-match records.
+  Adopter outcome rates describe observed results.
+  They do not measure causal effects on win rates.
 - Lane and whole-enemy-team matchup scopes kept separate, with mechanics-first
   counters and structured abstention when support or mechanics are inadequate.
-- An ending-duration profile that describes games ending in each phase. It is not
-  a live power curve and never justifies stalling an available close.
+- An ending-duration profile describes games that end in each phase.
+  It does not measure live power or support delays when a team can end the game.
 
-Steam receives `CORE ITEMS`, an `OPTIONAL CORE` row when a like-state alternative
-passes every evidence gate, then `TIER 1` through `TIER 4`. Only the complete
-economy-bounded default enters Queue. `OPTIONAL CORE` holds non-backbone substitutions
-with explicit decisions; an admitted item is removed from its tier row. The item and
-the normal item must both have pinned mechanics that support the decision, which stays
-in the policy sidecar. Each tier row remains an optional, non-CORE reference menu of up
-to ten supported items, not a claim that every item should be bought or that popularity
-proves a situational counter.
+Steam receives the validated component path as `CORE 1`, `CORE 2`, and later
+steps. These are the only automatic Queue rows. `OPTIONAL`, `PICK ONE`, and
+`UPGRADE` rows appear at their supported checkpoints. The complete `ITEM POOL`
+follows the path. Choice instructions show the trigger, checkpoint, component
+route, extra cost, and core resume point. Long instructions use extra rows.
+Items with unsupported timing stay in the pool with **Timing unknown**.
+
+All current heroes are requested. A hero must have an admitted build or an explicit
+evidence exclusion. Excluded heroes keep their installed builds. Missing data and
+malformed artifacts are errors. If no build passes, the existing bundle is preserved.
 
 Every item hover in every row carries the same two-line statistics card and nothing
 else:
@@ -109,18 +120,35 @@ player-match analysis pipeline. Its default location is
 incompatible patch, client, asset, rank-label, rank-range, mode, epoch, cutoff, or
 roster identities; it never falls back to aggregate purchase-event rankings.
 
-The offline producer is part of this repository, while its data-science dependencies
-remain optional. Install them only on a machine that refreshes evidence:
+The repository includes the offline producer.
+Its analysis dependencies are optional.
+Install them on a machine that refreshes evidence:
 
 ```bash
 uv tool install '.[analysis]'
 deadlock-build-sync refresh-evidence
 ```
 
-`refresh-evidence` downloads and analyzes the frozen public cohort, writes its run
-under `$XDG_STATE_HOME/deadlock-build-sync/offline`, then atomically hands one
-validated `build-evidence.json` to the artifact directory. It never discovers,
-reads, or writes Steam data.
+`refresh-evidence` downloads and analyzes the fixed public cohort.
+It uses eight concurrent hero worker processes by default.
+Use `--workers N` to change the worker count.
+Each worker gives DuckDB a 512 MiB memory limit.
+Each worker uses one Polars thread unless `POLARS_MAX_THREADS` specifies another value.
+Validation distributes candidate groups between workers and restores the original build order.
+After discovery completes, `--resume --run-id ID` validates the saved candidate set.
+Supply the original rank options when you resume a run.
+The command verifies candidate fingerprints, guide groups, source files, and the discovery method before it resumes validation.
+Checkpoints without source fingerprints require a new `--run-id`.
+Within each hero, identical statistical inputs reuse their model fits.
+The cache includes all input values and both item IDs.
+It writes its run under `$XDG_STATE_HOME/deadlock-build-sync/offline`.
+It atomically installs a validated `build-evidence.json` in the artifact directory.
+It does not discover, read, or write Steam data.
+
+Build generation requests analytics for four heroes concurrently.
+The API client shares a request interval of 0.31 seconds across these requests.
+The evidence recorder retains the original hero and request order.
+See [build performance verification](docs/build-performance-2026-09-09.md) for measured durations and output comparisons.
 
 Steam discovery supports native (`~/.local/share/Steam`), legacy
 (`~/.steam/steam` and `~/.steam/root`), Flatpak, and Snap installations. A
@@ -128,6 +156,55 @@ legacy symlink to the native installation is deduplicated. If more than one
 real cache remains, select it with `--account-id` or `--cache-path`.
 
 ## Development
+
+Create complete builds from the normal application without Steam:
+
+```bash
+uv run build --hero kelvin
+# Equivalent command:
+uv run deadlock-build-sync build --hero kelvin
+```
+
+Omit `--hero` to build all eligible heroes. The command uses the current
+`build-evidence.json`, validates the normal policy, and writes descriptions,
+policies, Markdown, and JSON. `--details` shows complete optional routes.
+Use `--format json` for structured output. `uv sync` installs dependencies;
+it does not create hero builds.
+
+Both `build` and `sync` write `builds.json` in the artifact directory. It points
+to `builds/<snapshot-id>/INDEX.md`, one Markdown guide per group, detailed guides,
+and `guides.json`. Each guide shows the core purchase path, all eligible choices,
+component costs and rebuys, and the full tiered item pool. `PICK ONE` means the
+next purchase for one need. It does not limit the number of choices in a match.
+Steam, Markdown, JSON, recommendations, and artifact installation use the same
+typed guide and purchase planner.
+The main guide has CORE, CORE OPTIONAL when needed, and TIER 1–4. CORE OPTIONAL
+contains the additional items from all supported variants, with no duplicates.
+Items already shown in either core section are not repeated in the tier sections.
+Small sections use smaller widths; empty tiers use a short text panel.
+The details file and `guides.json` keep every variant's full purchase path, costs,
+support, and pool.
+Steam item notes identify variant scope. Full paths and purchase instructions
+appear in the build description and detailed Markdown. `guides.json` also records
+the exact Steam categories and dimensions.
+Choose a complete variant before purchase. A manual variant is not evidence for
+an automatic core substitution during a match.
+
+`refresh-evidence` records strict adjacent purchase counts from the discovery
+buyers of each exact core. A position needs at least 20 buyers and 10% of the
+item's buyers. Missing or weak timing stays unknown. Evidence schema 12 and
+purchase-guide schema 3 are required. Guide indexes use schema 2; their group
+records use schema 1. Older evidence must be refreshed and rebuilt.
+See [the default build contract](docs/default-build-system.md).
+The [current verification report](docs/consolidated-hero-verification-2026-09-07.md)
+records 140 guide groups, all 761 supported variants, and complete coverage of 38 heroes.
+
+```bash
+uv run deadlock-build-sync refresh-evidence
+uv run build --hero kelvin --details
+# Installation remains an explicit command:
+uv run deadlock-build-sync sync
+```
 
 The default uv development group includes the test, type, coverage, complexity,
 dead-code, duplicate-code, and mutation tools. Validate a checkout with:
@@ -138,6 +215,8 @@ uv sync --frozen
 uv run ruff format --check .
 uv run ruff check .
 uv run ty check
+uv run deptry .
+uv run tach check
 uv run complexipy
 uv run coverage erase
 uv run coverage run -m pytest -W error
@@ -210,6 +289,12 @@ events; and monitoring/rollback rules. See the
 
 ## Patch workflow
 
+Use `deadlock-build-sync quality-report --artifacts PATH` to inspect ability
+support, fallbacks, and independent replay coverage for each frozen build.
+Missing replay evidence is reported as unevaluated. See
+[Build quality and independent replay](docs/build-quality.md) for inputs,
+technical acceptance criteria, and the limits of these diagnostics.
+
 Check the whole artifact chain first. This command is read-only:
 
 ```bash
@@ -225,22 +310,23 @@ When build evidence is stale, refresh it before generation:
 uv run deadlock-build-sync refresh-evidence
 ```
 
-The evidence producer reconstructs complete inventories, selects supported legal
-four-to-nine-item cores near the dynamic Oracle I+ economy target, and orders each core
-with deterministic pairwise-precedence dynamic programming subject to mechanics and
-nondecreasing observed first-ownership soul windows. No learned model is part of
-evidence production or runtime selection.
+The evidence producer reconstructs inventory from purchases, sales, and component
+consumption. It uses Eclat, Leiden, and pairwise ordering. The old clustering and
+core-completion fallback are archived in
+[Git history](tools/comparisons/README.md). Analysis dependencies are optional;
+rendering and installation do not load them.
 
-The normal installation workflow remains one command. Close Deadlock, then run:
+The normal installation workflow uses one command.
+Close Deadlock before you run it:
 
 ```bash
 uv run deadlock-build-sync sync
 ```
 
-`sync` discovers the local Steam account, generates every eligible hero from one
-coherent snapshot, writes one deterministic build-level description per path,
-validates every artifact, backs up the cache, and installs the private builds. Item
-statistics, imbue targets, categories, tags, and titles stay deterministic. Titles
+`sync` discovers the local Steam account.
+It generates every eligible hero from one snapshot and writes one deterministic description per path.
+It validates every artifact, creates a cache backup, and installs the private builds.
+Item statistics, imbue targets, categories, tags, and titles stay deterministic. Titles
 come from the CORE item mix, so an ability-path label cannot misname a weapon-heavy
 build. An all-hero run refuses installation if any pinned
 eligible hero lacks a complete policy. Reusable artifacts live under
@@ -254,7 +340,7 @@ deidentified state document matching
 
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "build_evidence_id": "<64-character artifact id>",
   "client_version": 6677,
   "patch_identity": "<patch identity>",
@@ -286,16 +372,24 @@ deidentified state document matching
 uv run deadlock-build-sync recommend --state state.json
 ```
 
-The result is `buy`, `save`, `end`, or `abstain`, with policy identity, support,
-backoff level, and component-aware incremental cost. It never mutates Steam and
-never treats next-action imitation as an item-effect claim. Explicit `threats`
-remain supported; pinned enemy-item mechanics add only conservative threat labels,
-and unknown items or conflicting situational branches fail closed.
+The result gives the next purchase, liquid-soul shortfall, remaining route and
+cost, selected placements, and all available choices. Add `--format markdown`
+for text output. Use `path_id` to retain one admitted identity. State schema 3
+also accepts `selected_optional_items`, `placement_overrides`,
+`core_substitution_item_id`, `enemy_observed_at_s`, and `economy`.
+
+Explicit player choices take priority. Otherwise an admitted matching branch can
+apply at the current checkpoint. The default path applies when none matches.
+The planner credits owned components and upgrades, shows required component
+rebuys, and checks item and active-item limits. See the
+[state example and observation rules](docs/default-build-system.md#match-state).
+Steam shows static conditions. This tool does not capture live game state.
 
 ### What is cached
 
 `sync` consumes four reviewable artifacts: the deterministic build evidence, exact
 strategy context, rich typed policy sidecar, and final build descriptions.
+`build` and `sync` include the exact admitted evidence bytes in the output bundle, including evidence from `--build-evidence PATH`.
 Every artifact carries the source manifest or snapshot identity. A narrative is reusable only when its
 snapshot, policy, context, narrative basis, and deterministic generator version are
 exactly compatible. Changed or malformed entries regenerate.
@@ -347,10 +441,15 @@ validation still apply.
 
 ## Rank cohorts
 
-Every analytics endpoint uses one validated rank range. Following the current
-Ranked calibration reset, the default is `emissary-i` through `eternus-v`.
-Override either boundary with symbolic
-rank names only when the build-evidence artifact was exported for the same range:
+Each hero uses its recorded effective rank range in analytics, guides, and
+recommendations. The starting range is `emissary-i` through `eternus-v`.
+`refresh-evidence` and generation commands accept `--rank-expansion auto|off`.
+The default is `auto`. `--min-rank` sets the starting cutoff. If a hero has no
+supported legal build, the producer lowers that hero's cutoff one tier at a time
+through Initiate. The upper cutoff, source snapshot, patch, and time range stay
+fixed. Expansion stops at the first range with a supported build. It does not
+seek better wins or more identities. `off` uses only the requested range.
+Use the same starting boundaries for refresh and generation:
 
 ```bash
 uv run deadlock-build-sync preview --all \
@@ -379,12 +478,14 @@ in-game description.
 - Layered mechanics, analytics, policy, description, projection, and whole-document
   fingerprints bound to the complete source manifest.
 
-Every hero requires a supported, mechanically legal four-to-nine-item core at or below
-its median final net worth, at least one adequately supported non-CORE option in each
-price tier, complete current mechanics, a complete ability projection, a duration
-estimate or explicit duration abstention, and policy validation. Every omission
-receives a structured exclusion; all-hero installation fails on any exclusion rather
-than silently shipping a partial roster.
+Every hero requires a supported legal core, complete purchase records, current
+mechanics, a complete ability projection, a duration estimate or explicit duration
+abstention, and policy validation. Optional pool tiers can be empty. The guide
+then shows that no supported options are available. Conflicting timing estimates
+are uncertain; the legal purchase order stays fixed. Missing optional economy or
+enemy observations disable the affected estimates and choices.
+Missing requested heroes cause generation to fail. A failed refresh or build
+preserves the current artifact bundle.
 
 Installation rejects an artifact when patch identity, snapshot, client version,
 match mode, rank labels, policy, context, narrative basis, generator version, hero
@@ -418,7 +519,7 @@ multiple accounts.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow. Report
 bugs and request features through [GitHub Issues](https://github.com/sxndmxn/deadlock-build-sync/issues).
-Please report security vulnerabilities privately as described in
+Report security vulnerabilities privately as described in
 [SECURITY.md](SECURITY.md).
 
 ## License and affiliation

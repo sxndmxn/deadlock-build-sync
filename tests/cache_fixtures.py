@@ -29,15 +29,15 @@ def set_deadlock_check(
     monkeypatch.setattr(cache_storage_module, "deadlock_is_running", check)
 
 
-def snapshot_manifest() -> dict[str, object]:
+def make_snapshot_manifest() -> dict[str, object]:
     return {"snapshot_id": SNAPSHOT_ID}
 
 
-def unpublished(root: dict[str, object]) -> list[object]:
+def make_unpublished_build(root: dict[str, object]) -> list[object]:
     return require_object_list(root["Unpublished"])
 
 
-def guide() -> PurchaseGuide:
+def make_purchase_guide() -> PurchaseGuide:
     window = PurchaseWindow(5000, 10000, 100, 60, 0.6, 0.5)
     item = GuideItem(123, "Test Item", 1, 200, 0.55, 0.48, 1.0, (window,))
     return PurchaseGuide(
@@ -51,7 +51,7 @@ def guide() -> PurchaseGuide:
     )
 
 
-def complete_guide() -> PurchaseGuide:
+def make_complete_guide() -> PurchaseGuide:
     window = PurchaseWindow(5000, 10000, 100, 60, 0.6, 0.5)
     tiers = {
         tier: tuple(
@@ -98,7 +98,9 @@ def create_discoverable_cache(root: Path, account_id: int) -> Path:
     return path
 
 
-def isolated_location(tmp_path: Path) -> tuple[CacheLocation, dict[str, object]]:
+def make_isolated_cache_location(
+    tmp_path: Path,
+) -> tuple[CacheLocation, dict[str, object]]:
     app_directory = tmp_path / "userdata/146293212/1422450"
     cache_path = app_directory / "remote/cfg/cached_hero_builds.kv3"
     cache_path.parent.mkdir(parents=True)
@@ -113,18 +115,18 @@ def isolated_location(tmp_path: Path) -> tuple[CacheLocation, dict[str, object]]
     return CacheLocation(146293212, cache_path, app_directory), original
 
 
-def install_complete(
+def install_complete_guide(
     location: CacheLocation,
     backup_root: Path,
 ) -> None:
     install_guides(
         location,
-        [complete_guide()],
+        [make_complete_guide()],
         persona="XMLJDX",
         timestamp=100,
         patch_title="Patch",
         patch_published_at="2026-01-01T00:00:00Z",
         backup_root=backup_root,
-        snapshot_manifest=snapshot_manifest(),
+        snapshot_manifest=make_snapshot_manifest(),
         expected_hero_ids={12},
     )

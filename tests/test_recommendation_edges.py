@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from deadlock_build_sync import recommendation, recommendation_state
+from deadlock_build_sync.hero_cohort import HeroCohort
 from deadlock_build_sync.mechanics import InventoryState, ItemGraph
 from deadlock_build_sync.policy import NodeKind, PolicyDecision, PolicyNode
 from deadlock_build_sync.recommendation import (
@@ -14,56 +15,47 @@ from deadlock_build_sync.recommendation import (
     recommend,
 )
 from deadlock_build_sync.value_validation import require_object_dict
+from tests.discovery_fixtures import make_hero_cohort
 from tests.recommendation_fixtures import (
-    assets,
-    build_policy,
-    catalog,
-    expanded_assets,
-    state,
+    make_build_catalog,
+    make_decision_state,
+    make_decision_state_document,
+    make_expanded_assets,
+    make_recommendation_assets,
+    make_recommendation_policy,
 )
 
 
-def _state_document() -> dict[str, object]:
-    return {
-        "schema_version": 2,
-        "build_evidence_id": "a" * 64,
-        "client_version": 123,
-        "patch_identity": "b" * 64,
-        "match_mode": "Ranked",
-        "game_mode": "Normal",
-        "hero_id": 12,
-        "clock_s": 300,
-        "average_badge": 90,
-        "liquid_souls": 500,
-        "purchases": [],
-        "inventory": {
-            "items": [],
-            "components": [],
-            "open_slots": 9,
-            "flex_slots": 0,
-            "active_bindings": 0,
-        },
-        "learned_abilities": [],
-        "enemy_hero_ids": [7],
-        "lane_enemy_hero_ids": [7],
-        "enemy_item_ids": [],
-        "allied_hero_ids": [],
-        "objectives": [],
-        "threats": [],
-    }
+def test_recommendation_uses_effective_hero_rank_range() -> None:
+    evidence = make_build_catalog()
+    hero = replace(evidence.heroes[12], cohort=HeroCohort.parse(make_hero_cohort()))
+    expanded = replace(evidence, heroes={12: hero})
+    for badge in (61, 71, 115):
+        recommendation._validate_evidence_identity(
+            expanded, make_decision_state(average_badge=badge)
+        )
+    for badge in (60, 116):
+        with pytest.raises(RecommendationError, match="outside the evidence cohort"):
+            recommendation._validate_evidence_identity(
+                expanded, make_decision_state(average_badge=badge)
+            )
+    with pytest.raises(RecommendationError, match="outside the evidence cohort"):
+        recommendation._validate_evidence_identity(
+            evidence, make_decision_state(average_badge=61)
+        )
 
 
 def _validate_scalar(function: str, value: object) -> None:
     if function == "integer":
-        recommendation_state._integer(value, "value")
+        recommendation_state._require_state_integer(value, "value")
     elif function == "text":
-        recommendation_state._text(value, "value")
+        recommendation_state._require_state_text(value, "value")
     elif function == "integers":
-        recommendation_state._integers(value, "value")
+        recommendation_state._parse_state_integers(value, "value")
     elif function == "unique_integers":
-        recommendation_state._unique_integers(value, "value")
+        recommendation_state._parse_unique_state_integers(value, "value")
     else:
-        recommendation_state._unique_strings(value, "value")
+        recommendation_state._parse_unique_state_strings(value, "value")
 
 
 def test_decision_state_loader_wraps_read_json_and_root_errors(tmp_path: Path) -> None:
@@ -85,13 +77,13 @@ def test_decision_state_loader_rejects_schema_and_inventory_extensions(
     tmp_path: Path,
 ) -> None:
     path = tmp_path / "state.json"
-    document = _state_document()
+    document = make_decision_state_document()
     document["schema_version"] = 1
     path.write_text(json.dumps(document), encoding="utf-8")
     with pytest.raises(RecommendationError, match="unsupported decision-state schema"):
         DecisionState.from_file(path)
 
-    document = _state_document()
+    document = make_decision_state_document()
     inventory = require_object_dict(document["inventory"])
     inventory["account_id"] = 7
     path.write_text(json.dumps(document), encoding="utf-8")
@@ -101,13 +93,13 @@ def test_decision_state_loader_rejects_schema_and_inventory_extensions(
 
 def test_decision_state_loader_requires_lane_membership(tmp_path: Path) -> None:
     path = tmp_path / "state.json"
-    missing = _state_document()
+    missing = make_decision_state_document()
     missing.pop("lane_enemy_hero_ids")
     path.write_text(json.dumps(missing), encoding="utf-8")
     with pytest.raises(RecommendationError, match="lacks lane enemy heroes"):
         DecisionState.from_file(path)
 
-    outside = _state_document()
+    outside = make_decision_state_document()
     outside["lane_enemy_hero_ids"] = [8]
     path.write_text(json.dumps(outside), encoding="utf-8")
     with pytest.raises(RecommendationError, match="not on the enemy team"):
@@ -137,40 +129,63 @@ def test_decision_state_scalar_helpers_reject_bad_values(
 
 def test_recommendation_validates_game_mode_and_inventory_shape() -> None:
     with pytest.raises(RecommendationError, match="another game mode"):
-        recommend(catalog(), build_policy(), state(game_mode="Other"), assets())
+        recommend(
+            make_build_catalog(),
+            make_recommendation_policy(),
+            make_decision_state(game_mode="Other"),
+            make_recommendation_assets(),
+        )
     with pytest.raises(RecommendationError, match="repeats an owned item"):
         recommend(
-            catalog(),
-            build_policy(),
-            state(owned_items=(1, 1), open_slots=7),
-            assets(),
+            make_build_catalog(),
+            make_recommendation_policy(),
+            make_decision_state(owned_items=(1, 1), open_slots=7),
+            make_recommendation_assets(),
         )
     with pytest.raises(RecommendationError, match="open-slot count"):
-        recommend(catalog(), build_policy(), state(open_slots=8), assets())
+        recommend(
+            make_build_catalog(),
+            make_recommendation_policy(),
+            make_decision_state(open_slots=8),
+            make_recommendation_assets(),
+        )
     with pytest.raises(RecommendationError, match="active bindings"):
-        recommend(catalog(), build_policy(), state(active_bindings=1), assets())
+        recommend(
+            make_build_catalog(),
+            make_recommendation_policy(),
+            make_decision_state(active_bindings=1),
+            make_recommendation_assets(),
+        )
     with pytest.raises(RecommendationError, match="component ownership"):
         recommend(
-            catalog(),
-            build_policy(),
-            state(owned_items=(1,), open_slots=8),
-            assets(),
+            make_build_catalog(),
+            make_recommendation_policy(),
+            make_decision_state(owned_items=(1,), open_slots=8),
+            make_recommendation_assets(),
         )
 
 
 def test_recommendation_wraps_mechanics_construction_error() -> None:
     with pytest.raises(RecommendationError, match="item graph is empty"):
-        recommend(catalog(), build_policy(), state(), [])
+        recommend(
+            make_build_catalog(),
+            make_recommendation_policy(),
+            make_decision_state(),
+            [],
+        )
 
 
 def test_next_purchase_returns_none_for_an_owned_target() -> None:
-    graph = ItemGraph.from_assets(assets())
+    graph = ItemGraph.from_assets(make_recommendation_assets())
 
-    assert recommendation._next_purchase(1, InventoryState((1,)), graph) is None
+    assert (
+        recommendation._find_next_component_purchase(1, InventoryState((1,)), graph)
+        is None
+    )
 
 
 def test_counter_metadata_must_be_unambiguous() -> None:
-    policy = build_policy(branch=True)
+    policy = make_recommendation_policy(branch=True)
     card = policy.counter_cards[0]
     object.__setattr__(  # ruff: ignore[unnecessary-dunder-call] - Fault injection bypasses frozen validation.
         policy, "counter_cards", (card, card)
@@ -178,17 +193,17 @@ def test_counter_metadata_must_be_unambiguous() -> None:
 
     with pytest.raises(RecommendationError, match="ambiguous counter metadata"):
         recommend(
-            catalog(branch=True),
+            make_build_catalog(branch=True),
             policy,
-            state(threats=("healing",), liquid_souls=1_000),
-            assets(),
+            make_decision_state(threats=("healing",), liquid_souls=1_000),
+            make_recommendation_assets(),
         )
 
 
 def test_policy_node_recommendation_handles_nonpurchase_and_unclaimed_nodes() -> None:
-    policy = build_policy()
-    decision_state = state(liquid_souls=1_000)
-    graph = ItemGraph.from_assets(assets())
+    policy = make_recommendation_policy()
+    decision_state = make_decision_state(liquid_souls=1_000)
+    graph = ItemGraph.from_assets(make_recommendation_assets())
     inventory = InventoryState()
     end = next(node for node in policy.nodes if node.kind == NodeKind.END)
 
@@ -210,11 +225,21 @@ def test_policy_node_recommendation_handles_nonpurchase_and_unclaimed_nodes() ->
 
 
 def test_recommendation_checks_hero_coverage_and_policy_identity() -> None:
-    evidence = catalog()
+    evidence = make_build_catalog()
     with pytest.raises(RecommendationError, match="absent from build evidence"):
-        recommend(replace(evidence, heroes={}), build_policy(), state(), assets())
+        recommend(
+            replace(evidence, heroes={}),
+            make_recommendation_policy(),
+            make_decision_state(),
+            make_recommendation_assets(),
+        )
     with pytest.raises(RecommendationError, match="differs from the build policy"):
-        recommend(evidence, replace(build_policy(), hero_id=13), state(), assets())
+        recommend(
+            evidence,
+            replace(make_recommendation_policy(), hero_id=13),
+            make_decision_state(),
+            make_recommendation_assets(),
+        )
 
 
 def test_recommendation_abstains_for_an_empty_typed_decision(
@@ -226,7 +251,12 @@ def test_recommendation_abstains_for_an_empty_typed_decision(
         lambda _policy, _state: PolicyDecision(None, None),
     )
 
-    result = recommend(catalog(), build_policy(), state(), expanded_assets())
+    result = recommend(
+        make_build_catalog(),
+        make_recommendation_policy(),
+        make_decision_state(),
+        make_expanded_assets(),
+    )
 
     assert result.action is RecommendationAction.ABSTAIN
     assert "no executable action" in result.reason

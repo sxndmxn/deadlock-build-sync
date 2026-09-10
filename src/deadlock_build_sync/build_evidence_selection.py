@@ -5,6 +5,7 @@ import math
 from typing import cast
 
 from .artifacts import ArtifactError
+from .build_evidence_discovery import frozen_windows
 from .build_evidence_types import (
     BuildEvidenceCatalog,
     CoreCandidate,
@@ -14,7 +15,8 @@ from .build_evidence_types import (
     nondecreasing_window_schedule,
     reliable_purchase_window,
 )
-from .build_evidence_values import _required_int
+from .build_evidence_values import _require_integer
+from .core_substitutions import validate_substitution_routes
 from .mechanics import (
     InventoryState,
     ItemGraph,
@@ -22,6 +24,7 @@ from .mechanics import (
     purchase_item,
     schedule_component_path,
 )
+from .value_validation import object_dict
 
 
 def _replay_component_path(
@@ -77,10 +80,6 @@ def _select_core_candidate(
         joint_matches=evidence.core_policy.default_matches,
     )
     cost = sum(graph.require(item_id).cost for item_id in candidate.item_ids)
-    if cost > evidence.median_final_net_worth:
-        raise ArtifactError(
-            f"hero {evidence.hero_id} default core exceeds cohort wealth"
-        )
     try:
         candidate_path = _expand_component_path(graph, selected_order, by_id)
         state = _replay_component_path(graph, by_id, candidate_path)
@@ -88,9 +87,7 @@ def _select_core_candidate(
         raise ArtifactError(
             f"hero {evidence.hero_id} has an illegal state-aware core: {error}"
         ) from error
-    if len(candidate_path) != len(set(candidate_path)) or set(state.owned) != set(
-        candidate.item_ids
-    ):
+    if set(state.owned) != set(candidate.item_ids):
         raise ArtifactError(f"hero {evidence.hero_id} has no legal state-aware core")
     return candidate, selected_order, cost
 
@@ -104,10 +101,13 @@ def _validate_item_assets(
         if (
             asset is None
             or str(asset.get("name") or "") != item.item
-            or _required_int(asset.get("item_tier"), "asset tier") != item.tier
-            or _required_int(asset.get("cost"), "asset cost") != item.cost
-            or str(asset.get("item_slot_type") or "unknown").casefold() != item.slot
-            or bool(asset.get("is_active_item")) != item.active
+            or _require_integer(asset.get("item_tier"), "asset tier") != item.tier
+            or _require_integer(asset.get("cost"), "asset cost") != item.cost
+            or (
+                str(asset.get("item_slot_type") or "unknown").casefold(),
+                bool(asset.get("is_active_item")),
+            )
+            != (item.slot, item.active)
         ):
             raise ArtifactError(
                 f"hero {evidence.hero_id} item {item.item_id} conflicts with assets"
@@ -131,14 +131,15 @@ def _replay_selected_path(
         if evidence.sequence_policy is not None
         else _expand_component_path(graph, selected_order, by_id)
     )
-    if len(path_ids) != len(set(path_ids)):
+    frozen = object_dict(evidence.discovery.get("frozen_guide"))
+    if frozen is not None:
+        window_bounds = frozen_windows(frozen)
+    if (
+        frozen is None
+        and nondecreasing_window_schedule(path_ids, window_bounds) is None
+    ):
         raise ArtifactError(
-            f"hero {evidence.hero_id} component-expanded path repeats an item"
-        )
-    if nondecreasing_window_schedule(path_ids, window_bounds) is None:
-        raise ArtifactError(
-            f"hero {evidence.hero_id} component-expanded path violates "
-            "first-ownership soul windows"
+            f"hero {evidence.hero_id} component-expanded path violates first-ownership soul windows"
         )
     try:
         state = _replay_component_path(graph, by_id, path_ids)
@@ -148,29 +149,15 @@ def _replay_selected_path(
         ) from error
     if set(state.owned) == set(selected.item_ids):
         return path_ids
-    fallback = _expand_component_path(graph, selected_order, by_id)
-    if len(fallback) != len(set(fallback)):
-        raise ArtifactError(
-            f"hero {evidence.hero_id} component-expanded path repeats an item"
-        )
-    if nondecreasing_window_schedule(fallback, window_bounds) is None:
-        raise ArtifactError(
-            f"hero {evidence.hero_id} fallback path violates first-ownership "
-            "soul windows"
-        )
-    state = _replay_component_path(graph, by_id, fallback)
-    if set(state.owned) != set(selected.item_ids):
-        raise ArtifactError(
-            f"hero {evidence.hero_id} component-expanded path does not end in CORE"
-        )
-    return fallback
+    raise ArtifactError(
+        f"hero {evidence.hero_id} component-expanded path does not end in CORE; refresh-evidence is required"
+    )
 
 
 def _tier_selection(
     evidence: HeroBuildEvidence,
     tier: int,
-    core_ids: set[int],
-    optional_core_ids: set[int],
+    unavailable_ids: set[int],
     *,
     graph: ItemGraph,
     visible_higher_tier_ids: set[int],
@@ -184,9 +171,8 @@ def _tier_selection(
         by_id[item_id] for item_id in evidence.tier_policy.item_ids_by_tier[tier]
     )
     if any(
-        item.item_id in core_ids
-        or item.item_id in optional_core_ids
-        or not has_visible_upgrade(item)
+        item.item_id in unavailable_ids
+        or (not evidence.tier_policy.discovery_pool and not has_visible_upgrade(item))
         for item in membership
     ):
         raise ArtifactError(
@@ -213,7 +199,7 @@ def _tier_selection(
             ),
         )
     )
-    if membership != expected_order:
+    if not evidence.tier_policy.discovery_pool and membership != expected_order:
         raise ArtifactError(
             f"hero {evidence.hero_id} Tier {tier} policy order is not deterministic"
         )
@@ -270,8 +256,7 @@ def _selected_tiers(
         tiers[tier] = _tier_selection(
             evidence,
             tier,
-            core_ids,
-            optional_core_ids,
+            core_ids | optional_core_ids,
             graph=graph,
             visible_higher_tier_ids=visible_higher_tier_ids,
         )
@@ -312,8 +297,24 @@ def select_hero_build(
         alternative.item_id for alternative in evidence.core_policy.alternatives
     }
     tiers = _selected_tiers(graph, evidence, core_ids, optional_core_ids)
+    validate_substitution_routes(graph, evidence.automatic_branches, selected_order)
     return SelectedHeroBuild(
         hero_id=evidence.hero_id,
+        cohort=evidence.cohort,
+        evidence_summary={
+            "status": evidence.discovery.get("evidence_status", "observed"),
+            "limitations": evidence.discovery.get("evidence_limitations", []),
+            "discovery_owners": evidence.discovery.get("discovery_support"),
+            "selection_owners": (
+                object_dict(evidence.discovery.get("selection")) or {}
+            ).get("owners"),
+            "validation_owners": (
+                object_dict(evidence.discovery.get("validation")) or {}
+            ).get("owners"),
+            "timing_status": (
+                object_dict(evidence.discovery.get("frozen_guide")) or {}
+            ).get("timing_status", "uncertain"),
+        },
         path_id=evidence.path_id,
         path_label=evidence.path_label,
         signature_item_ids=evidence.signature_item_ids,
@@ -342,6 +343,8 @@ def select_hero_build(
         ),
         median_final_net_worth=evidence.median_final_net_worth,
         core_target_cost=selected_cost,
+        purchase_timing=evidence.purchase_timing,
+        automatic_branches=evidence.automatic_branches,
     )
 
 

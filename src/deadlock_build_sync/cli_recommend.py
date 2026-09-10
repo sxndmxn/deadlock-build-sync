@@ -8,18 +8,21 @@ from .artifacts import load_policy_artifact
 from .cli_support import (
     _BUILD_EVIDENCE_FILENAME,
     _POLICY_FILENAME,
-    _build_evidence,
-    _catalog,
     _describe_preview_guide,
-    _generate,
-    _location,
+    _discover_cache_location,
+    _generate_requested_guides,
+    _load_build_evidence,
+    _load_optional_narrative_catalog,
     _record_fresh_evidence,
-    _sync_artifact_directory,
+    _resolve_artifact_directory,
 )
 from .freshness import (
     require_current_build_evidence,
 )
+from .guide_groups import group_guides
+from .purchase_markdown import render_purchase_markdown
 from .recommendation import DecisionState, RecommendationError, recommend
+from .recommendation_plan import render_recommendation_markdown
 from .tracing import record_stage_facts
 
 if TYPE_CHECKING:
@@ -30,7 +33,7 @@ def _run_recommend(args: argparse.Namespace) -> int:
     evidence_path = (
         args.build_evidence.expanduser().resolve()
         if args.build_evidence is not None
-        else _sync_artifact_directory(args.artifacts) / _BUILD_EVIDENCE_FILENAME
+        else _resolve_artifact_directory(args.artifacts) / _BUILD_EVIDENCE_FILENAME
     )
     evidence = require_current_build_evidence(
         evidence_path,
@@ -60,21 +63,9 @@ def _run_recommend(args: argparse.Namespace) -> int:
         raise RecommendationError(
             "typed policy sidecar differs from the current build evidence"
         )
-    policy = next(
-        (
-            candidate
-            for (hero_id, path_id), candidate in sorted(policies.items())
-            if hero_id == state.hero_id and path_id == "default"
-        ),
-        next(
-            (
-                candidate
-                for (hero_id, _), candidate in sorted(policies.items())
-                if hero_id == state.hero_id
-            ),
-            None,
-        ),
-    )
+    default = evidence.heroes.get(state.hero_id)
+    path_id = state.path_id or (default.path_id if default else "default")
+    policy = policies.get((state.hero_id, path_id))
     if policy is None:
         raise RecommendationError("decision state hero is absent from typed policies")
     pinned_api = DeadlockApi(
@@ -84,19 +75,23 @@ def _run_recommend(args: argparse.Namespace) -> int:
         epochs=evidence.epochs,
     )
     decision = recommend(evidence, policy, state, pinned_api.items())
-    print(json.dumps(decision.as_dict(), indent=2, ensure_ascii=False))
+    if args.format == "markdown":
+        print(render_recommendation_markdown(decision))
+    else:
+        print(json.dumps(decision.as_dict(), indent=2, ensure_ascii=False))
     return 0
 
 
 def _run_preview(args: argparse.Namespace) -> int:
-    location = _location(args)
-    evidence_path, evidence = _build_evidence(args)
-    generated = _generate(
+    location = _discover_cache_location(args)
+    evidence_path, evidence = _load_build_evidence(args)
+    generated = _generate_requested_guides(
         args,
         evidence,
         location.account_id,
-        narrative_catalog=_catalog(args),
+        narrative_catalog=_load_optional_narrative_catalog(args),
     )
+    guides = group_guides(generated.guides, generated.guide_groups)
     payload = {
         "account_id": location.account_id,
         "persona": generated.persona,
@@ -121,7 +116,7 @@ def _run_preview(args: argparse.Namespace) -> int:
                 generated,
                 account_id=location.account_id,
             )
-            for guide in generated.guides
+            for guide in guides
         ],
     }
     record_stage_facts(
@@ -129,5 +124,13 @@ def _run_preview(args: argparse.Namespace) -> int:
         guide_count=len(generated.guides),
         policy_count=len(generated.policies),
     )
-    print(json.dumps(payload, indent=2, ensure_ascii=False))
+    if args.format == "markdown":
+        print(
+            "\n".join(
+                render_purchase_markdown(guide, details=args.details)
+                for guide in guides
+            )
+        )
+    else:
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
     return 0
