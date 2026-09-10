@@ -1,0 +1,83 @@
+{
+  "greedy:1": {
+    "supported_queries": 156,
+    "raw_rate_above_hero": 110,
+    "median_raw_difference": 0.014446076838722885,
+    "median_interval_width": 0.17113585338062576,
+    "interpretation": "Descriptive associations. Query cohorts can overlap.",
+    "raw_rate_above_whole_hero": 96,
+    "owners_100_and_above_whole_hero": 60
+  },
+  "beam:4": {
+    "supported_queries": 259,
+    "raw_rate_above_hero": 171,
+    "median_raw_difference": 0.01714677640603568,
+    "median_interval_width": 0.1701890127470287,
+    "interpretation": "Descriptive associations. Query cohorts can overlap.",
+    "raw_rate_above_whole_hero": 148,
+    "owners_100_and_above_whole_hero": 90
+  },
+  "beam:8": {
+    "supported_queries": 291,
+    "raw_rate_above_hero": 186,
+    "median_raw_difference": 0.017079889807162574,
+    "median_interval_width": 0.173257862253966,
+    "interpretation": "Descriptive associations. Query cohorts can overlap.",
+    "raw_rate_above_whole_hero": 170,
+    "owners_100_and_above_whole_hero": 95
+  },
+  "beam:16": {
+    "supported_queries": 310,
+    "raw_rate_above_hero": 200,
+    "median_raw_difference": 0.014851006898362606,
+    "median_interval_width": 0.17019345795554486,
+    "interpretation": "Descriptive associations. Query cohorts can overlap.",
+    "raw_rate_above_whole_hero": 180,
+    "owners_100_and_above_whole_hero": 100
+  },
+  "beam:32": {
+    "supported_queries": 319,
+    "raw_rate_above_hero": 202,
+    "median_raw_difference": 0.013838633911001041,
+    "median_interval_width": 0.17016694466785587,
+    "interpretation": "Descriptive associations. Query cohorts can overlap.",
+    "raw_rate_above_whole_hero": 187,
+    "owners_100_and_above_whole_hero": 102
+  },
+  "diverse:16": {
+    "supported_queries": 315,
+    "raw_rate_above_hero": 202,
+    "median_raw_difference": 0.01479530554026326,
+    "median_interval_width": 0.17155013388027163,
+    "interpretation": "Descriptive associations. Query cohorts can overlap.",
+    "raw_rate_above_whole_hero": 184,
+    "owners_100_and_above_whole_hero": 101
+  },
+  "eclat:8": {
+    "supported_queries": 295,
+    "raw_rate_above_hero": 200,
+    "median_raw_difference": 0.017079889807162574,
+    "median_interval_width": 0.1679946767457886,
+    "interpretation": "Descriptive associations. Query cohorts can overlap.",
+    "raw_rate_above_whole_hero": 173,
+    "owners_100_and_above_whole_hero": 106
+  },
+  "eclat:16": {
+    "supported_queries": 310,
+    "raw_rate_above_hero": 198,
+    "median_raw_difference": 0.01428283723365692,
+    "median_interval_width": 0.17251698006155214,
+    "interpretation": "Descriptive associations. Query cohorts can overlap.",
+    "raw_rate_above_whole_hero": 184,
+    "owners_100_and_above_whole_hero": 105
+  },
+  "leiden:16": {
+    "supported_queries": 316,
+    "raw_rate_above_hero": 206,
+    "median_raw_difference": 0.014851006898362606,
+    "median_interval_width": 0.17251698006155214,
+    "interpretation": "Descriptive associations. Query cohorts can overlap.",
+    "raw_rate_above_whole_hero": 184,
+    "owners_100_and_above_whole_hero": 101
+  }
+}

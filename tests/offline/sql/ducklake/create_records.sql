@@ -1,1 +1,1 @@
-CREATE TABLE remote.records AS SELECT 7 AS value;
+CREATE TABLE remote.records AS SELECT 7 AS "value";

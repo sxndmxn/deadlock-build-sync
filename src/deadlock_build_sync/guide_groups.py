@@ -7,6 +7,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from .artifacts import ArtifactError
+from .beam_display import compact_beam_guide, generator_metadata
 from .purchase_types import MAX_ITEM_ANNOTATION_BYTES, GuideCategory
 
 if TYPE_CHECKING:
@@ -35,6 +36,11 @@ def describe_variant_changes(default: PurchaseGuide, variant: PurchaseGuide) -> 
 
 def build_variant_record(guide: PurchaseGuide) -> dict[str, object]:
     return {
+        **(
+            {"generator": generator_metadata(guide)}
+            if generator_metadata(guide)
+            else {}
+        ),
         "path_id": guide.path_id,
         "policy_id": guide.policy_id,
         "core": [item.item_id for item in guide.core_items],
@@ -205,7 +211,9 @@ def group_guides(
             raise ArtifactError("Guide group has no supported default")
         if len(members) == 1:
             result.append(
-                replace(default, categories=_build_compact_categories(default))
+                compact_beam_guide(default)
+                if generator_metadata(default)
+                else replace(default, categories=_build_compact_categories(default))
             )
             continue
         result.append(_combine_guides(default, members))
@@ -230,4 +238,6 @@ def _combine_guides(
     combined = replace(
         default, variant_guides=variants, path_label=label, build_archetype=label
     )
+    if generator_metadata(combined):
+        return compact_beam_guide(combined)
     return replace(combined, categories=_build_compact_categories(combined))

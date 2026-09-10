@@ -105,6 +105,8 @@ def freeze_purchase_guide(
     data: HeroDiscoveryData,
     row: NominatedCoreBuild,
     graph: ItemGraph,
+    *,
+    exact_path: tuple[int, ...] | None = None,
 ) -> FrozenPurchaseGuide:
     evidence = load_item_pool_evidence(
         connection, select_core_owners(data, row["items"], "discovery")
@@ -114,7 +116,11 @@ def freeze_purchase_guide(
         return {"ready": False, "reason": "No supported purchase order"}
     priorities, bounds = calculate_purchase_timing_policy(evidence["items"])
     try:
-        path = schedule_component_path(graph, order, priorities)
+        path = (
+            exact_path
+            if exact_path is not None
+            else schedule_component_path(graph, order, priorities)
+        )
         plan = plan_purchases(graph, path, tuple(row["items"]), {})
     except (MechanicsError, ValueError) as error:
         return {"ready": False, "reason": str(error)}
@@ -220,7 +226,7 @@ def build_evidence_payload(
         "sequence_policy": {
             "version": SEQUENCE_POLICY_VERSION,
             "minimum_support": 20,
-            "production_model": "pairwise",
+            "production_model": row["path"].get("method", "pairwise"),
             "component_expanded_default_path": frozen["path"],
             "transitions": [],
             "evaluation": row["order_validation"],

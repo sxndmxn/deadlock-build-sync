@@ -1,0 +1,178 @@
+[
+  {
+    "case": {
+      "name": "combined_prior_300_support_100_depth_6_cost_0",
+      "search": {"method": "beam", "width": 16, "depth": 6, "alternatives": 3, "diversity": 0.02},
+      "scoring": {"prior_strength": 300, "uncertainty_multiplier": 0.5, "cost_exponent": 0, "discount": 0.97, "minimum_support": 30, "state_aware": true},
+      "joint_support": 100
+    },
+    "guides": {"queries": 342, "valid_queries": 342, "validated_paths": 947, "validated_actions": 4230, "abstention_rate": 0.029239766081871343, "median_ms": 12.686312518781051, "p95_ms": 16.82891664095223, "total_search_seconds": 3.9790714946575463, "mean_expansions": 11730.105263157895, "mean_duplicate_states": 137.21052631578948, "mean_diversity": 0.5005321595233876, "mean_distinct_first_actions": 1.3421052631578947, "mean_score": 0.04507092871334208, "top1_training_support_100": 0.9707602339181286, "top1_heldout_support_30": 0.8391812865497076, "top1_heldout_support_100": 0.20175438596491227, "unavailable_top1_evidence": 0, "median_top1_heldout_owners": 53.0, "mean_final_items": 4.102409638554217, "total_evaluation_seconds": 4.668865374987945},
+    "decisions": {"queries": 912, "valid_queries": 912, "validated_paths": 2240, "validated_actions": 5010, "abstention_rate": 0.15570175438596492, "median_ms": 5.480624968186021, "p95_ms": 11.138189278426578, "total_search_seconds": 4.81284002965549, "mean_expansions": 6854.25, "mean_duplicate_states": 43.22697368421053, "mean_diversity": 0.6502506265664161, "mean_distinct_first_actions": 1.7971491228070176, "top1_agreement": 0.08991228070175439, "alternative_agreement": 0.14692982456140352, "prefix_two_agreement": 0.01045751633986928, "total_evaluation_seconds": 5.381602916982956},
+    "calibration": {"observations": 1583459, "supported_observations": 1407184, "brier_score": 0.24249359956267996, "state_baseline_brier": 0.24254675476116866, "hero_baseline_brier": 0.2492771004497343, "log_loss": 0.6777804531906165}
+  },
+  {
+    "case": {
+      "name": "combined_prior_300_support_100_depth_6_cost_0.5",
+      "search": {"method": "beam", "width": 16, "depth": 6, "alternatives": 3, "diversity": 0.02},
+      "scoring": {"prior_strength": 300, "uncertainty_multiplier": 0.5, "cost_exponent": 0.5, "discount": 0.97, "minimum_support": 30, "state_aware": true},
+      "joint_support": 100
+    },
+    "guides": {"queries": 342, "valid_queries": 342, "validated_paths": 944, "validated_actions": 4259, "abstention_rate": 0.04093567251461988, "median_ms": 12.839000526582822, "p95_ms": 17.198589889449067, "total_search_seconds": 4.035274494381156, "mean_expansions": 11758.842105263158, "mean_duplicate_states": 138.3830409356725, "mean_diversity": 0.505173040626257, "mean_distinct_first_actions": 1.2953216374269005, "mean_score": 0.0490659526126614, "top1_training_support_100": 0.9590643274853801, "top1_heldout_support_30": 0.847953216374269, "top1_heldout_support_100": 0.21052631578947367, "unavailable_top1_evidence": 0, "median_top1_heldout_owners": 55.0, "mean_final_items": 3.9390243902439024, "total_evaluation_seconds": 4.730430290976074},
+    "decisions": {"queries": 912, "valid_queries": 912, "validated_paths": 2240, "validated_actions": 5134, "abstention_rate": 0.15570175438596492, "median_ms": 5.548958986764774, "p95_ms": 11.295957994298071, "total_search_seconds": 4.874426219495945, "mean_expansions": 6871.868421052632, "mean_duplicate_states": 41.49122807017544, "mean_diversity": 0.648048506683375, "mean_distinct_first_actions": 1.7664473684210527, "top1_agreement": 0.08771929824561403, "alternative_agreement": 0.1425438596491228, "prefix_two_agreement": 0.01437908496732026, "total_evaluation_seconds": 5.447725624952},
+    "calibration": {"observations": 1583459, "supported_observations": 1407184, "brier_score": 0.24249359956267996, "state_baseline_brier": 0.24254675476116866, "hero_baseline_brier": 0.2492771004497343, "log_loss": 0.6777804531906165}
+  },
+  {
+    "case": {
+      "name": "combined_prior_300_support_100_depth_8_cost_0",
+      "search": {"method": "beam", "width": 16, "depth": 8, "alternatives": 3, "diversity": 0.02},
+      "scoring": {"prior_strength": 300, "uncertainty_multiplier": 0.5, "cost_exponent": 0, "discount": 0.97, "minimum_support": 30, "state_aware": true},
+      "joint_support": 100
+    },
+    "guides": {"queries": 342, "valid_queries": 342, "validated_paths": 953, "validated_actions": 4638, "abstention_rate": 0.023391812865497075, "median_ms": 16.591312509262934, "p95_ms": 23.430427376297303, "total_search_seconds": 5.033224257582333, "mean_expansions": 14863.333333333334, "mean_duplicate_states": 148.73099415204678, "mean_diversity": 0.49546386308082213, "mean_distinct_first_actions": 1.327485380116959, "mean_score": 0.04901991481873476, "top1_training_support_100": 0.9766081871345029, "top1_heldout_support_30": 0.8333333333333334, "top1_heldout_support_100": 0.14619883040935672, "unavailable_top1_evidence": 0, "median_top1_heldout_owners": 48.0, "mean_final_items": 4.419161676646707, "total_evaluation_seconds": 5.738718250009697},
+    "decisions": {"queries": 912, "valid_queries": 912, "validated_paths": 2240, "validated_actions": 5010, "abstention_rate": 0.15570175438596492, "median_ms": 5.569917004322633, "p95_ms": 11.534385607228614, "total_search_seconds": 4.924163668649271, "mean_expansions": 6976.894736842105, "mean_duplicate_states": 43.30811403508772, "mean_diversity": 0.6502506265664161, "mean_distinct_first_actions": 1.7971491228070176, "top1_agreement": 0.08991228070175439, "alternative_agreement": 0.14692982456140352, "prefix_two_agreement": 0.01045751633986928, "total_evaluation_seconds": 5.5121602499857545},
+    "calibration": {"observations": 1583459, "supported_observations": 1407184, "brier_score": 0.24249359956267996, "state_baseline_brier": 0.24254675476116866, "hero_baseline_brier": 0.2492771004497343, "log_loss": 0.6777804531906165}
+  },
+  {
+    "case": {
+      "name": "combined_prior_300_support_100_depth_8_cost_0.5",
+      "search": {"method": "beam", "width": 16, "depth": 8, "alternatives": 3, "diversity": 0.02},
+      "scoring": {"prior_strength": 300, "uncertainty_multiplier": 0.5, "cost_exponent": 0.5, "discount": 0.97, "minimum_support": 30, "state_aware": true},
+      "joint_support": 100
+    },
+    "guides": {"queries": 342, "valid_queries": 342, "validated_paths": 955, "validated_actions": 4728, "abstention_rate": 0.038011695906432746, "median_ms": 16.712812997866422, "p95_ms": 23.638198259868656, "total_search_seconds": 5.098828705900814, "mean_expansions": 14916.701754385966, "mean_duplicate_states": 151.1345029239766, "mean_diversity": 0.5096891006978725, "mean_distinct_first_actions": 1.2894736842105263, "mean_score": 0.05245857490129221, "top1_training_support_100": 0.9619883040935673, "top1_heldout_support_30": 0.8333333333333334, "top1_heldout_support_100": 0.1608187134502924, "unavailable_top1_evidence": 0, "median_top1_heldout_owners": 49.0, "mean_final_items": 4.316109422492401, "total_evaluation_seconds": 5.802049874968361},
+    "decisions": {"queries": 912, "valid_queries": 912, "validated_paths": 2240, "validated_actions": 5134, "abstention_rate": 0.15570175438596492, "median_ms": 5.523937492398545, "p95_ms": 11.83269373141229, "total_search_seconds": 4.928858244791627, "mean_expansions": 7005.118421052632, "mean_duplicate_states": 41.588815789473685, "mean_diversity": 0.648048506683375, "mean_distinct_first_actions": 1.7664473684210527, "top1_agreement": 0.08771929824561403, "alternative_agreement": 0.1425438596491228, "prefix_two_agreement": 0.01437908496732026, "total_evaluation_seconds": 5.506930875009857},
+    "calibration": {"observations": 1583459, "supported_observations": 1407184, "brier_score": 0.24249359956267996, "state_baseline_brier": 0.24254675476116866, "hero_baseline_brier": 0.2492771004497343, "log_loss": 0.6777804531906165}
+  },
+  {
+    "case": {
+      "name": "combined_prior_300_support_200_depth_6_cost_0",
+      "search": {"method": "beam", "width": 16, "depth": 6, "alternatives": 3, "diversity": 0.02},
+      "scoring": {"prior_strength": 300, "uncertainty_multiplier": 0.5, "cost_exponent": 0, "discount": 0.97, "minimum_support": 30, "state_aware": true},
+      "joint_support": 200
+    },
+    "guides": {"queries": 342, "valid_queries": 342, "validated_paths": 888, "validated_actions": 3875, "abstention_rate": 0.06140350877192982, "median_ms": 12.591541482834145, "p95_ms": 16.907953575719148, "total_search_seconds": 3.9341869905474596, "mean_expansions": 11378.421052631578, "mean_duplicate_states": 123.42105263157895, "mean_diversity": 0.46526540115721393, "mean_distinct_first_actions": 1.3391812865497077, "mean_score": 0.04086518914336745, "top1_training_support_100": 0.9385964912280702, "top1_heldout_support_30": 0.9181286549707602, "top1_heldout_support_100": 0.45321637426900585, "unavailable_top1_evidence": 0, "median_top1_heldout_owners": 98.0, "mean_final_items": 3.959501557632399, "total_evaluation_seconds": 4.633711292000953},
+    "decisions": {"queries": 912, "valid_queries": 912, "validated_paths": 2225, "validated_actions": 4568, "abstention_rate": 0.15679824561403508, "median_ms": 5.08206247468479, "p95_ms": 10.976928641321134, "total_search_seconds": 4.500204028328881, "mean_expansions": 6251.8026315789475, "mean_duplicate_states": 36.36074561403509, "mean_diversity": 0.6673297827903091, "mean_distinct_first_actions": 1.8782894736842106, "top1_agreement": 0.08552631578947369, "alternative_agreement": 0.1611842105263158, "prefix_two_agreement": 0.009150326797385621, "total_evaluation_seconds": 5.076243042014539},
+    "calibration": {"observations": 1583459, "supported_observations": 1407184, "brier_score": 0.24249359956267996, "state_baseline_brier": 0.24254675476116866, "hero_baseline_brier": 0.2492771004497343, "log_loss": 0.6777804531906165}
+  },
+  {
+    "case": {
+      "name": "combined_prior_300_support_200_depth_6_cost_0.5",
+      "search": {"method": "beam", "width": 16, "depth": 6, "alternatives": 3, "diversity": 0.02},
+      "scoring": {"prior_strength": 300, "uncertainty_multiplier": 0.5, "cost_exponent": 0.5, "discount": 0.97, "minimum_support": 30, "state_aware": true},
+      "joint_support": 200
+    },
+    "guides": {"queries": 342, "valid_queries": 342, "validated_paths": 879, "validated_actions": 3899, "abstention_rate": 0.06725146198830409, "median_ms": 12.656770966714248, "p95_ms": 17.244637498515655, "total_search_seconds": 3.968639788858127, "mean_expansions": 11391.192982456141, "mean_duplicate_states": 124.03801169590643, "mean_diversity": 0.4653725362789691, "mean_distinct_first_actions": 1.286549707602339, "mean_score": 0.04367038682514018, "top1_training_support_100": 0.9327485380116959, "top1_heldout_support_30": 0.9181286549707602, "top1_heldout_support_100": 0.4590643274853801, "unavailable_top1_evidence": 0, "median_top1_heldout_owners": 99.0, "mean_final_items": 3.852664576802508, "total_evaluation_seconds": 4.678057084034663},
+    "decisions": {"queries": 912, "valid_queries": 912, "validated_paths": 2225, "validated_actions": 4665, "abstention_rate": 0.15679824561403508, "median_ms": 5.116895481478423, "p95_ms": 11.115769037860446, "total_search_seconds": 4.547504044428933, "mean_expansions": 6251.460526315789, "mean_duplicate_states": 35.03508771929825, "mean_diversity": 0.6654283277638542, "mean_distinct_first_actions": 1.8585526315789473, "top1_agreement": 0.08114035087719298, "alternative_agreement": 0.17434210526315788, "prefix_two_agreement": 0.009150326797385621, "total_evaluation_seconds": 5.125982625002507},
+    "calibration": {"observations": 1583459, "supported_observations": 1407184, "brier_score": 0.24249359956267996, "state_baseline_brier": 0.24254675476116866, "hero_baseline_brier": 0.2492771004497343, "log_loss": 0.6777804531906165}
+  },
+  {
+    "case": {
+      "name": "combined_prior_300_support_200_depth_8_cost_0",
+      "search": {"method": "beam", "width": 16, "depth": 8, "alternatives": 3, "diversity": 0.02},
+      "scoring": {"prior_strength": 300, "uncertainty_multiplier": 0.5, "cost_exponent": 0, "discount": 0.97, "minimum_support": 30, "state_aware": true},
+      "joint_support": 200
+    },
+    "guides": {"queries": 342, "valid_queries": 342, "validated_paths": 892, "validated_actions": 4193, "abstention_rate": 0.05555555555555555, "median_ms": 16.060083493357524, "p95_ms": 23.33071315952111, "total_search_seconds": 4.915555851184763, "mean_expansions": 14294.982456140351, "mean_duplicate_states": 133.94152046783626, "mean_diversity": 0.4616568427240942, "mean_distinct_first_actions": 1.327485380116959, "mean_score": 0.043830902878027204, "top1_training_support_100": 0.9444444444444444, "top1_heldout_support_30": 0.9210526315789473, "top1_heldout_support_100": 0.41228070175438597, "unavailable_top1_evidence": 0, "median_top1_heldout_owners": 93.0, "mean_final_items": 4.226006191950464, "total_evaluation_seconds": 5.6183589159627445},
+    "decisions": {"queries": 912, "valid_queries": 912, "validated_paths": 2225, "validated_actions": 4568, "abstention_rate": 0.15679824561403508, "median_ms": 5.095667002024129, "p95_ms": 11.256960171158424, "total_search_seconds": 4.5398957776487805, "mean_expansions": 6316.289473684211, "mean_duplicate_states": 36.38048245614035, "mean_diversity": 0.6673297827903091, "mean_distinct_first_actions": 1.8782894736842106, "top1_agreement": 0.08552631578947369, "alternative_agreement": 0.1611842105263158, "prefix_two_agreement": 0.009150326797385621, "total_evaluation_seconds": 5.117975916014984},
+    "calibration": {"observations": 1583459, "supported_observations": 1407184, "brier_score": 0.24249359956267996, "state_baseline_brier": 0.24254675476116866, "hero_baseline_brier": 0.2492771004497343, "log_loss": 0.6777804531906165}
+  },
+  {
+    "case": {
+      "name": "combined_prior_300_support_200_depth_8_cost_0.5",
+      "search": {"method": "beam", "width": 16, "depth": 8, "alternatives": 3, "diversity": 0.02},
+      "scoring": {"prior_strength": 300, "uncertainty_multiplier": 0.5, "cost_exponent": 0.5, "discount": 0.97, "minimum_support": 30, "state_aware": true},
+      "joint_support": 200
+    },
+    "guides": {"queries": 342, "valid_queries": 342, "validated_paths": 887, "validated_actions": 4278, "abstention_rate": 0.06432748538011696, "median_ms": 16.21375000104308, "p95_ms": 23.498579146689735, "total_search_seconds": 4.953929708630312, "mean_expansions": 14311.40350877193, "mean_duplicate_states": 135.6578947368421, "mean_diversity": 0.46184249203255046, "mean_distinct_first_actions": 1.2836257309941521, "mean_score": 0.04654708467251084, "top1_training_support_100": 0.935672514619883, "top1_heldout_support_30": 0.9181286549707602, "top1_heldout_support_100": 0.4239766081871345, "unavailable_top1_evidence": 0, "median_top1_heldout_owners": 95.5, "mean_final_items": 4.153125, "total_evaluation_seconds": 5.65820712497225},
+    "decisions": {"queries": 912, "valid_queries": 912, "validated_paths": 2225, "validated_actions": 4665, "abstention_rate": 0.15679824561403508, "median_ms": 5.064291472081095, "p95_ms": 11.162689633783883, "total_search_seconds": 4.5493736999924295, "mean_expansions": 6318.0, "mean_duplicate_states": 35.05263157894737, "mean_diversity": 0.6654283277638542, "mean_distinct_first_actions": 1.8585526315789473, "top1_agreement": 0.08114035087719298, "alternative_agreement": 0.17434210526315788, "prefix_two_agreement": 0.009150326797385621, "total_evaluation_seconds": 5.128324416000396},
+    "calibration": {"observations": 1583459, "supported_observations": 1407184, "brier_score": 0.24249359956267996, "state_baseline_brier": 0.24254675476116866, "hero_baseline_brier": 0.2492771004497343, "log_loss": 0.6777804531906165}
+  },
+  {
+    "case": {
+      "name": "combined_prior_1000_support_100_depth_6_cost_0",
+      "search": {"method": "beam", "width": 16, "depth": 6, "alternatives": 3, "diversity": 0.02},
+      "scoring": {"prior_strength": 1000, "uncertainty_multiplier": 0.5, "cost_exponent": 0, "discount": 0.97, "minimum_support": 30, "state_aware": true},
+      "joint_support": 100
+    },
+    "guides": {"queries": 342, "valid_queries": 342, "validated_paths": 949, "validated_actions": 4091, "abstention_rate": 0.038011695906432746, "median_ms": 12.816853995900601, "p95_ms": 16.964569021365605, "total_search_seconds": 3.98860282584792, "mean_expansions": 11736.947368421053, "mean_duplicate_states": 142.8684210526316, "mean_diversity": 0.49767551595036974, "mean_distinct_first_actions": 1.2894736842105263, "mean_score": 0.017367896225523406, "top1_training_support_100": 0.9619883040935673, "top1_heldout_support_30": 0.8538011695906432, "top1_heldout_support_100": 0.27485380116959063, "unavailable_top1_evidence": 0, "median_top1_heldout_owners": 62.0, "mean_final_items": 3.860182370820669, "total_evaluation_seconds": 4.6936130420072},
+    "decisions": {"queries": 912, "valid_queries": 912, "validated_paths": 2240, "validated_actions": 4403, "abstention_rate": 0.15570175438596492, "median_ms": 5.510312505066395, "p95_ms": 11.33625243382994, "total_search_seconds": 4.828998427488841, "mean_expansions": 6856.473684210527, "mean_duplicate_states": 43.48574561403509, "mean_diversity": 0.6751705653021441, "mean_distinct_first_actions": 1.8695175438596492, "top1_agreement": 0.09978070175438597, "alternative_agreement": 0.1699561403508772, "prefix_two_agreement": 0.01045751633986928, "total_evaluation_seconds": 5.410987332987133},
+    "calibration": {"observations": 1583459, "supported_observations": 1407184, "brier_score": 0.2424835682743553, "state_baseline_brier": 0.24254675476116866, "hero_baseline_brier": 0.2492771004497343, "log_loss": 0.6777625475330479}
+  },
+  {
+    "case": {
+      "name": "combined_prior_1000_support_100_depth_6_cost_0.5",
+      "search": {"method": "beam", "width": 16, "depth": 6, "alternatives": 3, "diversity": 0.02},
+      "scoring": {"prior_strength": 1000, "uncertainty_multiplier": 0.5, "cost_exponent": 0.5, "discount": 0.97, "minimum_support": 30, "state_aware": true},
+      "joint_support": 100
+    },
+    "guides": {"queries": 342, "valid_queries": 342, "validated_paths": 944, "validated_actions": 4086, "abstention_rate": 0.03508771929824561, "median_ms": 12.882249982794747, "p95_ms": 17.07555659522768, "total_search_seconds": 4.009495546401013, "mean_expansions": 11751.087719298246, "mean_duplicate_states": 142.03801169590642, "mean_diversity": 0.49188093691017665, "mean_distinct_first_actions": 1.2222222222222223, "mean_score": 0.018888887548100284, "top1_training_support_100": 0.9649122807017544, "top1_heldout_support_30": 0.868421052631579, "top1_heldout_support_100": 0.2777777777777778, "unavailable_top1_evidence": 0, "median_top1_heldout_owners": 63.5, "mean_final_items": 3.7848484848484847, "total_evaluation_seconds": 4.712989583029412},
+    "decisions": {"queries": 912, "valid_queries": 912, "validated_paths": 2240, "validated_actions": 4496, "abstention_rate": 0.15570175438596492, "median_ms": 5.445499991765246, "p95_ms": 11.331789274117908, "total_search_seconds": 4.829644391022157, "mean_expansions": 6835.776315789473, "mean_duplicate_states": 40.11513157894737, "mean_diversity": 0.675026977165135, "mean_distinct_first_actions": 1.8651315789473684, "top1_agreement": 0.09978070175438597, "alternative_agreement": 0.16337719298245615, "prefix_two_agreement": 0.01437908496732026, "total_evaluation_seconds": 5.408435042016208},
+    "calibration": {"observations": 1583459, "supported_observations": 1407184, "brier_score": 0.2424835682743553, "state_baseline_brier": 0.24254675476116866, "hero_baseline_brier": 0.2492771004497343, "log_loss": 0.6777625475330479}
+  },
+  {
+    "case": {
+      "name": "combined_prior_1000_support_100_depth_8_cost_0",
+      "search": {"method": "beam", "width": 16, "depth": 8, "alternatives": 3, "diversity": 0.02},
+      "scoring": {"prior_strength": 1000, "uncertainty_multiplier": 0.5, "cost_exponent": 0, "discount": 0.97, "minimum_support": 30, "state_aware": true},
+      "joint_support": 100
+    },
+    "guides": {"queries": 342, "valid_queries": 342, "validated_paths": 957, "validated_actions": 4459, "abstention_rate": 0.029239766081871343, "median_ms": 16.793437505839393, "p95_ms": 23.482471480383538, "total_search_seconds": 5.041069206898101, "mean_expansions": 14895.263157894737, "mean_duplicate_states": 155.21929824561403, "mean_diversity": 0.49006607427660054, "mean_distinct_first_actions": 1.2982456140350878, "mean_score": 0.018694069655348654, "top1_training_support_100": 0.9707602339181286, "top1_heldout_support_30": 0.8421052631578947, "top1_heldout_support_100": 0.22807017543859648, "unavailable_top1_evidence": 0, "median_top1_heldout_owners": 56.5, "mean_final_items": 4.105421686746988, "total_evaluation_seconds": 5.760030541976448},
+    "decisions": {"queries": 912, "valid_queries": 912, "validated_paths": 2240, "validated_actions": 4403, "abstention_rate": 0.15570175438596492, "median_ms": 5.498208513017744, "p95_ms": 11.523689690511668, "total_search_seconds": 4.885003956675064, "mean_expansions": 6976.039473684211, "mean_duplicate_states": 43.56798245614035, "mean_diversity": 0.6751705653021441, "mean_distinct_first_actions": 1.8695175438596492, "top1_agreement": 0.09978070175438597, "alternative_agreement": 0.1699561403508772, "prefix_two_agreement": 0.01045751633986928, "total_evaluation_seconds": 5.469430040975567},
+    "calibration": {"observations": 1583459, "supported_observations": 1407184, "brier_score": 0.2424835682743553, "state_baseline_brier": 0.24254675476116866, "hero_baseline_brier": 0.2492771004497343, "log_loss": 0.6777625475330479}
+  },
+  {
+    "case": {
+      "name": "combined_prior_1000_support_100_depth_8_cost_0.5",
+      "search": {"method": "beam", "width": 16, "depth": 8, "alternatives": 3, "diversity": 0.02},
+      "scoring": {"prior_strength": 1000, "uncertainty_multiplier": 0.5, "cost_exponent": 0.5, "discount": 0.97, "minimum_support": 30, "state_aware": true},
+      "joint_support": 100
+    },
+    "guides": {"queries": 342, "valid_queries": 342, "validated_paths": 947, "validated_actions": 4474, "abstention_rate": 0.03216374269005848, "median_ms": 16.598458489170298, "p95_ms": 23.711231548804786, "total_search_seconds": 5.0270908735110424, "mean_expansions": 14890.245614035088, "mean_duplicate_states": 154.99707602339183, "mean_diversity": 0.48694808007673507, "mean_distinct_first_actions": 1.2105263157894737, "mean_score": 0.020165364302474054, "top1_training_support_100": 0.9678362573099415, "top1_heldout_support_30": 0.8450292397660819, "top1_heldout_support_100": 0.23684210526315788, "unavailable_top1_evidence": 0, "median_top1_heldout_owners": 59.0, "mean_final_items": 4.108761329305136, "total_evaluation_seconds": 5.748940750025213},
+    "decisions": {"queries": 912, "valid_queries": 912, "validated_paths": 2240, "validated_actions": 4496, "abstention_rate": 0.15570175438596492, "median_ms": 5.485728965140879, "p95_ms": 11.69339741754811, "total_search_seconds": 4.8782417850452475, "mean_expansions": 6966.289473684211, "mean_duplicate_states": 40.22478070175438, "mean_diversity": 0.675026977165135, "mean_distinct_first_actions": 1.8651315789473684, "top1_agreement": 0.09978070175438597, "alternative_agreement": 0.16337719298245615, "prefix_two_agreement": 0.01437908496732026, "total_evaluation_seconds": 5.45952416700311},
+    "calibration": {"observations": 1583459, "supported_observations": 1407184, "brier_score": 0.2424835682743553, "state_baseline_brier": 0.24254675476116866, "hero_baseline_brier": 0.2492771004497343, "log_loss": 0.6777625475330479}
+  },
+  {
+    "case": {
+      "name": "combined_prior_1000_support_200_depth_6_cost_0",
+      "search": {"method": "beam", "width": 16, "depth": 6, "alternatives": 3, "diversity": 0.02},
+      "scoring": {"prior_strength": 1000, "uncertainty_multiplier": 0.5, "cost_exponent": 0, "discount": 0.97, "minimum_support": 30, "state_aware": true},
+      "joint_support": 200
+    },
+    "guides": {"queries": 342, "valid_queries": 342, "validated_paths": 894, "validated_actions": 3763, "abstention_rate": 0.06432748538011696, "median_ms": 12.661041488172486, "p95_ms": 17.019428859930485, "total_search_seconds": 3.9217751637334004, "mean_expansions": 11388.0, "mean_duplicate_states": 128.09649122807016, "mean_diversity": 0.4650921284693215, "mean_distinct_first_actions": 1.2485380116959064, "mean_score": 0.01583901682811787, "top1_training_support_100": 0.935672514619883, "top1_heldout_support_30": 0.9239766081871345, "top1_heldout_support_100": 0.543859649122807, "unavailable_top1_evidence": 0, "median_top1_heldout_owners": 111.0, "mean_final_items": 3.753125, "total_evaluation_seconds": 4.624572917004116},
+    "decisions": {"queries": 912, "valid_queries": 912, "validated_paths": 2225, "validated_actions": 4057, "abstention_rate": 0.15679824561403508, "median_ms": 5.066416517365724, "p95_ms": 11.093970510410141, "total_search_seconds": 4.5029959714156576, "mean_expansions": 6262.578947368421, "mean_duplicate_states": 36.1984649122807, "mean_diversity": 0.6856664230019494, "mean_distinct_first_actions": 1.9375, "top1_agreement": 0.09649122807017543, "alternative_agreement": 0.18640350877192982, "prefix_two_agreement": 0.009150326797385621, "total_evaluation_seconds": 5.081642874982208},
+    "calibration": {"observations": 1583459, "supported_observations": 1407184, "brier_score": 0.2424835682743553, "state_baseline_brier": 0.24254675476116866, "hero_baseline_brier": 0.2492771004497343, "log_loss": 0.6777625475330479}
+  },
+  {
+    "case": {
+      "name": "combined_prior_1000_support_200_depth_6_cost_0.5",
+      "search": {"method": "beam", "width": 16, "depth": 6, "alternatives": 3, "diversity": 0.02},
+      "scoring": {"prior_strength": 1000, "uncertainty_multiplier": 0.5, "cost_exponent": 0.5, "discount": 0.97, "minimum_support": 30, "state_aware": true},
+      "joint_support": 200
+    },
+    "guides": {"queries": 342, "valid_queries": 342, "validated_paths": 889, "validated_actions": 3817, "abstention_rate": 0.06140350877192982, "median_ms": 12.665166519582272, "p95_ms": 17.12778951914515, "total_search_seconds": 3.928844706970267, "mean_expansions": 11398.947368421053, "mean_duplicate_states": 126.80116959064327, "mean_diversity": 0.4593195952845076, "mean_distinct_first_actions": 1.1929824561403508, "mean_score": 0.017110453717366123, "top1_training_support_100": 0.9385964912280702, "top1_heldout_support_30": 0.9298245614035088, "top1_heldout_support_100": 0.5233918128654971, "unavailable_top1_evidence": 0, "median_top1_heldout_owners": 109.0, "mean_final_items": 3.7289719626168223, "total_evaluation_seconds": 4.628262916987296},
+    "decisions": {"queries": 912, "valid_queries": 912, "validated_paths": 2225, "validated_actions": 4116, "abstention_rate": 0.15679824561403508, "median_ms": 4.969562491169199, "p95_ms": 11.0134502814617, "total_search_seconds": 4.4885608041659, "mean_expansions": 6211.605263157895, "mean_duplicate_states": 34.09978070175438, "mean_diversity": 0.6855994152046784, "mean_distinct_first_actions": 1.9089912280701755, "top1_agreement": 0.09320175438596491, "alternative_agreement": 0.18530701754385964, "prefix_two_agreement": 0.011764705882352941, "total_evaluation_seconds": 5.067477541975677},
+    "calibration": {"observations": 1583459, "supported_observations": 1407184, "brier_score": 0.2424835682743553, "state_baseline_brier": 0.24254675476116866, "hero_baseline_brier": 0.2492771004497343, "log_loss": 0.6777625475330479}
+  },
+  {
+    "case": {
+      "name": "combined_prior_1000_support_200_depth_8_cost_0",
+      "search": {"method": "beam", "width": 16, "depth": 8, "alternatives": 3, "diversity": 0.02},
+      "scoring": {"prior_strength": 1000, "uncertainty_multiplier": 0.5, "cost_exponent": 0, "discount": 0.97, "minimum_support": 30, "state_aware": true},
+      "joint_support": 200
+    },
+    "guides": {"queries": 342, "valid_queries": 342, "validated_paths": 905, "validated_actions": 4102, "abstention_rate": 0.05263157894736842, "median_ms": 16.13072896725498, "p95_ms": 23.12415836204309, "total_search_seconds": 4.917217678739689, "mean_expansions": 14334.666666666666, "mean_duplicate_states": 139.6549707602339, "mean_diversity": 0.46244258232562324, "mean_distinct_first_actions": 1.2485380116959064, "mean_score": 0.01694434465186068, "top1_training_support_100": 0.9473684210526315, "top1_heldout_support_30": 0.9269005847953217, "top1_heldout_support_100": 0.5175438596491229, "unavailable_top1_evidence": 0, "median_top1_heldout_owners": 107.5, "mean_final_items": 3.996913580246914, "total_evaluation_seconds": 5.631222125026397},
+    "decisions": {"queries": 912, "valid_queries": 912, "validated_paths": 2225, "validated_actions": 4057, "abstention_rate": 0.15679824561403508, "median_ms": 5.041145981522277, "p95_ms": 11.255287172389217, "total_search_seconds": 4.51902042812435, "mean_expansions": 6329.8026315789475, "mean_duplicate_states": 36.218201754385966, "mean_diversity": 0.6856664230019494, "mean_distinct_first_actions": 1.9375, "top1_agreement": 0.09649122807017543, "alternative_agreement": 0.18640350877192982, "prefix_two_agreement": 0.009150326797385621, "total_evaluation_seconds": 5.098869708017446},
+    "calibration": {"observations": 1583459, "supported_observations": 1407184, "brier_score": 0.2424835682743553, "state_baseline_brier": 0.24254675476116866, "hero_baseline_brier": 0.2492771004497343, "log_loss": 0.6777625475330479}
+  },
+  {
+    "case": {
+      "name": "combined_prior_1000_support_200_depth_8_cost_0.5",
+      "search": {"method": "beam", "width": 16, "depth": 8, "alternatives": 3, "diversity": 0.02},
+      "scoring": {"prior_strength": 1000, "uncertainty_multiplier": 0.5, "cost_exponent": 0.5, "discount": 0.97, "minimum_support": 30, "state_aware": true},
+      "joint_support": 200
+    },
+    "guides": {"queries": 342, "valid_queries": 342, "validated_paths": 894, "validated_actions": 4113, "abstention_rate": 0.06140350877192982, "median_ms": 16.128062503412366, "p95_ms": 23.288339894497767, "total_search_seconds": 4.937735513027292, "mean_expansions": 14326.912280701754, "mean_duplicate_states": 138.8421052631579, "mean_diversity": 0.45416279897274053, "mean_distinct_first_actions": 1.1871345029239766, "mean_score": 0.018118813418458342, "top1_training_support_100": 0.9385964912280702, "top1_heldout_support_30": 0.9239766081871345, "top1_heldout_support_100": 0.49415204678362573, "unavailable_top1_evidence": 0, "median_top1_heldout_owners": 103.0, "mean_final_items": 3.987538940809969, "total_evaluation_seconds": 5.648520082992036},
+    "decisions": {"queries": 912, "valid_queries": 912, "validated_paths": 2225, "validated_actions": 4116, "abstention_rate": 0.15679824561403508, "median_ms": 4.979187971912324, "p95_ms": 11.157052288763223, "total_search_seconds": 4.500416590832174, "mean_expansions": 6277.118421052632, "mean_duplicate_states": 34.12390350877193, "mean_diversity": 0.6855994152046784, "mean_distinct_first_actions": 1.9089912280701755, "top1_agreement": 0.09320175438596491, "alternative_agreement": 0.18530701754385964, "prefix_two_agreement": 0.011764705882352941, "total_evaluation_seconds": 5.080941708001774},
+    "calibration": {"observations": 1583459, "supported_observations": 1407184, "brier_score": 0.2424835682743553, "state_baseline_brier": 0.24254675476116866, "hero_baseline_brier": 0.2492771004497343, "log_loss": 0.6777625475330479}
+  }
+]

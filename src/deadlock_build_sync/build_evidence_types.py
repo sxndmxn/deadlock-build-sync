@@ -258,6 +258,7 @@ class HeroBuildEvidence:
     automatic_branches: tuple[AutomaticBranch, ...] = ()
     cohort: HeroCohort | None = None
     guide_group_id: str = ""
+    generator: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -300,6 +301,7 @@ class BuildEvidenceCatalog:
     exclusions: dict[int, str] = field(default_factory=dict)
     assets: tuple[dict[str, object], ...] = ()
     hero_builds: dict[int, tuple[HeroBuildEvidence, ...]] = field(default_factory=dict)
+    generator: str = "current"
 
     @property
     def as_of_timestamp(self) -> int:

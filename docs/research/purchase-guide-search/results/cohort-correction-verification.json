@@ -1,0 +1,19 @@
+{
+  "train": {
+    "statistics_identical": true,
+    "queries_identical": true,
+    "identical_inventory_files": 114,
+    "excluded_matches": 0,
+    "old_fingerprint": "2c5c74ec15ce1f28577102999015b5075bd0214c0c0fe050aeb81b50ac54edb3",
+    "corrected_fingerprint": "d2cc62597d0bdbf081e57dc85694e7afb5373a95f31f56aa40d906239f06bbea"
+  },
+  "validation": {
+    "statistics_identical": true,
+    "queries_identical": true,
+    "identical_inventory_files": 114,
+    "excluded_matches": 0,
+    "old_fingerprint": "2c5c74ec15ce1f28577102999015b5075bd0214c0c0fe050aeb81b50ac54edb3",
+    "corrected_fingerprint": "d2cc62597d0bdbf081e57dc85694e7afb5373a95f31f56aa40d906239f06bbea"
+  },
+  "structures_identical_except_metadata_and_time": true
+}

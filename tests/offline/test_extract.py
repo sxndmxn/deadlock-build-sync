@@ -68,6 +68,7 @@ def _insert_match(
 
 def test_match_admission_requires_complete_eligible_twelve_player_match() -> None:
     connection = duckdb.connect()
+    connection.execute(load_fixture_sql("extract/attach_memory.sql"))
     connection.execute(load_fixture_sql("extract/create_match_player.sql"))
     _insert_match(connection, _Match(1))
     _insert_match(connection, _Match(2, players=6))
@@ -135,6 +136,7 @@ def test_match_admission_binds_mode_text_without_sql_interpolation() -> None:
         match_mode=mode,
     )
     with duckdb.connect() as connection:
+        connection.execute(load_fixture_sql("extract/attach_memory.sql"))
         connection.execute(load_fixture_sql("extract/create_match_player.sql"))
         _insert_match(connection, _Match(1, match_mode=mode))
         _insert_match(connection, _Match(2))

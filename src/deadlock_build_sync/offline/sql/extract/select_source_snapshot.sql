@@ -1,1 +1,1 @@
-SELECT version FROM source_snapshot;
+SELECT "version" FROM source_snapshot;

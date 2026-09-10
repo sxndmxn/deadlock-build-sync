@@ -63,16 +63,16 @@ def _parse_sequence_policy(value: object, hero_id: int) -> SequencePolicy:
         not isinstance(raw_path, list)
         or not raw_path
         or not isinstance(raw_transitions, list)
-        or (not raw_transitions and production_model != "pairwise")
+        or (not raw_transitions and production_model not in {"pairwise", "beam16"})
         or evaluation is None
-        or production_model not in {"deterministic_backoff", "pairwise"}
+        or production_model not in {"deterministic_backoff", "pairwise", "beam16"}
     ):
         raise ArtifactError(f"hero {hero_id} has an incomplete sequence policy")
     path = tuple(
         _require_integer(item_id, "default path item id", minimum=1)
         for item_id in raw_path
     )
-    if production_model != "pairwise" and len(path) != len(set(path)):
+    if production_model not in {"pairwise", "beam16"} and len(path) != len(set(path)):
         raise ArtifactError(f"hero {hero_id} default path repeats an item")
     minimum_support = _require_integer(
         data.get("minimum_support"), "sequence minimum support", minimum=20

@@ -1,0 +1,3156 @@
+{
+  "exploratory": true,
+  "master_commit": "0ecad50cbf5500763d6dbd235c13a0263db7180b",
+  "patch": {
+    "content_sha256": "de790f61b0ecaa5dcba85d01d304ae300dee94cea44d1e319473d673df3d4888",
+    "guid": "{\"is_perma_link\":true,\"text\":\"https://store.steampowered.com/news/app/1422450/view/676255623445218601\"}",
+    "identity": "4bee59bbcf38938f551d3454feff64f1d9a27c81ad1eca7e200f79fcf599aa59",
+    "link": "https://store.steampowered.com/news/app/1422450/view/676255623445218601",
+    "published_at": "2026-08-22T21:40:46Z",
+    "source": "steam",
+    "start_timestamp": 1787434846,
+    "title": " Minor Update - 08-22-2026"
+  },
+  "cohort": {
+    "as_of": "2026-09-09T00:19:49+00:00",
+    "game_mode": "Normal",
+    "match_mode": "Ranked",
+    "maximum_badge": 115,
+    "minimum_badge": 71,
+    "since": "2026-08-22T21:40:46+00:00"
+  },
+  "client_version": 6686,
+  "summary": {
+    "groups": 142,
+    "heroes": 38,
+    "current": {
+      "variants": 800,
+      "beam_defaults": 0,
+      "same_default_core": 142,
+      "same_final_core_order": 142,
+      "same_component_path": 142,
+      "outcome_supported_defaults": 3,
+      "mean_default_cost": 9487.323943661971,
+      "beam_variants": 0,
+      "mean_within_group_core_distance": 0.3949027299096094
+    },
+    "beam-order": {
+      "variants": 800,
+      "beam_defaults": 54,
+      "same_default_core": 142,
+      "same_final_core_order": 115,
+      "same_component_path": 101,
+      "outcome_supported_defaults": 3,
+      "mean_default_cost": 9487.323943661971,
+      "beam_variants": 209,
+      "mean_within_group_core_distance": 0.3949027299096094
+    },
+    "beam": {
+      "variants": 787,
+      "beam_defaults": 39,
+      "same_default_core": 113,
+      "same_final_core_order": 107,
+      "same_component_path": 106,
+      "outcome_supported_defaults": 1,
+      "mean_default_cost": 9329.577464788732,
+      "beam_variants": 184,
+      "mean_within_group_core_distance": 0.38412635020465835
+    },
+    "new_beam_cores": 109,
+    "rendered": {
+      "current": {
+        "complete": true,
+        "groups": 142,
+        "variants": 800,
+        "ability_orders": 800,
+        "overflow_groups": 138,
+        "omitted_compact_variants": 0,
+        "omitted_compact_tier_items": 0
+      },
+      "beam-order": {
+        "complete": true,
+        "groups": 142,
+        "variants": 800,
+        "ability_orders": 800,
+        "overflow_groups": 0,
+        "omitted_compact_variants": 174,
+        "omitted_compact_tier_items": 3325
+      },
+      "beam": {
+        "complete": true,
+        "groups": 142,
+        "variants": 787,
+        "ability_orders": 787,
+        "overflow_groups": 0,
+        "omitted_compact_variants": 160,
+        "omitted_compact_tier_items": 3352
+      }
+    }
+  },
+  "runtime": {
+    "current": {
+      "guide_generation": {
+        "elapsed_seconds": 710.3057440409902,
+        "groups": 142,
+        "variants": 800,
+        "snapshot_id": "d7bd6d3fefc4c4326f8d364f17ad732e8aa183be693a61d7c0383d72e4b3a832",
+        "source_artifact": "abeb95a43e01e67cd9204d06f4a4264c3e6a9d7379c60879b457bc6bdfb7293d",
+        "exploratory": true,
+        "live_steam_sync": false
+      },
+      "evidence_generation": {
+        "commit": "0ecad50cbf5500763d6dbd235c13a0263db7180b",
+        "artifact_id": "abeb95a43e01e67cd9204d06f4a4264c3e6a9d7379c60879b457bc6bdfb7293d",
+        "elapsed_seconds": 829.6494777499465,
+        "source": "/Users/sandmac/code/deadlock-build-sync/generated/beam-integration/source/results/master-0ecad50"
+      }
+    },
+    "beam-order": {
+      "guide_generation": {
+        "elapsed_seconds": 57.23530754202511,
+        "groups": 142,
+        "variants": 800,
+        "snapshot_id": "ca91a9c00938b19bedbfd710385d8e19690682d7f03ec8e5b6010f5d9a43b5a2",
+        "source_artifact": "7e2bc0e8fc97f86612aa75c14e43f0a5fb8a2ec4c4cbdc20608b75abe00d2770",
+        "exploratory": true,
+        "live_steam_sync": false
+      },
+      "frozen_validation": {
+        "artifact_id": "7e2bc0e8fc97f86612aa75c14e43f0a5fb8a2ec4c4cbdc20608b75abe00d2770",
+        "workers": 1,
+        "elapsed_seconds": 226.25022445910145,
+        "source": "generated/beam-integration/source/results/master-0ecad50",
+        "frozen_revalidation": "generated/beam-integration/source/results/master-0ecad50/beam-order-nominations-93fa72b41247aee1.json"
+      },
+      "search": {
+        "requests": 2400,
+        "sum_seconds": 1.159774319618009,
+        "expansions": 171468,
+        "unassigned_routes": 11431,
+        "complete_routes": 4228
+      }
+    },
+    "beam": {
+      "guide_generation": {
+        "elapsed_seconds": 200.43167120800354,
+        "groups": 142,
+        "variants": 787,
+        "snapshot_id": "d602a40a8339cba00558fdfc6c95b3d5c6414fd09202a00efccc2c62a0a72e8a",
+        "source_artifact": "93f7760584495567827aea79e6dd6d926070b4c8987032052d5a754bb8318fab",
+        "exploratory": true,
+        "live_steam_sync": false
+      },
+      "frozen_validation": {
+        "artifact_id": "93f7760584495567827aea79e6dd6d926070b4c8987032052d5a754bb8318fab",
+        "workers": 1,
+        "elapsed_seconds": 207.75269391702022,
+        "source": "generated/beam-integration/source/results/master-0ecad50",
+        "frozen_revalidation": "generated/beam-integration/source/results/master-0ecad50/beam-nominations-3f90d268a6cdc019.json"
+      },
+      "search": {
+        "requests": 426,
+        "sum_seconds": 4.817827635910362,
+        "expansions": 895394,
+        "unassigned_routes": 19237,
+        "complete_routes": 2123
+      }
+    }
+  },
+  "artifacts": {
+    "current": {
+      "evidence_id": "abeb95a43e01e67cd9204d06f4a4264c3e6a9d7379c60879b457bc6bdfb7293d",
+      "builds_index": "generated/beam-integration/current/builds.json",
+      "comparison_sha256": "69907b6b1e1fddddf58c5b35ad3139e83325df403a4f702aa7f12bb30d4d436d"
+    },
+    "beam-order": {
+      "evidence_id": "7e2bc0e8fc97f86612aa75c14e43f0a5fb8a2ec4c4cbdc20608b75abe00d2770",
+      "builds_index": "generated/beam-integration/beam-order/builds.json",
+      "comparison_sha256": "69907b6b1e1fddddf58c5b35ad3139e83325df403a4f702aa7f12bb30d4d436d",
+      "frozen_family": "generated/beam-integration/source/results/master-0ecad50/beam-order-nominations-93fa72b41247aee1.json",
+      "nomination_implementation_sha256": "2c7dae215e94f577e90d3c510e1b6a11735a6a1a68f9685e6b0feb459442b806"
+    },
+    "beam": {
+      "evidence_id": "93f7760584495567827aea79e6dd6d926070b4c8987032052d5a754bb8318fab",
+      "builds_index": "generated/beam-integration/beam/builds.json",
+      "comparison_sha256": "69907b6b1e1fddddf58c5b35ad3139e83325df403a4f702aa7f12bb30d4d436d",
+      "frozen_family": "generated/beam-integration/source/results/master-0ecad50/beam-nominations-3f90d268a6cdc019.json",
+      "nomination_implementation_sha256": "2e1aa1255d04fd288009bd35292b6b11ee3487a8af9207c59c5e7afb7de670b0"
+    }
+  },
+  "independent_replay": {
+    "current": {
+      "checked_variants": 800,
+      "mechanical_failures": [],
+      "missing_tier_coverage": []
+    },
+    "beam-order": {
+      "checked_variants": 800,
+      "mechanical_failures": [],
+      "missing_tier_coverage": []
+    },
+    "beam": {
+      "checked_variants": 787,
+      "mechanical_failures": [],
+      "missing_tier_coverage": []
+    }
+  },
+  "final_implementation_sha256": "8218354ebdf8a3ea5777d17bea9ab424a8f0646d662803693d5020469d5d195b",
+  "first_builds": [
+    {
+      "hero": "Infernus",
+      "hero_id": 1,
+      "group": "1-b3f8ac6ff01af401",
+      "number": 1,
+      "current": {
+        "core": [
+          4104549924,
+          2356412290,
+          876563814,
+          2081037738,
+          3696726732,
+          2447176615
+        ],
+        "core_names": [
+          "Swift Striker",
+          "Titanic Magazine",
+          "Spirit Lifesteal",
+          "Mystic Vulnerability",
+          "Toxic Bullets",
+          "Enduring Speed"
+        ],
+        "path": [
+          1548066885,
+          3399065363,
+          668299740,
+          4104549924,
+          2356412290,
+          876563814,
+          2081037738,
+          3696726732,
+          2447176615
+        ],
+        "path_names": [
+          "Extended Magazine",
+          "Sprint Boots",
+          "Rapid Rounds",
+          "Swift Striker",
+          "Titanic Magazine",
+          "Spirit Lifesteal",
+          "Mystic Vulnerability",
+          "Toxic Bullets",
+          "Enduring Speed"
+        ],
+        "core_cost": 11200,
+        "generator": {
+          "effective": "current"
+        },
+        "owners": 417,
+        "wins": 204,
+        "win_rate": 0.4892086330935252,
+        "lower_95": 0.4415469014491619,
+        "upper_95": 0.5370673800287148,
+        "hero_win_rate": 0.47220662549129705,
+        "hero_matches": 7124,
+        "coverage": 0.05853453116226839,
+        "order_support": {
+          "ordered_owners": 178,
+          "owners": 417,
+          "passes": true,
+          "share": 0.42685851318944845
+        },
+        "discovery_order_support": {
+          "ordered_owners": 398,
+          "owners": 880,
+          "passes": true,
+          "share": 0.45227272727272727
+        },
+        "selection_order_support": {
+          "ordered_owners": 153,
+          "owners": 341,
+          "passes": true,
+          "share": 0.44868035190615835
+        },
+        "status": "observed",
+        "limitations": [
+          "selection: win lower bound does not exceed 50%",
+          "validation: observed win rate below 52%",
+          "validation: win evidence fails family correction",
+          "validation: adjusted evidence fails family correction",
+          "No shared documented kit channel supported by two core items"
+        ],
+        "tier_pool": {
+          "1": [
+            2829638276,
+            968099481,
+            1710079648,
+            3776945997,
+            1672893796
+          ],
+          "2": [
+            7409189,
+            2951612397,
+            2603935618,
+            3970837787,
+            1144549437,
+            84321454,
+            499683006,
+            1644605047,
+            1047818222
+          ],
+          "3": [
+            3731635960,
+            2717651715,
+            1414025773,
+            787198704,
+            2163598980,
+            1378931225,
+            4075861416,
+            3270001687,
+            2739107182
+          ],
+          "4": [
+            2226497419,
+            3005970438,
+            2480592370,
+            865846625,
+            2519598785,
+            951866250,
+            1250307611,
+            1955841979,
+            2037039379,
+            1113837674
+          ]
+        },
+        "variant_count": 8,
+        "state_evidence": {
+          "0": {
+            "discovery": {
+              "owners": 63,
+              "wins": 23,
+              "win_rate": 0.36507936507936506,
+              "lower_95": 0.25715218473434465,
+              "upper_95": 0.4885151840898606,
+              "hero_matches": 2099,
+              "hero_win_rate": 0.354454502143878,
+              "ownership_before_seconds": 1200
+            },
+            "selection": {
+              "owners": 18,
+              "wins": 10,
+              "win_rate": 0.5555555555555556,
+              "lower_95": 0.33716069428251627,
+              "upper_95": 0.7544076889861088,
+              "hero_matches": 742,
+              "hero_win_rate": 0.353099730458221,
+              "ownership_before_seconds": 1200
+            },
+            "validation": {
+              "owners": 20,
+              "wins": 9,
+              "win_rate": 0.45,
+              "lower_95": 0.25819502085709295,
+              "upper_95": 0.6579179916924003,
+              "hero_matches": 898,
+              "hero_win_rate": 0.34521158129175944,
+              "ownership_before_seconds": 1200
+            }
+          },
+          "1": {
+            "discovery": {
+              "owners": 462,
+              "wins": 213,
+              "win_rate": 0.461038961038961,
+              "lower_95": 0.4160918322735873,
+              "upper_95": 0.5066286804500508,
+              "hero_matches": 9271,
+              "hero_win_rate": 0.4635961600690325,
+              "ownership_before_seconds": 1200
+            },
+            "selection": {
+              "owners": 182,
+              "wins": 102,
+              "win_rate": 0.5604395604395604,
+              "lower_95": 0.48781868860661026,
+              "upper_95": 0.6305616955484982,
+              "hero_matches": 2948,
+              "hero_win_rate": 0.4525101763907734,
+              "ownership_before_seconds": 1200
+            },
+            "validation": {
+              "owners": 240,
+              "wins": 113,
+              "win_rate": 0.4708333333333333,
+              "lower_95": 0.4086395764916525,
+              "upper_95": 0.5339461020800103,
+              "hero_matches": 4154,
+              "hero_win_rate": 0.4672604718343765,
+              "ownership_before_seconds": 1200
+            }
+          },
+          "2": {
+            "discovery": {
+              "owners": 355,
+              "wins": 187,
+              "win_rate": 0.5267605633802817,
+              "lower_95": 0.47481359524654865,
+              "upper_95": 0.5781345579218687,
+              "hero_matches": 4633,
+              "hero_win_rate": 0.5402546945823441,
+              "ownership_before_seconds": 1200
+            },
+            "selection": {
+              "owners": 141,
+              "wins": 66,
+              "win_rate": 0.46808510638297873,
+              "lower_95": 0.38766415979626306,
+              "upper_95": 0.5501989955403254,
+              "hero_matches": 1513,
+              "hero_win_rate": 0.5267680105750165,
+              "ownership_before_seconds": 1200
+            },
+            "validation": {
+              "owners": 157,
+              "wins": 82,
+              "win_rate": 0.5222929936305732,
+              "lower_95": 0.44456270560291045,
+              "upper_95": 0.5989583735208984,
+              "hero_matches": 2072,
+              "hero_win_rate": 0.5371621621621622,
+              "ownership_before_seconds": 1200
+            }
+          }
+        }
+      },
+      "beam-order": {
+        "core": [
+          4104549924,
+          2356412290,
+          876563814,
+          2081037738,
+          3696726732,
+          2447176615
+        ],
+        "core_names": [
+          "Swift Striker",
+          "Titanic Magazine",
+          "Spirit Lifesteal",
+          "Mystic Vulnerability",
+          "Toxic Bullets",
+          "Enduring Speed"
+        ],
+        "path": [
+          1548066885,
+          3399065363,
+          668299740,
+          4104549924,
+          2356412290,
+          876563814,
+          2081037738,
+          3696726732,
+          2447176615
+        ],
+        "path_names": [
+          "Extended Magazine",
+          "Sprint Boots",
+          "Rapid Rounds",
+          "Swift Striker",
+          "Titanic Magazine",
+          "Spirit Lifesteal",
+          "Mystic Vulnerability",
+          "Toxic Bullets",
+          "Enduring Speed"
+        ],
+        "core_cost": 11200,
+        "generator": {
+          "baseline_path_id": "1-b3f8ac6ff01af401",
+          "core": [
+            876563814,
+            2081037738,
+            2356412290,
+            2447176615,
+            3696726732,
+            4104549924
+          ],
+          "default_variant_id": "1-b3f8ac6ff01af401",
+          "effective": "current",
+          "fallback_reason": "No complete admitted even-state beam order for this core",
+          "frozen_sha256": "93fa72b41247aee15c8ae9b39ff7303937c0cde2d7dec973a41de9343281b6cc",
+          "group_id": "1-b3f8ac6ff01af401",
+          "state_evidence": {
+            "1": {
+              "discovery": {
+                "hero_matches": 9271,
+                "hero_win_rate": 0.4635961600690325,
+                "lower_95": 0.4160918322735873,
+                "owners": 462,
+                "ownership_before_seconds": 1200,
+                "upper_95": 0.5066286804500508,
+                "win_rate": 0.461038961038961,
+                "wins": 213
+              },
+              "selection": {
+                "hero_matches": 2948,
+                "hero_win_rate": 0.4525101763907734,
+                "lower_95": 0.48781868860661026,
+                "owners": 182,
+                "ownership_before_seconds": 1200,
+                "upper_95": 0.6305616955484982,
+                "win_rate": 0.5604395604395604,
+                "wins": 102
+              },
+              "validation": {
+                "hero_matches": 4154,
+                "hero_win_rate": 0.4672604718343765,
+                "lower_95": 0.4086395764916525,
+                "owners": 240,
+                "ownership_before_seconds": 1200,
+                "upper_95": 0.5339461020800103,
+                "win_rate": 0.4708333333333333,
+                "wins": 113
+              }
+            }
+          },
+          "states": [
+            1
+          ],
+          "variant_id": "1-b3f8ac6ff01af401"
+        },
+        "owners": 417,
+        "wins": 204,
+        "win_rate": 0.4892086330935252,
+        "lower_95": 0.4415469014491619,
+        "upper_95": 0.5370673800287148,
+        "hero_win_rate": 0.47220662549129705,
+        "hero_matches": 7124,
+        "coverage": 0.05853453116226839,
+        "order_support": {
+          "ordered_owners": 178,
+          "owners": 417,
+          "passes": true,
+          "share": 0.42685851318944845
+        },
+        "discovery_order_support": {
+          "ordered_owners": 398,
+          "owners": 880,
+          "passes": true,
+          "share": 0.45227272727272727
+        },
+        "selection_order_support": {
+          "ordered_owners": 153,
+          "owners": 341,
+          "passes": true,
+          "share": 0.44868035190615835
+        },
+        "status": "observed",
+        "limitations": [
+          "selection: win lower bound does not exceed 50%",
+          "validation: observed win rate below 52%",
+          "validation: win evidence fails family correction",
+          "validation: adjusted evidence fails family correction",
+          "No shared documented kit channel supported by two core items"
+        ],
+        "tier_pool": {
+          "1": [
+            2829638276,
+            968099481,
+            1710079648,
+            3776945997,
+            1672893796
+          ],
+          "2": [
+            7409189,
+            2951612397,
+            2603935618,
+            3970837787,
+            1144549437,
+            84321454,
+            499683006,
+            1644605047,
+            1047818222
+          ],
+          "3": [
+            3731635960,
+            2717651715,
+            1414025773,
+            787198704,
+            2163598980,
+            1378931225,
+            4075861416,
+            3270001687,
+            2739107182
+          ],
+          "4": [
+            2226497419,
+            3005970438,
+            2480592370,
+            865846625,
+            2519598785,
+            951866250,
+            1250307611,
+            1955841979,
+            2037039379,
+            1113837674
+          ]
+        },
+        "variant_count": 8
+      },
+      "beam": {
+        "core": [
+          4104549924,
+          2356412290,
+          876563814,
+          2081037738,
+          3696726732,
+          2447176615
+        ],
+        "core_names": [
+          "Swift Striker",
+          "Titanic Magazine",
+          "Spirit Lifesteal",
+          "Mystic Vulnerability",
+          "Toxic Bullets",
+          "Enduring Speed"
+        ],
+        "path": [
+          1548066885,
+          3399065363,
+          668299740,
+          4104549924,
+          2356412290,
+          876563814,
+          2081037738,
+          3696726732,
+          2447176615
+        ],
+        "path_names": [
+          "Extended Magazine",
+          "Sprint Boots",
+          "Rapid Rounds",
+          "Swift Striker",
+          "Titanic Magazine",
+          "Spirit Lifesteal",
+          "Mystic Vulnerability",
+          "Toxic Bullets",
+          "Enduring Speed"
+        ],
+        "core_cost": 11200,
+        "generator": {
+          "baseline_path_id": "1-b3f8ac6ff01af401",
+          "core": [
+            876563814,
+            2081037738,
+            2356412290,
+            2447176615,
+            3696726732,
+            4104549924
+          ],
+          "default_variant_id": "1-b3f8ac6ff01af401",
+          "effective": "current",
+          "fallback_reason": "No complete admitted even-state beam guide in this group",
+          "frozen_sha256": "3f90d268a6cdc0196bf6b16f9dab26e1a9c7fbd768c880c15da4177648659584",
+          "group_id": "1-b3f8ac6ff01af401",
+          "state_evidence": {
+            "1": {
+              "discovery": {
+                "hero_matches": 9271,
+                "hero_win_rate": 0.4635961600690325,
+                "lower_95": 0.4160918322735873,
+                "owners": 462,
+                "ownership_before_seconds": 1200,
+                "upper_95": 0.5066286804500508,
+                "win_rate": 0.461038961038961,
+                "wins": 213
+              },
+              "selection": {
+                "hero_matches": 2948,
+                "hero_win_rate": 0.4525101763907734,
+                "lower_95": 0.48781868860661026,
+                "owners": 182,
+                "ownership_before_seconds": 1200,
+                "upper_95": 0.6305616955484982,
+                "win_rate": 0.5604395604395604,
+                "wins": 102
+              },
+              "validation": {
+                "hero_matches": 4154,
+                "hero_win_rate": 0.4672604718343765,
+                "lower_95": 0.4086395764916525,
+                "owners": 240,
+                "ownership_before_seconds": 1200,
+                "upper_95": 0.5339461020800103,
+                "win_rate": 0.4708333333333333,
+                "wins": 113
+              }
+            }
+          },
+          "states": [
+            1
+          ],
+          "variant_id": "1-b3f8ac6ff01af401"
+        },
+        "owners": 417,
+        "wins": 204,
+        "win_rate": 0.4892086330935252,
+        "lower_95": 0.4415469014491619,
+        "upper_95": 0.5370673800287148,
+        "hero_win_rate": 0.47220662549129705,
+        "hero_matches": 7124,
+        "coverage": 0.05853453116226839,
+        "order_support": {
+          "ordered_owners": 178,
+          "owners": 417,
+          "passes": true,
+          "share": 0.42685851318944845
+        },
+        "discovery_order_support": {
+          "ordered_owners": 398,
+          "owners": 880,
+          "passes": true,
+          "share": 0.45227272727272727
+        },
+        "selection_order_support": {
+          "ordered_owners": 153,
+          "owners": 341,
+          "passes": true,
+          "share": 0.44868035190615835
+        },
+        "status": "observed",
+        "limitations": [
+          "selection: win lower bound does not exceed 50%",
+          "validation: observed win rate below 52%",
+          "validation: win evidence fails family correction",
+          "validation: adjusted evidence fails family correction",
+          "No shared documented kit channel supported by two core items"
+        ],
+        "tier_pool": {
+          "1": [
+            2829638276,
+            968099481,
+            1710079648,
+            3776945997,
+            1672893796
+          ],
+          "2": [
+            7409189,
+            2951612397,
+            2603935618,
+            3970837787,
+            1144549437,
+            84321454,
+            499683006,
+            1644605047,
+            1047818222
+          ],
+          "3": [
+            3731635960,
+            2717651715,
+            1414025773,
+            787198704,
+            2163598980,
+            1378931225,
+            4075861416,
+            3270001687,
+            2739107182
+          ],
+          "4": [
+            2226497419,
+            3005970438,
+            2480592370,
+            865846625,
+            2519598785,
+            951866250,
+            1250307611,
+            1955841979,
+            2037039379,
+            1113837674
+          ]
+        },
+        "variant_count": 8
+      }
+    },
+    {
+      "hero": "Abrams",
+      "hero_id": 6,
+      "group": "6-f4ae81b321a1ae48",
+      "number": 1,
+      "current": {
+        "core": [
+          98582110,
+          26002154,
+          2971868509,
+          2481177645,
+          2717651715
+        ],
+        "core_names": [
+          "Stalker",
+          "Melee Charge",
+          "Bullet Resist Shredder",
+          "Hunter's Aura",
+          "Superior Duration"
+        ],
+        "path": [
+          98582110,
+          26002154,
+          2971868509,
+          2481177645,
+          2951612397,
+          2717651715
+        ],
+        "path_names": [
+          "Stalker",
+          "Melee Charge",
+          "Bullet Resist Shredder",
+          "Hunter's Aura",
+          "Duration Extender",
+          "Superior Duration"
+        ],
+        "core_cost": 11200,
+        "generator": {
+          "effective": "current"
+        },
+        "owners": 397,
+        "wins": 231,
+        "win_rate": 0.5818639798488665,
+        "lower_95": 0.5327850370404339,
+        "upper_95": 0.6293737808068156,
+        "hero_win_rate": 0.48952407381712226,
+        "hero_matches": 7207,
+        "coverage": 0.055085333703343974,
+        "order_support": {
+          "ordered_owners": 101,
+          "owners": 397,
+          "passes": true,
+          "share": 0.25440806045340053
+        },
+        "discovery_order_support": {
+          "ordered_owners": 283,
+          "owners": 990,
+          "passes": true,
+          "share": 0.28585858585858587
+        },
+        "selection_order_support": {
+          "ordered_owners": 78,
+          "owners": 282,
+          "passes": true,
+          "share": 0.2765957446808511
+        },
+        "status": "observed",
+        "limitations": [
+          "selection: insufficient comparable-state overlap",
+          "validation: win evidence fails family correction",
+          "validation: adjusted evidence fails family correction"
+        ],
+        "tier_pool": {
+          "1": [
+            3862866912,
+            2829638276,
+            1009965641,
+            1342610602,
+            1437614329,
+            4204808176,
+            3633614685,
+            1672893796,
+            465043967,
+            3399065363
+          ],
+          "2": [
+            1235347618,
+            2059712766,
+            3970837787,
+            112198670,
+            1813726886,
+            2566692615,
+            2603935618,
+            1047818222,
+            393974127,
+            2447176615
+          ],
+          "3": [
+            3270001687,
+            2095565695,
+            3731635960,
+            1414025773,
+            3190916303,
+            1252627263,
+            2163598980,
+            3791587546,
+            1414319208,
+            1193964439
+          ],
+          "4": [
+            1371725689,
+            3357231760,
+            800008313,
+            2407781327,
+            3491236900,
+            3028234315,
+            677738769,
+            2417568017,
+            1250307611,
+            1955841979
+          ]
+        },
+        "variant_count": 10,
+        "state_evidence": {
+          "0": {
+            "discovery": {
+              "owners": 89,
+              "wins": 40,
+              "win_rate": 0.449438202247191,
+              "lower_95": 0.35032217121118975,
+              "upper_95": 0.552738525717773,
+              "hero_matches": 4965,
+              "hero_win_rate": 0.41812688821752264,
+              "ownership_before_seconds": 1200
+            },
+            "selection": {
+              "owners": 32,
+              "wins": 22,
+              "win_rate": 0.6875,
+              "lower_95": 0.5143300030196761,
+              "upper_95": 0.8204764788338126,
+              "hero_matches": 1551,
+              "hero_win_rate": 0.41843971631205673,
+              "ownership_before_seconds": 1200
+            },
+            "validation": {
+              "owners": 45,
+              "wins": 20,
+              "win_rate": 0.4444444444444444,
+              "lower_95": 0.30938708549039107,
+              "upper_95": 0.5882411658363467,
+              "hero_matches": 2133,
+              "hero_win_rate": 0.4008438818565401,
+              "ownership_before_seconds": 1200
+            }
+          },
+          "1": {
+            "discovery": {
+              "owners": 571,
+              "wins": 358,
+              "win_rate": 0.626970227670753,
+              "lower_95": 0.5865780105056686,
+              "upper_95": 0.6656653901111274,
+              "hero_matches": 10254,
+              "hero_win_rate": 0.5446654963916521,
+              "ownership_before_seconds": 1200
+            },
+            "selection": {
+              "owners": 158,
+              "wins": 100,
+              "win_rate": 0.6329113924050633,
+              "lower_95": 0.5554273029563267,
+              "upper_95": 0.704085702352568,
+              "hero_matches": 3151,
+              "hero_win_rate": 0.5299904792129483,
+              "ownership_before_seconds": 1200
+            },
+            "validation": {
+              "owners": 244,
+              "wins": 143,
+              "win_rate": 0.5860655737704918,
+              "lower_95": 0.5233962237840876,
+              "upper_95": 0.6460668526324624,
+              "hero_matches": 4249,
+              "hero_win_rate": 0.5132972464109202,
+              "ownership_before_seconds": 1200
+            }
+          },
+          "2": {
+            "discovery": {
+              "owners": 330,
+              "wins": 206,
+              "win_rate": 0.6242424242424243,
+              "lower_95": 0.57083938229615,
+              "upper_95": 0.6747860879867625,
+              "hero_matches": 2099,
+              "hero_win_rate": 0.5993330157217722,
+              "ownership_before_seconds": 1200
+            },
+            "selection": {
+              "owners": 92,
+              "wins": 62,
+              "win_rate": 0.6739130434782609,
+              "lower_95": 0.5728306964306592,
+              "upper_95": 0.7610535459025239,
+              "hero_matches": 634,
+              "hero_win_rate": 0.610410094637224,
+              "ownership_before_seconds": 1200
+            },
+            "validation": {
+              "owners": 108,
+              "wins": 68,
+              "win_rate": 0.6296296296296297,
+              "lower_95": 0.5355679840159537,
+              "upper_95": 0.7147860881718547,
+              "hero_matches": 825,
+              "hero_win_rate": 0.5963636363636363,
+              "ownership_before_seconds": 1200
+            }
+          }
+        }
+      },
+      "beam-order": {
+        "core": [
+          98582110,
+          26002154,
+          2971868509,
+          2481177645,
+          2717651715
+        ],
+        "core_names": [
+          "Stalker",
+          "Melee Charge",
+          "Bullet Resist Shredder",
+          "Hunter's Aura",
+          "Superior Duration"
+        ],
+        "path": [
+          98582110,
+          26002154,
+          2971868509,
+          2481177645,
+          2951612397,
+          2717651715
+        ],
+        "path_names": [
+          "Stalker",
+          "Melee Charge",
+          "Bullet Resist Shredder",
+          "Hunter's Aura",
+          "Duration Extender",
+          "Superior Duration"
+        ],
+        "core_cost": 11200,
+        "generator": {
+          "baseline_path_id": "6-f4ae81b321a1ae48",
+          "core": [
+            26002154,
+            98582110,
+            2481177645,
+            2717651715,
+            2971868509
+          ],
+          "default_variant_id": "6-f4ae81b321a1ae48",
+          "effective": "current",
+          "fallback_reason": "No complete admitted even-state beam order for this core",
+          "frozen_sha256": "93fa72b41247aee15c8ae9b39ff7303937c0cde2d7dec973a41de9343281b6cc",
+          "group_id": "6-f4ae81b321a1ae48",
+          "state_evidence": {
+            "1": {
+              "discovery": {
+                "hero_matches": 10254,
+                "hero_win_rate": 0.5446654963916521,
+                "lower_95": 0.5865780105056686,
+                "owners": 571,
+                "ownership_before_seconds": 1200,
+                "upper_95": 0.6656653901111274,
+                "win_rate": 0.626970227670753,
+                "wins": 358
+              },
+              "selection": {
+                "hero_matches": 3151,
+                "hero_win_rate": 0.5299904792129483,
+                "lower_95": 0.5554273029563267,
+                "owners": 158,
+                "ownership_before_seconds": 1200,
+                "upper_95": 0.704085702352568,
+                "win_rate": 0.6329113924050633,
+                "wins": 100
+              },
+              "validation": {
+                "hero_matches": 4249,
+                "hero_win_rate": 0.5132972464109202,
+                "lower_95": 0.5233962237840876,
+                "owners": 244,
+                "ownership_before_seconds": 1200,
+                "upper_95": 0.6460668526324624,
+                "win_rate": 0.5860655737704918,
+                "wins": 143
+              }
+            }
+          },
+          "states": [
+            1
+          ],
+          "variant_id": "6-f4ae81b321a1ae48"
+        },
+        "owners": 397,
+        "wins": 231,
+        "win_rate": 0.5818639798488665,
+        "lower_95": 0.5327850370404339,
+        "upper_95": 0.6293737808068156,
+        "hero_win_rate": 0.48952407381712226,
+        "hero_matches": 7207,
+        "coverage": 0.055085333703343974,
+        "order_support": {
+          "ordered_owners": 101,
+          "owners": 397,
+          "passes": true,
+          "share": 0.25440806045340053
+        },
+        "discovery_order_support": {
+          "ordered_owners": 283,
+          "owners": 990,
+          "passes": true,
+          "share": 0.28585858585858587
+        },
+        "selection_order_support": {
+          "ordered_owners": 78,
+          "owners": 282,
+          "passes": true,
+          "share": 0.2765957446808511
+        },
+        "status": "observed",
+        "limitations": [
+          "selection: insufficient comparable-state overlap",
+          "validation: win evidence fails family correction",
+          "validation: adjusted evidence fails family correction"
+        ],
+        "tier_pool": {
+          "1": [
+            3862866912,
+            2829638276,
+            1009965641,
+            1342610602,
+            1437614329,
+            4204808176,
+            3633614685,
+            1672893796,
+            465043967,
+            3399065363
+          ],
+          "2": [
+            1235347618,
+            2059712766,
+            3970837787,
+            112198670,
+            1813726886,
+            2566692615,
+            2603935618,
+            1047818222,
+            393974127,
+            2447176615
+          ],
+          "3": [
+            3270001687,
+            2095565695,
+            3731635960,
+            1414025773,
+            3190916303,
+            1252627263,
+            2163598980,
+            3791587546,
+            1414319208,
+            1193964439
+          ],
+          "4": [
+            1371725689,
+            3357231760,
+            800008313,
+            2407781327,
+            3491236900,
+            3028234315,
+            677738769,
+            2417568017,
+            1250307611,
+            1955841979
+          ]
+        },
+        "variant_count": 10
+      },
+      "beam": {
+        "core": [
+          98582110,
+          26002154,
+          2971868509,
+          2481177645,
+          2717651715
+        ],
+        "core_names": [
+          "Stalker",
+          "Melee Charge",
+          "Bullet Resist Shredder",
+          "Hunter's Aura",
+          "Superior Duration"
+        ],
+        "path": [
+          98582110,
+          26002154,
+          2971868509,
+          2481177645,
+          2951612397,
+          2717651715
+        ],
+        "path_names": [
+          "Stalker",
+          "Melee Charge",
+          "Bullet Resist Shredder",
+          "Hunter's Aura",
+          "Duration Extender",
+          "Superior Duration"
+        ],
+        "core_cost": 11200,
+        "generator": {
+          "baseline_path_id": "6-f4ae81b321a1ae48",
+          "core": [
+            26002154,
+            98582110,
+            2481177645,
+            2717651715,
+            2971868509
+          ],
+          "default_variant_id": "6-f4ae81b321a1ae48",
+          "effective": "current",
+          "fallback_reason": "No complete admitted even-state beam guide in this group",
+          "frozen_sha256": "3f90d268a6cdc0196bf6b16f9dab26e1a9c7fbd768c880c15da4177648659584",
+          "group_id": "6-f4ae81b321a1ae48",
+          "state_evidence": {
+            "1": {
+              "discovery": {
+                "hero_matches": 10254,
+                "hero_win_rate": 0.5446654963916521,
+                "lower_95": 0.5865780105056686,
+                "owners": 571,
+                "ownership_before_seconds": 1200,
+                "upper_95": 0.6656653901111274,
+                "win_rate": 0.626970227670753,
+                "wins": 358
+              },
+              "selection": {
+                "hero_matches": 3151,
+                "hero_win_rate": 0.5299904792129483,
+                "lower_95": 0.5554273029563267,
+                "owners": 158,
+                "ownership_before_seconds": 1200,
+                "upper_95": 0.704085702352568,
+                "win_rate": 0.6329113924050633,
+                "wins": 100
+              },
+              "validation": {
+                "hero_matches": 4249,
+                "hero_win_rate": 0.5132972464109202,
+                "lower_95": 0.5233962237840876,
+                "owners": 244,
+                "ownership_before_seconds": 1200,
+                "upper_95": 0.6460668526324624,
+                "win_rate": 0.5860655737704918,
+                "wins": 143
+              }
+            }
+          },
+          "states": [
+            1
+          ],
+          "variant_id": "6-f4ae81b321a1ae48"
+        },
+        "owners": 397,
+        "wins": 231,
+        "win_rate": 0.5818639798488665,
+        "lower_95": 0.5327850370404339,
+        "upper_95": 0.6293737808068156,
+        "hero_win_rate": 0.48952407381712226,
+        "hero_matches": 7207,
+        "coverage": 0.055085333703343974,
+        "order_support": {
+          "ordered_owners": 101,
+          "owners": 397,
+          "passes": true,
+          "share": 0.25440806045340053
+        },
+        "discovery_order_support": {
+          "ordered_owners": 283,
+          "owners": 990,
+          "passes": true,
+          "share": 0.28585858585858587
+        },
+        "selection_order_support": {
+          "ordered_owners": 78,
+          "owners": 282,
+          "passes": true,
+          "share": 0.2765957446808511
+        },
+        "status": "observed",
+        "limitations": [
+          "selection: insufficient comparable-state overlap",
+          "validation: win evidence fails family correction",
+          "validation: adjusted evidence fails family correction"
+        ],
+        "tier_pool": {
+          "1": [
+            3862866912,
+            2829638276,
+            1009965641,
+            1342610602,
+            1437614329,
+            4204808176,
+            3633614685,
+            1672893796,
+            465043967,
+            3399065363
+          ],
+          "2": [
+            1235347618,
+            2059712766,
+            3970837787,
+            112198670,
+            1813726886,
+            2566692615,
+            2603935618,
+            1047818222,
+            393974127,
+            2447176615
+          ],
+          "3": [
+            3270001687,
+            2095565695,
+            3731635960,
+            1414025773,
+            3190916303,
+            1252627263,
+            2163598980,
+            3791587546,
+            1414319208,
+            1193964439
+          ],
+          "4": [
+            1371725689,
+            3357231760,
+            800008313,
+            2407781327,
+            3491236900,
+            3028234315,
+            677738769,
+            2417568017,
+            1250307611,
+            1955841979
+          ]
+        },
+        "variant_count": 10
+      }
+    },
+    {
+      "hero": "Kelvin",
+      "hero_id": 12,
+      "group": "12-2cf175b992d56d8a",
+      "number": 1,
+      "current": {
+        "core": [
+          2566692615,
+          2603935618,
+          7409189,
+          2081037738
+        ],
+        "core_names": [
+          "Healing Booster",
+          "Healbane",
+          "Improved Spirit",
+          "Mystic Vulnerability"
+        ],
+        "path": [
+          968099481,
+          2829638276,
+          2566692615,
+          2603935618,
+          7409189,
+          2081037738
+        ],
+        "path_names": [
+          "Extra Spirit",
+          "Extra Regen",
+          "Healing Booster",
+          "Healbane",
+          "Improved Spirit",
+          "Mystic Vulnerability"
+        ],
+        "core_cost": 6400,
+        "generator": {
+          "effective": "current"
+        },
+        "owners": 347,
+        "wins": 190,
+        "win_rate": 0.547550432276657,
+        "lower_95": 0.49494396563671217,
+        "upper_95": 0.5991155757631673,
+        "hero_win_rate": 0.5423511293634496,
+        "hero_matches": 3896,
+        "coverage": 0.08906570841889117,
+        "order_support": {
+          "ordered_owners": 104,
+          "owners": 347,
+          "passes": true,
+          "share": 0.29971181556195964
+        },
+        "discovery_order_support": {
+          "ordered_owners": 129,
+          "owners": 730,
+          "passes": true,
+          "share": 0.17671232876712328
+        },
+        "selection_order_support": {
+          "ordered_owners": 54,
+          "owners": 265,
+          "passes": true,
+          "share": 0.2037735849056604
+        },
+        "status": "observed",
+        "limitations": [
+          "selection: adjusted lower bound does not exceed zero",
+          "validation: win evidence fails family correction",
+          "validation: adjusted evidence fails family correction"
+        ],
+        "tier_pool": {
+          "1": [
+            2462046703,
+            3077079169,
+            3776945997,
+            4139877411,
+            3399065363,
+            1998374645,
+            1439347412,
+            1710079648,
+            754480263,
+            1672893796
+          ],
+          "2": [
+            1150006784,
+            2064029594,
+            3074274290,
+            3970837787,
+            2447176615,
+            1102081447,
+            1813726886,
+            876563814,
+            380806748,
+            2951612397
+          ],
+          "3": [
+            395944548,
+            2947183272,
+            787198704,
+            1804594021,
+            2121044373,
+            1254091416,
+            3261353684,
+            3731635960,
+            1193964439,
+            2717651715
+          ],
+          "4": [
+            3005970438,
+            2519598785,
+            343572757,
+            2617435668,
+            3357231760,
+            1427630806,
+            915014646,
+            1797283378,
+            3577481646,
+            1250307611
+          ]
+        },
+        "variant_count": 5,
+        "state_evidence": {
+          "0": {
+            "discovery": {
+              "owners": 225,
+              "wins": 106,
+              "win_rate": 0.4711111111111111,
+              "lower_95": 0.4069198447282583,
+              "upper_95": 0.5362723021541266,
+              "hero_matches": 3429,
+              "hero_win_rate": 0.442111402741324,
+              "ownership_before_seconds": 1200
+            },
+            "selection": {
+              "owners": 87,
+              "wins": 47,
+              "win_rate": 0.5402298850574713,
+              "lower_95": 0.43602640443965585,
+              "upper_95": 0.641030802831022,
+              "hero_matches": 1215,
+              "hero_win_rate": 0.44938271604938274,
+              "ownership_before_seconds": 1200
+            },
+            "validation": {
+              "owners": 111,
+              "wins": 41,
+              "win_rate": 0.36936936936936937,
+              "lower_95": 0.2853587441928345,
+              "upper_95": 0.46211952152272495,
+              "hero_matches": 1539,
+              "hero_win_rate": 0.4522417153996101,
+              "ownership_before_seconds": 1200
+            }
+          },
+          "1": {
+            "discovery": {
+              "owners": 465,
+              "wins": 269,
+              "win_rate": 0.578494623655914,
+              "lower_95": 0.5331481951471181,
+              "upper_95": 0.6225547117621664,
+              "hero_matches": 4950,
+              "hero_win_rate": 0.5783838383838383,
+              "ownership_before_seconds": 1200
+            },
+            "selection": {
+              "owners": 163,
+              "wins": 94,
+              "win_rate": 0.5766871165644172,
+              "lower_95": 0.499927593270457,
+              "upper_95": 0.6499151318053035,
+              "hero_matches": 1652,
+              "hero_win_rate": 0.5538740920096852,
+              "ownership_before_seconds": 1200
+            },
+            "validation": {
+              "owners": 212,
+              "wins": 132,
+              "win_rate": 0.6226415094339622,
+              "lower_95": 0.5557545977769636,
+              "upper_95": 0.6851628157336849,
+              "hero_matches": 2140,
+              "hero_win_rate": 0.594392523364486,
+              "ownership_before_seconds": 1200
+            }
+          },
+          "2": {
+            "discovery": {
+              "owners": 40,
+              "wins": 23,
+              "win_rate": 0.575,
+              "lower_95": 0.4219480043605999,
+              "upper_95": 0.7149083147518411,
+              "hero_matches": 563,
+              "hero_win_rate": 0.6269982238010657,
+              "ownership_before_seconds": 1200
+            },
+            "selection": {
+              "owners": 15,
+              "wins": 8,
+              "win_rate": 0.5333333333333333,
+              "lower_95": 0.3011663015105079,
+              "upper_95": 0.7519077474025356,
+              "hero_matches": 196,
+              "hero_win_rate": 0.6479591836734694,
+              "ownership_before_seconds": 1200
+            },
+            "validation": {
+              "owners": 24,
+              "wins": 17,
+              "win_rate": 0.7083333333333334,
+              "lower_95": 0.5083193634129031,
+              "upper_95": 0.8508553966583573,
+              "hero_matches": 217,
+              "hero_win_rate": 0.6682027649769585,
+              "ownership_before_seconds": 1200
+            }
+          }
+        }
+      },
+      "beam-order": {
+        "core": [
+          2566692615,
+          2603935618,
+          7409189,
+          2081037738
+        ],
+        "core_names": [
+          "Healing Booster",
+          "Healbane",
+          "Improved Spirit",
+          "Mystic Vulnerability"
+        ],
+        "path": [
+          2829638276,
+          2566692615,
+          2603935618,
+          968099481,
+          7409189,
+          2081037738
+        ],
+        "path_names": [
+          "Extra Regen",
+          "Healing Booster",
+          "Healbane",
+          "Extra Spirit",
+          "Improved Spirit",
+          "Mystic Vulnerability"
+        ],
+        "core_cost": 6400,
+        "generator": {
+          "baseline_path_id": "12-2cf175b992d56d8a",
+          "core": [
+            7409189,
+            2081037738,
+            2566692615,
+            2603935618
+          ],
+          "default_variant_id": "12-2cf175b992d56d8a",
+          "effective": "beam",
+          "frozen_sha256": "93fa72b41247aee15c8ae9b39ff7303937c0cde2d7dec973a41de9343281b6cc",
+          "group_id": "12-2cf175b992d56d8a",
+          "scores": {
+            "1": -0.02319013565470339
+          },
+          "state_evidence": {
+            "1": {
+              "discovery": {
+                "hero_matches": 4950,
+                "hero_win_rate": 0.5783838383838383,
+                "lower_95": 0.5331481951471181,
+                "owners": 465,
+                "ownership_before_seconds": 1200,
+                "upper_95": 0.6225547117621664,
+                "win_rate": 0.578494623655914,
+                "wins": 269
+              },
+              "selection": {
+                "hero_matches": 1652,
+                "hero_win_rate": 0.5538740920096852,
+                "lower_95": 0.499927593270457,
+                "owners": 163,
+                "ownership_before_seconds": 1200,
+                "upper_95": 0.6499151318053035,
+                "win_rate": 0.5766871165644172,
+                "wins": 94
+              },
+              "validation": {
+                "hero_matches": 2140,
+                "hero_win_rate": 0.594392523364486,
+                "lower_95": 0.5557545977769636,
+                "owners": 212,
+                "ownership_before_seconds": 1200,
+                "upper_95": 0.6851628157336849,
+                "win_rate": 0.6226415094339622,
+                "wins": 132
+              }
+            }
+          },
+          "states": [
+            1
+          ],
+          "variant_id": "12-2cf175b992d56d8a"
+        },
+        "owners": 347,
+        "wins": 190,
+        "win_rate": 0.547550432276657,
+        "lower_95": 0.49494396563671217,
+        "upper_95": 0.5991155757631673,
+        "hero_win_rate": 0.5423511293634496,
+        "hero_matches": 3896,
+        "coverage": 0.08906570841889117,
+        "order_support": {
+          "ordered_owners": 104,
+          "owners": 347,
+          "passes": true,
+          "share": 0.29971181556195964
+        },
+        "discovery_order_support": {
+          "ordered_owners": 129,
+          "owners": 730,
+          "passes": true,
+          "share": 0.17671232876712328
+        },
+        "selection_order_support": {
+          "ordered_owners": 54,
+          "owners": 265,
+          "passes": true,
+          "share": 0.2037735849056604
+        },
+        "status": "observed",
+        "limitations": [
+          "selection: adjusted lower bound does not exceed zero",
+          "validation: win evidence fails family correction",
+          "validation: adjusted evidence fails family correction"
+        ],
+        "tier_pool": {
+          "1": [
+            2462046703,
+            3077079169,
+            3776945997,
+            4139877411,
+            3399065363,
+            1998374645,
+            1439347412,
+            1710079648,
+            754480263,
+            1672893796
+          ],
+          "2": [
+            1150006784,
+            2064029594,
+            3074274290,
+            3970837787,
+            2447176615,
+            1102081447,
+            1813726886,
+            876563814,
+            380806748,
+            2951612397
+          ],
+          "3": [
+            395944548,
+            2947183272,
+            787198704,
+            1804594021,
+            2121044373,
+            1254091416,
+            3261353684,
+            3731635960,
+            1193964439,
+            2717651715
+          ],
+          "4": [
+            3005970438,
+            2519598785,
+            343572757,
+            2617435668,
+            3357231760,
+            1427630806,
+            915014646,
+            1797283378,
+            3577481646,
+            1250307611
+          ]
+        },
+        "variant_count": 5
+      },
+      "beam": {
+        "core": [
+          2566692615,
+          2603935618,
+          7409189,
+          2081037738
+        ],
+        "core_names": [
+          "Healing Booster",
+          "Healbane",
+          "Improved Spirit",
+          "Mystic Vulnerability"
+        ],
+        "path": [
+          968099481,
+          2829638276,
+          2566692615,
+          2603935618,
+          7409189,
+          2081037738
+        ],
+        "path_names": [
+          "Extra Spirit",
+          "Extra Regen",
+          "Healing Booster",
+          "Healbane",
+          "Improved Spirit",
+          "Mystic Vulnerability"
+        ],
+        "core_cost": 6400,
+        "generator": {
+          "baseline_path_id": "12-2cf175b992d56d8a",
+          "core": [
+            7409189,
+            2081037738,
+            2566692615,
+            2603935618
+          ],
+          "default_variant_id": "12-2cf175b992d56d8a",
+          "effective": "current",
+          "fallback_reason": "No complete admitted even-state beam guide in this group",
+          "frozen_sha256": "3f90d268a6cdc0196bf6b16f9dab26e1a9c7fbd768c880c15da4177648659584",
+          "group_id": "12-2cf175b992d56d8a",
+          "state_evidence": {
+            "1": {
+              "discovery": {
+                "hero_matches": 4950,
+                "hero_win_rate": 0.5783838383838383,
+                "lower_95": 0.5331481951471181,
+                "owners": 465,
+                "ownership_before_seconds": 1200,
+                "upper_95": 0.6225547117621664,
+                "win_rate": 0.578494623655914,
+                "wins": 269
+              },
+              "selection": {
+                "hero_matches": 1652,
+                "hero_win_rate": 0.5538740920096852,
+                "lower_95": 0.499927593270457,
+                "owners": 163,
+                "ownership_before_seconds": 1200,
+                "upper_95": 0.6499151318053035,
+                "win_rate": 0.5766871165644172,
+                "wins": 94
+              },
+              "validation": {
+                "hero_matches": 2140,
+                "hero_win_rate": 0.594392523364486,
+                "lower_95": 0.5557545977769636,
+                "owners": 212,
+                "ownership_before_seconds": 1200,
+                "upper_95": 0.6851628157336849,
+                "win_rate": 0.6226415094339622,
+                "wins": 132
+              }
+            }
+          },
+          "states": [
+            1
+          ],
+          "variant_id": "12-2cf175b992d56d8a"
+        },
+        "owners": 347,
+        "wins": 190,
+        "win_rate": 0.547550432276657,
+        "lower_95": 0.49494396563671217,
+        "upper_95": 0.5991155757631673,
+        "hero_win_rate": 0.5423511293634496,
+        "hero_matches": 3896,
+        "coverage": 0.08906570841889117,
+        "order_support": {
+          "ordered_owners": 104,
+          "owners": 347,
+          "passes": true,
+          "share": 0.29971181556195964
+        },
+        "discovery_order_support": {
+          "ordered_owners": 129,
+          "owners": 730,
+          "passes": true,
+          "share": 0.17671232876712328
+        },
+        "selection_order_support": {
+          "ordered_owners": 54,
+          "owners": 265,
+          "passes": true,
+          "share": 0.2037735849056604
+        },
+        "status": "observed",
+        "limitations": [
+          "selection: adjusted lower bound does not exceed zero",
+          "validation: win evidence fails family correction",
+          "validation: adjusted evidence fails family correction"
+        ],
+        "tier_pool": {
+          "1": [
+            2462046703,
+            3077079169,
+            3776945997,
+            4139877411,
+            3399065363,
+            1998374645,
+            1439347412,
+            1710079648,
+            754480263,
+            1672893796
+          ],
+          "2": [
+            1150006784,
+            2064029594,
+            3074274290,
+            3970837787,
+            2447176615,
+            1102081447,
+            1813726886,
+            876563814,
+            380806748,
+            2951612397
+          ],
+          "3": [
+            395944548,
+            2947183272,
+            787198704,
+            1804594021,
+            2121044373,
+            1254091416,
+            3261353684,
+            3731635960,
+            1193964439,
+            2717651715
+          ],
+          "4": [
+            3005970438,
+            2519598785,
+            343572757,
+            2617435668,
+            3357231760,
+            1427630806,
+            915014646,
+            1797283378,
+            3577481646,
+            1250307611
+          ]
+        },
+        "variant_count": 5
+      }
+    },
+    {
+      "hero": "Lash",
+      "hero_id": 31,
+      "group": "31-58389102caa0e0d8",
+      "number": 1,
+      "current": {
+        "core": [
+          84321454,
+          4053935515,
+          1763073141,
+          1282141666
+        ],
+        "core_names": [
+          "Quicksilver Reload",
+          "Headhunter",
+          "Recharging Rush",
+          "Siphon Bullets"
+        ],
+        "path": [
+          84321454,
+          2010028405,
+          4053935515,
+          1763073141,
+          1282141666
+        ],
+        "path_names": [
+          "Quicksilver Reload",
+          "Headshot Booster",
+          "Headhunter",
+          "Recharging Rush",
+          "Siphon Bullets"
+        ],
+        "core_cost": 12800,
+        "generator": {
+          "effective": "current"
+        },
+        "owners": 859,
+        "wins": 562,
+        "win_rate": 0.6542491268917345,
+        "lower_95": 0.6218195553031841,
+        "upper_95": 0.6853051823079833,
+        "hero_win_rate": 0.528158879401324,
+        "hero_matches": 10423,
+        "coverage": 0.0824138923534491,
+        "order_support": {
+          "ordered_owners": 770,
+          "owners": 859,
+          "passes": true,
+          "share": 0.8963911525029103
+        },
+        "discovery_order_support": {
+          "ordered_owners": 1581,
+          "owners": 1766,
+          "passes": true,
+          "share": 0.8952434881087202
+        },
+        "selection_order_support": {
+          "ordered_owners": 607,
+          "owners": 662,
+          "passes": true,
+          "share": 0.9169184290030211
+        },
+        "status": "outcome_supported",
+        "limitations": [],
+        "tier_pool": {
+          "1": [
+            3862866912,
+            2829638276,
+            1009965641,
+            1998374645,
+            3399065363,
+            3776945997,
+            4139877411,
+            754480263,
+            3077079169,
+            1672893796
+          ],
+          "2": [
+            2971868509,
+            1235347618,
+            2059712766,
+            112198670,
+            2603935618,
+            3331811235,
+            1770441818,
+            1644605047,
+            380806748,
+            1047818222
+          ],
+          "3": [
+            334300056,
+            2152872419,
+            2121044373,
+            3731635960,
+            3791587546,
+            1414025773,
+            2163598980,
+            3261353684,
+            1193964439,
+            787198704
+          ],
+          "4": [
+            3884003354,
+            3919289022,
+            2221211450,
+            3357231760,
+            951866250,
+            1113837674,
+            3491236900,
+            2037039379,
+            677738769,
+            915014646
+          ]
+        },
+        "variant_count": 10,
+        "state_evidence": {
+          "0": {
+            "discovery": {
+              "owners": 112,
+              "wins": 54,
+              "win_rate": 0.48214285714285715,
+              "lower_95": 0.3917383020413562,
+              "upper_95": 0.5737317881507682,
+              "hero_matches": 6900,
+              "hero_win_rate": 0.42188405797101447,
+              "ownership_before_seconds": 1200
+            },
+            "selection": {
+              "owners": 41,
+              "wins": 26,
+              "win_rate": 0.6341463414634146,
+              "lower_95": 0.4812042325216125,
+              "upper_95": 0.7641036958306319,
+              "hero_matches": 2187,
+              "hero_win_rate": 0.44718792866941015,
+              "ownership_before_seconds": 1200
+            },
+            "validation": {
+              "owners": 50,
+              "wins": 22,
+              "win_rate": 0.44,
+              "lower_95": 0.3116198721023535,
+              "upper_95": 0.5769421319985648,
+              "hero_matches": 2884,
+              "hero_win_rate": 0.4251040221914008,
+              "ownership_before_seconds": 1200
+            }
+          },
+          "1": {
+            "discovery": {
+              "owners": 821,
+              "wins": 525,
+              "win_rate": 0.6394640682095006,
+              "lower_95": 0.6060398521132703,
+              "upper_95": 0.6715892102424597,
+              "hero_matches": 14080,
+              "hero_win_rate": 0.5443892045454546,
+              "ownership_before_seconds": 1200
+            },
+            "selection": {
+              "owners": 304,
+              "wins": 189,
+              "win_rate": 0.6217105263157895,
+              "lower_95": 0.5659954290214096,
+              "upper_95": 0.6743879369694117,
+              "hero_matches": 4648,
+              "hero_win_rate": 0.5428141135972461,
+              "ownership_before_seconds": 1200
+            },
+            "validation": {
+              "owners": 399,
+              "wins": 244,
+              "win_rate": 0.6115288220551378,
+              "lower_95": 0.5628566801029452,
+              "upper_95": 0.6580738295564345,
+              "hero_matches": 6061,
+              "hero_win_rate": 0.5494142880712753,
+              "ownership_before_seconds": 1200
+            }
+          },
+          "2": {
+            "discovery": {
+              "owners": 833,
+              "wins": 562,
+              "win_rate": 0.6746698679471789,
+              "lower_95": 0.6421153221910768,
+              "upper_95": 0.705620736819374,
+              "hero_matches": 3226,
+              "hero_win_rate": 0.6239925604463732,
+              "ownership_before_seconds": 1200
+            },
+            "selection": {
+              "owners": 317,
+              "wins": 224,
+              "win_rate": 0.7066246056782335,
+              "lower_95": 0.6542676766739308,
+              "upper_95": 0.7540334912544177,
+              "hero_matches": 1063,
+              "hero_win_rate": 0.6444026340545626,
+              "ownership_before_seconds": 1200
+            },
+            "validation": {
+              "owners": 410,
+              "wins": 296,
+              "win_rate": 0.7219512195121951,
+              "lower_95": 0.6766746001577669,
+              "upper_95": 0.763107190749672,
+              "hero_matches": 1478,
+              "hero_win_rate": 0.642083897158322,
+              "ownership_before_seconds": 1200
+            }
+          }
+        }
+      },
+      "beam-order": {
+        "core": [
+          84321454,
+          4053935515,
+          1763073141,
+          1282141666
+        ],
+        "core_names": [
+          "Quicksilver Reload",
+          "Headhunter",
+          "Recharging Rush",
+          "Siphon Bullets"
+        ],
+        "path": [
+          84321454,
+          2010028405,
+          4053935515,
+          1763073141,
+          1282141666
+        ],
+        "path_names": [
+          "Quicksilver Reload",
+          "Headshot Booster",
+          "Headhunter",
+          "Recharging Rush",
+          "Siphon Bullets"
+        ],
+        "core_cost": 12800,
+        "generator": {
+          "baseline_path_id": "31-58389102caa0e0d8",
+          "core": [
+            84321454,
+            1282141666,
+            1763073141,
+            4053935515
+          ],
+          "default_variant_id": "31-58389102caa0e0d8",
+          "effective": "beam",
+          "frozen_sha256": "93fa72b41247aee15c8ae9b39ff7303937c0cde2d7dec973a41de9343281b6cc",
+          "group_id": "31-58389102caa0e0d8",
+          "scores": {
+            "1": -0.012040896262253981,
+            "2": 0.004586273455798656
+          },
+          "state_evidence": {
+            "1": {
+              "discovery": {
+                "hero_matches": 14080,
+                "hero_win_rate": 0.5443892045454546,
+                "lower_95": 0.6060398521132703,
+                "owners": 821,
+                "ownership_before_seconds": 1200,
+                "upper_95": 0.6715892102424597,
+                "win_rate": 0.6394640682095006,
+                "wins": 525
+              },
+              "selection": {
+                "hero_matches": 4648,
+                "hero_win_rate": 0.5428141135972461,
+                "lower_95": 0.5659954290214096,
+                "owners": 304,
+                "ownership_before_seconds": 1200,
+                "upper_95": 0.6743879369694117,
+                "win_rate": 0.6217105263157895,
+                "wins": 189
+              },
+              "validation": {
+                "hero_matches": 6061,
+                "hero_win_rate": 0.5494142880712753,
+                "lower_95": 0.5628566801029452,
+                "owners": 399,
+                "ownership_before_seconds": 1200,
+                "upper_95": 0.6580738295564345,
+                "win_rate": 0.6115288220551378,
+                "wins": 244
+              }
+            },
+            "2": {
+              "discovery": {
+                "hero_matches": 3226,
+                "hero_win_rate": 0.6239925604463732,
+                "lower_95": 0.6421153221910768,
+                "owners": 833,
+                "ownership_before_seconds": 1200,
+                "upper_95": 0.705620736819374,
+                "win_rate": 0.6746698679471789,
+                "wins": 562
+              },
+              "selection": {
+                "hero_matches": 1063,
+                "hero_win_rate": 0.6444026340545626,
+                "lower_95": 0.6542676766739308,
+                "owners": 317,
+                "ownership_before_seconds": 1200,
+                "upper_95": 0.7540334912544177,
+                "win_rate": 0.7066246056782335,
+                "wins": 224
+              },
+              "validation": {
+                "hero_matches": 1478,
+                "hero_win_rate": 0.642083897158322,
+                "lower_95": 0.6766746001577669,
+                "owners": 410,
+                "ownership_before_seconds": 1200,
+                "upper_95": 0.763107190749672,
+                "win_rate": 0.7219512195121951,
+                "wins": 296
+              }
+            }
+          },
+          "states": [
+            1,
+            2
+          ],
+          "variant_id": "31-58389102caa0e0d8"
+        },
+        "owners": 859,
+        "wins": 562,
+        "win_rate": 0.6542491268917345,
+        "lower_95": 0.6218195553031841,
+        "upper_95": 0.6853051823079833,
+        "hero_win_rate": 0.528158879401324,
+        "hero_matches": 10423,
+        "coverage": 0.0824138923534491,
+        "order_support": {
+          "ordered_owners": 770,
+          "owners": 859,
+          "passes": true,
+          "share": 0.8963911525029103
+        },
+        "discovery_order_support": {
+          "ordered_owners": 1581,
+          "owners": 1766,
+          "passes": true,
+          "share": 0.8952434881087202
+        },
+        "selection_order_support": {
+          "ordered_owners": 607,
+          "owners": 662,
+          "passes": true,
+          "share": 0.9169184290030211
+        },
+        "status": "outcome_supported",
+        "limitations": [],
+        "tier_pool": {
+          "1": [
+            3862866912,
+            2829638276,
+            1009965641,
+            1998374645,
+            3399065363,
+            3776945997,
+            4139877411,
+            754480263,
+            3077079169,
+            1672893796
+          ],
+          "2": [
+            2971868509,
+            1235347618,
+            2059712766,
+            112198670,
+            2603935618,
+            3331811235,
+            1770441818,
+            1644605047,
+            380806748,
+            1047818222
+          ],
+          "3": [
+            334300056,
+            2152872419,
+            2121044373,
+            3731635960,
+            3791587546,
+            1414025773,
+            2163598980,
+            3261353684,
+            1193964439,
+            787198704
+          ],
+          "4": [
+            3884003354,
+            3919289022,
+            2221211450,
+            3357231760,
+            951866250,
+            1113837674,
+            3491236900,
+            2037039379,
+            677738769,
+            915014646
+          ]
+        },
+        "variant_count": 10
+      },
+      "beam": {
+        "core": [
+          84321454,
+          2971868509,
+          1763073141,
+          3731635960
+        ],
+        "core_names": [
+          "Quicksilver Reload",
+          "Bullet Resist Shredder",
+          "Recharging Rush",
+          "Dispel Magic"
+        ],
+        "path": [
+          84321454,
+          2971868509,
+          1763073141,
+          3731635960
+        ],
+        "path_names": [
+          "Quicksilver Reload",
+          "Bullet Resist Shredder",
+          "Recharging Rush",
+          "Dispel Magic"
+        ],
+        "core_cost": 8000,
+        "generator": {
+          "baseline_path_id": "31-58389102caa0e0d8",
+          "core": [
+            84321454,
+            1763073141,
+            2971868509,
+            3731635960
+          ],
+          "default_variant_id": "31-e19e81f973389bc3",
+          "effective": "beam",
+          "frozen_sha256": "3f90d268a6cdc0196bf6b16f9dab26e1a9c7fbd768c880c15da4177648659584",
+          "group_id": "31-58389102caa0e0d8",
+          "scores": {
+            "0": -0.01369564433985003,
+            "1": 0.005696977033779896
+          },
+          "state_evidence": {
+            "0": {
+              "discovery": {
+                "hero_matches": 6900,
+                "hero_win_rate": 0.42188405797101447,
+                "lower_95": 0.372632205926679,
+                "owners": 287,
+                "ownership_before_seconds": 1200,
+                "upper_95": 0.4863975889857407,
+                "win_rate": 0.42857142857142855,
+                "wins": 123
+              },
+              "selection": {
+                "hero_matches": 2187,
+                "hero_win_rate": 0.44718792866941015,
+                "lower_95": 0.3919268939484636,
+                "owners": 96,
+                "ownership_before_seconds": 1200,
+                "upper_95": 0.5880413757908035,
+                "win_rate": 0.4895833333333333,
+                "wins": 47
+              },
+              "validation": {
+                "hero_matches": 2884,
+                "hero_win_rate": 0.4251040221914008,
+                "lower_95": 0.4276814843920897,
+                "owners": 118,
+                "ownership_before_seconds": 1200,
+                "upper_95": 0.60514802539767,
+                "win_rate": 0.5169491525423728,
+                "wins": 61
+              }
+            },
+            "1": {
+              "discovery": {
+                "hero_matches": 14080,
+                "hero_win_rate": 0.5443892045454546,
+                "lower_95": 0.5330078679572047,
+                "owners": 769,
+                "ownership_before_seconds": 1200,
+                "upper_95": 0.6028543837642348,
+                "win_rate": 0.5682704811443433,
+                "wins": 437
+              },
+              "selection": {
+                "hero_matches": 4648,
+                "hero_win_rate": 0.5428141135972461,
+                "lower_95": 0.5062633657719534,
+                "owners": 319,
+                "ownership_before_seconds": 1200,
+                "upper_95": 0.6145389100190228,
+                "win_rate": 0.5611285266457681,
+                "wins": 179
+              },
+              "validation": {
+                "hero_matches": 6061,
+                "hero_win_rate": 0.5494142880712753,
+                "lower_95": 0.5379471943734974,
+                "owners": 445,
+                "ownership_before_seconds": 1200,
+                "upper_95": 0.6291496166172842,
+                "win_rate": 0.5842696629213483,
+                "wins": 260
+              }
+            }
+          },
+          "states": [
+            0,
+            1
+          ],
+          "variant_id": "31-e19e81f973389bc3"
+        },
+        "owners": 711,
+        "wins": 428,
+        "win_rate": 0.6019690576652602,
+        "lower_95": 0.5655332318105705,
+        "upper_95": 0.6373089083222926,
+        "hero_win_rate": 0.528158879401324,
+        "hero_matches": 10423,
+        "coverage": 0.06821452556845438,
+        "order_support": {
+          "ordered_owners": 406,
+          "owners": 711,
+          "passes": true,
+          "share": 0.5710267229254571
+        },
+        "discovery_order_support": {
+          "ordered_owners": 704,
+          "owners": 1306,
+          "passes": true,
+          "share": 0.5390505359877489
+        },
+        "selection_order_support": {
+          "ordered_owners": 315,
+          "owners": 524,
+          "passes": true,
+          "share": 0.601145038167939
+        },
+        "status": "observed",
+        "limitations": [
+          "selection: adjusted lower bound does not exceed zero",
+          "No shared documented kit channel supported by two core items"
+        ],
+        "tier_pool": {
+          "1": [
+            2010028405,
+            3862866912,
+            2829638276,
+            1998374645,
+            3399065363,
+            3776945997,
+            4139877411,
+            1672893796,
+            754480263,
+            3077079169
+          ],
+          "2": [
+            3074274290,
+            112198670,
+            1235347618,
+            2059712766,
+            2603935618,
+            3331811235,
+            1644605047,
+            1770441818,
+            1047818222,
+            380806748
+          ],
+          "3": [
+            4053935515,
+            334300056,
+            1414025773,
+            2121044373,
+            2152872419,
+            2163598980,
+            1378931225,
+            3261353684,
+            787198704,
+            1193964439
+          ],
+          "4": [
+            1282141666,
+            3884003354,
+            951866250,
+            3357231760,
+            3919289022,
+            2221211450,
+            1113837674,
+            2037039379,
+            677738769,
+            915014646
+          ]
+        },
+        "variant_count": 7
+      }
+    },
+    {
+      "hero": "Viscous",
+      "hero_id": 35,
+      "group": "35-d41842ad5e6e28e7",
+      "number": 1,
+      "current": {
+        "core": [
+          26002154,
+          3190916303,
+          1252627263,
+          3294954488
+        ],
+        "core_names": [
+          "Melee Charge",
+          "Spirit Snatch",
+          "Lifestrike",
+          "Ballistic Enchantment"
+        ],
+        "path": [
+          465043967,
+          754480263,
+          26002154,
+          3190916303,
+          1437614329,
+          1252627263,
+          3294954488
+        ],
+        "path_names": [
+          "Spirit Strike",
+          "Mystic Expansion",
+          "Melee Charge",
+          "Spirit Snatch",
+          "Melee Lifesteal",
+          "Lifestrike",
+          "Ballistic Enchantment"
+        ],
+        "core_cost": 11200,
+        "generator": {
+          "effective": "current"
+        },
+        "owners": 166,
+        "wins": 88,
+        "win_rate": 0.5301204819277109,
+        "lower_95": 0.4543750621229647,
+        "upper_95": 0.6045033280947442,
+        "hero_win_rate": 0.4823431657665143,
+        "hero_matches": 4814,
+        "coverage": 0.034482758620689655,
+        "order_support": {
+          "ordered_owners": 73,
+          "owners": 166,
+          "passes": true,
+          "share": 0.4397590361445783
+        },
+        "discovery_order_support": {
+          "ordered_owners": 186,
+          "owners": 484,
+          "passes": true,
+          "share": 0.384297520661157
+        },
+        "selection_order_support": {
+          "ordered_owners": 63,
+          "owners": 158,
+          "passes": true,
+          "share": 0.3987341772151899
+        },
+        "status": "observed",
+        "limitations": [
+          "validation: win evidence fails family correction",
+          "validation: adjusted evidence fails family correction"
+        ],
+        "tier_pool": {
+          "1": [
+            2010028405,
+            4204808176,
+            1672893796,
+            3399065363,
+            3776945997,
+            2829638276,
+            1342610602,
+            1710079648,
+            1998374645
+          ],
+          "2": [
+            3074274290,
+            112198670,
+            1644605047,
+            1763073141,
+            2566692615,
+            3970837787,
+            1235347618,
+            1813726886,
+            2603935618,
+            380806748
+          ],
+          "3": [
+            787198704,
+            2121044373,
+            1804594021,
+            1414025773,
+            3731635960,
+            2095565695,
+            1254091416,
+            1193964439,
+            2163598980,
+            3261353684
+          ],
+          "4": [
+            800008313,
+            1371725689,
+            343572757,
+            951866250,
+            2617435668,
+            3028234315,
+            915014646,
+            3491236900,
+            1662311306
+          ]
+        },
+        "variant_count": 2,
+        "state_evidence": {
+          "0": {
+            "discovery": {
+              "owners": 142,
+              "wins": 63,
+              "win_rate": 0.44366197183098594,
+              "lower_95": 0.364499679538778,
+              "upper_95": 0.5257922536270676,
+              "hero_matches": 3715,
+              "hero_win_rate": 0.4123822341857335,
+              "ownership_before_seconds": 1200
+            },
+            "selection": {
+              "owners": 40,
+              "wins": 19,
+              "win_rate": 0.475,
+              "lower_95": 0.32935229550181694,
+              "upper_95": 0.6250289314607026,
+              "hero_matches": 1378,
+              "hero_win_rate": 0.4107402031930334,
+              "ownership_before_seconds": 1200
+            },
+            "validation": {
+              "owners": 40,
+              "wins": 17,
+              "win_rate": 0.425,
+              "lower_95": 0.2850916852481588,
+              "upper_95": 0.5780519956394001,
+              "hero_matches": 1770,
+              "hero_win_rate": 0.39717514124293785,
+              "ownership_before_seconds": 1200
+            }
+          },
+          "1": {
+            "discovery": {
+              "owners": 302,
+              "wins": 166,
+              "win_rate": 0.5496688741721855,
+              "lower_95": 0.49328130254310715,
+              "upper_95": 0.6048086891388617,
+              "hero_matches": 5938,
+              "hero_win_rate": 0.5358706635230718,
+              "ownership_before_seconds": 1200
+            },
+            "selection": {
+              "owners": 102,
+              "wins": 65,
+              "win_rate": 0.6372549019607843,
+              "lower_95": 0.5405399180148325,
+              "upper_95": 0.7240063473477469,
+              "hero_matches": 2110,
+              "hero_win_rate": 0.5374407582938389,
+              "ownership_before_seconds": 1200
+            },
+            "validation": {
+              "owners": 114,
+              "wins": 65,
+              "win_rate": 0.5701754385964912,
+              "lower_95": 0.4784751206157115,
+              "upper_95": 0.6573003610478098,
+              "hero_matches": 2688,
+              "hero_win_rate": 0.5200892857142857,
+              "ownership_before_seconds": 1200
+            }
+          },
+          "2": {
+            "discovery": {
+              "owners": 40,
+              "wins": 29,
+              "win_rate": 0.725,
+              "lower_95": 0.5716474916687543,
+              "upper_95": 0.8389214656685691,
+              "hero_matches": 813,
+              "hero_win_rate": 0.5854858548585485,
+              "ownership_before_seconds": 1200
+            },
+            "selection": {
+              "owners": 16,
+              "wins": 10,
+              "win_rate": 0.625,
+              "lower_95": 0.38640647097934805,
+              "upper_95": 0.8151901744524719,
+              "hero_matches": 289,
+              "hero_win_rate": 0.6401384083044983,
+              "ownership_before_seconds": 1200
+            },
+            "validation": {
+              "owners": 12,
+              "wins": 6,
+              "win_rate": 0.5,
+              "lower_95": 0.2537781703934222,
+              "upper_95": 0.7462218296065778,
+              "hero_matches": 356,
+              "hero_win_rate": 0.6207865168539326,
+              "ownership_before_seconds": 1200
+            }
+          }
+        }
+      },
+      "beam-order": {
+        "core": [
+          26002154,
+          3190916303,
+          3294954488,
+          1252627263
+        ],
+        "core_names": [
+          "Melee Charge",
+          "Spirit Snatch",
+          "Ballistic Enchantment",
+          "Lifestrike"
+        ],
+        "path": [
+          26002154,
+          465043967,
+          3190916303,
+          754480263,
+          3294954488,
+          1437614329,
+          1252627263
+        ],
+        "path_names": [
+          "Melee Charge",
+          "Spirit Strike",
+          "Spirit Snatch",
+          "Mystic Expansion",
+          "Ballistic Enchantment",
+          "Melee Lifesteal",
+          "Lifestrike"
+        ],
+        "core_cost": 11200,
+        "generator": {
+          "baseline_path_id": "35-d41842ad5e6e28e7",
+          "core": [
+            26002154,
+            1252627263,
+            3190916303,
+            3294954488
+          ],
+          "default_variant_id": "35-d41842ad5e6e28e7",
+          "effective": "beam",
+          "frozen_sha256": "93fa72b41247aee15c8ae9b39ff7303937c0cde2d7dec973a41de9343281b6cc",
+          "group_id": "35-d41842ad5e6e28e7",
+          "scores": {
+            "1": -0.017359476031134267
+          },
+          "state_evidence": {
+            "1": {
+              "discovery": {
+                "hero_matches": 5938,
+                "hero_win_rate": 0.5358706635230718,
+                "lower_95": 0.49328130254310715,
+                "owners": 302,
+                "ownership_before_seconds": 1200,
+                "upper_95": 0.6048086891388617,
+                "win_rate": 0.5496688741721855,
+                "wins": 166
+              },
+              "selection": {
+                "hero_matches": 2110,
+                "hero_win_rate": 0.5374407582938389,
+                "lower_95": 0.5405399180148325,
+                "owners": 102,
+                "ownership_before_seconds": 1200,
+                "upper_95": 0.7240063473477469,
+                "win_rate": 0.6372549019607843,
+                "wins": 65
+              },
+              "validation": {
+                "hero_matches": 2688,
+                "hero_win_rate": 0.5200892857142857,
+                "lower_95": 0.4784751206157115,
+                "owners": 114,
+                "ownership_before_seconds": 1200,
+                "upper_95": 0.6573003610478098,
+                "win_rate": 0.5701754385964912,
+                "wins": 65
+              }
+            }
+          },
+          "states": [
+            1
+          ],
+          "variant_id": "35-d41842ad5e6e28e7"
+        },
+        "owners": 166,
+        "wins": 88,
+        "win_rate": 0.5301204819277109,
+        "lower_95": 0.4543750621229647,
+        "upper_95": 0.6045033280947442,
+        "hero_win_rate": 0.4823431657665143,
+        "hero_matches": 4814,
+        "coverage": 0.034482758620689655,
+        "order_support": {
+          "ordered_owners": 39,
+          "owners": 166,
+          "passes": true,
+          "share": 0.23493975903614459
+        },
+        "discovery_order_support": {
+          "ordered_owners": 160,
+          "owners": 484,
+          "passes": true,
+          "share": 0.3305785123966942
+        },
+        "selection_order_support": {
+          "ordered_owners": 49,
+          "owners": 158,
+          "passes": true,
+          "share": 0.310126582278481
+        },
+        "status": "observed",
+        "limitations": [
+          "validation: win evidence fails family correction",
+          "validation: adjusted evidence fails family correction"
+        ],
+        "tier_pool": {
+          "1": [
+            2010028405,
+            4204808176,
+            1672893796,
+            3399065363,
+            3776945997,
+            2829638276,
+            1342610602,
+            1710079648,
+            1998374645
+          ],
+          "2": [
+            3074274290,
+            112198670,
+            1644605047,
+            1763073141,
+            2566692615,
+            3970837787,
+            1235347618,
+            1813726886,
+            2603935618,
+            380806748
+          ],
+          "3": [
+            787198704,
+            2121044373,
+            1804594021,
+            1414025773,
+            3731635960,
+            2095565695,
+            1254091416,
+            1193964439,
+            2163598980,
+            3261353684
+          ],
+          "4": [
+            800008313,
+            1371725689,
+            343572757,
+            951866250,
+            2617435668,
+            3028234315,
+            915014646,
+            3491236900,
+            1662311306
+          ]
+        },
+        "variant_count": 2
+      },
+      "beam": {
+        "core": [
+          26002154,
+          3190916303,
+          3294954488,
+          1252627263
+        ],
+        "core_names": [
+          "Melee Charge",
+          "Spirit Snatch",
+          "Ballistic Enchantment",
+          "Lifestrike"
+        ],
+        "path": [
+          26002154,
+          465043967,
+          3190916303,
+          754480263,
+          3294954488,
+          1437614329,
+          1252627263
+        ],
+        "path_names": [
+          "Melee Charge",
+          "Spirit Strike",
+          "Spirit Snatch",
+          "Mystic Expansion",
+          "Ballistic Enchantment",
+          "Melee Lifesteal",
+          "Lifestrike"
+        ],
+        "core_cost": 11200,
+        "generator": {
+          "baseline_path_id": "35-d41842ad5e6e28e7",
+          "core": [
+            26002154,
+            1252627263,
+            3190916303,
+            3294954488
+          ],
+          "default_variant_id": "35-d41842ad5e6e28e7",
+          "effective": "beam",
+          "frozen_sha256": "3f90d268a6cdc0196bf6b16f9dab26e1a9c7fbd768c880c15da4177648659584",
+          "group_id": "35-d41842ad5e6e28e7",
+          "scores": {
+            "1": -0.017359476031134267
+          },
+          "state_evidence": {
+            "1": {
+              "discovery": {
+                "hero_matches": 5938,
+                "hero_win_rate": 0.5358706635230718,
+                "lower_95": 0.49328130254310715,
+                "owners": 302,
+                "ownership_before_seconds": 1200,
+                "upper_95": 0.6048086891388617,
+                "win_rate": 0.5496688741721855,
+                "wins": 166
+              },
+              "selection": {
+                "hero_matches": 2110,
+                "hero_win_rate": 0.5374407582938389,
+                "lower_95": 0.5405399180148325,
+                "owners": 102,
+                "ownership_before_seconds": 1200,
+                "upper_95": 0.7240063473477469,
+                "win_rate": 0.6372549019607843,
+                "wins": 65
+              },
+              "validation": {
+                "hero_matches": 2688,
+                "hero_win_rate": 0.5200892857142857,
+                "lower_95": 0.4784751206157115,
+                "owners": 114,
+                "ownership_before_seconds": 1200,
+                "upper_95": 0.6573003610478098,
+                "win_rate": 0.5701754385964912,
+                "wins": 65
+              }
+            }
+          },
+          "states": [
+            1
+          ],
+          "variant_id": "35-d41842ad5e6e28e7"
+        },
+        "owners": 166,
+        "wins": 88,
+        "win_rate": 0.5301204819277109,
+        "lower_95": 0.4543750621229647,
+        "upper_95": 0.6045033280947442,
+        "hero_win_rate": 0.4823431657665143,
+        "hero_matches": 4814,
+        "coverage": 0.034482758620689655,
+        "order_support": {
+          "ordered_owners": 39,
+          "owners": 166,
+          "passes": true,
+          "share": 0.23493975903614459
+        },
+        "discovery_order_support": {
+          "ordered_owners": 160,
+          "owners": 484,
+          "passes": true,
+          "share": 0.3305785123966942
+        },
+        "selection_order_support": {
+          "ordered_owners": 49,
+          "owners": 158,
+          "passes": true,
+          "share": 0.310126582278481
+        },
+        "status": "observed",
+        "limitations": [
+          "validation: win evidence fails family correction",
+          "validation: adjusted evidence fails family correction"
+        ],
+        "tier_pool": {
+          "1": [
+            2010028405,
+            4204808176,
+            1672893796,
+            3399065363,
+            3776945997,
+            2829638276,
+            1342610602,
+            1710079648,
+            1998374645
+          ],
+          "2": [
+            3074274290,
+            112198670,
+            1644605047,
+            1763073141,
+            2566692615,
+            3970837787,
+            1235347618,
+            1813726886,
+            2603935618,
+            380806748
+          ],
+          "3": [
+            787198704,
+            2121044373,
+            1804594021,
+            1414025773,
+            3731635960,
+            2095565695,
+            1254091416,
+            1193964439,
+            2163598980,
+            3261353684
+          ],
+          "4": [
+            800008313,
+            1371725689,
+            343572757,
+            951866250,
+            2617435668,
+            3028234315,
+            915014646,
+            3491236900,
+            1662311306
+          ]
+        },
+        "variant_count": 1
+      }
+    }
+  ],
+  "verification": {
+    "checks": [
+      {
+        "command": "uv lock --check",
+        "status": "passed"
+      },
+      {
+        "command": "uv sync --frozen",
+        "status": "passed"
+      },
+      {
+        "command": "uv run ruff format --check .",
+        "status": "passed"
+      },
+      {
+        "command": "uv run ruff check .",
+        "status": "passed"
+      },
+      {
+        "command": "uv run ty check",
+        "status": "passed"
+      },
+      {
+        "command": "uv run deptry .",
+        "status": "passed"
+      },
+      {
+        "command": "uv run tach check",
+        "status": "passed"
+      },
+      {
+        "command": "uv run complexipy",
+        "status": "passed"
+      },
+      {
+        "command": "uv run coverage erase",
+        "status": "passed"
+      },
+      {
+        "command": "uv run coverage run -m pytest -W error",
+        "status": "passed"
+      },
+      {
+        "command": "uv run coverage json",
+        "status": "passed"
+      },
+      {
+        "command": "uv run tools/quality_gate.py",
+        "status": "passed"
+      },
+      {
+        "command": "uv run vulture",
+        "status": "passed"
+      },
+      {
+        "command": "uv run pylint --disable=all --enable=duplicate-code src scripts",
+        "status": "passed"
+      },
+      {
+        "command": "uv pip check",
+        "status": "passed"
+      },
+      {
+        "command": "uv build",
+        "status": "passed"
+      }
+    ],
+    "tests_passed": 1528,
+    "test_elapsed_seconds": 11.38,
+    "statement_coverage_percent": 97.04323153886358,
+    "branch_coverage_percent": 91.83155758498225,
+    "wheel": {
+      "wheel": "/Users/sandmac/code/deadlock-build-sync/dist/deadlock_build_sync-0.1.0-py3-none-any.whl",
+      "wheel_sha256": "de3354f2baedc860fa6a7ffc029db8eb7af676965d6695cc6304263baed319be",
+      "outside_checkout": "/private/var/folders/jt/s88jx1px65n165_bhj0550cw0000gn/T/beam-wheel-verification-me6qjj_n",
+      "installed_package": "/private/var/folders/jt/s88jx1px65n165_bhj0550cw0000gn/T/beam-wheel-verification-me6qjj_n/venv/lib/python3.13/site-packages/deadlock_build_sync/__init__.py",
+      "verified_at_utc": "2026-09-10T22:14:53.254576+00:00",
+      "passed": true,
+      "members_checked": [
+        "deadlock_build_sync/beam_display.py",
+        "deadlock_build_sync/guide_generator.py",
+        "deadlock_build_sync/offline/beam_search.py",
+        "deadlock_build_sync/offline/sql/beam/select_item_counts.sql"
+      ],
+      "generator_record": {
+        "name": "beam",
+        "version": "eclat-leiden-beam16-v1",
+        "settings": {
+          "width": 16,
+          "prior_strength": 1000.0,
+          "uncertainty_multiplier": 0.5,
+          "cost_exponent": 0.5,
+          "discount": 0.97,
+          "minimum_item_support": 30,
+          "minimum_core_support": 200,
+          "maximum_core_cost": 19200,
+          "minimum_group_similarity": 0.5,
+          "ownership_before_seconds": 1200
+        },
+        "settings_sha256": "6cf9dc58633c4042c0390fe892f984ef4165cd74a117b961fbc42ec3f84ee253"
+      }
+    },
+    "mutation_gate": "not_run",
+    "live_steam_sync": false,
+    "commit_created": false
+  }
+}

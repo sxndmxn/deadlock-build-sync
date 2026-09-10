@@ -7,6 +7,7 @@ Describe the user-visible result and why it is needed.
 - [ ] `uv lock --check`
 - [ ] `uv run ruff format --check .`
 - [ ] `uv run ruff check .`
+- [ ] `uv run sqlfluff lint .`
 - [ ] `uv run ty check`
 - [ ] `uv run deptry .`
 - [ ] `uv run tach check`

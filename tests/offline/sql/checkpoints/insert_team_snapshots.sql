@@ -1,1 +1,3 @@
-INSERT INTO team_snapshots VALUES(1,0,590,60000,6),(1,1,590,60000,6),(1,0,600,999999,6);
+INSERT INTO team_snapshots VALUES (1, 0, 590, 60000, 6),
+(1, 1, 590, 60000, 6),
+(1, 0, 600, 999999, 6);

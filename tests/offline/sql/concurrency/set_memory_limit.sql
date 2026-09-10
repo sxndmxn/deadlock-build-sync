@@ -1,1 +1,1 @@
-SET memory_limit='16MiB';
+SET memory_limit = '16MiB';

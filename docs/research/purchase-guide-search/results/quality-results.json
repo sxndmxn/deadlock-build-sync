@@ -1,0 +1,82 @@
+[
+  {
+    "command": "uv lock --check",
+    "exit_code": 0,
+    "log": "generated/purchase-guide-search/quality-corrected/01.log"
+  },
+  {
+    "command": "uv sync --frozen",
+    "exit_code": 0,
+    "log": "generated/purchase-guide-search/quality-corrected/02.log"
+  },
+  {
+    "command": "uv run ruff format --check .",
+    "exit_code": 0,
+    "log": "generated/purchase-guide-search/quality-corrected/03.log"
+  },
+  {
+    "command": "uv run ruff check .",
+    "exit_code": 0,
+    "log": "generated/purchase-guide-search/quality-corrected/04.log"
+  },
+  {
+    "command": "uv run ty check",
+    "exit_code": 0,
+    "log": "generated/purchase-guide-search/quality-corrected/05.log"
+  },
+  {
+    "command": "uv run deptry .",
+    "exit_code": 0,
+    "log": "generated/purchase-guide-search/quality-corrected/06.log"
+  },
+  {
+    "command": "uv run tach check",
+    "exit_code": 0,
+    "log": "generated/purchase-guide-search/quality-corrected/07.log"
+  },
+  {
+    "command": "uv run complexipy",
+    "exit_code": 0,
+    "log": "generated/purchase-guide-search/quality-corrected/08.log"
+  },
+  {
+    "command": "uv run coverage erase",
+    "exit_code": 0,
+    "log": "generated/purchase-guide-search/quality-corrected/09.log"
+  },
+  {
+    "command": "uv run coverage run -m pytest -W error",
+    "exit_code": 0,
+    "log": "generated/purchase-guide-search/quality-corrected/10.log"
+  },
+  {
+    "command": "uv run coverage json",
+    "exit_code": 0,
+    "log": "generated/purchase-guide-search/quality-corrected/11.log"
+  },
+  {
+    "command": "uv run tools/quality_gate.py",
+    "exit_code": 0,
+    "log": "generated/purchase-guide-search/quality-corrected/12.log"
+  },
+  {
+    "command": "uv run vulture",
+    "exit_code": 0,
+    "log": "generated/purchase-guide-search/quality-corrected/13.log"
+  },
+  {
+    "command": "uv run pylint --disable=all --enable=duplicate-code src scripts",
+    "exit_code": 0,
+    "log": "generated/purchase-guide-search/quality-corrected/14.log"
+  },
+  {
+    "command": "uv pip check",
+    "exit_code": 0,
+    "log": "generated/purchase-guide-search/quality-corrected/15.log"
+  },
+  {
+    "command": "uv build",
+    "exit_code": 0,
+    "log": "generated/purchase-guide-search/quality-corrected/16.log"
+  }
+]

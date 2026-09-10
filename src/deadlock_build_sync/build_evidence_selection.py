@@ -302,6 +302,7 @@ def select_hero_build(
         hero_id=evidence.hero_id,
         cohort=evidence.cohort,
         evidence_summary={
+            **({"generator": evidence.generator} if evidence.generator else {}),
             "status": evidence.discovery.get("evidence_status", "observed"),
             "limitations": evidence.discovery.get("evidence_limitations", []),
             "discovery_owners": evidence.discovery.get("discovery_support"),

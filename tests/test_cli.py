@@ -314,7 +314,9 @@ def test_sync_generates_artifacts_and_installs_without_extra_flags(
         manifest=snapshot(),
     )
     calls: dict[str, object] = {}
-    evidence = SimpleNamespace(artifact_id="e" * 64, heroes={}, raw_bytes=b"evidence")
+    evidence = SimpleNamespace(
+        artifact_id="e" * 64, heroes={}, raw_bytes=b"evidence", generator="current"
+    )
     api = object()
 
     monkeypatch.setattr(cli_module, "_discover_cache_location", lambda _args: location)

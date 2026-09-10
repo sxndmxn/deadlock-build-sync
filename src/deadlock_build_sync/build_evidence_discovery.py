@@ -44,7 +44,7 @@ def validate_discovery(
     discovery: dict[str, object], core: tuple[int, ...], path: tuple[int, ...]
 ) -> None:
     if (
-        discovery.get("method") != DISCOVERY_METHOD
+        discovery.get("method") not in {DISCOVERY_METHOD, "eclat_leiden_beam"}
         or discovery.get("test_evaluated") is not False
     ):
         raise ArtifactError(f"Unsupported discovery evidence. {REFRESH_INSTRUCTION}")
@@ -60,7 +60,13 @@ def validate_discovery(
     if discovery.get("selection_rejections") != [] or discovery.get("rejections") != []:
         raise ArtifactError("A rejected discovery identity cannot be installed")
     outcome_supported = _validate_outcome_status(discovery, selection, validation)
-    _validate_order(order, core, path, frozen)
+    _validate_order(
+        order,
+        core,
+        path,
+        frozen,
+        method="beam16" if discovery["method"] == "eclat_leiden_beam" else "pairwise",
+    )
     _order_record(discovery.get("order_validation"), required=outcome_supported)
 
 
@@ -108,12 +114,14 @@ def _validate_order(
     core: tuple[int, ...],
     path: tuple[int, ...],
     frozen: dict[str, object],
+    *,
+    method: str = "pairwise",
 ) -> None:
     for record in (order.get("discovery"), order.get("selection")):
         _order_record(record, required=True)
     if (
         order.get("order") != list(core)
-        or (order.get("method"), order.get("legal")) != ("pairwise", True)
+        or (order.get("method"), order.get("legal")) != (method, True)
         or order.get("admitted_before_validation") is not True
         or frozen.get("ready") is not True
         or frozen.get("path") != list(path)

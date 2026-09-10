@@ -1,0 +1,48 @@
+[
+  {
+    "mode": "guides",
+    "methods": [
+      "greedy:1",
+      "beam:4",
+      "beam:8",
+      "beam:16",
+      "beam:32",
+      "diverse:16",
+      "eclat:8",
+      "eclat:16",
+      "leiden:16"
+    ],
+    "heroes": null,
+    "depth": 6,
+    "alternatives": 3,
+    "sample_size": 96,
+    "diversity": 0.02,
+    "prior": 1000.0,
+    "cost_exponent": 0.5,
+    "stateless": false,
+    "joint_support": 200
+  },
+  {
+    "mode": "decisions",
+    "methods": [
+      "greedy:1",
+      "beam:4",
+      "beam:8",
+      "beam:16",
+      "beam:32",
+      "diverse:16",
+      "eclat:8",
+      "eclat:16",
+      "leiden:16"
+    ],
+    "heroes": null,
+    "depth": 6,
+    "alternatives": 3,
+    "sample_size": 96,
+    "diversity": 0.02,
+    "prior": 1000.0,
+    "cost_exponent": 0.5,
+    "stateless": false,
+    "joint_support": 200
+  }
+]

@@ -1,5 +1,4 @@
-ATTACH ':memory:' AS remote;
-CREATE TABLE remote.main.match_player (
+CREATE TABLE remote."main".match_player (
     match_id INTEGER,
     player_slot INTEGER,
     team VARCHAR,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from .beam_display import generator_metadata, render_beam_markdown, variant_statistics
 from .guide_groups import VARIANT_RULE, describe_variant_changes
 from .purchase_categories import (
     format_choice_instruction,
@@ -143,8 +144,10 @@ def render_purchase_markdown(guide: PurchaseGuide, *, details: bool = False) -> 
     guidance = guide.purchase_guidance
     if guidance is None:
         raise ValueError("Build has no purchase guidance; generate it with build")
-    if not details and any(category.compact for category in guide.rendered_categories):
-        return _render_compact_markdown(guide, guidance)
+    if not details:
+        compact = _render_short_markdown(guide, guidance)
+        if compact is not None:
+            return compact
     lines = [
         f"# {guide.hero_name} — {guide.build_archetype}",
         "",
@@ -157,6 +160,7 @@ def render_purchase_markdown(guide: PurchaseGuide, *, details: bool = False) -> 
         "",
     ]
     lines.extend(_render_variant_markdown(guide))
+    lines.extend(_render_generator_evidence(guide))
     lines.extend(["## Purchase path and choices", ""])
     for index in range(len(guidance.default_path.actions) + 1):
         if index:
@@ -207,6 +211,26 @@ def render_purchase_markdown(guide: PurchaseGuide, *, details: bool = False) -> 
             for variant in guide.variant_guides
         )
     return "\n".join(lines)
+
+
+def _render_generator_evidence(guide: PurchaseGuide) -> list[str]:
+    if not generator_metadata(guide):
+        return []
+    return [
+        *variant_statistics(guide),
+        f"Generator evidence: {generator_metadata(guide)}",
+        "",
+    ]
+
+
+def _render_short_markdown(
+    guide: PurchaseGuide, guidance: PurchaseGuidance
+) -> str | None:
+    if generator_metadata(guide):
+        return render_beam_markdown(guide)
+    if any(category.compact for category in guide.rendered_categories):
+        return _render_compact_markdown(guide, guidance)
+    return None
 
 
 def _render_variant_markdown(guide: PurchaseGuide) -> list[str]:

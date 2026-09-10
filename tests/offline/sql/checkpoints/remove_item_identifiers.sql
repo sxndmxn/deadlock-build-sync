@@ -1,1 +1,1 @@
-UPDATE purchases SET item_id=NULL;
+UPDATE purchases SET item_id = NULL;

@@ -8,9 +8,11 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
+from deadlock_build_sync.guide_generator import GENERATOR_NAMES
 from deadlock_build_sync.value_validation import integer, require_object_dict
 
 from .api import capture_sources, read_json, write_json
+from .beam_snapshot import beam_resume_record, require_beam_resume
 from .config import Cohort, RunPaths, parse_timestamp
 from .extract import extract_cohort
 from .production_evidence import export_production_evidence
@@ -28,6 +30,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--rank-expansion", choices=("auto", "off"), default="auto")
     parser.add_argument("--workers", type=int, default=8)
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--generator", choices=GENERATOR_NAMES, default="current")
     args = parser.parse_args(argv)
     if args.workers < 1:
         parser.error("--workers must be at least 1")
@@ -40,7 +43,11 @@ def main(argv: list[str] | None = None) -> int:
     else:
         _capture_run_sources(paths, args)
     document = export_production_evidence(
-        paths, args.output, workers=args.workers, resume=args.resume
+        paths,
+        args.output,
+        workers=args.workers,
+        resume=args.resume,
+        generator=args.generator,
     )
     print(f"Evidence: {args.output} ({document['artifact_id']})")
     print(f"Source and admission reports: {paths.run}")
@@ -50,6 +57,10 @@ def main(argv: list[str] | None = None) -> int:
 def _validate_resume_request(paths: RunPaths, args: argparse.Namespace) -> None:
     manifest = require_object_dict(read_json(paths.run / "manifest.json"))
     cohort = require_object_dict(manifest["cohort"])
+    if manifest.get("generator", "current") != getattr(args, "generator", "current"):
+        raise ValueError("Resume generator must match the source snapshot")
+    if manifest.get("generator") == "beam":
+        require_beam_resume(manifest)
     if (
         manifest.get("schema_version") != 2
         or manifest.get("production_method") != "eclat_leiden_pairwise"
@@ -95,6 +106,9 @@ def _capture_run_sources(paths: RunPaths, args: argparse.Namespace) -> None:
         "production_method": "eclat_leiden_pairwise",
         "test_usage": "reserved",
     }
+    if getattr(args, "generator", "current") != "current":
+        manifest["generator"] = args.generator
+        manifest["beam_resume"] = beam_resume_record()
     write_json(paths.run / "manifest.json", manifest)
     manifest["extraction"] = extract_cohort(
         paths, cohort, rank_expansion=args.rank_expansion

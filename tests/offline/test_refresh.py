@@ -32,10 +32,11 @@ def test_refresh_uses_requested_worker_count(
     received: list[int] = []
 
     def export_evidence(
-        paths: RunPaths, target: Path, *, workers: int, resume: bool
+        paths: RunPaths, target: Path, *, workers: int, resume: bool, generator: str
     ) -> dict[str, object]:
         assert target == output
         assert resume is False
+        assert generator == "current"
         assert (paths.run / "manifest.json").exists()
         received.append(workers)
         return {"artifact_id": "test"}
@@ -89,11 +90,12 @@ def test_resume_reuses_source_run_without_capture_or_extraction(
         raise AssertionError("Resume must preserve source data")
 
     def export_evidence(
-        resumed: RunPaths, _output: Path, *, workers: int, resume: bool
+        resumed: RunPaths, _output: Path, *, workers: int, resume: bool, generator: str
     ) -> dict[str, object]:
         assert resumed == paths
         assert workers == 8
         assert resume is True
+        assert generator == "current"
         return {"artifact_id": "test"}
 
     monkeypatch.setattr(refresh, "capture_sources", reject_source_refresh)

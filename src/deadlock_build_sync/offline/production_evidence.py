@@ -14,6 +14,12 @@ from deadlock_build_sync.build_evidence import (
     TIER_ITEM_COUNT,
 )
 from deadlock_build_sync.build_support import SUPPORT
+from deadlock_build_sync.guide_generator import (
+    BEAM_METHOD_VERSION,
+    BEAM_SCHEMA_VERSION,
+    GENERATOR_NAMES,
+    generator_record,
+)
 from deadlock_build_sync.mechanics import (
     BASE_INVENTORY_SLOTS,
     ItemGraph,
@@ -25,6 +31,7 @@ from deadlock_build_sync.value_validation import (
 )
 
 from .api import read_json, write_json
+from .beam_export import generate_beam_roster
 from .config import RunPaths, sha256_json
 from .discovery_export import discover_hero_roster
 from .inventory_reconstruction import load_item_asset_maps
@@ -40,8 +47,15 @@ from .production_storage import write_validated_evidence
 
 
 def export_production_evidence(
-    paths: RunPaths, output: Path, *, workers: int = 8, resume: bool = False
+    paths: RunPaths,
+    output: Path,
+    *,
+    workers: int = 8,
+    resume: bool = False,
+    generator: str = "current",
 ) -> dict[str, object]:
+    if generator not in GENERATOR_NAMES:
+        raise ValueError(f"Unknown guide generator: {generator}")
     manifest = object_dict(read_json(paths.run / "manifest.json"))
     if manifest is None:
         raise RuntimeError("analysis manifest must be a dictionary")
@@ -127,6 +141,20 @@ def export_production_evidence(
         "requested_hero_ids": sorted(integer(hero["id"]) for hero in heroes),
         "heroes": hero_payloads,
     }
+    if generator == "beam":
+        write_json(
+            paths.run / "beam-current-baseline.json",
+            {**payload, "artifact_id": sha256_json(payload)},
+        )
+        payload["heroes"] = generate_beam_roster(
+            heroes, hero_payloads, export_context, workers=workers
+        )
+        payload["schema_version"] = BEAM_SCHEMA_VERSION
+        payload["generator"] = generator_record()
+        payload["method"]["version"] = BEAM_METHOD_VERSION
+        payload["method"]["core_selection"] = (
+            "Frozen groups with state-aware beam search and complete guide admission"
+        )
     document = {**payload, "artifact_id": sha256_json(payload)}
     write_validated_evidence(output, document)
     return document

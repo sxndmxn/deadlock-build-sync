@@ -47,6 +47,7 @@ from .freshness import (
     FreshnessError,
     require_current_build_evidence,
 )
+from .guide_generator import require_generator
 from .guide_groups import group_guides
 from .narratives import (
     NarrativeError,
@@ -83,6 +84,7 @@ def _current_evidence(args: argparse.Namespace) -> tuple[Path, BuildEvidenceCata
     evidence = require_current_build_evidence(
         evidence_path, DeadlockApi(args.api_base_url)
     )
+    require_generator(getattr(args, "generator", "current"), evidence.generator)
     _record_fresh_evidence(evidence_path, evidence)
     return evidence_path, evidence
 
@@ -266,6 +268,8 @@ def _run_refresh_evidence(args: argparse.Namespace) -> int:
             forwarded.extend((flag, str(value)))
     if args.resume:
         forwarded.append("--resume")
+    if getattr(args, "generator", "current") != "current":
+        forwarded.extend(("--generator", args.generator))
     result = offline_main(forwarded)
     if result == 0:
         loaded = load_build_evidence(output)

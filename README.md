@@ -88,6 +88,15 @@ Pinned hero role, playstyle, build archetype, and ability order produce the shor
 build-level description. The description artifact must copy the exact snapshot,
 policy, context, and narrative basis identities.
 
+## Optional beam generator
+
+`refresh-evidence`, `build`, and `sync` accept `--generator beam`.
+The default remains `current`.
+Beam preserves existing guide groups and searches supported cores and component paths within each group.
+It retains current-guide fallbacks when support is insufficient.
+Use separate artifact directories for each generator.
+See the [integration guide](docs/research/purchase-guide-search/integration.md) for commands, limits, and comparison details.
+
 ## Requirements
 
 - Linux with Steam and Deadlock installed
