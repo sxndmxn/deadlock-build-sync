@@ -15,3 +15,11 @@ def test_purchase_counts_use_discovery_and_strict_prior_complete_states() -> Non
         connection.execute(load_fixture_sql("beam/change_reserved_outcomes.sql"))
         repeated = load_beam_model(connection, make_beam_values(), 71, 115)
         assert repeated.cells == model.cells
+
+
+def test_multiple_purchases_in_one_match_do_not_multiply_observations() -> None:
+    with duckdb.connect() as connection:
+        connection.execute(load_fixture_sql("beam/create_purchase_observations.sql"))
+        connection.execute(load_fixture_sql("beam/insert_second_purchase.sql"))
+        model = load_beam_model(connection, make_beam_values(), 71, 115)
+    assert model.cells == {(0, 1, 1): (1, 1), (0, 1, 2): (1, 1)}

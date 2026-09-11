@@ -1,6 +1,7 @@
 CREATE TABLE purchases (
     match_id BIGINT,
     player_slot INT,
+    hero_id INT,
     item_id BIGINT,
     buy_time INT,
     own_net_worth_at_buy INT,

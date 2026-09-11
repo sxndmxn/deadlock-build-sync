@@ -3,7 +3,7 @@ WITH firsts AS (
     INNER JOIN
         _build_path_members AS m
         ON p.match_id = m.match_id AND p.player_slot = m.player_slot
-    WHERE p.buy_time <= p.duration_s
+    WHERE p.hero_id = $hero AND p.buy_time <= p.duration_s
 ),
 
 events AS (
@@ -14,7 +14,7 @@ events AS (
     INNER JOIN
         _build_path_members AS m
         ON p.match_id = m.match_id AND p.player_slot = m.player_slot
-    WHERE p.buy_time <= p.duration_s
+    WHERE p.hero_id = $hero AND p.buy_time <= p.duration_s
     GROUP BY p.item_id
 ),
 

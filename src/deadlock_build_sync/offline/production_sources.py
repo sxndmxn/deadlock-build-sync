@@ -144,6 +144,7 @@ def _calculate_rank_labels_sha256(paths: RunPaths) -> str:
 def _query_path_item_metrics(
     connection: duckdb.DuckDBPyConnection,
     member_ids: frozenset[tuple[int, int]],
+    hero: int,
 ) -> pl.DataFrame:
     members = pl.DataFrame({
         "match_id": [identity[0] for identity in member_ids],
@@ -154,6 +155,7 @@ def _query_path_item_metrics(
         return connection.sql(
             load_sql("production/select_path_item_metrics.sql"),
             params={
+                "hero": hero,
                 "minimum_support": MINIMUM_CORE_SUPPORT,
                 "member_count": len(member_ids),
             },

@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 from .build_support import numeric
 from .purchase_types import MAX_CATEGORY_DESCRIPTION_BYTES, GuideCategory
-from .value_validation import object_dict, object_list
+from .value_validation import object_dict, object_list, object_rows
 
 if TYPE_CHECKING:
     from .purchase_types import PurchaseGuide
@@ -19,6 +19,23 @@ COMPACT_HEIGHT = 650.0
 
 def generator_metadata(guide: PurchaseGuide) -> dict[str, object]:
     return object_dict(guide.evidence_summary.get("generator")) or {}
+
+
+def attach_beam_ability_names(
+    guide: PurchaseGuide, kit: dict[str, object]
+) -> PurchaseGuide:
+    if not generator_metadata(guide):
+        return guide
+    return replace(
+        guide,
+        evidence_summary={
+            **guide.evidence_summary,
+            "ability_names": {
+                str(row["id"]): str(row["name"])
+                for row in object_rows(kit.get("abilities")) or []
+            },
+        },
+    )
 
 
 def variant_state_label(guide: PurchaseGuide) -> str:

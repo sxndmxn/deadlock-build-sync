@@ -13,10 +13,10 @@ def test_test_period_cannot_change_imbue_selection() -> None:
     connection.execute(load_fixture_sql("selection/create_purchases.sql"))
     members = frozenset((match_id, 0) for match_id in range(1, 71))
     try:
-        before = _query_path_item_metrics(connection, members)
+        before = _query_path_item_metrics(connection, members, 7)
         connection.execute(load_fixture_sql("selection/change_test_observations.sql"))
         connection.execute(load_fixture_sql("selection/remove_test_item.sql"))
-        after = _query_path_item_metrics(connection, members)
+        after = _query_path_item_metrics(connection, members, 7)
     finally:
         connection.close()
     outputs = []

@@ -111,6 +111,7 @@ def test_path_item_metrics_aggregate_fold_and_imbue_support() -> None:
             "match_id": row["match_id"],
             "player_slot": 0,
             "item_id": 10,
+            "hero_id": row["hero_id"],
             "buy_time": row["buy_time"],
             "duration_s": row["duration_s"],
         }
@@ -126,6 +127,7 @@ def test_path_item_metrics_aggregate_fold_and_imbue_support() -> None:
         metrics = sources._query_path_item_metrics(
             connection,
             frozenset((match_id, 0) for match_id in range(1, 21)),
+            7,
         )
     finally:
         connection.close()

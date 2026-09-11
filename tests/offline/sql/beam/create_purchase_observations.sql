@@ -31,3 +31,5 @@ SELECT
     14400 AS team_net_worth,
     CASE WHEN t.i = 10 THEN 5 ELSE 6 END AS observed_players
 FROM range(1, 11) AS t (i) CROSS JOIN range(2) AS teams (team);
+
+INSERT INTO team_snapshots VALUES (10, 0, 80, 14400, 6), (10, 1, 80, 14400, 6);

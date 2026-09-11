@@ -3,12 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
+from .beam_display import attach_beam_ability_names
 from .build_tags import BuildTagCatalog, BuildTagError, select_build_tags
 from .narratives import apply_narrative
 from .purchase_guidance import attach_purchase_guidance
 from .renderer import ProjectionIdentity, project_policy_to_guide
 from .strategy_context import build_hero_strategy_context
-from .value_validation import object_rows
 
 if TYPE_CHECKING:
     from .api import Patch
@@ -72,17 +72,7 @@ def _project_hero_guide(
         layout_source=inputs.analytic_guide,
     )
     projected = replace(projected, ability_path=inputs.analytic_guide.ability_path)
-    if projected.evidence_summary.get("generator"):
-        projected = replace(
-            projected,
-            evidence_summary={
-                **projected.evidence_summary,
-                "ability_names": {
-                    str(row["id"]): str(row["name"])
-                    for row in object_rows(inputs.kit.get("abilities")) or []
-                },
-            },
-        )
+    projected = attach_beam_ability_names(projected, inputs.kit)
     projected = attach_purchase_guidance(projected, environment.assets)
     if projected.ability_path is None:
         raise GuideError(f"{projected.hero_name} has no complete ability path")

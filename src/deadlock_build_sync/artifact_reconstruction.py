@@ -8,6 +8,7 @@ from .artifact_bundle_types import (
     ArtifactBundleError,
 )
 from .artifact_projection import _reconstruct_ability_path
+from .beam_display import attach_beam_ability_names
 from .build_evidence import select_hero_build
 from .build_tags import FUNCTION_CLASSES
 from .mechanics import ItemGraph, parse_ability_definitions
@@ -198,7 +199,7 @@ def _reconstruct_guide(
         analysis_start_timestamp=_calculate_analysis_start_timestamp(manifest),
         as_of_timestamp=integer(manifest.get("as_of_timestamp")),
     )
-    guide = attach_purchase_guidance(projected, assets)
+    guide = attach_purchase_guidance(attach_beam_ability_names(projected, kit), assets)
     raw = object_dict(hero.get("projection"))
     if (
         raw is None

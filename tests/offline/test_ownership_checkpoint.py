@@ -71,6 +71,28 @@ def test_checkpoint_rejects_nonpositive_values() -> None:
         )
 
 
+def test_checkpoint_keeps_invalid_latest_state_over_older_complete_state() -> None:
+    with duckdb.connect() as connection:
+        connection.execute(
+            load_fixture_sql("checkpoints/create_ownership_checkpoint.sql")
+        )
+        connection.execute(
+            load_fixture_sql("checkpoints/insert_recent_observations.sql")
+        )
+        rows = {
+            row[0]: row
+            for row in load_landmark_rows(connection, 7, ownership_before_seconds=1800)
+        }
+    for match in (1, 6):
+        assert rows[match][4] is None
+        assert rows[match][5] == 0
+        assert rows[match][7] is None
+    for match in (3, 4, 7):
+        assert rows[match][4] == 17000
+        assert rows[match][5] is None
+        assert rows[match][7] is None
+
+
 def test_empty_checkpoint_reports_no_observed_win_rate() -> None:
     data = build_hero_discovery_data(
         7, [], {}, make_item_graph(), ownership_before_seconds=1800
