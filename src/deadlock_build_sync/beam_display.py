@@ -6,7 +6,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from .build_support import numeric
-from .value_validation import object_dict, object_rows
+from .value_validation import integer, object_dict, object_list, object_rows
 
 if TYPE_CHECKING:
     from .purchase_types import PurchaseGuide
@@ -35,15 +35,38 @@ def attach_beam_ability_names(
     )
 
 
-def variant_statistics(guide: PurchaseGuide, *, detailed: bool = False) -> list[str]:
-    evidence = object_dict(generator_metadata(guide).get("state_evidence")) or {}
-    lines = []
+def _variant_state_rows(guide: PurchaseGuide) -> list[tuple[str, dict[str, object]]]:
+    metadata = generator_metadata(guide)
+    states = object_list(metadata.get("states")) or []
+    evidence = object_dict(metadata.get("state_evidence")) or {}
+    rows = []
     for state, label in STATE_LABELS.items():
+        if state not in states:
+            continue
         folds = object_dict(evidence.get(str(state))) or {}
         row = object_dict(folds.get("validation")) or {}
         count, wins = row.get("owners"), row.get("wins")
-        if type(count) is not int or type(wins) is not int or not count:
+        if (
+            type(count) is not int
+            or type(wins) is not int
+            or count <= 0
+            or not 0 <= wins <= count
+        ):
             continue
+        rows.append((label, row))
+    return rows
+
+
+def variant_state_labels(guide: PurchaseGuide) -> str:
+    return (
+        ", ".join(label for label, _ in _variant_state_rows(guide)) or "State unknown"
+    )
+
+
+def variant_statistics(guide: PurchaseGuide, *, detailed: bool = False) -> list[str]:
+    lines = []
+    for label, row in _variant_state_rows(guide):
+        count, wins = integer(row["owners"]), integer(row["wins"])
         text = f"{label}: {100 * wins / count:.1f}% | {wins}/{count} wins"
         if detailed:
             text += (

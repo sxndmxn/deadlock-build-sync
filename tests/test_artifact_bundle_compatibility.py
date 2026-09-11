@@ -50,11 +50,12 @@ def test_loads_exact_reviewed_bundle_without_analytics_refetch(
 
     normalized = json.loads(json.dumps(asdict(bundle), default=serialize_json_value))
     assert sha256_json(normalized) == (
-        "de80951a48a38f25041bf77b3f7b67f1ad7617235ab02dce1ee0616415c1ac61"
+        "a105cabaf65ff941f85f8ea76b0690c86a319f33de4e80b66a0c5b7aee45f721"
     )
     assert len(bundle.guides) == 1
     guide = bundle.guides[0]
     assert guide.hero_name == "Kelvin"
+    assert guide.rendered_categories[0].name == "CORE ITEMS"
     queue = [
         item.item_id
         for row in guide.rendered_categories

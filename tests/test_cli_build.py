@@ -92,7 +92,7 @@ def test_normal_build_generates_full_files_without_steam(
     }
     # The complete Steam presentation defines the review artifact contract.
     assert sha256_json(files) == (
-        "4777ba38a16c664f584f4adf61861d83b31ca5cd4359a614cc712eafe6f076ca"
+        "82d1c848609fee35f971b5c267ab3bd1a733a2a4d78739f50e93d89c9e1c22b3"
     )
     output = capsys.readouterr()
     _assert_build_output(output.out, output_format)
@@ -127,7 +127,8 @@ def _assert_build_output(output: str, output_format: str) -> None:
     else:
         assert "Steam build content." in output
         assert "## TIER 1" in output
-        assert "## SHARED CORE" in output
+        assert "## CORE ITEMS" in output
+        assert "## ALTERNATIVE CORE" in output
         assert "## VARIANT 1" in output
         assert "## TIER 3" in output
         assert "## TIER 4" in output

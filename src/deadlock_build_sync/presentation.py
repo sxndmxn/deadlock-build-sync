@@ -138,6 +138,8 @@ def _describe_role_and_plan(guide: PurchaseGuide) -> tuple[str, str]:
 
 
 def _describe_queue_rule(guide: PurchaseGuide) -> str:
+    if any(category.compact for category in guide.rendered_categories):
+        return "Queue follows CORE ITEMS only. All other panels are optional."
     if guide.purchase_guidance is not None:
         return "AUTO: CORE steps only. OPTIONAL, PICK ONE, UPGRADE, and ITEM POOL rows stay optional."
     if guide.optional_core_items:
@@ -201,12 +203,14 @@ def build_presentation(
         ])
     if guide.variant_guides:
         lines.extend([
-            f"{len(guide.variant_guides) + 1} supported variants. Queue: default only. Each VARIANT panel shows one alternative core combination. V numbers identify the full paths below.",
-            "SHARED CORE contains items common to every final core. Add it only to panels marked SHARED CORE +. Each complete variant replaces the default core. Follow that variant's complete purchase order."
+            f"{len(guide.variant_guides)} alternative variants. CORE ITEMS contains the complete default purchase path. V numbers identify the full variant paths below.",
+            "ALTERNATIVE CORE contains common final items. Combine it with one panel marked ALTERNATIVE CORE +. Each complete variant replaces CORE ITEMS. Follow that variant's complete purchase order. Shared and variant items can occur at different steps."
             if any(
-                category.name == "SHARED CORE" for category in guide.rendered_categories
+                category.name == "ALTERNATIVE CORE"
+                for category in guide.rendered_categories
             )
             else "Each VARIANT panel contains its complete final core. Follow that variant's complete purchase order.",
+            "Variant notes show recorded wealth states and complete-core win rates. State labels describe observed matches. They do not establish when to change a partly purchased core.",
         ])
         lines.extend(describe_variants(guide))
     if any(category.compact for category in guide.rendered_categories):
@@ -250,7 +254,7 @@ def _describe_purchase_details(guide: PurchaseGuide) -> list[str]:
     if guidance is None:
         return []
     return [
-        "CORE buys left to right. All other sections are optional. Tier numbers show item prices, not purchase order. Keep the selected variant's core and pool together.",
+        "Buy CORE ITEMS from left to right. All other sections are optional. Tier numbers show item prices. Keep the selected variant's core and pool together.",
         *(
             f"{step.name}: +{step.incremental_cost:,} souls; total {step.cumulative_cost:,}."
             for step in guidance.default_path.actions

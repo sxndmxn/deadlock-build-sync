@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
@@ -9,12 +10,16 @@ import pytest
 
 from deadlock_build_sync.beam_display import (
     generator_metadata,
+    variant_state_labels,
     variant_statistics,
 )
 from deadlock_build_sync.guide_groups import build_group_record, group_guides
 from deadlock_build_sync.purchase_markdown import render_purchase_markdown
 from deadlock_build_sync.service import generate_guides
-from deadlock_build_sync.value_validation import require_object_rows
+from deadlock_build_sync.value_validation import (
+    require_object_dict,
+    require_object_rows,
+)
 from tests.beam_fixtures import make_generator_path
 from tests.service_evidence_fixtures import make_service_build_evidence
 from tests.service_fake_api import FakeApi, make_ability_rows, make_duration_statistics
@@ -50,7 +55,8 @@ def test_complete_markdown_keeps_every_variant_pool_and_named_ability() -> None:
     )[0]
     body = render_purchase_markdown(result)
     assert "## TIER 3" in body and "## TIER 4" in body
-    assert "## SHARED CORE" in body and "## VARIANT 1" in body
+    assert "## CORE ITEMS" in body and "## ALTERNATIVE CORE" in body
+    assert "## VARIANT 1" in body
     assert "## CORE OPTIONAL" not in body
     assert len(require_object_rows(build_group_record(result)["variants"])) == 2
     details = render_purchase_markdown(result, details=True)
@@ -87,8 +93,8 @@ def test_layout_keeps_all_variant_items_and_default_queue(variant_count: int) ->
     official = presentation(projected)
     assert projected.core_purchase_items == guide.core_purchase_items
     assert [category.name for category in official.categories] == [
-        "CORE",
-        "SHARED CORE",
+        "CORE ITEMS",
+        "ALTERNATIVE CORE",
         *(f"VARIANT {index}" for index in range(1, variant_count + 1)),
         "TIER 1",
         "TIER 2",
@@ -116,7 +122,8 @@ def test_layout_keeps_all_variant_items_and_default_queue(variant_count: int) ->
         for item in category.items
     }
     assert 902 in {item.item_id for item in official.categories[-1].items}
-    assert f"V{variant_count}:" in official.description
+    assert f"V{variant_count} (Even):" in official.description
+    assert "Queue follows CORE ITEMS only." in official.description
 
 
 def test_variant_panels_preserve_combinations_and_specific_imbue_targets() -> None:
@@ -140,7 +147,7 @@ def test_variant_panels_preserve_combinations_and_specific_imbue_targets() -> No
     categories = {
         category.name: category for category in presentation(projected).categories
     }
-    assert [item.item_id for item in categories["SHARED CORE"].items] == [
+    assert [item.item_id for item in categories["ALTERNATIVE CORE"].items] == [
         item.item_id for item in shared
     ]
     assert [item.item_id for item in categories["VARIANT 1"].items] == [
@@ -153,7 +160,10 @@ def test_variant_panels_preserve_combinations_and_specific_imbue_targets() -> No
     ]
     assert categories["VARIANT 1"].items[1].imbue_target_ability_id == 10
     assert categories["VARIANT 2"].items[0].imbue_target_ability_id == 20
-    assert categories["VARIANT 1"].description == "SHARED CORE +"
+    assert categories["ALTERNATIVE CORE"].description == "Combine with one VARIANT."
+    assert categories["VARIANT 1"].description == (
+        "ALTERNATIVE CORE +\nEven: 55.0% | 110/200 wins"
+    )
     assert categories["VARIANT 2"].optional
     # The same item can be a supported tier option and part of a complete variant.
     assert extra.item_id in {item.item_id for item in categories["TIER 4"].items}
@@ -173,7 +183,7 @@ def test_variant_without_shared_items_shows_its_complete_final_core() -> None:
     projected = group_guides([replace(guide, variant_guides=(variant,))], {})[0]
     official = presentation(projected)
     assert [category.name for category in official.categories] == [
-        "CORE",
+        "CORE ITEMS",
         "VARIANT 1",
         "TIER 1",
         "TIER 2",
@@ -183,7 +193,9 @@ def test_variant_without_shared_items_shows_its_complete_final_core() -> None:
     assert [item.item_id for item in official.categories[1].items] == [
         item.item_id for item in variant.core_items
     ]
-    assert official.categories[1].description == "Full core."
+    assert official.categories[1].description == (
+        "Full core.\nEven: 55.0% | 110/200 wins"
+    )
     assert (
         "Each VARIANT panel contains its complete final core." in official.description
     )
@@ -277,3 +289,71 @@ def test_missing_statistics_and_fallback_remain_explicit() -> None:
     fallback = replace(guide, evidence_summary={"generator": metadata})
     assert "No supported beam route" in render_purchase_markdown(fallback, details=True)
     assert variant_statistics(replace(guide, evidence_summary={})) == []
+
+
+@pytest.mark.parametrize(
+    ("states", "labels"),
+    [
+        ([0], "Behind"),
+        ([1], "Even"),
+        ([2], "Ahead"),
+        ([2, 0, 1], "Behind, Even, Ahead"),
+    ],
+)
+def test_variant_notes_use_its_own_wealth_states(
+    states: list[int], labels: str
+) -> None:
+    guide = make_beam_guide()
+    metadata = generator_metadata(guide)
+    evidence = require_object_dict(metadata["state_evidence"])
+    metadata = {
+        **metadata,
+        "states": states,
+        "scores": {str(state): 0.1 for state in states},
+        "state_evidence": {str(state): deepcopy(evidence["1"]) for state in states},
+    }
+    variant = replace(
+        guide,
+        path_id="variant",
+        core_items=(*guide.core_items[:-1], guide.tiers[4][0]),
+        evidence_summary={**guide.evidence_summary, "generator": metadata},
+    )
+    official = presentation(
+        group_guides([replace(guide, variant_guides=(variant,))], {})[0]
+    )
+    assert f"V1 ({labels}):" in official.description
+    panel = next(row for row in official.categories if row.name == "VARIANT 1")
+    assert panel.description.startswith("ALTERNATIVE CORE +\n")
+    for label in ("Behind", "Even", "Ahead"):
+        assert (f"{label}: 55.0% | 110/200 wins" in panel.description) == (
+            label in labels
+        )
+    assert [
+        item.item_id
+        for category in official.categories
+        if not category.optional
+        for item in category.items
+    ] == [item.item_id for item in guide.core_purchase_items]
+
+
+@pytest.mark.parametrize("missing", ["generator", "states", "validation"])
+def test_missing_state_evidence_does_not_assign_a_variant_state(missing: str) -> None:
+    guide = make_beam_guide()
+    metadata = deepcopy(generator_metadata(guide))
+    if missing == "states":
+        metadata["states"] = []
+    elif missing == "validation":
+        evidence = require_object_dict(metadata["state_evidence"])
+        require_object_dict(evidence["1"])["validation"] = {"owners": 0, "wins": 0}
+    variant = replace(
+        guide,
+        path_id="variant",
+        evidence_summary={"generator": metadata} if missing != "generator" else {},
+    )
+    official = presentation(
+        group_guides([replace(guide, variant_guides=(variant,))], {})[0]
+    )
+    panel = next(row for row in official.categories if row.name == "VARIANT 1")
+    assert "State evidence unavailable." in panel.description
+    assert "V1 (State unknown):" in official.description
+    assert variant_state_labels(variant) == "State unknown"

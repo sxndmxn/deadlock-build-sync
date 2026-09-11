@@ -7,7 +7,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from .artifacts import ArtifactError
-from .beam_display import generator_metadata, variant_statistics
+from .beam_display import generator_metadata, variant_state_labels, variant_statistics
 from .purchase_types import MAX_ITEM_ANNOTATION_BYTES, GuideCategory
 
 if TYPE_CHECKING:
@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 
 VARIANT_RULE = (
-    "Choose one complete variant before purchase. The Queue follows the default. "
+    "Choose CORE ITEMS or one complete variant before purchase. Queue follows CORE ITEMS only. "
     "Use the selected variant's order and item pool. Core changes during a match "
     "still require admitted substitution evidence."
 )
@@ -73,7 +73,7 @@ def build_group_record(guide: PurchaseGuide) -> dict[str, object]:
 
 def describe_variants(guide: PurchaseGuide) -> list[str]:
     return [
-        f"V{index}: {describe_variant_changes(guide, variant)}. "
+        f"V{index} ({variant_state_labels(variant)}): {describe_variant_changes(guide, variant)}. "
         f"{variant.core_target_cost:,} souls; {variant.evidence_summary.get('status', 'observed')}. "
         + " ".join(variant_statistics(variant, detailed=True))
         + " Order: "
@@ -160,7 +160,11 @@ def _build_variant_categories(guide: PurchaseGuide) -> tuple[GuideCategory, ...]
         ])
         categories.append(
             GuideCategory(
-                "SHARED CORE", items, "Variant base.", optional=True, compact=True
+                "ALTERNATIVE CORE",
+                items,
+                "Combine with one VARIANT.",
+                optional=True,
+                compact=True,
             )
         )
     for index, variant in enumerate(guide.variant_guides, 1):
@@ -174,7 +178,10 @@ def _build_variant_categories(guide: PurchaseGuide) -> tuple[GuideCategory, ...]
             GuideCategory(
                 f"VARIANT {index}",
                 items,
-                "SHARED CORE +" if shared and combination else "Full core.",
+                "\n".join([
+                    "ALTERNATIVE CORE +" if shared and combination else "Full core.",
+                    *(variant_statistics(variant) or ["State evidence unavailable."]),
+                ]),
                 optional=True,
                 compact=True,
             )
@@ -220,7 +227,9 @@ def _build_compact_categories(guide: PurchaseGuide) -> tuple[GuideCategory, ...]
     )
     conditional = _collect_conditional_core_items(guide)
     result = [
-        GuideCategory("CORE", core, "; ".join(variant_statistics(guide)), compact=True),
+        GuideCategory(
+            "CORE ITEMS", core, "; ".join(variant_statistics(guide)), compact=True
+        ),
         *_build_variant_categories(guide),
     ]
     if conditional:
@@ -267,13 +276,13 @@ def validate_group_categories(guide: PurchaseGuide) -> None:
         return
     names = [category.name for category in categories]
     variants = _build_variant_categories(guide)
-    expected_names = ["CORE", *(category.name for category in variants)]
+    expected_names = ["CORE ITEMS", *(category.name for category in variants)]
     if _collect_conditional_core_items(guide):
         expected_names.append("CORE CONDITIONAL")
     expected_names.extend(f"TIER {tier}" for tier in range(1, 5))
     if names != expected_names:
         raise ValueError(
-            "Steam build requires CORE, each variant, and all four tier panels"
+            "Steam build requires CORE ITEMS, each variant, and all four tier panels"
         )
     if categories[1 : 1 + len(variants)] != variants:
         raise ValueError("Steam variant panels differ from complete core combinations")

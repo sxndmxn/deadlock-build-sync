@@ -4,7 +4,7 @@ Steam build content. Panels and items follow serialization order.
 The client controls panel placement. Dimensions use native layout units.
 Hero ID: 12. Tags: 2351041382, 7409189, 255841590.
 
-## CORE
+## CORE ITEMS
 
 Optional: no. Size: 516 x 164.
 
@@ -46,11 +46,11 @@ Optional: no. Size: 516 x 164.
         SOUL WINDOW: 10k - 13k
         PR: 100.0% | WR: 54.6% | TOTAL GAMES: 1,077
 
-## SHARED CORE
+## ALTERNATIVE CORE
 
 Optional: yes. Size: 180 x 164.
 
-    Variant base.
+    Combine with one VARIANT.
 
 1. **Healing Booster** (ID 2566692615)
 
@@ -68,7 +68,8 @@ Optional: yes. Size: 180 x 164.
 
 Optional: yes. Size: 180 x 164.
 
-    SHARED CORE +
+    ALTERNATIVE CORE +
+    Even: 54.3% | 51/94 wins
 
 1. **Enchanter's Emblem** (ID 3970837787)
 
@@ -86,7 +87,8 @@ Optional: yes. Size: 180 x 164.
 
 Optional: yes. Size: 180 x 164.
 
-    SHARED CORE +
+    ALTERNATIVE CORE +
+    Even: 56.2% | 63/112 wins
 
 1. **Radiant Regeneration** (ID 2947183272)
 
@@ -104,7 +106,8 @@ Optional: yes. Size: 180 x 164.
 
 Optional: yes. Size: 180 x 164.
 
-    SHARED CORE +
+    ALTERNATIVE CORE +
+    Even: 61.2% | 49/80 wins
 
 1. **Opening Rounds** (ID 2064029594)
 
@@ -122,7 +125,8 @@ Optional: yes. Size: 180 x 164.
 
 Optional: yes. Size: 180 x 164.
 
-    SHARED CORE +
+    ALTERNATIVE CORE +
+    Even: 59.2% | 87/147 wins
 
 1. **Radiant Regeneration** (ID 2947183272)
 
@@ -441,7 +445,7 @@ First ability note:
 ## Build description
 
     Kelvin: Freezes enemies in their tracks. Timely heals and splitting a teamfight properly is the difference between an easy victory or a ruinous defeat. Gliding around slowing enemies gives Kelvin's team the maneuvering advantage to make this happen. Follow the shown Debuff / Spirit CORE order and max Arctic Beam first. Use conditional cards only when their VS line applies; all optional rows stay outside Queue.
-    AUTO: CORE steps only. OPTIONAL, PICK ONE, UPGRADE, and ITEM POOL rows stay optional.
+    Queue follows CORE ITEMS only. All other panels are optional.
     Use observed order as a default and deviate when the match requires.
     Ranked • Emissary I–Eternus V • data through 2026-09-09 • client 6686.
     Evidence: observed. Timing: observed.
@@ -449,13 +453,14 @@ First ability note:
     Default core: Even: 62.3% | 132/212 wins | 95% interval 55.6%–68.5%. State hero baseline: 59.4% across 2140 matches. All final core items owned before 1200 seconds; additional items allowed.
     Rates describe validation matches with the complete core. Variant samples can overlap.
     Wealth states compare personal net worth with the lobby average. Behind: below 90%. Even: 90% through 110%. Ahead: above 110%.
-    5 supported variants. Queue: default only. Each VARIANT panel shows one alternative core combination. V numbers identify the full paths below.
-    SHARED CORE contains items common to every final core. Add it only to panels marked SHARED CORE +. Each complete variant replaces the default core. Follow that variant's complete purchase order.
-    V1: Use Enchanter's Emblem, Radiant Regeneration; omit Improved Spirit, Mystic Vulnerability. 8,000 souls; observed. Even: 54.3% | 51/94 wins | 95% interval 44.2%–64.0%. State hero baseline: 59.4% across 2140 matches. All final core items owned before 1200 seconds; additional items allowed. Order: Mystic Regeneration -> Extra Regen -> Healing Booster -> Enchanter's Emblem -> Healbane -> Radiant Regeneration
-    V2: Use Radiant Regeneration; omit Improved Spirit. 8,000 souls; observed. Even: 56.2% | 63/112 wins | 95% interval 47.0%–65.1%. State hero baseline: 59.4% across 2140 matches. All final core items owned before 1200 seconds; additional items allowed. Order: Mystic Regeneration -> Extra Regen -> Healing Booster -> Healbane -> Radiant Regeneration -> Mystic Vulnerability
-    V3: Use Opening Rounds, Enchanter's Emblem; omit Improved Spirit, Mystic Vulnerability. 6,400 souls; observed. Even: 61.2% | 49/80 wins | 95% interval 50.3%–71.2%. State hero baseline: 59.4% across 2140 matches. All final core items owned before 1200 seconds; additional items allowed. Order: Extra Regen -> High-Velocity Rounds -> Opening Rounds -> Healing Booster -> Enchanter's Emblem -> Healbane
-    V4: Use Radiant Regeneration; omit Mystic Vulnerability. 8,000 souls; observed. Even: 59.2% | 87/147 wins | 95% interval 51.1%–66.8%. State hero baseline: 59.4% across 2140 matches. All final core items owned before 1200 seconds; additional items allowed. Order: Extra Spirit -> Mystic Regeneration -> Extra Regen -> Healing Booster -> Healbane -> Radiant Regeneration -> Improved Spirit
-    CORE buys left to right. All other sections are optional. Tier numbers show item prices, not purchase order. Keep the selected variant's core and pool together.
+    4 alternative variants. CORE ITEMS contains the complete default purchase path. V numbers identify the full variant paths below.
+    ALTERNATIVE CORE contains common final items. Combine it with one panel marked ALTERNATIVE CORE +. Each complete variant replaces CORE ITEMS. Follow that variant's complete purchase order. Shared and variant items can occur at different steps.
+    Variant notes show recorded wealth states and complete-core win rates. State labels describe observed matches. They do not establish when to change a partly purchased core.
+    V1 (Even): Use Enchanter's Emblem, Radiant Regeneration; omit Improved Spirit, Mystic Vulnerability. 8,000 souls; observed. Even: 54.3% | 51/94 wins | 95% interval 44.2%–64.0%. State hero baseline: 59.4% across 2140 matches. All final core items owned before 1200 seconds; additional items allowed. Order: Mystic Regeneration -> Extra Regen -> Healing Booster -> Enchanter's Emblem -> Healbane -> Radiant Regeneration
+    V2 (Even): Use Radiant Regeneration; omit Improved Spirit. 8,000 souls; observed. Even: 56.2% | 63/112 wins | 95% interval 47.0%–65.1%. State hero baseline: 59.4% across 2140 matches. All final core items owned before 1200 seconds; additional items allowed. Order: Mystic Regeneration -> Extra Regen -> Healing Booster -> Healbane -> Radiant Regeneration -> Mystic Vulnerability
+    V3 (Even): Use Opening Rounds, Enchanter's Emblem; omit Improved Spirit, Mystic Vulnerability. 6,400 souls; observed. Even: 61.2% | 49/80 wins | 95% interval 50.3%–71.2%. State hero baseline: 59.4% across 2140 matches. All final core items owned before 1200 seconds; additional items allowed. Order: Extra Regen -> High-Velocity Rounds -> Opening Rounds -> Healing Booster -> Enchanter's Emblem -> Healbane
+    V4 (Even): Use Radiant Regeneration; omit Mystic Vulnerability. 8,000 souls; observed. Even: 59.2% | 87/147 wins | 95% interval 51.1%–66.8%. State hero baseline: 59.4% across 2140 matches. All final core items owned before 1200 seconds; additional items allowed. Order: Extra Spirit -> Mystic Regeneration -> Extra Regen -> Healing Booster -> Healbane -> Radiant Regeneration -> Improved Spirit
+    Buy CORE ITEMS from left to right. All other sections are optional. Tier numbers show item prices. Keep the selected variant's core and pool together.
     Extra Spirit: +800 souls; total 800.
     Extra Regen: +800 souls; total 1,600.
     Healing Booster: +800 souls; total 2,400.

@@ -78,13 +78,20 @@ applies. Each exact core retains its original path, costs, support, evidence
 status, ability order, and discovery-buyer pools.
 
 Steam and the main Markdown display each alternative core in its own VARIANT category.
-CORE keeps the exact default component purchase order.
-SHARED CORE contains the intersection of all final cores, including the default.
+CORE ITEMS keeps the exact default component purchase order.
+ALTERNATIVE CORE contains the intersection of all final cores, including the default.
 Each VARIANT category shows the remaining items for that complete combination.
-Its description says `SHARED CORE +`.
+Its description starts with `ALTERNATIVE CORE +`.
 When no shared items exist, each VARIANT category shows its complete final core.
 A variant with no additional final items also shows its full core.
-Its description says `Full core.`.
+Its description starts with `Full core.`.
+
+Variant category notes show recorded Behind, Even, and Ahead states with complete-core win counts.
+The full build description also identifies each variant's states before its purchase order.
+Only declared states with a nonempty validation sample receive labels.
+Missing state evidence remains explicit. The renderer does not infer a state from item cost or the default core.
+State labels describe observed matches. They do not establish when to change a partly purchased core.
+ALTERNATIVE CORE and VARIANT define final item combinations. Their items can occur at different purchase steps.
 
 Items can repeat between VARIANT categories because each category must preserve its complete combination.
 Each variant card retains its own item statistics and imbue target.
@@ -93,7 +100,7 @@ Conflicting shared imbue targets remain explicit and do not receive a guessed bi
 
 CORE CONDITIONAL contains admitted conditional core items when needed.
 The four tier panels combine supported pools and required variant component purchases.
-They exclude items already visible in CORE or CORE CONDITIONAL.
+They exclude items already visible in CORE ITEMS or CORE CONDITIONAL.
 An item can appear in a tier panel and a variant combination when both roles have support.
 Component purchases retain their variant scope in the item notes.
 Detailed Markdown and JSON retain every complete variant.
@@ -101,7 +108,7 @@ Detailed Markdown and JSON retain every complete variant.
 Both generators use this complete layout.
 The renderer does not remove panels or items to meet a fixed screen height.
 Before serialization, validation checks each complete variant category, all four tier panels, every supported item, and the exact default Queue.
-Only CORE is required; all other panels remain optional.
+Only CORE ITEMS is required; all other panels remain optional.
 
 The main Markdown file now renders the actual Steam presentation, including item notes and panel dimensions.
 Each `.steam.json` file contains its title, tags, description, ordered panels, item fields, and ability order.

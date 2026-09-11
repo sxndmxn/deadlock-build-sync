@@ -261,8 +261,8 @@ def _render_compact_markdown(guide: PurchaseGuide, guidance: PurchaseGuidance) -
         f"Core: {guide.core_target_cost:,} souls. Ranks: {guide.rank_identity}.",
         f"Evidence: {guidance.evidence.get('status', 'observed')}. Limits: {guidance.evidence.get('limitations', [])}.",
         "",
-        "Buy CORE in order. All other sections are optional. Tier numbers show prices, not purchase order.",
-        "Each VARIANT panel contains one alternative core combination. Use SHARED CORE where indicated. Complete purchase orders and variant pools are in the details file.",
+        "Buy CORE ITEMS in order. All other sections are optional. Tier numbers show item prices.",
+        "Combine ALTERNATIVE CORE with one VARIANT where indicated. Variant notes show observed wealth states. Complete purchase orders and variant pools are in the details file.",
         "",
     ]
     for category in guide.rendered_categories:
