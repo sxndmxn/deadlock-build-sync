@@ -169,13 +169,16 @@ def test_exact_core_pool_uses_only_discovery_owners(
     connection.close()
 
 
-def test_pool_sql_preserves_first_purchase_in_exact_membership(tmp_path: Path) -> None:
+@pytest.mark.parametrize(("hero", "slot", "expected_time"), [(7, 0, 100), (8, 1, 50)])
+def test_pool_sql_preserves_first_purchase_in_exact_membership(
+    tmp_path: Path, hero: int, slot: int, expected_time: int
+) -> None:
     connection = duckdb.connect(str(tmp_path / "pool.duckdb"))
     connection.execute(load_fixture_sql("pool/create_purchases.sql"))
     connection.execute(load_fixture_sql("pool/insert_purchase_history.sql"))
     evidence = discovery_artifacts.load_item_pool_evidence(
-        connection, frozenset({(1, 0)})
+        connection, frozenset({(1, slot)}), hero
     )
     assert evidence["population"] == 1
-    assert evidence["histories"] == {(1, 0): {101: 100.0}}
+    assert evidence["histories"] == {(1, slot): {101: float(expected_time)}}
     connection.close()

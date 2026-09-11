@@ -1,40 +1,67 @@
 WITH firsts AS (
-    SELECT p.* FROM first_purchases p
-    JOIN _build_path_members m USING (match_id, player_slot)
-    WHERE p.buy_time <= p.duration_s
-), events AS (
-    SELECT p.item_id, count(*) AS purchase_events
-    FROM purchases p
-    JOIN _build_path_members m USING (match_id, player_slot)
-    WHERE p.buy_time <= p.duration_s
+    SELECT p.* FROM first_purchases AS p
+    INNER JOIN
+        _build_path_members AS m
+        ON p.match_id = m.match_id AND p.player_slot = m.player_slot
+    WHERE p.hero_id = $hero AND p.buy_time <= p.duration_s
+),
+
+events AS (
+    SELECT
+        p.item_id,
+        count(*) AS purchase_events
+    FROM purchases AS p
+    INNER JOIN
+        _build_path_members AS m
+        ON p.match_id = m.match_id AND p.player_slot = m.player_slot
+    WHERE p.hero_id = $hero AND p.buy_time <= p.duration_s
     GROUP BY p.item_id
-), imbue_counts AS (
-    SELECT p.item_id, p.imbued_ability_id,
-           count(*) AS target_matches
-    FROM firsts p
-    WHERE p.imbued_ability_id > 0
-      AND p.fold IN ('train', 'validation')
+),
+
+imbue_counts AS (
+    SELECT
+        p.item_id,
+        p.imbued_ability_id,
+        count(*) AS target_matches
+    FROM firsts AS p
+    WHERE
+        p.imbued_ability_id > 0
+        AND p.fold IN ('train', 'validation')
     GROUP BY p.item_id, p.imbued_ability_id
-), ranked_imbues AS (
-    SELECT *,
-           sum(target_matches) OVER (PARTITION BY item_id)
-               AS imbue_observations,
-           row_number() OVER (
-               PARTITION BY item_id
-               ORDER BY target_matches DESC, imbued_ability_id
-           ) AS target_rank
+),
+
+ranked_imbues AS (
+    SELECT
+        *,
+        sum(target_matches) OVER (PARTITION BY item_id)
+            AS imbue_observations,
+        row_number() OVER (
+            PARTITION BY item_id
+            ORDER BY target_matches DESC, imbued_ability_id ASC
+        ) AS target_rank
     FROM imbue_counts
-), dominant_imbues AS (
-    SELECT item_id, imbued_ability_id, target_matches,
-           imbue_observations,
-           target_matches / imbue_observations::DOUBLE AS target_share
+),
+
+dominant_imbues AS (
+    SELECT
+        item_id,
+        imbued_ability_id,
+        target_matches,
+        imbue_observations,
+        target_matches / imbue_observations::DOUBLE AS target_share
     FROM ranked_imbues
     WHERE target_rank = 1
-), items AS (
+),
+
+items AS (
     SELECT
-        p.hero_id, p.item_id, any_value(p.item_name) AS item_name,
-        any_value(p.tier) AS tier, any_value(p.cost) AS cost,
-        any_value(p.slot) AS slot, any_value(p.active) AS active,
+        p.hero_id,
+        p.item_id,
+        any_value(p.item_name) AS item_name,
+        any_value(p.tier) AS tier,
+        any_value(p."cost") AS "cost",
+        any_value(p.slot) AS slot,
+        any_value(p.active) AS active,
         count(*) AS adopter_matches,
         count(*) FILTER (
             WHERE p.fold IN ('train', 'validation')
@@ -90,14 +117,19 @@ WITH firsts AS (
         quantile_cont(p.own_net_worth_at_buy, 0.75) FILTER (
             WHERE p.fold = 'validation'
         ) AS validation_buy_nw_q75
-    FROM firsts p
+    FROM firsts AS p
     GROUP BY p.hero_id, p.item_id
     HAVING count(*) >= $minimum_support
 )
-SELECT i.*, e.purchase_events,
-       d.imbued_ability_id, d.target_matches,
-       d.imbue_observations, d.target_share,
-       $member_count::BIGINT AS hero_player_matches,
-       i.adopter_matches / $member_count::DOUBLE AS adoption_rate
-FROM items i JOIN events e USING (item_id)
-LEFT JOIN dominant_imbues d USING (item_id);
+
+SELECT
+    i.*,
+    e.purchase_events,
+    d.imbued_ability_id,
+    d.target_matches,
+    d.imbue_observations,
+    d.target_share,
+    $member_count::BIGINT AS hero_player_matches,
+    i.adopter_matches / $member_count::DOUBLE AS adoption_rate
+FROM items AS i INNER JOIN events AS e ON i.item_id = e.item_id
+LEFT JOIN dominant_imbues AS d ON i.item_id = d.item_id;

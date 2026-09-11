@@ -1,4 +1,4 @@
-"""Whole-match temporal partitions and inventories strictly before 20 minutes."""
+"""Whole-match temporal partitions and inventories before a specified checkpoint."""
 
 from __future__ import annotations
 
@@ -37,6 +37,7 @@ class HeroDiscoveryData:
     enemies: np.ndarray
     actors: tuple[tuple[int, int], ...] = ()
     inventories: tuple[tuple[int, ...], ...] = ()
+    ownership_before_seconds: int = 1200
 
     def fold_mask(self, fold: str) -> np.ndarray:
         return self.folds == fold
@@ -52,27 +53,33 @@ def prepare_discovery_partitions(connection: duckdb.DuckDBPyConnection) -> None:
 
 
 def load_landmark_rows(
-    connection: duckdb.DuckDBPyConnection, hero: int
+    connection: duckdb.DuckDBPyConnection,
+    hero: int,
+    *,
+    ownership_before_seconds: int = 1200,
 ) -> list[HeroLandmarkRow]:
     return connection.execute(
         load_sql("discovery/select_landmark_rows.sql"),
-        {"hero": hero},
+        {"hero": hero, "ownership_before_seconds": ownership_before_seconds},
     ).fetchall()
 
 
 def load_purchase_histories(
-    connection: duckdb.DuckDBPyConnection, hero: int
+    connection: duckdb.DuckDBPyConnection,
+    hero: int,
+    *,
+    ownership_before_seconds: int = 1200,
 ) -> dict[tuple[int, int], list[tuple[int, int, int]]]:
     rows = connection.execute(
         load_sql("discovery/select_purchase_histories.sql"),
-        {"hero": hero},
+        {"hero": hero, "ownership_before_seconds": ownership_before_seconds},
     ).fetchall()
     histories: dict[tuple[int, int], list[tuple[int, int, int]]] = defaultdict(list)
     for match, slot, item, bought, sold in rows:
         histories[int(match), int(slot)].append((
             int(item),
             int(bought),
-            int(sold) if sold and sold < 1200 else 0,
+            int(sold) if sold and sold < ownership_before_seconds else 0,
         ))
     return dict(histories)
 
@@ -82,7 +89,11 @@ def build_hero_discovery_data(
     rows: list[HeroLandmarkRow],
     histories: dict[tuple[int, int], list[tuple[int, int, int]]],
     graph: ItemGraph,
+    *,
+    ownership_before_seconds: int = 1200,
 ) -> HeroDiscoveryData:
+    if ownership_before_seconds < 1:
+        raise ValueError("The ownership checkpoint must be positive")
     actors = tuple((int(row[0]), int(row[1])) for row in rows)
     if len(set(actors)) != len(actors) or len({row[0] for row in actors}) != len(
         actors
@@ -117,6 +128,7 @@ def build_hero_discovery_data(
         _build_hero_arrays(hero, items, rows, times),
         actors=actors,
         inventories=inventories,
+        ownership_before_seconds=ownership_before_seconds,
     )
 
 

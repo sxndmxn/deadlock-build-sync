@@ -83,6 +83,7 @@ dev = [
   "vulture>=2,<3",
   "deptry>=0.25.1",
   "tach>=0.35.0",
+  "sqlfluff>=4,<5",
 ]
 
 [tool.hatch.build.targets.wheel]

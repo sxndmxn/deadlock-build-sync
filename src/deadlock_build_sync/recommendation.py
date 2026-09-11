@@ -295,10 +295,10 @@ def recommend(
     evidence = next(
         (build for build in builds if build.path_id == policy.path_id), None
     )
-    if (
-        evidence is not None
-        and evidence.discovery.get("method") == "eclat_leiden_pairwise"
-    ):
+    if evidence is not None and evidence.discovery.get("method") in {
+        "eclat_leiden_pairwise",
+        "eclat_leiden_beam",
+    }:
         return recommend_guide(evidence, policy, state, assets)
     if _is_required_core_complete(policy, inventory):
         return Recommendation(

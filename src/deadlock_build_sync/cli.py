@@ -38,6 +38,7 @@ from .cli_support import (
     _print_cohort,
     _print_install_result,
     _record_fresh_evidence,
+    _render_preview_guide,
     _resolve_artifact_directory,
     _resolve_build_evidence_path,
     _write_policy_artifact,
@@ -47,13 +48,13 @@ from .freshness import (
     FreshnessError,
     require_current_build_evidence,
 )
+from .guide_generator import require_generator
 from .guide_groups import group_guides
 from .narratives import (
     NarrativeError,
     apply_narrative,
     load_narrative_catalog,
 )
-from .purchase_markdown import render_purchase_markdown
 from .recommendation import RecommendationError
 from .service import GuideError
 from .steam_identity import local_steam_persona
@@ -83,6 +84,7 @@ def _current_evidence(args: argparse.Namespace) -> tuple[Path, BuildEvidenceCata
     evidence = require_current_build_evidence(
         evidence_path, DeadlockApi(args.api_base_url)
     )
+    require_generator(getattr(args, "generator", "current"), evidence.generator)
     _record_fresh_evidence(evidence_path, evidence)
     return evidence_path, evidence
 
@@ -108,7 +110,7 @@ def _run_build(args: argparse.Namespace) -> int:
     if args.format == "markdown":
         print(
             "\n".join(
-                render_purchase_markdown(guide, details=args.details)
+                _render_preview_guide(guide, generated, details=args.details)
                 for guide in guides
             )
         )
@@ -266,6 +268,8 @@ def _run_refresh_evidence(args: argparse.Namespace) -> int:
             forwarded.extend((flag, str(value)))
     if args.resume:
         forwarded.append("--resume")
+    if getattr(args, "generator", "current") != "current":
+        forwarded.extend(("--generator", args.generator))
     result = offline_main(forwarded)
     if result == 0:
         loaded = load_build_evidence(output)

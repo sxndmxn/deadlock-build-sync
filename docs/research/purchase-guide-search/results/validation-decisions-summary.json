@@ -1,0 +1,328 @@
+{
+  "mode": "decisions",
+  "partition": "validation",
+  "patch": "2026-08-22T21:40:46Z:9cb8e778f0a2319e",
+  "data_fingerprint": "2c5c74ec15ce1f28577102999015b5075bd0214c0c0fe050aeb81b50ac54edb3",
+  "scoring": {
+    "prior_strength": 1000.0,
+    "uncertainty_multiplier": 0.5,
+    "cost_exponent": 0.5,
+    "discount": 0.97,
+    "minimum_support": 30,
+    "state_aware": true
+  },
+  "machine": "macOS-15.5-arm64-arm-64bit-Mach-O",
+  "heroes": [
+    1,
+    2,
+    3,
+    4,
+    6,
+    7,
+    8,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    25,
+    27,
+    31,
+    35,
+    50,
+    52,
+    58,
+    60,
+    63,
+    64,
+    65,
+    66,
+    67,
+    69,
+    72,
+    76,
+    77,
+    79,
+    80,
+    81
+  ],
+  "joint_support": 200,
+  "frozen_specification": null,
+  "calibration": {
+    "observations": 1583459,
+    "supported_observations": 1407184,
+    "brier_score": 0.2424835682743553,
+    "state_baseline_brier": 0.24254675476116866,
+    "hero_baseline_brier": 0.2492771004497343,
+    "log_loss": 0.6777625475330479
+  },
+  "results": [
+    {
+      "config": {
+        "method": "greedy",
+        "width": 1,
+        "depth": 6,
+        "alternatives": 3,
+        "diversity": 0.02
+      },
+      "summary": {
+        "queries": 3648,
+        "valid_queries": 3648,
+        "validated_paths": 3059,
+        "validated_actions": 4912,
+        "abstention_rate": 0.16145833333333334,
+        "median_ms": 0.18433350487612188,
+        "p95_ms": 0.4948061454342676,
+        "total_search_seconds": 0.7570352816255763,
+        "mean_expansions": 108.85800438596492,
+        "mean_duplicate_states": 0.0,
+        "mean_diversity": 0.0,
+        "mean_distinct_first_actions": 0.8385416666666666,
+        "initial_inventory_eligible_share": 0.8618421052631579,
+        "observed_action_permitted_share": 0.6825657894736842,
+        "top1_agreement": 0.08799342105263158,
+        "alternative_agreement": 0.08799342105263158,
+        "prefix_two_agreement": 0.006612090680100755,
+        "total_evaluation_seconds": 1.5407967080245726
+      }
+    },
+    {
+      "config": {
+        "method": "beam",
+        "width": 4,
+        "depth": 6,
+        "alternatives": 3,
+        "diversity": 0.02
+      },
+      "summary": {
+        "queries": 3648,
+        "valid_queries": 3648,
+        "validated_paths": 8949,
+        "validated_actions": 15103,
+        "abstention_rate": 0.1524122807017544,
+        "median_ms": 0.5799999635200948,
+        "p95_ms": 1.7066232336219362,
+        "total_search_seconds": 2.405440091562923,
+        "mean_expansions": 376.72724780701753,
+        "mean_duplicate_states": 3.465734649122807,
+        "mean_diversity": 0.7160407529239766,
+        "mean_distinct_first_actions": 1.9638157894736843,
+        "initial_inventory_eligible_share": 0.8618421052631579,
+        "observed_action_permitted_share": 0.6825657894736842,
+        "top1_agreement": 0.09457236842105263,
+        "alternative_agreement": 0.18448464912280702,
+        "prefix_two_agreement": 0.01102015113350126,
+        "total_evaluation_seconds": 3.2629949579713866
+      }
+    },
+    {
+      "config": {
+        "method": "beam",
+        "width": 8,
+        "depth": 6,
+        "alternatives": 3,
+        "diversity": 0.02
+      },
+      "summary": {
+        "queries": 3648,
+        "valid_queries": 3648,
+        "validated_paths": 9007,
+        "validated_actions": 16083,
+        "abstention_rate": 0.1524122807017544,
+        "median_ms": 1.06870848685503,
+        "p95_ms": 3.2686961436411353,
+        "total_search_seconds": 4.537526612752117,
+        "mean_expansions": 731.4597039473684,
+        "mean_duplicate_states": 11.870339912280702,
+        "mean_diversity": 0.706297645154553,
+        "mean_distinct_first_actions": 1.9533991228070176,
+        "initial_inventory_eligible_share": 0.8618421052631579,
+        "observed_action_permitted_share": 0.6825657894736842,
+        "top1_agreement": 0.09786184210526316,
+        "alternative_agreement": 0.18859649122807018,
+        "prefix_two_agreement": 0.01102015113350126,
+        "total_evaluation_seconds": 5.405583040963393
+      }
+    },
+    {
+      "config": {
+        "method": "beam",
+        "width": 16,
+        "depth": 6,
+        "alternatives": 3,
+        "diversity": 0.02
+      },
+      "summary": {
+        "queries": 3648,
+        "valid_queries": 3648,
+        "validated_paths": 9007,
+        "validated_actions": 16416,
+        "abstention_rate": 0.1524122807017544,
+        "median_ms": 1.8619379843585193,
+        "p95_ms": 6.263397724251259,
+        "total_search_seconds": 8.348790771036875,
+        "mean_expansions": 1387.625,
+        "mean_duplicate_states": 34.19051535087719,
+        "mean_diversity": 0.7017243629908103,
+        "mean_distinct_first_actions": 1.9476425438596492,
+        "initial_inventory_eligible_share": 0.8618421052631579,
+        "observed_action_permitted_share": 0.6825657894736842,
+        "top1_agreement": 0.09676535087719298,
+        "alternative_agreement": 0.18969298245614036,
+        "prefix_two_agreement": 0.011335012594458438,
+        "total_evaluation_seconds": 9.241927916998975
+      }
+    },
+    {
+      "config": {
+        "method": "beam",
+        "width": 32,
+        "depth": 6,
+        "alternatives": 3,
+        "diversity": 0.02
+      },
+      "summary": {
+        "queries": 3648,
+        "valid_queries": 3648,
+        "validated_paths": 9007,
+        "validated_actions": 16492,
+        "abstention_rate": 0.1524122807017544,
+        "median_ms": 2.7755619667004794,
+        "p95_ms": 11.198017111746584,
+        "total_search_seconds": 13.839524490584154,
+        "mean_expansions": 2388.3533442982457,
+        "mean_duplicate_states": 76.94298245614036,
+        "mean_diversity": 0.7012949039264829,
+        "mean_distinct_first_actions": 1.950109649122807,
+        "initial_inventory_eligible_share": 0.8618421052631579,
+        "observed_action_permitted_share": 0.6825657894736842,
+        "top1_agreement": 0.09594298245614036,
+        "alternative_agreement": 0.18969298245614036,
+        "prefix_two_agreement": 0.011335012594458438,
+        "total_evaluation_seconds": 14.747607374971267
+      }
+    },
+    {
+      "config": {
+        "method": "diverse",
+        "width": 16,
+        "depth": 6,
+        "alternatives": 3,
+        "diversity": 0.02
+      },
+      "summary": {
+        "queries": 3648,
+        "valid_queries": 3648,
+        "validated_paths": 9007,
+        "validated_actions": 16418,
+        "abstention_rate": 0.1524122807017544,
+        "median_ms": 2.1955834818072617,
+        "p95_ms": 6.92249605199322,
+        "total_search_seconds": 9.340481490595266,
+        "mean_expansions": 1386.9884868421052,
+        "mean_duplicate_states": 34.073190789473685,
+        "mean_diversity": 0.7019923941798942,
+        "mean_distinct_first_actions": 1.952576754385965,
+        "initial_inventory_eligible_share": 0.8618421052631579,
+        "observed_action_permitted_share": 0.6825657894736842,
+        "top1_agreement": 0.09703947368421052,
+        "alternative_agreement": 0.18969298245614036,
+        "prefix_two_agreement": 0.011335012594458438,
+        "total_evaluation_seconds": 10.231678957992699
+      }
+    },
+    {
+      "config": {
+        "method": "eclat",
+        "width": 8,
+        "depth": 6,
+        "alternatives": 3,
+        "diversity": 0.02
+      },
+      "summary": {
+        "queries": 3648,
+        "valid_queries": 3648,
+        "validated_paths": 9007,
+        "validated_actions": 15590,
+        "abstention_rate": 0.1524122807017544,
+        "median_ms": 1.1993119842372835,
+        "p95_ms": 3.44110855658073,
+        "total_search_seconds": 4.871405412035529,
+        "mean_expansions": 745.2598684210526,
+        "mean_duplicate_states": 13.220668859649123,
+        "mean_diversity": 0.7128228557504873,
+        "mean_distinct_first_actions": 1.971765350877193,
+        "initial_inventory_eligible_share": 0.8618421052631579,
+        "observed_action_permitted_share": 0.6825657894736842,
+        "top1_agreement": 0.09676535087719298,
+        "alternative_agreement": 0.18695175438596492,
+        "prefix_two_agreement": 0.01102015113350126,
+        "total_evaluation_seconds": 5.7462147079641
+      }
+    },
+    {
+      "config": {
+        "method": "eclat",
+        "width": 16,
+        "depth": 6,
+        "alternatives": 3,
+        "diversity": 0.02
+      },
+      "summary": {
+        "queries": 3648,
+        "valid_queries": 3648,
+        "validated_paths": 9007,
+        "validated_actions": 16213,
+        "abstention_rate": 0.1524122807017544,
+        "median_ms": 2.135438029654324,
+        "p95_ms": 6.691308566951192,
+        "total_search_seconds": 9.041388690238819,
+        "mean_expansions": 1409.6047149122808,
+        "mean_duplicate_states": 38.48739035087719,
+        "mean_diversity": 0.7052102913533834,
+        "mean_distinct_first_actions": 1.9542214912280702,
+        "initial_inventory_eligible_share": 0.8618421052631579,
+        "observed_action_permitted_share": 0.6825657894736842,
+        "top1_agreement": 0.09841008771929824,
+        "alternative_agreement": 0.18887061403508773,
+        "prefix_two_agreement": 0.011335012594458438,
+        "total_evaluation_seconds": 9.937612375011668
+      }
+    },
+    {
+      "config": {
+        "method": "leiden",
+        "width": 16,
+        "depth": 6,
+        "alternatives": 3,
+        "diversity": 0.02
+      },
+      "summary": {
+        "queries": 3648,
+        "valid_queries": 3648,
+        "validated_paths": 9007,
+        "validated_actions": 16340,
+        "abstention_rate": 0.1524122807017544,
+        "median_ms": 2.037500002188608,
+        "p95_ms": 6.557820417219772,
+        "total_search_seconds": 8.810402073082514,
+        "mean_expansions": 1398.3125,
+        "mean_duplicate_states": 33.16474780701754,
+        "mean_diversity": 0.7028360832637148,
+        "mean_distinct_first_actions": 1.950657894736842,
+        "initial_inventory_eligible_share": 0.8618421052631579,
+        "observed_action_permitted_share": 0.6825657894736842,
+        "top1_agreement": 0.09703947368421052,
+        "alternative_agreement": 0.18996710526315788,
+        "prefix_two_agreement": 0.011335012594458438,
+        "total_evaluation_seconds": 9.708379874995444
+      }
+    }
+  ]
+}

@@ -1,1 +1,4 @@
-SELECT * FROM match_folds;
+SELECT
+    match_id,
+    fold
+FROM match_folds;

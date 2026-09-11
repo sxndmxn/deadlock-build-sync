@@ -21,6 +21,7 @@ A separate scheduled or manual workflow runs the slower mutation gate.
 | `Any` or `Unknown` annotation names | zero | `tools/quality_gate.py` |
 | Undeclared, unused, or development-only runtime dependencies | zero, with documented indirect-use exceptions | Deptry |
 | Imports across unapproved module boundaries | zero | Tach |
+| SQL rule violations | zero, with specified parser and dynamic-schema exceptions | SQLFluff with the DuckDB dialect |
 
 The numeric gate checks all tracked Python files for file size, cyclomatic
 complexity, Halstead difficulty, and forbidden type names. Coverage and CRAP
@@ -37,6 +38,7 @@ uv lock --check
 uv sync --frozen
 uv run ruff format --check .
 uv run ruff check .
+uv run sqlfluff lint .
 uv run ty check
 uv run deptry .
 uv run tach check
@@ -53,6 +55,26 @@ uv build
 
 The coverage command treats warnings as errors. `coverage.json` supplies both
 repository coverage and per-function data for the CRAP calculation.
+
+SQLFluff uses the DuckDB dialect and enables all rules.
+The configuration requires explicit aliases, qualified join references, uppercase keywords, lowercase identifiers, and final semicolons.
+The maximum line length is 88 characters.
+Large SQL files remain subject to the checks.
+The placeholder templater supplies lint values for `$name` and `?` parameters.
+Runtime queries retain their bound parameters.
+
+SQLFluff 4.3 cannot parse DuckDB `ATTACH`, `DETACH`, `INSTALL`, `LOAD`, or `CREATE SECRET` statements.
+Nine administration files contain a `PRS` exception.
+The generic table export contains one `AM04` exception because its output schema depends on the bound table name.
+Six external column names retain periods from the remote DuckLake schema.
+The configuration specifies these names individually.
+The existing DuckDB fixture tests check query behavior and packaged SQL parsing.
+Fixture setup keeps unsupported administration statements separate from SQL that SQLFluff can parse.
+
+Run `uv run sqlfluff lint .` after each SQL change.
+Review automatic fixes before acceptance.
+Column order and aliases with column lists can form part of a Python data contract.
+Run the fixture tests after fixes.
 
 [Deptry](https://deptry.com/usage/) checks the installed product code, including
 the optional offline producer and packaged narrative script. The `test` extra

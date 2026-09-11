@@ -34,6 +34,9 @@ jobs:
       - name: Lint
         run: uv run ruff check .
 
+      - name: Lint DuckDB SQL
+        run: uv run sqlfluff lint .
+
       - name: Type-check
         run: uv run ty check
 

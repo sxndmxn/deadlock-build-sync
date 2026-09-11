@@ -40,6 +40,7 @@ path = "deadlock_build_sync.cli_build"
 layer = "entrypoints"
 depends_on = [
   "deadlock_build_sync",
+  "deadlock_build_sync.cli_support",
 ]
 
 [[modules]]

@@ -8,7 +8,7 @@ from .mechanics import build_hero_mechanics
 from .power_curve import summarize_ending_duration_profile
 from .purchase_categories import serialize_category_records
 from .purchase_guide import format_purchase_window
-from .value_validation import integer, object_rows
+from .value_validation import integer, object_dict, object_rows
 
 if TYPE_CHECKING:
     from .api import HeroDurationStat, Patch
@@ -298,7 +298,12 @@ def build_hero_strategy_context(
         "ability_policy": _describe_ability_policy(guide, kit, ability_timeline),
         "ending_duration_profile": ending_profile,
         "core": {
-            "selection": "frozen Eclat identity, Leiden group, and supported pairwise component path",
+            "selection": "frozen group and supported state-aware beam component path"
+            if (object_dict(guide.evidence_summary.get("generator")) or {}).get(
+                "effective"
+            )
+            == "beam"
+            else "frozen Eclat identity, Leiden group, and supported pairwise component path",
             "backbone_item_ids": [item.item_id for item in guide.backbone_items],
             "backbone_player_matches": guide.backbone_matches,
             "backbone_share": guide.backbone_share,

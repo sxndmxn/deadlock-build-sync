@@ -1,0 +1,248 @@
+{
+  "guides": {
+    "identical_records_except_time_and_attempts": true,
+    "queries_per_method": 342,
+    "comparisons": [
+      {
+        "config": {
+          "method": "greedy",
+          "width": 1,
+          "depth": 6,
+          "alternatives": 3,
+          "diversity": 0.02
+        },
+        "before_ms": 0.9894380054902285,
+        "after_ms": 0.427833991125226,
+        "before_seconds": 0.3037841636687517,
+        "after_seconds": 0.1540578743442893
+      },
+      {
+        "config": {
+          "method": "beam",
+          "width": 4,
+          "depth": 6,
+          "alternatives": 3,
+          "diversity": 0.02
+        },
+        "before_ms": 3.444583504460752,
+        "after_ms": 1.4120000123512,
+        "before_seconds": 1.05840408540098,
+        "after_seconds": 0.5151261715800501
+      },
+      {
+        "config": {
+          "method": "beam",
+          "width": 8,
+          "depth": 6,
+          "alternatives": 3,
+          "diversity": 0.02
+        },
+        "before_ms": 6.708041502861306,
+        "after_ms": 2.7179999742656946,
+        "before_seconds": 2.0540984048275277,
+        "after_seconds": 0.9817064146627672
+      },
+      {
+        "config": {
+          "method": "beam",
+          "width": 16,
+          "depth": 6,
+          "alternatives": 3,
+          "diversity": 0.02
+        },
+        "before_ms": 12.575000000651926,
+        "after_ms": 5.08270799764432,
+        "before_seconds": 3.896476082270965,
+        "after_seconds": 1.8681990773184225
+      },
+      {
+        "config": {
+          "method": "beam",
+          "width": 32,
+          "depth": 6,
+          "alternatives": 3,
+          "diversity": 0.02
+        },
+        "before_ms": 22.625104000326246,
+        "after_ms": 9.045832994161174,
+        "before_seconds": 7.085813067795243,
+        "after_seconds": 3.3817017551045865
+      },
+      {
+        "config": {
+          "method": "diverse",
+          "width": 16,
+          "depth": 6,
+          "alternatives": 3,
+          "diversity": 0.02
+        },
+        "before_ms": 14.070853998418897,
+        "after_ms": 6.422417005524039,
+        "before_seconds": 4.426542122848332,
+        "after_seconds": 2.39534129074309
+      },
+      {
+        "config": {
+          "method": "eclat",
+          "width": 8,
+          "depth": 6,
+          "alternatives": 3,
+          "diversity": 0.02
+        },
+        "before_ms": 7.00960450922139,
+        "after_ms": 3.055853972909972,
+        "before_seconds": 2.15947908826638,
+        "after_seconds": 1.1054720083484426
+      },
+      {
+        "config": {
+          "method": "eclat",
+          "width": 16,
+          "depth": 6,
+          "alternatives": 3,
+          "diversity": 0.02
+        },
+        "before_ms": 13.42499948805198,
+        "after_ms": 5.992687481921166,
+        "before_seconds": 4.237137787975371,
+        "after_seconds": 2.209654337959364
+      },
+      {
+        "config": {
+          "method": "leiden",
+          "width": 16,
+          "depth": 6,
+          "alternatives": 3,
+          "diversity": 0.02
+        },
+        "before_ms": 13.22358351899311,
+        "after_ms": 5.704000475816429,
+        "before_seconds": 4.117289120680653,
+        "after_seconds": 2.0908993696793914
+      }
+    ]
+  },
+  "decisions": {
+    "identical_records_except_time_and_attempts": true,
+    "queries_per_method": 3648,
+    "comparisons": [
+      {
+        "config": {
+          "method": "greedy",
+          "width": 1,
+          "depth": 6,
+          "alternatives": 3,
+          "diversity": 0.02
+        },
+        "before_ms": 0.45595798292197287,
+        "after_ms": 0.18433350487612188,
+        "before_seconds": 1.5915654187556356,
+        "after_seconds": 0.7570352816255763
+      },
+      {
+        "config": {
+          "method": "beam",
+          "width": 4,
+          "depth": 6,
+          "alternatives": 3,
+          "diversity": 0.02
+        },
+        "before_ms": 1.4570415078196675,
+        "after_ms": 0.5799999635200948,
+        "before_seconds": 5.071439512365032,
+        "after_seconds": 2.405440091562923
+      },
+      {
+        "config": {
+          "method": "beam",
+          "width": 8,
+          "depth": 6,
+          "alternatives": 3,
+          "diversity": 0.02
+        },
+        "before_ms": 2.714771020691842,
+        "after_ms": 1.06870848685503,
+        "before_seconds": 9.552862792450469,
+        "after_seconds": 4.537526612752117
+      },
+      {
+        "config": {
+          "method": "beam",
+          "width": 16,
+          "depth": 6,
+          "alternatives": 3,
+          "diversity": 0.02
+        },
+        "before_ms": 4.963062499882653,
+        "after_ms": 1.8619379843585193,
+        "before_seconds": 17.53546074364567,
+        "after_seconds": 8.348790771036875
+      },
+      {
+        "config": {
+          "method": "beam",
+          "width": 32,
+          "depth": 6,
+          "alternatives": 3,
+          "diversity": 0.02
+        },
+        "before_ms": 7.540541497291997,
+        "after_ms": 2.7755619667004794,
+        "before_seconds": 29.045842304476537,
+        "after_seconds": 13.839524490584154
+      },
+      {
+        "config": {
+          "method": "diverse",
+          "width": 16,
+          "depth": 6,
+          "alternatives": 3,
+          "diversity": 0.02
+        },
+        "before_ms": 5.318666488165036,
+        "after_ms": 2.1955834818072617,
+        "before_seconds": 18.56894719414413,
+        "after_seconds": 9.340481490595266
+      },
+      {
+        "config": {
+          "method": "eclat",
+          "width": 8,
+          "depth": 6,
+          "alternatives": 3,
+          "diversity": 0.02
+        },
+        "before_ms": 2.9399585037026554,
+        "after_ms": 1.1993119842372835,
+        "before_seconds": 9.965472157928161,
+        "after_seconds": 4.871405412035529
+      },
+      {
+        "config": {
+          "method": "eclat",
+          "width": 16,
+          "depth": 6,
+          "alternatives": 3,
+          "diversity": 0.02
+        },
+        "before_ms": 5.411583493696526,
+        "after_ms": 2.135438029654324,
+        "before_seconds": 18.371278783190064,
+        "after_seconds": 9.041388690238819
+      },
+      {
+        "config": {
+          "method": "leiden",
+          "width": 16,
+          "depth": 6,
+          "alternatives": 3,
+          "diversity": 0.02
+        },
+        "before_ms": 5.204875022172928,
+        "after_ms": 2.037500002188608,
+        "before_seconds": 18.102409092709422,
+        "after_seconds": 8.810402073082514
+      }
+    ]
+  }
+}

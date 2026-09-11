@@ -9,6 +9,7 @@ from .build_evidence import (
 )
 from .build_evidence_loader import BuildEvidenceIdentity
 from .build_tags import BuildTagCatalog, BuildTagError
+from .guide_generator import BEAM_METHOD_VERSION
 from .mechanics import (
     ItemGraph,
     MechanicsError,
@@ -90,7 +91,9 @@ def generate_guides(
         "artifact:build-evidence",
         {
             "artifact_id": build_evidence.artifact_id,
-            "method": METHOD_VERSION,
+            "method": BEAM_METHOD_VERSION
+            if build_evidence.generator == "beam"
+            else METHOD_VERSION,
             "hero_count": len(build_evidence.heroes),
         },
         build_evidence.raw_bytes,

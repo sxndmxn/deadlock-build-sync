@@ -1,0 +1,10 @@
+{
+  "test-guides-corrected.json": "a1b85f6582f75aee60119915528d725531eff6d687245ff8ac6103e3702f976e",
+  "test-decisions-corrected.json": "c88521bb77df5dce1d58cb4c26ad76cfebcc69e1de497382c4a1e76f4451a413",
+  "validation-guides-optimized.json": "037f453ba76ca39d4809293528b90fef3bb32afcd09b0dbaffea0341e1fdf655",
+  "validation-decisions-optimized.json": "1971a288120f8571692e55742aa4e80217891419dcdd8c43799868049397d439",
+  "structures-corrected.json": "3699d1fbe11637baa25960fda02122672a5e971648d9d771afa3c3e8767daf54",
+  "optimization-verification.json": "71cfcb260a81ec5e87c2753a32d62863bcc9265a8081f1add927bf81c5a51ced",
+  "cohort-correction-verification.json": "b7b573bf700c38a713be96642b8ba1c8ddf20b11805ddabed9e04465dd627caa",
+  "frozen-specification-corrected.json": "9f67e135894b1baaff41cb09a2e9be01dba765eaf7b80b1b25a173934b2a01eb"
+}

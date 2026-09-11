@@ -1,0 +1,626 @@
+{
+  "schema_version": 1,
+  "hero_id": 12,
+  "name": "Build Preview | Healing Booster | 0822 / 0822–0909",
+  "description": "Kelvin: Freezes enemies in their tracks. Timely heals and splitting a teamfight properly is the difference between an easy victory or a ruinous defeat. Gliding around slowing enemies gives Kelvin's team the maneuvering advantage to make this happen. Follow the shown Debuff / Spirit CORE order and max Arctic Beam first. Use conditional cards only when their VS line applies; all optional rows stay outside Queue.\nQueue follows CORE ITEMS only. All other panels are optional.\nUse observed order as a default and deviate when the match requires.\nRanked • Emissary I–Eternus V • data through 2026-09-09 • client 6686.\nEvidence: observed. Timing: observed.\nEvidence limits: ['selection: adjusted lower bound does not exceed zero', 'validation: win evidence fails family correction', 'validation: adjusted evidence fails family correction'].\nDefault core: Even: 62.3% | 132/212 wins | 95% interval 55.6%–68.5%. State hero baseline: 59.4% across 2140 matches. All final core items owned before 1200 seconds; additional items allowed.\nRates describe validation matches with the complete core. Variant samples can overlap.\nWealth states compare personal net worth with the lobby average. Behind: below 90%. Even: 90% through 110%. Ahead: above 110%.\n4 alternative variants. CORE ITEMS contains the complete default purchase path. V numbers identify the full variant paths below.\nALTERNATIVE CORE contains common final items. Combine it with one panel marked ALTERNATIVE CORE +. Each complete variant replaces CORE ITEMS. Follow that variant's complete purchase order. Shared and variant items can occur at different steps.\nVariant notes show recorded wealth states and complete-core win rates. State labels describe observed matches. They do not establish when to change a partly purchased core.\nV1 (Even): Use Enchanter's Emblem, Radiant Regeneration; omit Improved Spirit, Mystic Vulnerability. 8,000 souls; observed. Even: 54.3% | 51/94 wins | 95% interval 44.2%–64.0%. State hero baseline: 59.4% across 2140 matches. All final core items owned before 1200 seconds; additional items allowed. Order: Mystic Regeneration -> Extra Regen -> Healing Booster -> Enchanter's Emblem -> Healbane -> Radiant Regeneration\nV2 (Even): Use Radiant Regeneration; omit Improved Spirit. 8,000 souls; observed. Even: 56.2% | 63/112 wins | 95% interval 47.0%–65.1%. State hero baseline: 59.4% across 2140 matches. All final core items owned before 1200 seconds; additional items allowed. Order: Mystic Regeneration -> Extra Regen -> Healing Booster -> Healbane -> Radiant Regeneration -> Mystic Vulnerability\nV3 (Even): Use Opening Rounds, Enchanter's Emblem; omit Improved Spirit, Mystic Vulnerability. 6,400 souls; observed. Even: 61.2% | 49/80 wins | 95% interval 50.3%–71.2%. State hero baseline: 59.4% across 2140 matches. All final core items owned before 1200 seconds; additional items allowed. Order: Extra Regen -> High-Velocity Rounds -> Opening Rounds -> Healing Booster -> Enchanter's Emblem -> Healbane\nV4 (Even): Use Radiant Regeneration; omit Mystic Vulnerability. 8,000 souls; observed. Even: 59.2% | 87/147 wins | 95% interval 51.1%–66.8%. State hero baseline: 59.4% across 2140 matches. All final core items owned before 1200 seconds; additional items allowed. Order: Extra Spirit -> Mystic Regeneration -> Extra Regen -> Healing Booster -> Healbane -> Radiant Regeneration -> Improved Spirit\nBuy CORE ITEMS from left to right. All other sections are optional. Tier numbers show item prices. Keep the selected variant's core and pool together.\nExtra Spirit: +800 souls; total 800.\nExtra Regen: +800 souls; total 1,600.\nHealing Booster: +800 souls; total 2,400.\nHealbane: +1,600 souls; total 4,000.\nImproved Spirit: +800 souls; total 4,800.\nMystic Vulnerability: +1,600 souls; total 6,400.\nGolden Goose Egg: You can stay alive while holding the egg to earn souls. After core step 0. Route: Golden Goose Egg. Extra cost: 800 souls. Resume: Extra Spirit.\nHigh-Velocity Rounds: You need faster bullets. After core step 0. Route: High-Velocity Rounds. Extra cost: 800 souls. Resume: Extra Spirit.\nExtra Charge: You need more uses of a charged ability. After core step 0. Route: Extra Charge. Extra cost: 800 souls. Resume: Extra Spirit.\nExtra Stamina: You need more movement actions. After core step 2. Route: Extra Stamina. Extra cost: 800 souls. Resume: Healing Booster.\nSprint Boots: You need faster travel between fights. After core step 2. Route: Sprint Boots. Extra cost: 800 souls. Resume: Healing Booster.\nMystic Burst: You can apply this item's Spirit damage effect. After core step 2. Route: Mystic Burst. Extra cost: 800 souls. Resume: Healing Booster.\nMystic Regeneration: You need to restore health between attacks. After core step 2. Route: Mystic Regeneration. Extra cost: 800 souls. Resume: Healing Booster.\nHealing Rite: You need to restore health between attacks. After core step 6. Route: Healing Rite. Extra cost: 800 souls. Resume: core complete.\nMystic Expansion: Your ability needs more range or area. After core step 6. Route: Mystic Expansion. Extra cost: 800 souls. Resume: core complete.\nGrit: You need a temporary barrier. After core step 6. Route: Grit. Extra cost: 800 souls. Resume: core complete.\nArcane Surge: You can use an ability after a dash-jump. After core step 2. Route: Extra Stamina -> Arcane Surge. Extra cost: 1,600 souls. Resume: Healing Booster.\nOpening Rounds: You can use the item's trigger to improve weapon damage. After core step 2. Route: High-Velocity Rounds -> Opening Rounds. Extra cost: 1,600 souls. Resume: Healing Booster.\nTrophy Collector: You can gain its bonuses from kills and assists. After core step 2. Route: Sprint Boots -> Trophy Collector. Extra cost: 1,600 souls. Resume: Healing Booster.\nEnchanter's Emblem: Your health is above 65%, so the conditional bonus is active. After core step 2. Route: Enchanter's Emblem. Extra cost: 1,600 souls. Resume: Healing Booster.\nEnduring Speed: Enemy slows prevent movement. After core step 5. Route: Sprint Boots -> Enduring Speed. Extra cost: 1,600 souls. Resume: Mystic Vulnerability.\nMystic Slow: You need to slow an enemy to keep them in reach. After core step 5. Route: Mystic Slow. Extra cost: 1,600 souls. Resume: Mystic Vulnerability.\nSlowing Hex: You need to stop enemy movement or weapon use. After core step 5. Route: Slowing Hex. Extra cost: 1,600 souls. Resume: Mystic Vulnerability.\nSpirit Lifesteal: You need healing while dealing Spirit damage. After core step 6. Route: Spirit Lifesteal. Extra cost: 1,600 souls. Resume: core complete.\nCompress Cooldown: You need abilities available more often. After core step 6. Route: Compress Cooldown. Extra cost: 1,600 souls. Resume: core complete.\nDuration Extender: Your ability effect needs to last longer. After core step 6. Route: Duration Extender. Extra cost: 1,600 souls. Resume: core complete.\nTorment Pulse: You can apply this item's Spirit damage effect. After core step 2. Route: Torment Pulse. Extra cost: 3,200 souls. Resume: Healing Booster.\nRadiant Regeneration: You need to restore health between attacks. After core step 4. Route: Mystic Regeneration -> Radiant Regeneration. Extra cost: 3,200 souls. Resume: Improved Spirit.\nRapid Recharge: You need more uses of a charged ability. After core step 6. Route: Extra Charge -> Rapid Recharge. Extra cost: 3,200 souls. Resume: core complete.\nRescue Beam: An ally needs healing or help to leave a fight. After core step 6. Route: Healing Rite -> Rescue Beam. Extra cost: 3,200 souls. Resume: core complete.\nTankbuster: You can apply this item's Spirit damage effect. After core step 6. Route: Mystic Burst -> Tankbuster. Extra cost: 3,200 souls. Resume: core complete.\nKnockdown: You need a delayed stun; airborne targets receive a longer stun. After core step 6. Route: Knockdown. Extra cost: 3,200 souls. Resume: core complete.\nSuperior Cooldown: You need abilities available more often. After core step 6. Route: Compress Cooldown -> Superior Cooldown. Extra cost: 3,200 souls. Resume: core complete.\nDispel Magic: You need to remove debuffs while you can still use items. After core step 6. Route: Dispel Magic. Extra cost: 3,200 souls. Resume: core complete.\nGreater Expansion: Your ability needs more range or area. After core step 6. Route: Mystic Expansion -> Greater Expansion. Extra cost: 3,200 souls. Resume: core complete.\nSuperior Duration: Your ability effect needs to last longer. After core step 6. Route: Duration Extender -> Superior Duration. Extra cost: 3,200 souls. Resume: core complete.\nEscalating Exposure: You can apply this item's Spirit damage effect. After core step 6. Route: Mystic Vulnerability -> Escalating Exposure. Extra cost: 4,800 souls. Resume: core complete.\nBoundless Spirit: You need more Spirit power. After core step 6. Route: Extra Spirit -> Improved Spirit -> Boundless Spirit. Extra cost: 4,800 souls. Resume: core complete.\nSpirit Burn: You can deal enough Spirit damage to trigger the burn and reduce healing. After core step 6. Route: Spirit Burn. Extra cost: 6,400 souls. Resume: core complete.\nCursed Relic: You need to stop an enemy from using abilities. After core step 6. Route: Cursed Relic. Extra cost: 6,400 souls. Resume: core complete.\nUnstoppable: You can activate it before enemy control prevents item use. After core step 6. Route: Debuff Reducer -> Unstoppable. Extra cost: 6,400 souls. Resume: core complete.\nHealing Tempo: You can heal a target before they fight. After core step 6. Route: Extra Regen -> Healing Booster -> Healing Tempo. Extra cost: 4,800 souls. Resume: core complete.\nTranscendent Cooldown: You need abilities available more often. After core step 6. Route: Compress Cooldown -> Superior Cooldown -> Transcendent Cooldown. Extra cost: 6,400 souls. Resume: core complete.\nInfuser: You need healing while dealing Spirit damage. After core step 6. Route: Spirit Lifesteal -> Infuser. Extra cost: 6,400 souls. Resume: core complete.\nMystic Reverb: You can hit enemies with the imbued ability for delayed area damage. After core step 6. Route: Mystic Reverb. Extra cost: 6,400 souls. Resume: core complete.\nJuggernaut: You need to reduce incoming bullet fire. After core step 6. Route: Sprint Boots -> Enduring Speed -> Juggernaut. Extra cost: 6,400 souls. Resume: core complete.\nAbility order: item-filtered observed default • tail support n=644.\n\n[deadlock-build-sync:v2]\nBuild path: 12-2cf175b992d56d8a.\nPrivate evidence-grounded guide generated from deadlock-api.com.\nPatch:  Minor Update - 08-22-2026 (2026-08-22T21:40:46Z).\nSnapshot: 07d9927c014442376d0e3344cf5c1907967397956b4cb3e975cedd8ce81f768b.\nPolicy: f7426b3ebdd8f6e032c35c1158d65ac81a20bddb961fab2ea39572b7de371181.\nClaim limit: observational; no causal item effect.",
+  "tag_ids": [
+    2351041382,
+    7409189,
+    255841590
+  ],
+  "categories": [
+    {
+      "name": "CORE ITEMS",
+      "optional": false,
+      "description": "Even: 62.3% | 132/212 wins",
+      "width": 516.0,
+      "height": 164.0,
+      "items": [
+        {
+          "item_id": 968099481,
+          "item": "Extra Spirit",
+          "annotation": "Step 1: +800 souls; total 800.\nSOUL WINDOW: 2k - 4k\nPR: 93.0% | WR: 54.2% | TOTAL GAMES: 1,002",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 2829638276,
+          "item": "Extra Regen",
+          "annotation": "Step 2: +800 souls; total 1,600.\nSOUL WINDOW: unavailable\nPR: 97.1% | WR: 54.9% | TOTAL GAMES: 1,046",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 2566692615,
+          "item": "Healing Booster",
+          "annotation": "Step 3: +800 souls; total 2,400.\nSOUL WINDOW: 4k - 8k\nPR: 100.0% | WR: 54.6% | TOTAL GAMES: 1,077",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 2603935618,
+          "item": "Healbane",
+          "annotation": "Step 4: +1,600 souls; total 4,000.\nSOUL WINDOW: 6k - 9k\nPR: 100.0% | WR: 54.6% | TOTAL GAMES: 1,077",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 7409189,
+          "item": "Improved Spirit",
+          "annotation": "Step 5: +800 souls; total 4,800.\nSOUL WINDOW: 4k - 12k\nPR: 100.0% | WR: 54.6% | TOTAL GAMES: 1,077",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 2081037738,
+          "item": "Mystic Vulnerability",
+          "annotation": "Step 6: +1,600 souls; total 6,400.\nSOUL WINDOW: 10k - 13k\nPR: 100.0% | WR: 54.6% | TOTAL GAMES: 1,077",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        }
+      ]
+    },
+    {
+      "name": "ALTERNATIVE CORE",
+      "optional": true,
+      "description": "Combine with one VARIANT.",
+      "width": 180.0,
+      "height": 164.0,
+      "items": [
+        {
+          "item_id": 2566692615,
+          "item": "Healing Booster",
+          "annotation": "Default, V1, V2, V3, V4. Stats: Default.\nSOUL WINDOW: 4k - 8k\nPR: 100.0% | WR: 54.6% | TOTAL GAMES: 1,077",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 2603935618,
+          "item": "Healbane",
+          "annotation": "Default, V1, V2, V3, V4. Stats: Default.\nSOUL WINDOW: 6k - 9k\nPR: 100.0% | WR: 54.6% | TOTAL GAMES: 1,077",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        }
+      ]
+    },
+    {
+      "name": "VARIANT 1",
+      "optional": true,
+      "description": "ALTERNATIVE CORE +\nEven: 54.3% | 51/94 wins",
+      "width": 180.0,
+      "height": 164.0,
+      "items": [
+        {
+          "item_id": 3970837787,
+          "item": "Enchanter's Emblem",
+          "annotation": "V1. Stats: V1.\nSOUL WINDOW: 4k - 6k\nPR: 100.0% | WR: 52.9% | TOTAL GAMES: 736",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 2947183272,
+          "item": "Radiant Regeneration",
+          "annotation": "V1. Stats: V1.\nSOUL WINDOW: 8k - 11k\nPR: 100.0% | WR: 52.9% | TOTAL GAMES: 736",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        }
+      ]
+    },
+    {
+      "name": "VARIANT 2",
+      "optional": true,
+      "description": "ALTERNATIVE CORE +\nEven: 56.2% | 63/112 wins",
+      "width": 180.0,
+      "height": 164.0,
+      "items": [
+        {
+          "item_id": 2947183272,
+          "item": "Radiant Regeneration",
+          "annotation": "V2. Stats: V2.\nSOUL WINDOW: 7k - 11k\nPR: 100.0% | WR: 53.4% | TOTAL GAMES: 545",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 2081037738,
+          "item": "Mystic Vulnerability",
+          "annotation": "V2. Stats: V2.\nSOUL WINDOW: 11k - 13k\nPR: 100.0% | WR: 53.4% | TOTAL GAMES: 545",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        }
+      ]
+    },
+    {
+      "name": "VARIANT 3",
+      "optional": true,
+      "description": "ALTERNATIVE CORE +\nEven: 61.2% | 49/80 wins",
+      "width": 180.0,
+      "height": 164.0,
+      "items": [
+        {
+          "item_id": 2064029594,
+          "item": "Opening Rounds",
+          "annotation": "V3. Stats: V3.\nSOUL WINDOW: 2k - 4k\nPR: 100.0% | WR: 52.1% | TOTAL GAMES: 566",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 3970837787,
+          "item": "Enchanter's Emblem",
+          "annotation": "V3. Stats: V3.\nSOUL WINDOW: 4k - 6k\nPR: 100.0% | WR: 52.1% | TOTAL GAMES: 566",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        }
+      ]
+    },
+    {
+      "name": "VARIANT 4",
+      "optional": true,
+      "description": "ALTERNATIVE CORE +\nEven: 59.2% | 87/147 wins",
+      "width": 180.0,
+      "height": 164.0,
+      "items": [
+        {
+          "item_id": 2947183272,
+          "item": "Radiant Regeneration",
+          "annotation": "V4. Stats: V4.\nSOUL WINDOW: 7k - 11k\nPR: 100.0% | WR: 56.4% | TOTAL GAMES: 695",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 7409189,
+          "item": "Improved Spirit",
+          "annotation": "V4. Stats: V4.\nSOUL WINDOW: 6k - 12k\nPR: 100.0% | WR: 56.4% | TOTAL GAMES: 695",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        }
+      ]
+    },
+    {
+      "name": "TIER 1",
+      "optional": true,
+      "description": "",
+      "width": 516.0,
+      "height": 293.0,
+      "items": [
+        {
+          "item_id": 2462046703,
+          "item": "Golden Goose Egg",
+          "annotation": "Default. Stats: Default.\nSOUL WINDOW: unavailable\nPR: 8.1% | WR: 49.4% | TOTAL GAMES: 87",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 3077079169,
+          "item": "High-Velocity Rounds",
+          "annotation": "Default, V1, V2, V4, Component V3. Stats: Default.\nSOUL WINDOW: unavailable\nPR: 24.0% | WR: 51.4% | TOTAL GAMES: 259",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 3776945997,
+          "item": "Extra Charge",
+          "annotation": "Default, V1, V2, V3, V4. Stats: Default.\nSOUL WINDOW: unavailable\nPR: 64.6% | WR: 56.6% | TOTAL GAMES: 696",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 4139877411,
+          "item": "Extra Stamina",
+          "annotation": "Default, V1, V2, V4. Stats: Default.\nSOUL WINDOW: about 2k\nPR: 25.5% | WR: 54.2% | TOTAL GAMES: 275",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 3399065363,
+          "item": "Sprint Boots",
+          "annotation": "Default, V1, V2, V3, V4. Stats: Default.\nSOUL WINDOW: 4k - 8k\nPR: 49.6% | WR: 56.4% | TOTAL GAMES: 534",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 1998374645,
+          "item": "Mystic Burst",
+          "annotation": "Default, V1, V4. Stats: Default.\nSOUL WINDOW: 2k - 11k\nPR: 16.0% | WR: 55.2% | TOTAL GAMES: 172",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 1439347412,
+          "item": "Mystic Regeneration",
+          "annotation": "Default, V3, Component V1, Component V2, Component V4. Stats: Default.\nSOUL WINDOW: 4k - 8k\nPR: 35.2% | WR: 55.1% | TOTAL GAMES: 379",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 1710079648,
+          "item": "Healing Rite",
+          "annotation": "Default, V1, V2, V4. Stats: Default.\nSOUL WINDOW: 2k - 15k\nPR: 9.3% | WR: 57.0% | TOTAL GAMES: 100",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 754480263,
+          "item": "Mystic Expansion",
+          "annotation": "Default, V1, V2, V3, V4. Imbue varies; use the selected variant's target.",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 1672893796,
+          "item": "Grit",
+          "annotation": "Default, V1, V3, V4. Stats: Default.\nSOUL WINDOW: unavailable\nPR: 5.2% | WR: 44.6% | TOTAL GAMES: 56",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        }
+      ]
+    },
+    {
+      "name": "TIER 2",
+      "optional": true,
+      "description": "",
+      "width": 516.0,
+      "height": 293.0,
+      "items": [
+        {
+          "item_id": 1150006784,
+          "item": "Arcane Surge",
+          "annotation": "Default, V1, V2, V4. Stats: Default.\nSOUL WINDOW: 2k - 3k\nPR: 29.6% | WR: 55.5% | TOTAL GAMES: 319",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 2064029594,
+          "item": "Opening Rounds",
+          "annotation": "Default, V1, V2, V4. Stats: Default.\nSOUL WINDOW: 2k - 3k\nPR: 22.4% | WR: 51.5% | TOTAL GAMES: 241",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 3074274290,
+          "item": "Trophy Collector",
+          "annotation": "Default, V2, V4. Stats: Default.\nSOUL WINDOW: 3k - 6k\nPR: 27.6% | WR: 58.6% | TOTAL GAMES: 297",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 3970837787,
+          "item": "Enchanter's Emblem",
+          "annotation": "Default, V2, V4. Stats: Default.\nSOUL WINDOW: 4k - 7k\nPR: 34.3% | WR: 53.4% | TOTAL GAMES: 369",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 2447176615,
+          "item": "Enduring Speed",
+          "annotation": "Default, V3. Stats: Default.\nSOUL WINDOW: 7k - 10k\nPR: 47.1% | WR: 57.0% | TOTAL GAMES: 507",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 1102081447,
+          "item": "Mystic Slow",
+          "annotation": "Default, V1, V2, V4. Stats: Default.\nSOUL WINDOW: 8k - 11k\nPR: 19.0% | WR: 59.5% | TOTAL GAMES: 205",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 1813726886,
+          "item": "Slowing Hex",
+          "annotation": "Default, V1, V2, V3, V4. Stats: Default.\nSOUL WINDOW: 7k - 12k\nPR: 15.8% | WR: 54.7% | TOTAL GAMES: 170",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 876563814,
+          "item": "Spirit Lifesteal",
+          "annotation": "Default. Stats: Default.\nSOUL WINDOW: 12k - 21k\nPR: 25.5% | WR: 59.3% | TOTAL GAMES: 275",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 380806748,
+          "item": "Compress Cooldown",
+          "annotation": "Default, V1, V2, V3, V4. Imbue varies; use the selected variant's target.",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 2951612397,
+          "item": "Duration Extender",
+          "annotation": "Default, V1, V2, V3, V4. Imbue varies; use the selected variant's target.",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 1925087134,
+          "item": "Suppressor",
+          "annotation": "V1, V3. Stats: V1.\nSOUL WINDOW: unavailable\nPR: 10.2% | WR: 62.7% | TOTAL GAMES: 75",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 1047818222,
+          "item": "Debuff Reducer",
+          "annotation": "V1, V2, V3, V4. Stats: V1.\nSOUL WINDOW: 21k - 33k\nPR: 18.6% | WR: 54.7% | TOTAL GAMES: 137",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        }
+      ]
+    },
+    {
+      "name": "TIER 3",
+      "optional": true,
+      "description": "",
+      "width": 516.0,
+      "height": 422.0,
+      "items": [
+        {
+          "item_id": 395944548,
+          "item": "Torment Pulse",
+          "annotation": "Default, V1, V2, V3, V4. Stats: Default.\nSOUL WINDOW: 6k - 10k\nPR: 28.1% | WR: 63.7% | TOTAL GAMES: 303",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 2947183272,
+          "item": "Radiant Regeneration",
+          "annotation": "Default, V3. Stats: Default.\nSOUL WINDOW: 7k - 12k\nPR: 38.8% | WR: 55.5% | TOTAL GAMES: 418",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 787198704,
+          "item": "Rapid Recharge",
+          "annotation": "Default, V1, V2, V3, V4. Stats: Default.\nSOUL WINDOW: 11k - 24k\nPR: 56.7% | WR: 57.8% | TOTAL GAMES: 611",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 1804594021,
+          "item": "Rescue Beam",
+          "annotation": "Default, V1, V2, V4. Stats: Default.\nSOUL WINDOW: 12k - 24k\nPR: 9.7% | WR: 55.8% | TOTAL GAMES: 104",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 2121044373,
+          "item": "Tankbuster",
+          "annotation": "Default. Stats: Default.\nSOUL WINDOW: 12k - 28k\nPR: 16.3% | WR: 54.5% | TOTAL GAMES: 176",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 1254091416,
+          "item": "Knockdown",
+          "annotation": "Default, V4. Stats: Default.\nSOUL WINDOW: unavailable\nPR: 5.4% | WR: 41.4% | TOTAL GAMES: 58",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 3261353684,
+          "item": "Superior Cooldown",
+          "annotation": "Default, V1, V2, V3, V4. Stats: Default.\nSOUL WINDOW: 17k - 26k\nPR: 57.9% | WR: 58.8% | TOTAL GAMES: 624",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 3731635960,
+          "item": "Dispel Magic",
+          "annotation": "Default, V1, V2, V3, V4. Stats: Default.\nSOUL WINDOW: 18k - 29k\nPR: 7.5% | WR: 60.5% | TOTAL GAMES: 81",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 1193964439,
+          "item": "Greater Expansion",
+          "annotation": "Default, V1, V2, V3, V4. Stats: Default.\nSOUL WINDOW: 21k - 30k\nPR: 60.5% | WR: 58.0% | TOTAL GAMES: 652",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 2717651715,
+          "item": "Superior Duration",
+          "annotation": "Default, V1, V2, V3, V4. Stats: Default.\nSOUL WINDOW: 21k - 32k\nPR: 42.4% | WR: 61.7% | TOTAL GAMES: 457",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 3144988365,
+          "item": "Decay",
+          "annotation": "V1, V2, V3. Stats: V1.\nSOUL WINDOW: 12k - 17k\nPR: 7.1% | WR: 46.2% | TOTAL GAMES: 52",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 1414025773,
+          "item": "Counterspell",
+          "annotation": "V1, V3. Stats: V1.\nSOUL WINDOW: unavailable\nPR: 5.6% | WR: 46.3% | TOTAL GAMES: 41",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 1932939246,
+          "item": "Alchemical Fire",
+          "annotation": "V1, V2, V3, V4. Stats: V1.\nSOUL WINDOW: 17k - 24k\nPR: 22.3% | WR: 48.2% | TOTAL GAMES: 164",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        }
+      ]
+    },
+    {
+      "name": "TIER 4",
+      "optional": true,
+      "description": "",
+      "width": 516.0,
+      "height": 293.0,
+      "items": [
+        {
+          "item_id": 3005970438,
+          "item": "Escalating Exposure",
+          "annotation": "Default, V1, V2, V3, V4. Stats: Default.\nSOUL WINDOW: 17k - 22k\nPR: 88.1% | WR: 55.7% | TOTAL GAMES: 949",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 2519598785,
+          "item": "Boundless Spirit",
+          "annotation": "Default, V1, V2, V3, V4. Stats: Default.\nSOUL WINDOW: 20k - 28k\nPR: 68.3% | WR: 58.8% | TOTAL GAMES: 736",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 343572757,
+          "item": "Spirit Burn",
+          "annotation": "Default, V1, V2, V3, V4. Stats: Default.\nSOUL WINDOW: 25k - 36k\nPR: 31.1% | WR: 65.4% | TOTAL GAMES: 335",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 2617435668,
+          "item": "Cursed Relic",
+          "annotation": "Default, V1, V3, V4. Stats: Default.\nSOUL WINDOW: unavailable\nPR: 5.9% | WR: 57.8% | TOTAL GAMES: 64",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 3357231760,
+          "item": "Unstoppable",
+          "annotation": "Default, V1, V2, V3, V4. Stats: Default.\nSOUL WINDOW: unavailable\nPR: 6.4% | WR: 56.5% | TOTAL GAMES: 69",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 1427630806,
+          "item": "Healing Tempo",
+          "annotation": "Default, V1, V2, V3, V4. Stats: Default.\nSOUL WINDOW: 32k - 45k\nPR: 11.9% | WR: 67.2% | TOTAL GAMES: 128",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 915014646,
+          "item": "Transcendent Cooldown",
+          "annotation": "Default, V1, V2, V3, V4. Stats: Default.\nSOUL WINDOW: 32k - 45k\nPR: 12.0% | WR: 62.8% | TOTAL GAMES: 129",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 1797283378,
+          "item": "Infuser",
+          "annotation": "Default. Stats: Default.\nSOUL WINDOW: 34k - 43k\nPR: 6.9% | WR: 58.1% | TOTAL GAMES: 74",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 3577481646,
+          "item": "Mystic Reverb",
+          "annotation": "Default. Stats: Default.\nSOUL WINDOW: 26k - 46k\nPR: 5.4% | WR: 60.3% | TOTAL GAMES: 58",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": 18921423
+        },
+        {
+          "item_id": 1250307611,
+          "item": "Juggernaut",
+          "annotation": "Default. Stats: Default.\nSOUL WINDOW: unavailable\nPR: 4.9% | WR: 56.6% | TOTAL GAMES: 53",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 1662311306,
+          "item": "Divine Barrier",
+          "annotation": "V1, V3, V4. Stats: V1.\nSOUL WINDOW: unavailable\nPR: 5.2% | WR: 73.7% | TOTAL GAMES: 38",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        },
+        {
+          "item_id": 677738769,
+          "item": "Refresher",
+          "annotation": "V1, V3. Stats: V1.\nSOUL WINDOW: unavailable\nPR: 4.3% | WR: 56.2% | TOTAL GAMES: 32",
+          "required_flex_slots": null,
+          "sell_priority": null,
+          "imbue_target_ability_id": null
+        }
+      ]
+    }
+  ],
+  "ability_order": [
+    18921423,
+    18921423,
+    2351041382,
+    1963397252,
+    18921423,
+    1963397252,
+    3826390464,
+    2351041382,
+    2351041382,
+    2351041382,
+    1963397252,
+    18921423,
+    1963397252,
+    3826390464,
+    3826390464,
+    3826390464
+  ],
+  "ability_annotation": "State-composed observed default • tail support n=644 • observational."
+}

@@ -1,5 +1,6 @@
 import copy
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,7 @@ from deadlock_build_sync.artifact_bundle_types import ArtifactBundleError
 from deadlock_build_sync.artifacts import load_policy_artifact
 from deadlock_build_sync.build_evidence import HeroBuildEvidence, load_build_evidence
 from deadlock_build_sync.policy import BuildPolicy
+from deadlock_build_sync.service import generate_guides
 from deadlock_build_sync.value_validation import (
     require_object_dict,
     require_object_rows,
@@ -18,6 +20,48 @@ from tests.artifact_bundle_fixtures import (
     make_artifact_projection,
     write_artifact_bundle,
 )
+from tests.beam_fixtures import make_generator_path
+from tests.service_evidence_fixtures import make_service_build_evidence
+from tests.service_fake_api import FakeApi, make_ability_rows, make_duration_statistics
+
+
+@pytest.mark.parametrize("effective", ["beam", "current"])
+def test_beam_reconstruction_preserves_named_ability_evidence(effective: str) -> None:
+    api = FakeApi(
+        ability_rows=make_ability_rows(), duration_points=make_duration_statistics()
+    )
+    catalog = make_service_build_evidence(api)
+    original = catalog.heroes[12]
+    evidence = replace(
+        original,
+        generator=make_generator_path(
+            original.core_policy.default_item_ids,
+            original.hero_id,
+            original.path_id,
+            effective=effective,
+        ),
+    )
+    catalog = replace(catalog, generator="beam", heroes={12: evidence})
+    generated = generate_guides(
+        api, build_evidence=catalog, account_id=0, hero_query="Kelvin", all_heroes=False
+    )
+    expected = generated.guides[0]
+    reconstructed = artifact_reconstruction._reconstruct_guide(
+        generated.contexts[0],
+        generated.policies[0],
+        evidence,
+        manifest=generated.manifest.as_dict(),
+        rank_identity=expected.rank_identity,
+        assets=api.items(),
+    )
+
+    assert reconstructed.purchase_guidance == expected.purchase_guidance
+    assert reconstructed.evidence_summary["ability_names"] == {
+        "10": "Ability 1",
+        "20": "Ability 2",
+        "30": "Ability 3",
+        "40": "Ability 4",
+    }
 
 
 def _inputs(

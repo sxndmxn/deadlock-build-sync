@@ -15,6 +15,7 @@ from .build_evidence_sequence import _parse_sequence_policy, _parse_situational_
 from .build_evidence_timing import parse_purchase_timing
 from .build_evidence_types import HeroBuildEvidence, ItemEvidence
 from .build_evidence_values import _require_integer
+from .guide_generator import validate_generator_path
 from .hero_cohort import HeroCohort
 from .match_choices import parse_automatic_branches
 from .value_validation import object_dict, object_list
@@ -129,6 +130,10 @@ def _parse_build_path(
     validate_discovery(
         discovery, core_policy.default_item_ids, sequence_policy.default_path
     )
+    if (sequence_policy.production_model == "beam16") != (
+        discovery.get("method") == "eclat_leiden_beam"
+    ):
+        raise ArtifactError("Sequence generator differs from its discovery method")
     validate_frozen_pool(document, discovery)
     group_id = document.get("guide_group_id")
     if not isinstance(group_id, str) or not group_id:
@@ -137,6 +142,14 @@ def _parse_build_path(
         hero_id=hero_id,
         hero=hero_name,
         guide_group_id=group_id,
+        generator=validate_generator_path(
+            document["generator"],
+            group=group_id,
+            core=core_policy.default_item_ids,
+            hero=hero_id,
+        )
+        if "generator" in document
+        else {},
         eligible_player_matches=eligible,
         selection_eligible_player_matches=selection,
         fold_eligible_player_matches=folds,

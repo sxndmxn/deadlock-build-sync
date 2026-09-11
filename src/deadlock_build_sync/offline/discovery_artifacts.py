@@ -55,7 +55,9 @@ def select_core_owners(
 
 
 def load_item_pool_evidence(
-    connection: duckdb.DuckDBPyConnection, members: frozenset[tuple[int, int]]
+    connection: duckdb.DuckDBPyConnection,
+    members: frozenset[tuple[int, int]],
+    hero: int,
 ) -> ItemPoolEvidence:
     connection.register(
         "_discovery_buyers",
@@ -66,7 +68,7 @@ def load_item_pool_evidence(
     )
     try:
         rows = connection.execute(
-            load_sql("discovery/select_item_pool_purchases.sql")
+            load_sql("discovery/select_item_pool_purchases.sql"), {"hero": hero}
         ).fetchall()
     finally:
         connection.unregister("_discovery_buyers")
@@ -105,16 +107,22 @@ def freeze_purchase_guide(
     data: HeroDiscoveryData,
     row: NominatedCoreBuild,
     graph: ItemGraph,
+    *,
+    exact_path: tuple[int, ...] | None = None,
 ) -> FrozenPurchaseGuide:
     evidence = load_item_pool_evidence(
-        connection, select_core_owners(data, row["items"], "discovery")
+        connection, select_core_owners(data, row["items"], "discovery"), data.hero
     )
     order = tuple(row["path"]["order"])
     if not order:
         return {"ready": False, "reason": "No supported purchase order"}
     priorities, bounds = calculate_purchase_timing_policy(evidence["items"])
     try:
-        path = schedule_component_path(graph, order, priorities)
+        path = (
+            exact_path
+            if exact_path is not None
+            else schedule_component_path(graph, order, priorities)
+        )
         plan = plan_purchases(graph, path, tuple(row["items"]), {})
     except (MechanicsError, ValueError) as error:
         return {"ready": False, "reason": str(error)}
@@ -168,7 +176,7 @@ def build_evidence_payload(
     assets: dict[int, dict[str, object]],
 ) -> dict[str, object]:
     members = select_core_owners(data, row["items"])
-    metrics = _query_path_item_metrics(connection, members)
+    metrics = _query_path_item_metrics(connection, members, data.hero)
     eligible, wealth = _query_path_cohort_summary(connection, members)
     folds = {
         "train": len(select_core_owners(data, row["items"], "discovery")),
@@ -220,7 +228,7 @@ def build_evidence_payload(
         "sequence_policy": {
             "version": SEQUENCE_POLICY_VERSION,
             "minimum_support": 20,
-            "production_model": "pairwise",
+            "production_model": row["path"].get("method", "pairwise"),
             "component_expanded_default_path": frozen["path"],
             "transitions": [],
             "evaluation": row["order_validation"],

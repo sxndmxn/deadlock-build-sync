@@ -295,3 +295,28 @@ def test_strict_team_snapshot_and_no_future_enemy_item_enter_branch_state() -> N
     assert stale["enemy_items"] == []
     assert stale["enemy_heroes"] == []
     connection.close()
+
+
+def test_shared_purchase_checkpoint_does_not_multiply_decisions() -> None:
+    with duckdb.connect() as connection:
+        for fixture in (
+            "create_single_partition.sql",
+            "create_enemy_composition.sql",
+            "create_team_snapshots.sql",
+            "insert_team_snapshots.sql",
+            "create_decision_opportunities.sql",
+        ):
+            connection.execute(load_fixture_sql(f"checkpoints/{fixture}"))
+        decisions = connection.table("decision_opportunities").pl()
+        connection.register(
+            "decision_opportunities",
+            pl.concat([
+                decisions,
+                decisions.with_columns(pl.lit(8).alias("item_id")),
+            ]),
+        )
+        rows = checkpoints.load_decision_rows(connection, 12)
+    assert len(rows) == 2
+    assert {row["item_id"] for row in rows} == {7, 8}
+    assert all(row["own_team_net_worth"] == 60000 for row in rows)
+    assert all(row["own_observed"] == 590 for row in rows)

@@ -29,6 +29,12 @@ from .build_evidence_types import (
 )
 from .build_evidence_values import _require_integer, _require_sha256
 from .build_support import SUPPORT
+from .guide_generator import (
+    BEAM_METHOD_VERSION,
+    BEAM_SCHEMA_VERSION,
+    validate_generator_group,
+    validate_generator_header,
+)
 from .snapshot import EpochBoundary, EpochSet, MatchMode, sha256_json
 from .value_validation import object_dict, object_list, object_rows
 
@@ -89,8 +95,12 @@ def _read_document(path: Path) -> tuple[bytes, dict[str, object]]:
 
 def _validate_method(document: dict[str, object]) -> None:
     method = object_dict(document.get("method"))
+    expected = dict(_EXPECTED_METHOD)
+    if document.get("schema_version") == BEAM_SCHEMA_VERSION:
+        validate_generator_header(document.get("generator"))
+        expected["version"] = BEAM_METHOD_VERSION
     if method is None or any(
-        method.get(key) != value for key, value in _EXPECTED_METHOD.items()
+        method.get(key) != value for key, value in expected.items()
     ):
         raise ArtifactError(
             f"build evidence uses an unsupported selection method. {REFRESH_INSTRUCTION}"
@@ -102,9 +112,17 @@ def _parse_evidence_header(document: dict[str, object]) -> _BuildEvidenceHeader:
     payload = {key: value for key, value in document.items() if key != "artifact_id"}
     if not isinstance(artifact_id, str) or artifact_id != sha256_json(payload):
         raise ArtifactError("build evidence fingerprint does not match its contents")
-    if document.get("schema_version") != BUILD_EVIDENCE_SCHEMA_VERSION:
+    if document.get("schema_version") not in {
+        BUILD_EVIDENCE_SCHEMA_VERSION,
+        BEAM_SCHEMA_VERSION,
+    }:
         raise ArtifactError(f"unsupported build-evidence schema. {REFRESH_INSTRUCTION}")
     _validate_method(document)
+    if (
+        document.get("schema_version") == BUILD_EVIDENCE_SCHEMA_VERSION
+        and "generator" in document
+    ):
+        raise ArtifactError("Legacy evidence cannot contain a beam generator header")
     heroes = object_list(document.get("heroes"))
     requested = object_list(document.get("requested_hero_ids"))
     patch = object_dict(document.get("patch"))
@@ -160,13 +178,28 @@ def _validate_catalog(catalog: BuildEvidenceCatalog) -> None:
     if catalog.as_of_timestamp < catalog.epochs.analysis_start_timestamp:
         raise ArtifactError("build evidence as-of cutoff precedes an epoch boundary")
     for builds in catalog.hero_builds.values():
-        groups: dict[str, list[HeroBuildEvidence]] = {}
-        for build in builds:
-            groups.setdefault(build.guide_group_id, []).append(build)
-        for group_id, members in groups.items():
-            default = min(members, key=lambda build: discovery_rank(build.discovery))
-            if group_id != default.path_id:
-                raise ArtifactError("Guide group differs from its frozen default")
+        _validate_hero_groups(builds, catalog.generator)
+
+
+def _validate_hero_groups(
+    builds: tuple[HeroBuildEvidence, ...], generator: str
+) -> None:
+    groups: dict[str, list[HeroBuildEvidence]] = {}
+    for build in builds:
+        groups.setdefault(build.guide_group_id, []).append(build)
+    for group_id, members in groups.items():
+        default = min(members, key=lambda build: discovery_rank(build.discovery))
+        if group_id != default.path_id:
+            raise ArtifactError("Guide group differs from its frozen default")
+        if generator == "beam":
+            validate_generator_group(members, default)
+        elif any(build.generator for build in members):
+            raise ArtifactError("Current evidence cannot contain beam paths")
+        if generator == "current" and any(
+            build.discovery.get("method") != "eclat_leiden_pairwise"
+            for build in members
+        ):
+            raise ArtifactError("Current evidence cannot contain beam discovery")
 
 
 def load_build_evidence(path: Path) -> BuildEvidenceCatalog:
@@ -207,6 +240,9 @@ def load_build_evidence(path: Path) -> BuildEvidenceCatalog:
         heroes=by_id,
         hero_builds=hero_builds,
         raw_bytes=raw,
+        generator="beam"
+        if document.get("schema_version") == BEAM_SCHEMA_VERSION
+        else "current",
         exclusions={
             _require_integer(
                 row["hero_id"], "excluded hero id", minimum=1

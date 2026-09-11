@@ -4,6 +4,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from .beam_display import (
+    generator_metadata,
+    render_ability_instructions,
+    variant_statistics,
+)
 from .guide_groups import VARIANT_RULE, describe_variant_changes
 from .purchase_categories import (
     format_choice_instruction,
@@ -143,8 +148,10 @@ def render_purchase_markdown(guide: PurchaseGuide, *, details: bool = False) -> 
     guidance = guide.purchase_guidance
     if guidance is None:
         raise ValueError("Build has no purchase guidance; generate it with build")
-    if not details and any(category.compact for category in guide.rendered_categories):
-        return _render_compact_markdown(guide, guidance)
+    if not details:
+        compact = _render_short_markdown(guide, guidance)
+        if compact is not None:
+            return compact
     lines = [
         f"# {guide.hero_name} — {guide.build_archetype}",
         "",
@@ -157,6 +164,8 @@ def render_purchase_markdown(guide: PurchaseGuide, *, details: bool = False) -> 
         "",
     ]
     lines.extend(_render_variant_markdown(guide))
+    lines.extend(_render_generator_evidence(guide))
+    lines.extend(render_ability_instructions(guide))
     lines.extend(["## Purchase path and choices", ""])
     for index in range(len(guidance.default_path.actions) + 1):
         if index:
@@ -209,6 +218,25 @@ def render_purchase_markdown(guide: PurchaseGuide, *, details: bool = False) -> 
     return "\n".join(lines)
 
 
+def _render_generator_evidence(guide: PurchaseGuide) -> list[str]:
+    if not generator_metadata(guide):
+        return []
+    return [
+        *variant_statistics(guide, detailed=True),
+        "Variant samples can overlap. These observations do not prove a purchase-order or win-rate benefit.",
+        f"Generator evidence: {generator_metadata(guide)}",
+        "",
+    ]
+
+
+def _render_short_markdown(
+    guide: PurchaseGuide, guidance: PurchaseGuidance
+) -> str | None:
+    if any(category.compact for category in guide.rendered_categories):
+        return _render_compact_markdown(guide, guidance)
+    return None
+
+
 def _render_variant_markdown(guide: PurchaseGuide) -> list[str]:
     if not guide.variant_guides:
         return []
@@ -233,12 +261,14 @@ def _render_compact_markdown(guide: PurchaseGuide, guidance: PurchaseGuidance) -
         f"Core: {guide.core_target_cost:,} souls. Ranks: {guide.rank_identity}.",
         f"Evidence: {guidance.evidence.get('status', 'observed')}. Limits: {guidance.evidence.get('limitations', [])}.",
         "",
-        "Buy CORE in order. All other sections are optional. Tier numbers show prices, not purchase order.",
-        "Variant items appear once in CORE OPTIONAL. Complete variant paths, pools, and purchase instructions are in the details file.",
+        "Buy CORE ITEMS in order. All other sections are optional. Tier numbers show item prices.",
+        "Combine ALTERNATIVE CORE with one VARIANT where indicated. Variant notes show observed wealth states. Complete purchase orders and variant pools are in the details file.",
         "",
     ]
     for category in guide.rendered_categories:
         lines.extend([f"## {category.name}", ""])
+        if category.description and category.items:
+            lines.extend([category.description, ""])
         if category.optional:
             lines.append(
                 ", ".join(item.name for item in category.items)

@@ -1,0 +1,214 @@
+{
+  "source_result": "test-guides-corrected.json",
+  "method": "diverse:16",
+  "query": {
+    "hero": 1,
+    "relative_state": 1,
+    "budget": 12800,
+    "initial_net_worth": 800,
+    "initial_cash": 800,
+    "initial_owned": "0x0",
+    "flex_slots": 0,
+    "initial_inventory_eligible": true,
+    "valid": true,
+    "abstained": false,
+    "search_seconds": 0.012838584021665156,
+    "expansions": 4013,
+    "duplicate_states": 173,
+    "diversity": 0.3333333333333333,
+    "distinct_first_actions": 1,
+    "checkpoint": 1201
+  },
+  "shared_final_core": [
+    "Enchanter's Emblem",
+    "Healbane",
+    "Rapid Recharge",
+    "Spirit Lifesteal"
+  ],
+  "shared_purchase_prefix": [
+    "Spirit Lifesteal",
+    "Enchanter's Emblem",
+    "Extra Charge",
+    "Healbane",
+    "Rapid Recharge"
+  ],
+  "default_costs": [
+    {
+      "item": "Spirit Lifesteal",
+      "incremental_cost": 1600
+    },
+    {
+      "item": "Enchanter's Emblem",
+      "incremental_cost": 1600
+    },
+    {
+      "item": "Extra Charge",
+      "incremental_cost": 800
+    },
+    {
+      "item": "Healbane",
+      "incremental_cost": 1600
+    },
+    {
+      "item": "Rapid Recharge",
+      "incremental_cost": 2400
+    },
+    {
+      "item": "Extended Magazine",
+      "incremental_cost": 800
+    }
+  ],
+  "variants": [
+    {
+      "path": [
+        34,
+        149,
+        143,
+        107,
+        27,
+        65
+      ],
+      "path_names": [
+        "Spirit Lifesteal",
+        "Enchanter's Emblem",
+        "Extra Charge",
+        "Healbane",
+        "Rapid Recharge",
+        "Extended Magazine"
+      ],
+      "owned": "0x20000000000800000000020000000408000000",
+      "owned_names": [
+        "Rapid Recharge",
+        "Spirit Lifesteal",
+        "Extended Magazine",
+        "Healbane",
+        "Enchanter's Emblem"
+      ],
+      "spent": 8800,
+      "score": 0.06570791187774438,
+      "minimum_item_support": 149,
+      "training": {
+        "available": true,
+        "owners": 209,
+        "wins": 109,
+        "win_rate": 0.5215311004784688,
+        "lower_95": 0.4540314184573747,
+        "upper_95": 0.5882535764391409,
+        "hero_matches": 12266,
+        "hero_win_rate": 0.46266101418555355
+      },
+      "heldout": {
+        "available": true,
+        "owners": 60,
+        "wins": 26,
+        "win_rate": 0.43333333333333335,
+        "lower_95": 0.3157239680468677,
+        "upper_95": 0.5589656122387444,
+        "hero_matches": 4428,
+        "hero_win_rate": 0.4634146341463415
+      }
+    },
+    {
+      "path": [
+        34,
+        149,
+        143,
+        107,
+        27,
+        76
+      ],
+      "path_names": [
+        "Spirit Lifesteal",
+        "Enchanter's Emblem",
+        "Extra Charge",
+        "Healbane",
+        "Rapid Recharge",
+        "Suppressor"
+      ],
+      "owned": "0x20000000000800000010000000000408000000",
+      "owned_names": [
+        "Rapid Recharge",
+        "Spirit Lifesteal",
+        "Suppressor",
+        "Healbane",
+        "Enchanter's Emblem"
+      ],
+      "spent": 9600,
+      "score": 0.060610710447993224,
+      "minimum_item_support": 288,
+      "training": {
+        "available": true,
+        "owners": 320,
+        "wins": 158,
+        "win_rate": 0.49375,
+        "lower_95": 0.43937157345885924,
+        "upper_95": 0.5482767035265321,
+        "hero_matches": 12266,
+        "hero_win_rate": 0.46266101418555355
+      },
+      "heldout": {
+        "available": true,
+        "owners": 82,
+        "wins": 37,
+        "win_rate": 0.45121951219512196,
+        "lower_95": 0.34811270021487606,
+        "upper_95": 0.5586922386817192,
+        "hero_matches": 4428,
+        "hero_win_rate": 0.4634146341463415
+      }
+    },
+    {
+      "path": [
+        34,
+        149,
+        143,
+        107,
+        27,
+        20
+      ],
+      "path_names": [
+        "Spirit Lifesteal",
+        "Enchanter's Emblem",
+        "Extra Charge",
+        "Healbane",
+        "Rapid Recharge",
+        "Rapid Rounds"
+      ],
+      "owned": "0x20000000000800000000000000000408100000",
+      "owned_names": [
+        "Rapid Rounds",
+        "Rapid Recharge",
+        "Spirit Lifesteal",
+        "Healbane",
+        "Enchanter's Emblem"
+      ],
+      "spent": 8800,
+      "score": 0.05839056599435144,
+      "minimum_item_support": 121,
+      "training": {
+        "available": true,
+        "owners": 234,
+        "wins": 125,
+        "win_rate": 0.5341880341880342,
+        "lower_95": 0.470238198212151,
+        "upper_95": 0.5970335048766793,
+        "hero_matches": 12266,
+        "hero_win_rate": 0.46266101418555355
+      },
+      "heldout": {
+        "available": true,
+        "owners": 69,
+        "wins": 34,
+        "win_rate": 0.4927536231884058,
+        "lower_95": 0.3783242300928733,
+        "upper_95": 0.6079473243736349,
+        "hero_matches": 4428,
+        "hero_win_rate": 0.4634146341463415
+      }
+    }
+  ],
+  "core_cards_before": 15,
+  "core_cards_after": 7,
+  "purchase_cards_before": 18,
+  "purchase_cards_after": 8
+}

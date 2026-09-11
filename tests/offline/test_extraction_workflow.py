@@ -203,6 +203,7 @@ def test_sql_files_extract_and_export_complete_cohort(
 
     def connect_source(paths: RunPaths) -> duckdb.DuckDBPyConnection:
         connection = duckdb.connect(str(paths.raw / "analysis.duckdb"))
+        connection.execute(load_fixture_sql("extract/attach_memory.sql"))
         connection.execute(load_fixture_sql("extract/create_source_tables.sql"))
         return connection
 

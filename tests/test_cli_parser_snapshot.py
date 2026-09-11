@@ -58,7 +58,7 @@ def test_public_parser_help_is_stable(
         help_text[command or "root"] = capsys.readouterr().out
 
     assert sha256_json(help_text) == (
-        "f533480790ce3981487cb6b0b18e43314fc4190352149c24070dee7da9de8d9c"
+        "e90efd5b2cc29071aa7ef0bebd46e36865d0538c015f487d3ff40f1b8f7e850e"
     )
 
 
@@ -82,5 +82,5 @@ def test_public_parser_defaults_are_stable(monkeypatch: pytest.MonkeyPatch) -> N
     ]
 
     assert sha256_json(values) == (
-        "ced6323a3a25ae12c28f566c2480e83ce3e5b5e7e5351f00732f4da687ae9dff"
+        "f2e524bdd1cf4c33846bd862f02c8c5d56a1224b383611c5b2dec3c61000c687"
     )

@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 
 from .api import DEFAULT_API_BASE_URL
+from .guide_generator import GENERATOR_NAMES
 from .ranks import DEFAULT_RANK_RANGE, Rank
 from .snapshot import EpochBoundary, MatchMode
 from .tracing import TRACE_ENVIRONMENT_VARIABLE, TraceError, TraceMode
@@ -355,4 +356,11 @@ def build_parser() -> argparse.ArgumentParser:
         trace_summary,
     ):
         _add_trace_argument(command_parser, default=argparse.SUPPRESS)
+    for command_parser in (sync, build, refresh):
+        command_parser.add_argument(
+            "--generator",
+            choices=GENERATOR_NAMES,
+            default="current",
+            help="guide generator (default: current)",
+        )
     return parser

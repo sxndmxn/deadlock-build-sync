@@ -1,1 +1,2 @@
-ATTACH 'ducklake:deadlock_ducklake' AS remote (READ_ONLY);
+-- SQLFluff 4.3 does not parse DuckDB ATTACH.
+ATTACH 'ducklake:deadlock_ducklake' AS remote (READ_ONLY); -- noqa: PRS
