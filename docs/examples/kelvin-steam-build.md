@@ -46,39 +46,95 @@ Optional: no. Size: 516 x 164.
         SOUL WINDOW: 10k - 13k
         PR: 100.0% | WR: 54.6% | TOTAL GAMES: 1,077
 
-## CORE OPTIONAL
+## SHARED CORE
 
-Optional: yes. Size: 432 x 164.
+Optional: yes. Size: 180 x 164.
 
-1. **Mystic Regeneration** (ID 1439347412)
+    Variant base.
 
-        V1, V2, V4, Pool Default, Pool V3. Stats: V1.
-        SOUL WINDOW: 5k - 8k
-        PR: 87.6% | WR: 52.6% | TOTAL GAMES: 645
+1. **Healing Booster** (ID 2566692615)
 
-2. **Enchanter's Emblem** (ID 3970837787)
+        Default, V1, V2, V3, V4. Stats: Default.
+        SOUL WINDOW: 4k - 8k
+        PR: 100.0% | WR: 54.6% | TOTAL GAMES: 1,077
 
-        V1, V3, Pool Default, Pool V2, Pool V4. Stats: V1.
+2. **Healbane** (ID 2603935618)
+
+        Default, V1, V2, V3, V4. Stats: Default.
+        SOUL WINDOW: 6k - 9k
+        PR: 100.0% | WR: 54.6% | TOTAL GAMES: 1,077
+
+## VARIANT 1
+
+Optional: yes. Size: 180 x 164.
+
+    SHARED CORE +
+
+1. **Enchanter's Emblem** (ID 3970837787)
+
+        V1. Stats: V1.
         SOUL WINDOW: 4k - 6k
         PR: 100.0% | WR: 52.9% | TOTAL GAMES: 736
 
-3. **Radiant Regeneration** (ID 2947183272)
+2. **Radiant Regeneration** (ID 2947183272)
 
-        V1, V2, V4, Pool Default, Pool V3. Stats: V1.
+        V1. Stats: V1.
         SOUL WINDOW: 8k - 11k
         PR: 100.0% | WR: 52.9% | TOTAL GAMES: 736
 
-4. **High-Velocity Rounds** (ID 3077079169)
+## VARIANT 2
 
-        V3, Pool Default, Pool V1, Pool V2, Pool V4. Stats: V3.
-        SOUL WINDOW: unavailable
-        PR: 99.6% | WR: 52.1% | TOTAL GAMES: 564
+Optional: yes. Size: 180 x 164.
 
-5. **Opening Rounds** (ID 2064029594)
+    SHARED CORE +
 
-        V3, Pool Default, Pool V1, Pool V2, Pool V4. Stats: V3.
+1. **Radiant Regeneration** (ID 2947183272)
+
+        V2. Stats: V2.
+        SOUL WINDOW: 7k - 11k
+        PR: 100.0% | WR: 53.4% | TOTAL GAMES: 545
+
+2. **Mystic Vulnerability** (ID 2081037738)
+
+        V2. Stats: V2.
+        SOUL WINDOW: 11k - 13k
+        PR: 100.0% | WR: 53.4% | TOTAL GAMES: 545
+
+## VARIANT 3
+
+Optional: yes. Size: 180 x 164.
+
+    SHARED CORE +
+
+1. **Opening Rounds** (ID 2064029594)
+
+        V3. Stats: V3.
         SOUL WINDOW: 2k - 4k
         PR: 100.0% | WR: 52.1% | TOTAL GAMES: 566
+
+2. **Enchanter's Emblem** (ID 3970837787)
+
+        V3. Stats: V3.
+        SOUL WINDOW: 4k - 6k
+        PR: 100.0% | WR: 52.1% | TOTAL GAMES: 566
+
+## VARIANT 4
+
+Optional: yes. Size: 180 x 164.
+
+    SHARED CORE +
+
+1. **Radiant Regeneration** (ID 2947183272)
+
+        V4. Stats: V4.
+        SOUL WINDOW: 7k - 11k
+        PR: 100.0% | WR: 56.4% | TOTAL GAMES: 695
+
+2. **Improved Spirit** (ID 7409189)
+
+        V4. Stats: V4.
+        SOUL WINDOW: 6k - 12k
+        PR: 100.0% | WR: 56.4% | TOTAL GAMES: 695
 
 ## TIER 1
 
@@ -90,41 +146,53 @@ Optional: yes. Size: 516 x 293.
         SOUL WINDOW: unavailable
         PR: 8.1% | WR: 49.4% | TOTAL GAMES: 87
 
-2. **Extra Charge** (ID 3776945997)
+2. **High-Velocity Rounds** (ID 3077079169)
+
+        Default, V1, V2, V4, Component V3. Stats: Default.
+        SOUL WINDOW: unavailable
+        PR: 24.0% | WR: 51.4% | TOTAL GAMES: 259
+
+3. **Extra Charge** (ID 3776945997)
 
         Default, V1, V2, V3, V4. Stats: Default.
         SOUL WINDOW: unavailable
         PR: 64.6% | WR: 56.6% | TOTAL GAMES: 696
 
-3. **Extra Stamina** (ID 4139877411)
+4. **Extra Stamina** (ID 4139877411)
 
         Default, V1, V2, V4. Stats: Default.
         SOUL WINDOW: about 2k
         PR: 25.5% | WR: 54.2% | TOTAL GAMES: 275
 
-4. **Sprint Boots** (ID 3399065363)
+5. **Sprint Boots** (ID 3399065363)
 
         Default, V1, V2, V3, V4. Stats: Default.
         SOUL WINDOW: 4k - 8k
         PR: 49.6% | WR: 56.4% | TOTAL GAMES: 534
 
-5. **Mystic Burst** (ID 1998374645)
+6. **Mystic Burst** (ID 1998374645)
 
         Default, V1, V4. Stats: Default.
         SOUL WINDOW: 2k - 11k
         PR: 16.0% | WR: 55.2% | TOTAL GAMES: 172
 
-6. **Healing Rite** (ID 1710079648)
+7. **Mystic Regeneration** (ID 1439347412)
+
+        Default, V3, Component V1, Component V2, Component V4. Stats: Default.
+        SOUL WINDOW: 4k - 8k
+        PR: 35.2% | WR: 55.1% | TOTAL GAMES: 379
+
+8. **Healing Rite** (ID 1710079648)
 
         Default, V1, V2, V4. Stats: Default.
         SOUL WINDOW: 2k - 15k
         PR: 9.3% | WR: 57.0% | TOTAL GAMES: 100
 
-7. **Mystic Expansion** (ID 754480263)
+9. **Mystic Expansion** (ID 754480263)
 
         Default, V1, V2, V3, V4. Imbue varies; use the selected variant's target.
 
-8. **Grit** (ID 1672893796)
+10. **Grit** (ID 1672893796)
 
         Default, V1, V3, V4. Stats: Default.
         SOUL WINDOW: unavailable
@@ -140,51 +208,63 @@ Optional: yes. Size: 516 x 293.
         SOUL WINDOW: 2k - 3k
         PR: 29.6% | WR: 55.5% | TOTAL GAMES: 319
 
-2. **Trophy Collector** (ID 3074274290)
+2. **Opening Rounds** (ID 2064029594)
+
+        Default, V1, V2, V4. Stats: Default.
+        SOUL WINDOW: 2k - 3k
+        PR: 22.4% | WR: 51.5% | TOTAL GAMES: 241
+
+3. **Trophy Collector** (ID 3074274290)
 
         Default, V2, V4. Stats: Default.
         SOUL WINDOW: 3k - 6k
         PR: 27.6% | WR: 58.6% | TOTAL GAMES: 297
 
-3. **Enduring Speed** (ID 2447176615)
+4. **Enchanter's Emblem** (ID 3970837787)
+
+        Default, V2, V4. Stats: Default.
+        SOUL WINDOW: 4k - 7k
+        PR: 34.3% | WR: 53.4% | TOTAL GAMES: 369
+
+5. **Enduring Speed** (ID 2447176615)
 
         Default, V3. Stats: Default.
         SOUL WINDOW: 7k - 10k
         PR: 47.1% | WR: 57.0% | TOTAL GAMES: 507
 
-4. **Mystic Slow** (ID 1102081447)
+6. **Mystic Slow** (ID 1102081447)
 
         Default, V1, V2, V4. Stats: Default.
         SOUL WINDOW: 8k - 11k
         PR: 19.0% | WR: 59.5% | TOTAL GAMES: 205
 
-5. **Slowing Hex** (ID 1813726886)
+7. **Slowing Hex** (ID 1813726886)
 
         Default, V1, V2, V3, V4. Stats: Default.
         SOUL WINDOW: 7k - 12k
         PR: 15.8% | WR: 54.7% | TOTAL GAMES: 170
 
-6. **Spirit Lifesteal** (ID 876563814)
+8. **Spirit Lifesteal** (ID 876563814)
 
         Default. Stats: Default.
         SOUL WINDOW: 12k - 21k
         PR: 25.5% | WR: 59.3% | TOTAL GAMES: 275
 
-7. **Compress Cooldown** (ID 380806748)
+9. **Compress Cooldown** (ID 380806748)
 
         Default, V1, V2, V3, V4. Imbue varies; use the selected variant's target.
 
-8. **Duration Extender** (ID 2951612397)
+10. **Duration Extender** (ID 2951612397)
 
         Default, V1, V2, V3, V4. Imbue varies; use the selected variant's target.
 
-9. **Suppressor** (ID 1925087134)
+11. **Suppressor** (ID 1925087134)
 
         V1, V3. Stats: V1.
         SOUL WINDOW: unavailable
         PR: 10.2% | WR: 62.7% | TOTAL GAMES: 75
 
-10. **Debuff Reducer** (ID 1047818222)
+12. **Debuff Reducer** (ID 1047818222)
 
         V1, V2, V3, V4. Stats: V1.
         SOUL WINDOW: 21k - 33k
@@ -192,7 +272,7 @@ Optional: yes. Size: 516 x 293.
 
 ## TIER 3
 
-Optional: yes. Size: 516 x 293.
+Optional: yes. Size: 516 x 422.
 
 1. **Torment Pulse** (ID 395944548)
 
@@ -200,67 +280,73 @@ Optional: yes. Size: 516 x 293.
         SOUL WINDOW: 6k - 10k
         PR: 28.1% | WR: 63.7% | TOTAL GAMES: 303
 
-2. **Rapid Recharge** (ID 787198704)
+2. **Radiant Regeneration** (ID 2947183272)
+
+        Default, V3. Stats: Default.
+        SOUL WINDOW: 7k - 12k
+        PR: 38.8% | WR: 55.5% | TOTAL GAMES: 418
+
+3. **Rapid Recharge** (ID 787198704)
 
         Default, V1, V2, V3, V4. Stats: Default.
         SOUL WINDOW: 11k - 24k
         PR: 56.7% | WR: 57.8% | TOTAL GAMES: 611
 
-3. **Rescue Beam** (ID 1804594021)
+4. **Rescue Beam** (ID 1804594021)
 
         Default, V1, V2, V4. Stats: Default.
         SOUL WINDOW: 12k - 24k
         PR: 9.7% | WR: 55.8% | TOTAL GAMES: 104
 
-4. **Tankbuster** (ID 2121044373)
+5. **Tankbuster** (ID 2121044373)
 
         Default. Stats: Default.
         SOUL WINDOW: 12k - 28k
         PR: 16.3% | WR: 54.5% | TOTAL GAMES: 176
 
-5. **Knockdown** (ID 1254091416)
+6. **Knockdown** (ID 1254091416)
 
         Default, V4. Stats: Default.
         SOUL WINDOW: unavailable
         PR: 5.4% | WR: 41.4% | TOTAL GAMES: 58
 
-6. **Superior Cooldown** (ID 3261353684)
+7. **Superior Cooldown** (ID 3261353684)
 
         Default, V1, V2, V3, V4. Stats: Default.
         SOUL WINDOW: 17k - 26k
         PR: 57.9% | WR: 58.8% | TOTAL GAMES: 624
 
-7. **Dispel Magic** (ID 3731635960)
+8. **Dispel Magic** (ID 3731635960)
 
         Default, V1, V2, V3, V4. Stats: Default.
         SOUL WINDOW: 18k - 29k
         PR: 7.5% | WR: 60.5% | TOTAL GAMES: 81
 
-8. **Greater Expansion** (ID 1193964439)
+9. **Greater Expansion** (ID 1193964439)
 
         Default, V1, V2, V3, V4. Stats: Default.
         SOUL WINDOW: 21k - 30k
         PR: 60.5% | WR: 58.0% | TOTAL GAMES: 652
 
-9. **Superior Duration** (ID 2717651715)
+10. **Superior Duration** (ID 2717651715)
 
         Default, V1, V2, V3, V4. Stats: Default.
         SOUL WINDOW: 21k - 32k
         PR: 42.4% | WR: 61.7% | TOTAL GAMES: 457
 
-10. **Decay** (ID 3144988365)
+11. **Decay** (ID 3144988365)
 
         V1, V2, V3. Stats: V1.
         SOUL WINDOW: 12k - 17k
         PR: 7.1% | WR: 46.2% | TOTAL GAMES: 52
 
-11. **Counterspell** (ID 1414025773)
+12. **Counterspell** (ID 1414025773)
 
         V1, V3. Stats: V1.
         SOUL WINDOW: unavailable
         PR: 5.6% | WR: 46.3% | TOTAL GAMES: 41
 
-12. **Alchemical Fire** (ID 1932939246)
+13. **Alchemical Fire** (ID 1932939246)
 
         V1, V2, V3, V4. Stats: V1.
         SOUL WINDOW: 17k - 24k
@@ -363,7 +449,8 @@ First ability note:
     Default core: Even: 62.3% | 132/212 wins | 95% interval 55.6%–68.5%. State hero baseline: 59.4% across 2140 matches. All final core items owned before 1200 seconds; additional items allowed.
     Rates describe validation matches with the complete core. Variant samples can overlap.
     Wealth states compare personal net worth with the lobby average. Behind: below 90%. Even: 90% through 110%. Ahead: above 110%.
-    5 supported variants. Queue: default only. CORE OPTIONAL lists additional variant items once. V numbers identify the full paths below.
+    5 supported variants. Queue: default only. Each VARIANT panel shows one alternative core combination. V numbers identify the full paths below.
+    SHARED CORE contains items common to every final core. Add it only to panels marked SHARED CORE +. Each complete variant replaces the default core. Follow that variant's complete purchase order.
     V1: Use Enchanter's Emblem, Radiant Regeneration; omit Improved Spirit, Mystic Vulnerability. 8,000 souls; observed. Even: 54.3% | 51/94 wins | 95% interval 44.2%–64.0%. State hero baseline: 59.4% across 2140 matches. All final core items owned before 1200 seconds; additional items allowed. Order: Mystic Regeneration -> Extra Regen -> Healing Booster -> Enchanter's Emblem -> Healbane -> Radiant Regeneration
     V2: Use Radiant Regeneration; omit Improved Spirit. 8,000 souls; observed. Even: 56.2% | 63/112 wins | 95% interval 47.0%–65.1%. State hero baseline: 59.4% across 2140 matches. All final core items owned before 1200 seconds; additional items allowed. Order: Mystic Regeneration -> Extra Regen -> Healing Booster -> Healbane -> Radiant Regeneration -> Mystic Vulnerability
     V3: Use Opening Rounds, Enchanter's Emblem; omit Improved Spirit, Mystic Vulnerability. 6,400 souls; observed. Even: 61.2% | 49/80 wins | 95% interval 50.3%–71.2%. State hero baseline: 59.4% across 2140 matches. All final core items owned before 1200 seconds; additional items allowed. Order: Extra Regen -> High-Velocity Rounds -> Opening Rounds -> Healing Booster -> Enchanter's Emblem -> Healbane

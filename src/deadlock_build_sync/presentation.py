@@ -200,9 +200,14 @@ def build_presentation(
             "Wealth states compare personal net worth with the lobby average. Behind: below 90%. Even: 90% through 110%. Ahead: above 110%.",
         ])
     if guide.variant_guides:
-        lines.append(
-            f"{len(guide.variant_guides) + 1} supported variants. Queue: default only. CORE OPTIONAL lists additional variant items once. V numbers identify the full paths below."
-        )
+        lines.extend([
+            f"{len(guide.variant_guides) + 1} supported variants. Queue: default only. Each VARIANT panel shows one alternative core combination. V numbers identify the full paths below.",
+            "SHARED CORE contains items common to every final core. Add it only to panels marked SHARED CORE +. Each complete variant replaces the default core. Follow that variant's complete purchase order."
+            if any(
+                category.name == "SHARED CORE" for category in guide.rendered_categories
+            )
+            else "Each VARIANT panel contains its complete final core. Follow that variant's complete purchase order.",
+        ])
         lines.extend(describe_variants(guide))
     if any(category.compact for category in guide.rendered_categories):
         lines.extend(_describe_purchase_details(guide))

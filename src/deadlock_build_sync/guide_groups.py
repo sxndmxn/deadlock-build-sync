@@ -122,20 +122,14 @@ def _collect_variant_items(
     return tuple(result)
 
 
-def _collect_optional_core_items(guide: PurchaseGuide) -> tuple[GuideItem, ...]:
+def _collect_conditional_core_items(guide: PurchaseGuide) -> tuple[GuideItem, ...]:
     core_ids = {item.item_id for item in guide.core_purchase_items or guide.core_items}
     members = [
-        (item, f"V{index}")
-        for index, variant in enumerate(guide.variant_guides, 1)
-        for item in variant.core_purchase_items or variant.core_items
-        if item.item_id not in core_ids
-    ]
-    members.extend(
         (item, "Conditional Default" if index == 0 else f"Conditional V{index}")
         for index, variant in enumerate((guide, *guide.variant_guides))
         for item in variant.optional_core_items
         if item.item_id not in core_ids
-    )
+    ]
     optional_ids = {item.item_id for item, _ in members}
     members.extend(
         (item, "Pool Default" if index == 0 else f"Pool V{index}")
@@ -144,6 +138,66 @@ def _collect_optional_core_items(guide: PurchaseGuide) -> tuple[GuideItem, ...]:
         for item in items
         if item.item_id in optional_ids
     )
+    return _collect_variant_items(members)
+
+
+def _build_variant_categories(guide: PurchaseGuide) -> tuple[GuideCategory, ...]:
+    if not guide.variant_guides:
+        return ()
+    shared = set.intersection(
+        *(
+            {item.item_id for item in member.core_items}
+            for member in (guide, *guide.variant_guides)
+        )
+    )
+    categories = []
+    if shared:
+        items = _collect_variant_items([
+            (item, "Default" if index == 0 else f"V{index}")
+            for index, member in enumerate((guide, *guide.variant_guides))
+            for item in member.core_items
+            if item.item_id in shared
+        ])
+        categories.append(
+            GuideCategory(
+                "SHARED CORE", items, "Variant base.", optional=True, compact=True
+            )
+        )
+    for index, variant in enumerate(guide.variant_guides, 1):
+        combination = tuple(
+            item for item in variant.core_items if item.item_id not in shared
+        )
+        items = _collect_variant_items([
+            (item, f"V{index}") for item in combination or variant.core_items
+        ])
+        categories.append(
+            GuideCategory(
+                f"VARIANT {index}",
+                items,
+                "SHARED CORE +" if shared and combination else "Full core.",
+                optional=True,
+                compact=True,
+            )
+        )
+    return tuple(categories)
+
+
+def _collect_tier_items(
+    guide: PurchaseGuide, tier: int, covered: set[int]
+) -> tuple[GuideItem, ...]:
+    members = [
+        (item, "Default" if index == 0 else f"V{index}")
+        for index, variant in enumerate((guide, *guide.variant_guides))
+        for item in variant.tiers[tier]
+        if item.item_id not in covered
+    ]
+    for index, variant in enumerate(guide.variant_guides, 1):
+        excluded = covered | {item.item_id for item in variant.core_items}
+        members.extend(
+            (item, f"Component V{index}")
+            for item in variant.core_purchase_items
+            if item.tier == tier and item.item_id not in excluded
+        )
     return _collect_variant_items(members)
 
 
@@ -164,23 +218,18 @@ def _build_compact_categories(guide: PurchaseGuide) -> tuple[GuideCategory, ...]
             1,
         )
     )
-    optional = _collect_optional_core_items(guide)
-    covered = {item.item_id for item in (*core, *optional)}
+    conditional = _collect_conditional_core_items(guide)
     result = [
-        GuideCategory("CORE", core, "; ".join(variant_statistics(guide)), compact=True)
+        GuideCategory("CORE", core, "; ".join(variant_statistics(guide)), compact=True),
+        *_build_variant_categories(guide),
     ]
-    if optional:
+    if conditional:
         result.append(
-            GuideCategory("CORE OPTIONAL", optional, optional=True, compact=True)
+            GuideCategory("CORE CONDITIONAL", conditional, optional=True, compact=True)
         )
+    covered = {item.item_id for item in (*core, *conditional)}
     for tier in range(1, 5):
-        members = [
-            (item, "Default" if index == 0 else f"V{index}")
-            for index, variant in enumerate((guide, *guide.variant_guides))
-            for item in variant.tiers[tier]
-            if item.item_id not in covered
-        ]
-        items = _collect_variant_items(members)
+        items = _collect_tier_items(guide, tier, covered)
         result.append(
             GuideCategory(
                 f"TIER {tier}",
@@ -191,6 +240,18 @@ def _build_compact_categories(guide: PurchaseGuide) -> tuple[GuideCategory, ...]
             )
         )
     return tuple(result)
+
+
+def _collect_group_item_ids(guide: PurchaseGuide) -> set[int]:
+    return {
+        item.item_id
+        for member in (guide, *guide.variant_guides)
+        for item in (
+            *(member.core_purchase_items or member.core_items),
+            *member.optional_core_items,
+            *(item for items in member.tiers.values() for item in items),
+        )
+    }
 
 
 def validate_group_categories(guide: PurchaseGuide) -> None:
@@ -205,12 +266,17 @@ def validate_group_categories(guide: PurchaseGuide) -> None:
     if guidance is None or not any(category.compact for category in categories):
         return
     names = [category.name for category in categories]
-    expected_names = ["CORE"]
-    if _collect_optional_core_items(guide):
-        expected_names.append("CORE OPTIONAL")
+    variants = _build_variant_categories(guide)
+    expected_names = ["CORE", *(category.name for category in variants)]
+    if _collect_conditional_core_items(guide):
+        expected_names.append("CORE CONDITIONAL")
     expected_names.extend(f"TIER {tier}" for tier in range(1, 5))
     if names != expected_names:
-        raise ValueError("Steam build requires CORE and all four tier panels")
+        raise ValueError(
+            "Steam build requires CORE, each variant, and all four tier panels"
+        )
+    if categories[1 : 1 + len(variants)] != variants:
+        raise ValueError("Steam variant panels differ from complete core combinations")
     if any(
         category.optional != (index > 0) for index, category in enumerate(categories)
     ):
@@ -218,17 +284,8 @@ def validate_group_categories(guide: PurchaseGuide) -> None:
     queued = tuple(item.item_id for item in categories[0].items)
     if queued != tuple(step.item_id for step in guidance.default_path.actions):
         raise ValueError("Steam Queue differs from the canonical component path")
-    required = {
-        item.item_id
-        for member in (guide, *guide.variant_guides)
-        for item in (
-            *(member.core_purchase_items or member.core_items),
-            *member.optional_core_items,
-            *(item for items in member.tiers.values() for item in items),
-        )
-    }
     shown = {item.item_id for category in categories for item in category.items}
-    if required != shown:
+    if _collect_group_item_ids(guide) != shown:
         raise ValueError("Steam build items differ from the complete variant pools")
 
 

@@ -1,36 +1,50 @@
 # Complete Steam build layout
 
-The Steam exporter now retains all four tier panels and every supported item in each build group.
+Each alternative core now has its own optional VARIANT category within the same Steam build.
+SHARED CORE contains the final items common to the default and every alternative.
+The default purchase Queue and all four tier panels remain complete.
 The main Markdown and JSON use the same presentation as Steam serialization.
-The correction does not change build groups, core paths, variant evidence, or item pools.
 
 ## Official output contract
 
 | Order | Panel | Contents | Optional |
 | ---: | --- | --- | --- |
 | 1 | CORE | Exact default purchase path, including components and required rebuys | No |
-| 2 | CORE OPTIONAL | Additional variant path items and admitted conditional core items | Yes |
-| 3–6 | TIER 1–4 | Complete union of supported variant pools, excluding cards already visible in the core panels | Yes |
+| 2 | SHARED CORE | Final items common to every core, when a common set exists | Yes |
+| Next | VARIANT 1–N | One complete alternative combination per category | Yes |
+| Next | CORE CONDITIONAL | Admitted conditional core items, when needed | Yes |
+| Last | TIER 1–4 | Supported item pools and required variant component purchases | Yes |
 
-CORE OPTIONAL appears only when the group needs additional items.
+A panel marked `SHARED CORE +` needs the shared items and every item in that panel.
+Together, those items reconstruct one exact supported final core.
+When no shared items exist, each VARIANT panel displays its complete final core.
+A variant with no additional final items also displays its full core.
+These panels use the description `Full core.`
+The shared set is the strict intersection. The renderer does not substitute the most common items.
+
+Items can repeat between variant panels because each combination must remain complete.
+Each variant card retains its own item statistics and imbue target.
+Shared card notes identify the source of their displayed statistics.
+Conflicting shared imbue targets remain explicit and have no guessed binding.
+The build description retains each complete purchase order and the separate core outcome estimates.
+Only CORE enters the default Queue.
+
 All four tier panels remain present, including empty panels.
-Tier numbers identify item price tiers. They do not specify purchase order.
-Item notes identify the applicable variants and the source of displayed statistics.
-Each item appears once outside the default path. Required component rebuys remain in the default path.
-Variant purchase paths remain in the build description. Variant counts and outcome estimates remain separate.
-The renderer no longer deletes content to fit a 900-by-650-unit area.
+Tier numbers identify price tiers. They do not specify purchase order.
+Tier pools exclude items already visible in CORE or CORE CONDITIONAL.
+An item can appear in a tier panel and a variant combination when both roles have support.
+Required variant components appear in their price tier, with notes that identify the applicable variants.
+The renderer does not delete content to meet a fixed screen height.
 
-Before serialization, validation checks panel order, optional flags, the default Queue, and complete item coverage.
-A missing tier panel, missing supported item, or changed default Queue causes rejection.
+Before serialization, validation checks category order, optional flags, each exact variant category, all supported items, and the default Queue.
+A missing variant category fails validation even when its items appear elsewhere.
+An incomplete combination also fails validation.
 
 The main `.md` file contains the title, ordered panels, dimensions, item notes, ability order, and build description.
 The `.steam.json` file contains the corresponding structured presentation.
-CLI JSON and guide indexes also expose this content as `steam_build`.
+CLI JSON and guide indexes expose this content as `steam_build`.
 The `.details.md` file supplies additional evidence and purchase instructions.
-It does not define another native build layout.
-
-The CLI build writer now uses the existing CLI preview presentation helper.
-This dependency stays within the entrypoint layer. Runtime presentation code does not import Steam storage code.
+It does not define a separate Steam layout.
 
 ## Exact Kelvin build 1
 
@@ -43,20 +57,22 @@ Build path: `12-2cf175b992d56d8a`.
 Title: `Build Preview | Healing Booster | 0822 / 0822–0909`.
 The captured-data build uses the `Build Preview` persona.
 Installation uses the selected account persona and assigns the account ID, local build ID, and timestamp.
-The JSON describes content before those installation identity fields are assigned.
 
 | Order | Panel | Cards | Width | Height |
 | ---: | --- | ---: | ---: | ---: |
 | 1 | CORE | 6 | 516 | 164 |
-| 2 | CORE OPTIONAL | 5 | 432 | 164 |
-| 3 | TIER 1 | 8 | 516 | 293 |
-| 4 | TIER 2 | 10 | 516 | 293 |
-| 5 | TIER 3 | 12 | 516 | 293 |
-| 6 | TIER 4 | 12 | 516 | 293 |
+| 2 | SHARED CORE | 2 | 180 | 164 |
+| 3 | VARIANT 1 | 2 | 180 | 164 |
+| 4 | VARIANT 2 | 2 | 180 | 164 |
+| 5 | VARIANT 3 | 2 | 180 | 164 |
+| 6 | VARIANT 4 | 2 | 180 | 164 |
+| 7 | TIER 1 | 10 | 516 | 293 |
+| 8 | TIER 2 | 12 | 516 | 293 |
+| 9 | TIER 3 | 13 | 516 | 422 |
+| 10 | TIER 4 | 12 | 516 | 293 |
 
 Dimensions use native layout units.
 The protobuf stores category order, width, and height. It does not store absolute panel coordinates.
-The client controls placement and text display.
 
 ```text
 CORE
@@ -67,26 +83,43 @@ CORE
   Improved Spirit
   Mystic Vulnerability
 
-CORE OPTIONAL
-  Mystic Regeneration
+SHARED CORE
+  Healing Booster
+  Healbane
+
+VARIANT 1
   Enchanter's Emblem
   Radiant Regeneration
-  High-Velocity Rounds
+
+VARIANT 2
+  Radiant Regeneration
+  Mystic Vulnerability
+
+VARIANT 3
   Opening Rounds
+  Enchanter's Emblem
+
+VARIANT 4
+  Radiant Regeneration
+  Improved Spirit
 
 TIER 1
   Golden Goose Egg
+  High-Velocity Rounds
   Extra Charge
   Extra Stamina
   Sprint Boots
   Mystic Burst
+  Mystic Regeneration
   Healing Rite
   Mystic Expansion
   Grit
 
 TIER 2
   Arcane Surge
+  Opening Rounds
   Trophy Collector
+  Enchanter's Emblem
   Enduring Speed
   Mystic Slow
   Slowing Hex
@@ -98,6 +131,7 @@ TIER 2
 
 TIER 3
   Torment Pulse
+  Radiant Regeneration
   Rapid Recharge
   Rescue Beam
   Tankbuster
@@ -126,62 +160,73 @@ TIER 4
 
 ```
 
-The build contains 53 cards.
-Radiant Regeneration appears in CORE OPTIONAL because a supported variant uses it in its core.
-Additional tier items come from the other supported variant pools.
-Their notes retain the variant scope.
+Kelvin has 63 cards across ten panels.
+Every alternative uses Healing Booster and Healbane from SHARED CORE.
+VARIANT 1 adds Enchanter's Emblem and Radiant Regeneration.
+VARIANT 2 adds Radiant Regeneration and Mystic Vulnerability.
+VARIANT 3 adds Opening Rounds and Enchanter's Emblem.
+VARIANT 4 adds Radiant Regeneration and Improved Spirit.
+Mystic Regeneration and High-Velocity Rounds remain in TIER 1 as component purchases and supported pool options.
 
 ## Captured-data verification
 
 The verification reconstructs the existing bundle through the normal artifact loader.
-The source cutoff remains `2026-09-09T00:19:49Z`.
+The data cutoff remains `2026-09-09T00:19:49Z`.
 The snapshot remains `07d9927c014442376d0e3344cf5c1907967397956b4cb3e975cedd8ce81f768b`.
-No timestamp or fingerprint changed to admit old data.
+No timestamp, fingerprint, core, purchase path, support count, or source pool changed.
 
 | Check | Result |
 | --- | ---: |
 | Heroes | 38 |
 | Build groups | 142 |
 | Supported variants, including defaults | 787 |
-| Serialized item cards | 6,782 |
-| Restored item entries across groups | 4,250 |
-| Restored tier panels | 333 |
+| Separate alternative categories | 645 |
+| Shared core categories | 105 |
+| Serialized item cards | 9,036 |
 | Missing supported item IDs | 0 |
 | Changed default purchase paths | 0 |
 
-The comparison checks each reconstructed canonical variant against the previous generated record.
-Only the obsolete display-omission metadata differs.
-The comparison decodes protobuf fields and checks every category, item, annotation, optional flag, dimension, and ability purchase.
-It also checks titles, descriptions, tags, flex requirements, sell priorities, and imbue targets.
+The comparison reconstructs every complete variant from its shared items and category items.
+It compares the result with that variant's original final core.
+The comparison also checks each reconstructed canonical variant against the earlier generated record.
+Only the obsolete display-omission metadata differs from the original SQL verification bundle.
+The protobuf comparison checks titles, descriptions, tags, every category, item annotation, dimension, optional flag, imbue target, and ability purchase.
 Every main Markdown file matches the current presentation renderer.
 
-Artifacts: `generated/steam-display-verification/verification.json` and `generated/steam-display-verification/builds/`.
+Artifacts: `generated/variant-panel-verification/verification.json` and `generated/variant-panel-verification/builds/`.
 The `.preview.pb` files use account ID 0, build ID 1, and timestamp 0.
 They are serializer test payloads, not installed Steam records.
 
-## Local and installed-wheel checks
+The earlier correction, `f925aad`, restored 333 tier panels and 4,250 missing item entries.
+Its flat CORE OPTIONAL panel is now replaced by the separate variant categories documented here.
+The earlier verification remains in `generated/steam-display-verification/`.
+
+## Local checks
 
 All documented fast local gates passed.
-All 1,549 tests passed with warnings treated as errors.
-Statement coverage was 97.11%. Branch coverage was 91.97%.
+All 1,553 tests passed with warnings treated as errors.
+Statement coverage was 97.12%. Branch coverage was 92.02%.
 Formatting, Ruff, SQLFluff, type checks, dependency checks, architecture checks, and complexity checks passed.
 Coverage, dead-code checks, duplicate-code checks, package consistency, and package builds also passed.
+The slower mutation gate did not run. Steam storage modules did not change.
+Check records: `generated/variant-panel-verification/quality-gates.json`.
+
+## Installed-wheel checks
 
 The wheel and source distribution contain all 226 expected Python and SQL source files with matching bytes.
 The installed wheel reconstructed all 142 groups and 787 variants outside the source checkout.
-Its presentation and protobuf content matched the saved official records.
-The in-memory cache test retained unrelated entries and produced identical content after a repeated update.
+Its presentation and protobuf content matched the saved records with separate variant categories.
+The build writer produced the same Kelvin Markdown and JSON.
+An in-memory cache test retained unrelated entries and produced identical content after a repeated update.
 Both CLI help commands and the installed package consistency check passed.
-Wheel SHA-256: `aa649eabc9058fe2bfe2af4e685724475dbf44432b9a6c9fdfb877bfc5bae677`.
-
-The slower mutation gate did not run. Steam storage modules did not change.
-Check records: `generated/steam-display-verification/quality-gates.json` and `wheel-verification.json`.
+Wheel SHA-256: `ae264173093f2d8bf81cc06adde5c1ecb0d18190a77aba33962fbcf71a55b354`.
+Check record: `generated/variant-panel-verification/wheel-verification.json`.
 
 ## Verification limits
 
 No live Steam sync or client layout check ran.
 Captured-data verification does not certify current patch freshness or a win-rate improvement.
-Native wrapping, screen fit, and description visibility remain unverified.
-The Kelvin description contains 10,323 characters. The JSON preserves that complete text.
+Native placement, screen fit, and description visibility remain unverified.
+The Kelvin description contains 10,526 characters. The JSON preserves that complete text.
 The client can display less text than the serialized payload contains.
 This report verifies export completeness. It does not certify the complete in-game presentation.

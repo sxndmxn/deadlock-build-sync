@@ -50,7 +50,8 @@ def test_complete_markdown_keeps_every_variant_pool_and_named_ability() -> None:
     )[0]
     body = render_purchase_markdown(result)
     assert "## TIER 3" in body and "## TIER 4" in body
-    assert "## V1" not in body
+    assert "## SHARED CORE" in body and "## VARIANT 1" in body
+    assert "## CORE OPTIONAL" not in body
     assert len(require_object_rows(build_group_record(result)["variants"])) == 2
     details = render_purchase_markdown(result, details=True)
     assert "Choice details" in details and "state_evidence" in details
@@ -87,7 +88,8 @@ def test_layout_keeps_all_variant_items_and_default_queue(variant_count: int) ->
     assert projected.core_purchase_items == guide.core_purchase_items
     assert [category.name for category in official.categories] == [
         "CORE",
-        "CORE OPTIONAL",
+        "SHARED CORE",
+        *(f"VARIANT {index}" for index in range(1, variant_count + 1)),
         "TIER 1",
         "TIER 2",
         "TIER 3",
@@ -107,8 +109,96 @@ def test_layout_keeps_all_variant_items_and_default_queue(variant_count: int) ->
     }
     assert set(shown) == expected
     assert shown.count(901) == shown.count(902) == 1
+    assert 901 in {
+        item.item_id
+        for category in official.categories
+        if category.name == "TIER 1"
+        for item in category.items
+    }
     assert 902 in {item.item_id for item in official.categories[-1].items}
     assert f"V{variant_count}:" in official.description
+
+
+def test_variant_panels_preserve_combinations_and_specific_imbue_targets() -> None:
+    guide = make_beam_guide()
+    shared = guide.core_items[:-2]
+    first, second = guide.core_items[-2:]
+    extra = guide.tiers[4][0]
+    variants = (
+        replace(
+            guide,
+            path_id="v1",
+            core_items=(*shared, first, replace(extra, imbue_target_ability_id=10)),
+        ),
+        replace(
+            guide,
+            path_id="v2",
+            core_items=(*shared, replace(extra, imbue_target_ability_id=20), second),
+        ),
+    )
+    projected = group_guides([replace(guide, variant_guides=variants)], {})[0]
+    categories = {
+        category.name: category for category in presentation(projected).categories
+    }
+    assert [item.item_id for item in categories["SHARED CORE"].items] == [
+        item.item_id for item in shared
+    ]
+    assert [item.item_id for item in categories["VARIANT 1"].items] == [
+        first.item_id,
+        extra.item_id,
+    ]
+    assert [item.item_id for item in categories["VARIANT 2"].items] == [
+        extra.item_id,
+        second.item_id,
+    ]
+    assert categories["VARIANT 1"].items[1].imbue_target_ability_id == 10
+    assert categories["VARIANT 2"].items[0].imbue_target_ability_id == 20
+    assert categories["VARIANT 1"].description == "SHARED CORE +"
+    assert categories["VARIANT 2"].optional
+    # The same item can be a supported tier option and part of a complete variant.
+    assert extra.item_id in {item.item_id for item in categories["TIER 4"].items}
+    changed = tuple(
+        replace(category, items=category.items[:-1])
+        if category.name == "VARIANT 2"
+        else category
+        for category in projected.categories
+    )
+    with pytest.raises(ValueError, match="complete core combinations"):
+        presentation(replace(projected, categories=changed))
+
+
+def test_variant_without_shared_items_shows_its_complete_final_core() -> None:
+    guide = make_beam_guide()
+    variant = replace(guide, path_id="other", core_items=guide.tiers[1][:2])
+    projected = group_guides([replace(guide, variant_guides=(variant,))], {})[0]
+    official = presentation(projected)
+    assert [category.name for category in official.categories] == [
+        "CORE",
+        "VARIANT 1",
+        "TIER 1",
+        "TIER 2",
+        "TIER 3",
+        "TIER 4",
+    ]
+    assert [item.item_id for item in official.categories[1].items] == [
+        item.item_id for item in variant.core_items
+    ]
+    assert official.categories[1].description == "Full core."
+    assert (
+        "Each VARIANT panel contains its complete final core." in official.description
+    )
+
+
+def test_missing_variant_panel_fails_even_when_its_items_appear_elsewhere() -> None:
+    guide = make_beam_guide()
+    projected = group_guides(
+        [replace(guide, variant_guides=(replace(guide, path_id="v1"),))], {}
+    )[0]
+    categories = tuple(
+        category for category in projected.categories if category.name != "VARIANT 1"
+    )
+    with pytest.raises(ValueError, match="each variant"):
+        presentation(replace(projected, categories=categories))
 
 
 def test_empty_tiers_remain_present() -> None:
@@ -128,6 +218,24 @@ def test_empty_tiers_remain_present() -> None:
         and category.description == "No supported options."
         for category in presentation(projected).categories[-4:]
     )
+
+
+def test_conditional_core_items_remain_separate_from_variant_combinations() -> None:
+    guide = make_beam_guide()
+    conditional = guide.tiers[2][0]
+    variant = replace(guide, path_id="v1", optional_core_items=(conditional,))
+    projected = group_guides([replace(guide, variant_guides=(variant,))], {})[0]
+    categories = {
+        category.name: category for category in presentation(projected).categories
+    }
+    panel = categories["CORE CONDITIONAL"]
+    assert panel.optional and [item.item_id for item in panel.items] == [
+        conditional.item_id
+    ]
+    assert "Conditional V1" in panel.items[0].annotation
+    assert conditional.item_id not in {
+        item.item_id for item in categories["VARIANT 1"].items
+    }
 
 
 @pytest.mark.parametrize("missing_tier", [3, 4])

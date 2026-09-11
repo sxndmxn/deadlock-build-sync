@@ -262,11 +262,13 @@ def _render_compact_markdown(guide: PurchaseGuide, guidance: PurchaseGuidance) -
         f"Evidence: {guidance.evidence.get('status', 'observed')}. Limits: {guidance.evidence.get('limitations', [])}.",
         "",
         "Buy CORE in order. All other sections are optional. Tier numbers show prices, not purchase order.",
-        "Variant items appear once in CORE OPTIONAL. Complete variant paths, pools, and purchase instructions are in the details file.",
+        "Each VARIANT panel contains one alternative core combination. Use SHARED CORE where indicated. Complete purchase orders and variant pools are in the details file.",
         "",
     ]
     for category in guide.rendered_categories:
         lines.extend([f"## {category.name}", ""])
+        if category.description and category.items:
+            lines.extend([category.description, ""])
         if category.optional:
             lines.append(
                 ", ".join(item.name for item in category.items)

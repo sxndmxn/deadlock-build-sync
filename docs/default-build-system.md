@@ -77,18 +77,30 @@ The producer saves the groups before validation. No group or variant count limit
 applies. Each exact core retains its original path, costs, support, evidence
 status, ability order, and discovery-buyer pools.
 
-Steam and the main Markdown use five or six sections: CORE, CORE OPTIONAL when
-needed, and TIER 1–4. CORE keeps the exact default component purchase order.
-CORE OPTIONAL combines additional items from every variant path and admitted
-core alternatives, with each item shown once. The four tiers combine the supported
-pools and omit items already visible in either core section. This removes repeated
-cards without changing any variant's actual pool. Item notes identify the source
-variant. Conflicting imbue targets remain explicit and do not receive a guessed
-binding. Detailed Markdown and JSON retain every complete variant.
+Steam and the main Markdown display each alternative core in its own VARIANT category.
+CORE keeps the exact default component purchase order.
+SHARED CORE contains the intersection of all final cores, including the default.
+Each VARIANT category shows the remaining items for that complete combination.
+Its description says `SHARED CORE +`.
+When no shared items exist, each VARIANT category shows its complete final core.
+A variant with no additional final items also shows its full core.
+Its description says `Full core.`.
+
+Items can repeat between VARIANT categories because each category must preserve its complete combination.
+Each variant card retains its own item statistics and imbue target.
+Shared item notes identify the source variant for their statistics.
+Conflicting shared imbue targets remain explicit and do not receive a guessed binding.
+
+CORE CONDITIONAL contains admitted conditional core items when needed.
+The four tier panels combine supported pools and required variant component purchases.
+They exclude items already visible in CORE or CORE CONDITIONAL.
+An item can appear in a tier panel and a variant combination when both roles have support.
+Component purchases retain their variant scope in the item notes.
+Detailed Markdown and JSON retain every complete variant.
 
 Both generators use this complete layout.
 The renderer does not remove panels or items to meet a fixed screen height.
-Before serialization, validation checks all four tier panels, every supported item, and the exact default Queue.
+Before serialization, validation checks each complete variant category, all four tier panels, every supported item, and the exact default Queue.
 Only CORE is required; all other panels remain optional.
 
 The main Markdown file now renders the actual Steam presentation, including item notes and panel dimensions.
