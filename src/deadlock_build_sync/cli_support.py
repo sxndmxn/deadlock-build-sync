@@ -22,7 +22,9 @@ from .narratives import (
     load_narrative_catalog,
 )
 from .presentation import build_presentation
+from .presentation_output import render_presentation_markdown, serialize_presentation
 from .protobuf import describe_guide, encode_hero_build
+from .purchase_markdown import render_purchase_markdown
 from .ranks import RankRange
 from .service import GeneratedGuides, generate_guides
 from .snapshot import EpochBoundary, EpochSet
@@ -32,6 +34,7 @@ from .tracing import record_stage_facts
 if TYPE_CHECKING:
     import argparse
 
+    from .presentation import BuildPresentation
     from .purchase_guide import PurchaseGuide
 
 DEFAULT_NARRATIVE_PATH = Path("generated/narratives.json")
@@ -283,19 +286,33 @@ def _record_generated_facts(generated: GeneratedGuides) -> None:
     )
 
 
-def _describe_preview_guide(
-    guide: PurchaseGuide,
-    generated: GeneratedGuides,
-    *,
-    account_id: int,
-) -> dict[str, object]:
-    presentation = build_presentation(
+def _build_preview_presentation(
+    guide: PurchaseGuide, generated: GeneratedGuides
+) -> BuildPresentation:
+    return build_presentation(
         guide,
         persona=generated.persona,
         patch_title=generated.patch.title,
         patch_published_at=generated.patch.published_at,
         rank_range=generated.rank_range,
     )
+
+
+def _render_preview_guide(
+    guide: PurchaseGuide, generated: GeneratedGuides, *, details: bool = False
+) -> str:
+    if details:
+        return render_purchase_markdown(guide, details=True)
+    return render_presentation_markdown(_build_preview_presentation(guide, generated))
+
+
+def _describe_preview_guide(
+    guide: PurchaseGuide,
+    generated: GeneratedGuides,
+    *,
+    account_id: int,
+) -> dict[str, object]:
+    presentation = _build_preview_presentation(guide, generated)
     # Preview and installation use the same serializer and presentation checks.
     # Preview does not read or change Steam data.
     encode_hero_build(
@@ -305,6 +322,7 @@ def _describe_preview_guide(
         timestamp=0,
     )
     described = describe_guide(guide, presentation=presentation)
+    described["steam_build"] = serialize_presentation(presentation)
     described["purchase_guidance"] = (
         guide.purchase_guidance.as_dict() if guide.purchase_guidance else None
     )

@@ -411,9 +411,15 @@ def test_support_preview_uses_the_install_serializer(
             calls.append(("describe", values, options)) or {"guide": True}
         ),
     )
+    monkeypatch.setattr(
+        cli_support,
+        "serialize_presentation",
+        lambda value: calls.append(("serialize", (value,), {})) or {"content": True},
+    )
 
     assert cli_support._describe_preview_guide(guide, generated, account_id=7) == {
         "guide": True,
+        "steam_build": {"content": True},
         "purchase_guidance": None,
         "guide_group": {"variants": []},
     }
@@ -434,4 +440,5 @@ def test_support_preview_uses_the_install_serializer(
             {"build_id": 1, "account_id": 7, "timestamp": 0},
         ),
         ("describe", (guide,), {"presentation": presentation}),
+        ("serialize", (presentation,), {}),
     ]

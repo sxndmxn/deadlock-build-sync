@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from .beam_display import generator_metadata, render_beam_markdown, variant_statistics
+from .beam_display import (
+    generator_metadata,
+    render_ability_instructions,
+    variant_statistics,
+)
 from .guide_groups import VARIANT_RULE, describe_variant_changes
 from .purchase_categories import (
     format_choice_instruction,
@@ -161,6 +165,7 @@ def render_purchase_markdown(guide: PurchaseGuide, *, details: bool = False) -> 
     ]
     lines.extend(_render_variant_markdown(guide))
     lines.extend(_render_generator_evidence(guide))
+    lines.extend(render_ability_instructions(guide))
     lines.extend(["## Purchase path and choices", ""])
     for index in range(len(guidance.default_path.actions) + 1):
         if index:
@@ -217,7 +222,8 @@ def _render_generator_evidence(guide: PurchaseGuide) -> list[str]:
     if not generator_metadata(guide):
         return []
     return [
-        *variant_statistics(guide),
+        *variant_statistics(guide, detailed=True),
+        "Variant samples can overlap. These observations do not prove a purchase-order or win-rate benefit.",
         f"Generator evidence: {generator_metadata(guide)}",
         "",
     ]
@@ -226,8 +232,6 @@ def _render_generator_evidence(guide: PurchaseGuide) -> list[str]:
 def _render_short_markdown(
     guide: PurchaseGuide, guidance: PurchaseGuidance
 ) -> str | None:
-    if generator_metadata(guide):
-        return render_beam_markdown(guide)
     if any(category.compact for category in guide.rendered_categories):
         return _render_compact_markdown(guide, guidance)
     return None

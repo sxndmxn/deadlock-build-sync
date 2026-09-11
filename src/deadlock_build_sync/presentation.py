@@ -5,7 +5,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from .guide_groups import describe_variants
+from .beam_display import variant_statistics
+from .guide_groups import describe_variants, validate_group_categories
 from .purchase_categories import format_choice_instruction
 from .purchase_guide import (
     MAX_CATEGORY_DESCRIPTION_BYTES,
@@ -174,6 +175,7 @@ def build_presentation(
         ValueError: If required tags or a UTF-8 budget are invalid.
 
     """
+    validate_group_categories(guide)
     queue = guide.match_mode.title() if guide.match_mode else "Unresolved"
     role_line, plan_line = _describe_role_and_plan(guide)
     lines = [
@@ -190,6 +192,12 @@ def build_presentation(
         lines.extend([
             f"Evidence: {guide.evidence_summary['status']}. Timing: {guide.evidence_summary['timing_status']}.",
             f"Evidence limits: {guide.evidence_summary['limitations']}.",
+        ])
+    if statistics := variant_statistics(guide, detailed=True):
+        lines.extend([
+            "Default core: " + " ".join(statistics),
+            "Rates describe validation matches with the complete core. Variant samples can overlap.",
+            "Wealth states compare personal net worth with the lobby average. Behind: below 90%. Even: 90% through 110%. Ahead: above 110%.",
         ])
     if guide.variant_guides:
         lines.append(

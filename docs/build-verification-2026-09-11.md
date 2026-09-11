@@ -88,7 +88,8 @@ The compact native display still omits optional content because of its current s
 This run reports omitted tier items in 138 groups, with 3,352 omitted default-pool item entries and 160 omitted alternative variants.
 These counts concern display entries, not unique items or discarded statistical records.
 Full Markdown and JSON retain all supported variants and tier pools.
-The requested display correction remains on hold.
+This measurement precedes the display correction.
+The [Steam layout verification](steam-build-layout-2026-09-11.md) records the correction and complete output.
 
 The unresolved input and statistical issues in the [SQL audit](sql-query-audit-2026-09-11.md) remain unchanged.
 This verification establishes generation and serialization behavior on captured data.

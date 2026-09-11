@@ -38,6 +38,7 @@ from .cli_support import (
     _print_cohort,
     _print_install_result,
     _record_fresh_evidence,
+    _render_preview_guide,
     _resolve_artifact_directory,
     _resolve_build_evidence_path,
     _write_policy_artifact,
@@ -54,7 +55,6 @@ from .narratives import (
     apply_narrative,
     load_narrative_catalog,
 )
-from .purchase_markdown import render_purchase_markdown
 from .recommendation import RecommendationError
 from .service import GuideError
 from .steam_identity import local_steam_persona
@@ -110,7 +110,7 @@ def _run_build(args: argparse.Namespace) -> int:
     if args.format == "markdown":
         print(
             "\n".join(
-                render_purchase_markdown(guide, details=args.details)
+                _render_preview_guide(guide, generated, details=args.details)
                 for guide in guides
             )
         )

@@ -86,6 +86,19 @@ cards without changing any variant's actual pool. Item notes identify the source
 variant. Conflicting imbue targets remain explicit and do not receive a guessed
 binding. Detailed Markdown and JSON retain every complete variant.
 
+Both generators use this complete layout.
+The renderer does not remove panels or items to meet a fixed screen height.
+Before serialization, validation checks all four tier panels, every supported item, and the exact default Queue.
+Only CORE is required; all other panels remain optional.
+
+The main Markdown file now renders the actual Steam presentation, including item notes and panel dimensions.
+Each `.steam.json` file contains its title, tags, description, ordered panels, item fields, and ability order.
+The `steam_build` record in CLI JSON and guide indexes contains the same content.
+The `.details.md` file provides additional variant evidence and purchase instructions.
+It does not define a separate Steam layout.
+
+See the [Steam layout verification](steam-build-layout-2026-09-11.md) for exact Kelvin output and verification limits.
+
 Each source pool still has at most ten items per tier; its displayed union can
 contain more. Empty tiers remain explicit. Select one full variant before
 purchase. Automatic changes during a match still require the existing branch

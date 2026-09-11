@@ -1,5 +1,13 @@
 # Native build display design
 
+## Status: historical experiment
+
+The complete Steam layout replaces the display-budget approach in this experiment.
+The exporter retains CORE, CORE OPTIONAL when needed, and all four tier panels.
+It does not remove supported items to meet a fixed screen height.
+See the [current contract and verification](../../steam-build-layout-2026-09-11.md).
+The sections below preserve the original experiment and its limits.
+
 ## Result
 
 Use one build for one coherent build family.

@@ -14,13 +14,13 @@ from .cli_support import (
     _load_build_evidence,
     _load_optional_narrative_catalog,
     _record_fresh_evidence,
+    _render_preview_guide,
     _resolve_artifact_directory,
 )
 from .freshness import (
     require_current_build_evidence,
 )
 from .guide_groups import group_guides
-from .purchase_markdown import render_purchase_markdown
 from .recommendation import DecisionState, RecommendationError, recommend
 from .recommendation_plan import render_recommendation_markdown
 from .tracing import record_stage_facts
@@ -127,7 +127,7 @@ def _run_preview(args: argparse.Namespace) -> int:
     if args.format == "markdown":
         print(
             "\n".join(
-                render_purchase_markdown(guide, details=args.details)
+                _render_preview_guide(guide, generated, details=args.details)
                 for guide in guides
             )
         )

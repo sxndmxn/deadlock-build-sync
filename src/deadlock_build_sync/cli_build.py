@@ -6,8 +6,9 @@ from hashlib import sha256
 from typing import TYPE_CHECKING
 
 from .artifacts import atomic_write_bytes, atomic_write_json
+from .cli_support import _build_preview_presentation
 from .guide_groups import build_group_record
-from .purchase_categories import serialize_category_records
+from .presentation_output import render_presentation_markdown, serialize_presentation
 from .purchase_markdown import render_purchase_markdown
 
 if TYPE_CHECKING:
@@ -29,8 +30,11 @@ def write_build_guides(
             raise ValueError("Generated build has no purchase guidance")
         identity = sha256(guide.path_id.encode()).hexdigest()[:16]
         stem = f"{guide.hero_id}-{identity}"
-        body = render_purchase_markdown(guide)
+        presentation = _build_preview_presentation(guide, generated)
+        content = serialize_presentation(presentation)
+        body = render_presentation_markdown(presentation)
         atomic_write_bytes(output / f"{stem}.md", body.encode())
+        atomic_write_json(output / f"{stem}.steam.json", content)
         atomic_write_bytes(
             output / f"{stem}.details.md",
             render_purchase_markdown(guide, details=True).encode(),
@@ -41,9 +45,11 @@ def write_build_guides(
             "path_id": guide.path_id,
             "policy_id": guide.policy_id,
             "markdown": f"{stem}.md",
+            "steam_json": f"{stem}.steam.json",
+            "steam_build": content,
             "purchase_guidance": guide.purchase_guidance.as_dict(),
             "guide_group": build_group_record(guide),
-            "steam_categories": serialize_category_records(guide.rendered_categories),
+            "steam_categories": content["categories"],
             "variant_path_ids": [
                 member.path_id for member in (guide, *guide.variant_guides)
             ],

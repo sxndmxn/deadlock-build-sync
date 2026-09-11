@@ -7,7 +7,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from .artifacts import ArtifactError
-from .beam_display import compact_beam_guide, generator_metadata
+from .beam_display import generator_metadata, variant_statistics
 from .purchase_types import MAX_ITEM_ANNOTATION_BYTES, GuideCategory
 
 if TYPE_CHECKING:
@@ -75,6 +75,8 @@ def describe_variants(guide: PurchaseGuide) -> list[str]:
     return [
         f"V{index}: {describe_variant_changes(guide, variant)}. "
         f"{variant.core_target_cost:,} souls; {variant.evidence_summary.get('status', 'observed')}. "
+        + " ".join(variant_statistics(variant, detailed=True))
+        + " Order: "
         + " -> ".join(
             item.name
             + (
@@ -164,7 +166,9 @@ def _build_compact_categories(guide: PurchaseGuide) -> tuple[GuideCategory, ...]
     )
     optional = _collect_optional_core_items(guide)
     covered = {item.item_id for item in (*core, *optional)}
-    result = [GuideCategory("CORE", core, compact=True)]
+    result = [
+        GuideCategory("CORE", core, "; ".join(variant_statistics(guide)), compact=True)
+    ]
     if optional:
         result.append(
             GuideCategory("CORE OPTIONAL", optional, optional=True, compact=True)
@@ -189,6 +193,45 @@ def _build_compact_categories(guide: PurchaseGuide) -> tuple[GuideCategory, ...]
     return tuple(result)
 
 
+def validate_group_categories(guide: PurchaseGuide) -> None:
+    """Reject incomplete grouped layouts before Steam serialization.
+
+    Raises:
+        ValueError: If panels, purchase order, or supported items differ.
+
+    """
+    categories = guide.rendered_categories
+    guidance = guide.purchase_guidance
+    if guidance is None or not any(category.compact for category in categories):
+        return
+    names = [category.name for category in categories]
+    expected_names = ["CORE"]
+    if _collect_optional_core_items(guide):
+        expected_names.append("CORE OPTIONAL")
+    expected_names.extend(f"TIER {tier}" for tier in range(1, 5))
+    if names != expected_names:
+        raise ValueError("Steam build requires CORE and all four tier panels")
+    if any(
+        category.optional != (index > 0) for index, category in enumerate(categories)
+    ):
+        raise ValueError("Steam tier and variant panels must remain optional")
+    queued = tuple(item.item_id for item in categories[0].items)
+    if queued != tuple(step.item_id for step in guidance.default_path.actions):
+        raise ValueError("Steam Queue differs from the canonical component path")
+    required = {
+        item.item_id
+        for member in (guide, *guide.variant_guides)
+        for item in (
+            *(member.core_purchase_items or member.core_items),
+            *member.optional_core_items,
+            *(item for items in member.tiers.values() for item in items),
+        )
+    }
+    shown = {item.item_id for category in categories for item in category.items}
+    if required != shown:
+        raise ValueError("Steam build items differ from the complete variant pools")
+
+
 def group_guides(
     guides: list[PurchaseGuide], groups: dict[tuple[int, str], str]
 ) -> list[PurchaseGuide]:
@@ -211,9 +254,7 @@ def group_guides(
             raise ArtifactError("Guide group has no supported default")
         if len(members) == 1:
             result.append(
-                compact_beam_guide(default)
-                if generator_metadata(default)
-                else replace(default, categories=_build_compact_categories(default))
+                replace(default, categories=_build_compact_categories(default))
             )
             continue
         result.append(_combine_guides(default, members))
@@ -238,6 +279,4 @@ def _combine_guides(
     combined = replace(
         default, variant_guides=variants, path_label=label, build_archetype=label
     )
-    if generator_metadata(combined):
-        return compact_beam_guide(combined)
     return replace(combined, categories=_build_compact_categories(combined))

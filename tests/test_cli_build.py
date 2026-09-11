@@ -90,9 +90,9 @@ def test_normal_build_generates_full_files_without_steam(
         for path in tmp_path.rglob("*")
         if path.is_file() and path.name != "build-evidence.json"
     }
-    # Captured from PR #26 at 80b9afc before the code cleanup.
+    # The complete Steam presentation defines the review artifact contract.
     assert sha256_json(files) == (
-        "709b2be7f7122ca300801ea5374420acbce994dd3c621ee7641d638ed37e2a6a"
+        "21068bc5b8bb33736d02fc1619624575267f0593e1c64989b201ea65fda87e74"
     )
     output = capsys.readouterr()
     _assert_build_output(output.out, output_format)
@@ -125,9 +125,11 @@ def _assert_build_output(output: str, output_format: str) -> None:
             require_object_rows(emitted["guides"])[0]["purchase_guidance"] is not None
         )
     else:
-        assert "# Kelvin" in output
+        assert "Steam build content." in output
         assert "## TIER 1" in output
         assert "## CORE OPTIONAL" in output
+        assert "## TIER 3" in output
+        assert "## TIER 4" in output
 
 
 def test_build_alias_and_reject_missing_guidance(
