@@ -30,6 +30,7 @@ from .cache_types import (
     CacheError,
     CacheLocation,
     InstallResult,
+    _CacheReplacementError,
     _ReplacementValidation,
 )
 
@@ -109,7 +110,7 @@ def install_guides(
     )
     try:
         _install_replacement(location, encoded, validation)
-    except Exception as error:
+    except _CacheReplacementError as error:
         try:
             _restore_cache_file(
                 backup / _CACHE_FILENAME,
@@ -120,10 +121,14 @@ def install_guides(
                 f"installation failed ({error}) and automatic restore failed ({restore_error}); "
                 f"backup is at {backup}"
             ) from restore_error
-        if isinstance(error, CacheError):
-            raise
         raise CacheError(
             f"installation failed and the original cache was restored: {error}"
+        ) from error
+    except CacheError:
+        raise
+    except Exception as error:
+        raise CacheError(
+            f"Installation failed before cache replacement: {error}"
         ) from error
 
     return InstallResult(

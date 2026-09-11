@@ -50,7 +50,7 @@ def test_loads_exact_reviewed_bundle_without_analytics_refetch(
 
     normalized = json.loads(json.dumps(asdict(bundle), default=serialize_json_value))
     assert sha256_json(normalized) == (
-        "a105cabaf65ff941f85f8ea76b0690c86a319f33de4e80b66a0c5b7aee45f721"
+        "69fe2c6bf819c583911886d8afb423d31949cf2e199348694537eb7a8b763cd7"
     )
     assert len(bundle.guides) == 1
     guide = bundle.guides[0]

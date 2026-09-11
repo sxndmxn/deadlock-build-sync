@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 GENERATOR_NAMES = ("current", "beam")
 BEAM_SCHEMA_VERSION = 13
-BEAM_METHOD_VERSION = "eclat-leiden-beam16-v1"
+BEAM_METHOD_VERSION = "eclat-leiden-beam16-v2"
 BEAM_SETTINGS: dict[str, int | float] = {
     "width": 16,
     "prior_strength": 1000.0,

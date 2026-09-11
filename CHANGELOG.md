@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Reject null reward eligibility, extra source players, and incomplete team wealth.
+  Exclude purchases after match completion from extraction and beam counts.
+- Preserve concurrent cache changes when installation stops before replacement.
+  Refuse backup restoration while Deadlock is running.
+- Check all research SQL files with SQLFluff and include them in data fingerprints.
+  Restrict split-boundary detection to the current database and schema.
+- Require pairwise method v4 and beam method v2 after the SQL validation corrections.
+  Generate fresh evidence instead of resuming an older source extraction.
 - Make Eclat, Leiden, and pairwise purchase ordering the normal build producer.
   Use exact-core discovery buyers for all item pools. Keep every supported,
   legal discovered identity, with no build-count limit per hero.

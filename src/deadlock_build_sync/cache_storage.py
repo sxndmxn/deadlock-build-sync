@@ -28,6 +28,7 @@ from .cache_types import (
     BuildKey,
     CacheError,
     CacheLocation,
+    _CacheReplacementError,
     _GuideInstallationIdentity,
     _ReplacementValidation,
 )
@@ -226,6 +227,10 @@ def _restore_cache_file(source: Path, destination: Path) -> None:
             output.flush()
             os.fsync(output.fileno())
         read_cache(temporary)
+        if deadlock_is_running():
+            raise CacheError(
+                "Deadlock started before restore; refusing to change the cache"
+            )
         temporary.replace(destination)
         temporary = None
         _fsync_directory(destination.parent)
@@ -355,13 +360,16 @@ def _install_replacement(
             )
         temporary_path.replace(location.cache_path)
         temporary_path = None
-        _fsync_directory(location.cache_path.parent)
-        installed = read_cache(location.cache_path)
-        _validate_replacement_cache(
-            installed,
-            validation,
-            "installed cache changed out-of-scope Steam data",
-        )
+        try:
+            _fsync_directory(location.cache_path.parent)
+            installed = read_cache(location.cache_path)
+            _validate_replacement_cache(
+                installed,
+                validation,
+                "installed cache changed out-of-scope Steam data",
+            )
+        except Exception as error:
+            raise _CacheReplacementError(str(error)) from error
     finally:
         if temporary_path is not None:
             temporary_path.unlink(missing_ok=True)

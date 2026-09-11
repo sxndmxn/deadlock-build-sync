@@ -19,6 +19,7 @@ SELECT
     CASE WHEN t.i = 6 THEN 2 ELSE 1 END AS item_purchase_ordinal,
     800 AS "cost",
     100 AS buy_time,
+    1800 AS duration_s,
     CASE WHEN t.i = 7 THEN NULL ELSE 2400 END AS own_net_worth_at_buy,
     CASE WHEN t.i = 8 THEN 100 ELSE 90 END AS state_observed_at_s
 FROM range(1, 12) AS t (i);

@@ -19,6 +19,7 @@ WITH purchases_in_partition AS (
         AND p.item_purchase_ordinal = 1
         AND p."cost" > 0
         AND p.own_net_worth_at_buy > 0
+        AND p.buy_time > 0 AND p.buy_time <= p.duration_s
         AND p.buy_time - p.state_observed_at_s BETWEEN 1 AND $freshness
 ),
 
