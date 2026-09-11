@@ -285,14 +285,14 @@ def prepare_partition(request: PreparationRequest) -> Path:
                 read_sql("select_state_counts.sql")
             ).fetchall(),
             "hero_counts": connection.execute(
-                "SELECT p.hero_id, count(*), sum(p.won::INTEGER) FROM player_matches p JOIN experiment_matches e USING(match_id) GROUP BY p.hero_id ORDER BY p.hero_id",
+                read_sql("select_hero_counts.sql")
             ).fetchall(),
             "eligible_matches": connection.execute(
-                "SELECT count(*) FROM experiment_matches"
+                read_sql("count_eligible_matches.sql")
             ).fetchone()[0],
             "excluded_matches": connection.execute(
-                "SELECT count(*) FROM match_folds WHERE fold = ? AND match_id NOT IN (SELECT match_id FROM experiment_matches)",
-                [request.partition],
+                read_sql("count_excluded_matches.sql"),
+                {"partition": request.partition},
             ).fetchone()[0],
         }
         (destination / "statistics.json").write_text(

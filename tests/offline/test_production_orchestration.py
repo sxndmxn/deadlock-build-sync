@@ -75,7 +75,7 @@ def test_export_production_evidence_writes_closed_document(
     assert document["requested_hero_ids"] == [7]
     assert len(str(document["artifact_id"])) == 64
     assert sha256_json(document) == (
-        "0ce711a6a099635a578be4eee24a97e33afa3556c68427afda047222f8e795bc"
+        "75379487008fd1b078f0385a22f01c137db6ced67e943fb664327d94089d7adb"
     )
     previous = target.read_bytes()
     monkeypatch.setattr(

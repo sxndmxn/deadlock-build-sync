@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from deadlock_build_sync.artifacts import ArtifactError
-from deadlock_build_sync.build_evidence import load_build_evidence
+from deadlock_build_sync.build_evidence import METHOD_VERSION, load_build_evidence
 from deadlock_build_sync.cli_parser import build_parser
 from deadlock_build_sync.guide_generator import (
     generator_record,
@@ -31,7 +31,10 @@ from tests.beam_fixtures import (
     make_generator_path,
     make_state_evidence,
 )
-from tests.build_evidence_fixtures import write_fingerprinted_evidence
+from tests.build_evidence_fixtures import (
+    make_evidence_document,
+    write_fingerprinted_evidence,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -56,6 +59,21 @@ def test_loads_versioned_beam_and_explicit_fallback(
     require_generator("beam", catalog.generator)
     with pytest.raises(ArtifactError, match="differs"):
         require_generator("current", catalog.generator)
+
+
+@pytest.mark.parametrize(
+    ("generator", "version"),
+    [("current", "eclat-leiden-pairwise-v3"), ("beam", "eclat-leiden-beam16-v1")],
+)
+def test_rejects_evidence_from_previous_sql_validation_rules(
+    tmp_path: Path, generator: str, version: str
+) -> None:
+    document = make_beam_document() if generator == "beam" else make_evidence_document()
+    require_object_dict(document["method"])["version"] = version
+    path = tmp_path / "previous-method.json"
+    write_fingerprinted_evidence(path, document)
+    with pytest.raises(ArtifactError, match="unsupported selection method"):
+        load_build_evidence(path)
 
 
 @pytest.mark.parametrize("value", [None, {}, {"name": "beam"}])
@@ -115,7 +133,7 @@ def test_rejects_small_matched_sample_and_inconsistent_default(tmp_path: Path) -
 def test_current_header_cannot_hide_beam_paths(tmp_path: Path) -> None:
     document = make_beam_document()
     document["schema_version"] = 12
-    require_object_dict(document["method"])["version"] = "eclat-leiden-pairwise-v3"
+    require_object_dict(document["method"])["version"] = METHOD_VERSION
     document.pop("generator")
     path = tmp_path / "mixed.json"
     write_fingerprinted_evidence(path, document)

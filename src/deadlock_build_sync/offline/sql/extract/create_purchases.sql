@@ -49,7 +49,7 @@ valid_purchases AS (
         )) AS state_observed_at_s
     FROM expanded AS e
     INNER JOIN item_assets AS a ON e.item_id = a.item_id
-    WHERE e.buy_time > 0
+    WHERE e.buy_time > 0 AND e.buy_time <= e.duration_s
 )
 
 SELECT

@@ -8,6 +8,7 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
+from deadlock_build_sync.build_evidence import METHOD_VERSION
 from deadlock_build_sync.guide_generator import GENERATOR_NAMES
 from deadlock_build_sync.value_validation import integer, require_object_dict
 
@@ -69,6 +70,8 @@ def _validate_resume_request(paths: RunPaths, args: argparse.Namespace) -> None:
         or not (paths.raw / "analysis.duckdb").is_file()
     ):
         raise ValueError("Resume requires a completed production source extraction")
+    if manifest.get("method_version") != METHOD_VERSION:
+        raise ValueError("Source extraction method differs. Start a new --run-id.")
     if (
         manifest.get("rank_expansion") != args.rank_expansion
         or cohort["minimum_badge"] != args.min_rank
@@ -104,6 +107,7 @@ def _capture_run_sources(paths: RunPaths, args: argparse.Namespace) -> None:
         "cohort": cohort.as_dict(),
         "sources": sources,
         "production_method": "eclat_leiden_pairwise",
+        "method_version": METHOD_VERSION,
         "test_usage": "reserved",
     }
     if getattr(args, "generator", "current") != "current":

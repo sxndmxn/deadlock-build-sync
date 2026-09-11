@@ -13,6 +13,7 @@ WITH purchases AS (
         AND p.average_badge BETWEEN $minimum_badge AND $maximum_badge
         AND p.same_second_purchase_count = 1 AND p.item_purchase_ordinal = 1
         AND p."cost" > 0 AND p.own_net_worth_at_buy > 0
+        AND p.buy_time > 0 AND p.buy_time <= p.duration_s
         AND p.buy_time - p.state_observed_at_s BETWEEN 1 AND 120
 ),
 

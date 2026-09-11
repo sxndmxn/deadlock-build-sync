@@ -11,6 +11,7 @@ from deadlock_build_sync.cache import (
     install_guides,
     read_cache,
 )
+from deadlock_build_sync.kv3_binary import encode_binary_v4
 from tests.cache_fixtures import (
     install_complete_guide,
     make_complete_guide,
@@ -35,6 +36,40 @@ def test_install_refuses_if_deadlock_starts_at_mutation_boundary(
         install_complete_guide(location, tmp_path / "state")
 
     assert read_cache(location.cache_path) == original
+
+
+def test_install_refusal_preserves_cache_changes_after_backup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    location, original = make_isolated_cache_location(tmp_path)
+    updated = {**original, "Favorites": [b"new-favorite"]}
+    checks = 0
+    replacements: list[Path] = []
+    real_replace = type(location.cache_path).replace
+
+    def check_running() -> bool:
+        nonlocal checks
+        checks += 1
+        if checks == 1:
+            return False
+        location.cache_path.write_bytes(encode_binary_v4(updated))
+        return True
+
+    def record_replace(source: Path, destination: Path) -> Path:
+        if destination == location.cache_path:
+            replacements.append(source)
+        return real_replace(source, destination)
+
+    set_deadlock_check(monkeypatch, check_running)
+    monkeypatch.setattr(type(location.cache_path), "replace", record_replace)
+    with pytest.raises(CacheError, match="started before replacement"):
+        install_complete_guide(location, tmp_path / "state")
+
+    assert replacements == []
+    assert read_cache(location.cache_path) == updated
+    backups = list((tmp_path / "state").rglob("cached_hero_builds.kv3"))
+    assert len(backups) == 1
+    assert read_cache(backups[0]) == original
 
 
 def test_install_restores_after_directory_fsync_failure(
@@ -118,8 +153,17 @@ def test_double_failure_reports_recoverable_backup_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     location, _ = make_isolated_cache_location(tmp_path)
-    states = iter((False, True))
-    set_deadlock_check(monkeypatch, lambda: next(states))
+    set_deadlock_check(monkeypatch, lambda: False)
+    real_fsync = cache_storage_module._fsync_directory
+
+    def fail_after_replacement(path: Path) -> None:
+        if path == location.cache_path.parent:
+            raise OSError("Directory synchronization failed")
+        real_fsync(path)
+
+    monkeypatch.setattr(
+        cache_storage_module, "_fsync_directory", fail_after_replacement
+    )
     monkeypatch.setattr(
         cache_install_module,
         "_restore_cache_file",
@@ -128,3 +172,52 @@ def test_double_failure_reports_recoverable_backup_path(
 
     with pytest.raises(CacheError, match=r"automatic restore failed.*backup is at"):
         install_complete_guide(location, tmp_path / "state")
+
+
+@pytest.mark.parametrize("failure", [OSError, CacheError])
+def test_validation_failure_before_replacement_preserves_the_destination(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: type[Exception]
+) -> None:
+    location, original = make_isolated_cache_location(tmp_path)
+    updated = {**original, "Favorites": [b"concurrent-favorite"]}
+    set_deadlock_check(monkeypatch, lambda: False)
+
+    def reject_candidate(*_args: object) -> None:
+        location.cache_path.write_bytes(encode_binary_v4(updated))
+        raise failure("Candidate validation failed")
+
+    monkeypatch.setattr(
+        cache_storage_module, "_validate_replacement_cache", reject_candidate
+    )
+    with pytest.raises(CacheError, match="Candidate validation failed"):
+        install_complete_guide(location, tmp_path / "state")
+    assert read_cache(location.cache_path) == updated
+
+
+def test_recovery_refuses_if_deadlock_starts_after_replacement(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    location, original = make_isolated_cache_location(tmp_path)
+    updated = {**original, "Favorites": [b"concurrent-favorite"]}
+    checks = iter((False, False, True))
+    set_deadlock_check(monkeypatch, lambda: next(checks))
+    real_fsync = cache_storage_module._fsync_directory
+
+    def fail_after_replacement(path: Path) -> None:
+        if path == location.cache_path.parent:
+            location.cache_path.write_bytes(encode_binary_v4(updated))
+            raise OSError("Directory synchronization failed")
+        real_fsync(path)
+
+    monkeypatch.setattr(
+        cache_storage_module, "_fsync_directory", fail_after_replacement
+    )
+    with pytest.raises(
+        CacheError, match=r"started before restore.*backup is at"
+    ) as error:
+        install_complete_guide(location, tmp_path / "state")
+    assert read_cache(location.cache_path) == updated
+    assert isinstance(error.value.__cause__, CacheError)
+    assert str(error.value.__cause__) == (
+        "Deadlock started before restore; refusing to change the cache"
+    )

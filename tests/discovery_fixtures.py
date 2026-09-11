@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 
+from deadlock_build_sync.build_evidence import METHOD_VERSION
 from deadlock_build_sync.snapshot import sha256_json
 from deadlock_build_sync.value_validation import (
     integer,
@@ -63,7 +64,7 @@ def make_current_evidence_document(
     document: dict[str, object], assets: list[dict[str, object]]
 ) -> dict[str, object]:
     document["schema_version"] = 12
-    require_object_dict(document["method"])["version"] = "eclat-leiden-pairwise-v3"
+    require_object_dict(document["method"])["version"] = METHOD_VERSION
     require_object_dict(document["method"])["minimum_core_item_count"] = 3
     require_object_dict(document["method"])["minimum_core_support"] = 100
     document["mechanics_assets"] = assets

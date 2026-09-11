@@ -126,6 +126,7 @@ def test_restore_uses_a_local_persistent_temporary_file(
     )
     monkeypatch.setattr(cache_storage, "read_cache", lambda _path: {})
     monkeypatch.setattr(cache_storage, "_fsync_directory", lambda _path: None)
+    monkeypatch.setattr(cache_storage, "deadlock_is_running", lambda: False)
 
     cache_storage._restore_cache_file(source, location.cache_path)
 

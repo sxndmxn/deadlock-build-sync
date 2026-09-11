@@ -20,6 +20,10 @@ class CacheError(RuntimeError):
     """Raised when the Deadlock build cache cannot be safely changed."""
 
 
+class _CacheReplacementError(CacheError):
+    """Identify a failure after cache replacement."""
+
+
 @dataclass(frozen=True)
 class CacheLocation:
     account_id: int

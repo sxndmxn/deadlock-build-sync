@@ -62,6 +62,8 @@ The maximum line length is 88 characters.
 Large SQL files remain subject to the checks.
 The placeholder templater supplies lint values for `$name` and `?` parameters.
 Runtime queries retain their bound parameters.
+An AST regression check rejects literal and formatted SQL statements in Python database calls.
+Research statistics queries use SQL files and contribute to their data fingerprint.
 
 SQLFluff 4.3 cannot parse DuckDB `ATTACH`, `DETACH`, `INSTALL`, `LOAD`, or `CREATE SECRET` statements.
 Nine administration files contain a `PRS` exception.

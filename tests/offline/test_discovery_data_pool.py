@@ -53,6 +53,31 @@ def test_whole_match_time_partitions_and_reserved_test_exclusion() -> None:
     connection.close()
 
 
+def test_partition_detection_ignores_unrelated_schemas_and_catalogs() -> None:
+    with duckdb.connect() as connection:
+        connection.execute(load_fixture_sql("partitions/create_player_matches.sql"))
+        connection.execute(load_fixture_sql("partitions/create_match_folds.sql"))
+        discovery_data.prepare_discovery_partitions(connection)
+        expected = connection.execute(
+            load_fixture_sql("select_discovery_partitions.sql")
+        ).fetchall()
+        connection.execute(load_fixture_sql("extract/attach_memory.sql"))
+        connection.execute(
+            load_fixture_sql("partitions/create_unrelated_split_boundaries.sql")
+        )
+        count = connection.execute(
+            discovery_data.load_sql("discovery/count_split_boundaries.sql")
+        ).fetchone()
+        assert count == (0,)
+        discovery_data.prepare_discovery_partitions(connection)
+        assert (
+            connection.execute(
+                load_fixture_sql("select_discovery_partitions.sql")
+            ).fetchall()
+            == expected
+        )
+
+
 def test_inventory_reconstruction_uses_sales_consumption_rebuys_and_latest_time() -> (
     None
 ):

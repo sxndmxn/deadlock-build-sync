@@ -4,10 +4,12 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from deadlock_build_sync.build_evidence import METHOD_VERSION
 from deadlock_build_sync.cli_parser import build_parser
 from deadlock_build_sync.offline import refresh
-from deadlock_build_sync.offline.api import write_json
+from deadlock_build_sync.offline.api import read_json, write_json
 from deadlock_build_sync.offline.config import RunPaths
+from deadlock_build_sync.value_validation import require_object_dict
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -63,6 +65,7 @@ def _saved_source_run(tmp_path: Path) -> RunPaths:
         {
             "schema_version": 2,
             "production_method": "eclat_leiden_pairwise",
+            "method_version": METHOD_VERSION,
             "test_usage": "reserved",
             "rank_expansion": "off",
             "cohort": {
@@ -116,6 +119,30 @@ def test_resume_reuses_source_run_without_capture_or_extraction(
         == 0
     )
     assert manifest.read_bytes() == previous
+
+
+@pytest.mark.parametrize("version", [None, "eclat-leiden-pairwise-v3"])
+def test_resume_rejects_sources_from_previous_sql_validation_rules(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, version: str | None
+) -> None:
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+    paths = _saved_source_run(tmp_path)
+    manifest = require_object_dict(read_json(paths.run / "manifest.json"))
+    if version is None:
+        manifest.pop("method_version")
+    else:
+        manifest["method_version"] = version
+    write_json(paths.run / "manifest.json", manifest)
+    with pytest.raises(ValueError, match="Source extraction method differs"):
+        refresh.main([
+            "--output",
+            str(tmp_path / "output.json"),
+            "--run-id",
+            "saved",
+            "--rank-expansion",
+            "off",
+            "--resume",
+        ])
 
 
 @pytest.mark.parametrize(
