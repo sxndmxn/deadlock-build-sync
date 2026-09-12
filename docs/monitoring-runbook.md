@@ -73,5 +73,5 @@ persona names, email addresses, and IP addresses are prohibited.
 - Illustrative layer-separated report:
   [`evaluation-sample-report.json`](evaluation-sample-report.json)
 - Deterministic implementation:
-  [`evaluation.py`](../src/deadlock_build_sync/evaluation.py)
+  [archived Python evaluation module](https://github.com/sxndmxn/deadlock-build-sync/blob/d603d6b53bb110d0ac48a689f037861e6453b243/src/deadlock_build_sync/evaluation.py)
 - Regression suite: [`test_evaluation.py`](../tests/test_evaluation.py)

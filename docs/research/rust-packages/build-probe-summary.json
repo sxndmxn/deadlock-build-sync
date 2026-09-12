@@ -1,0 +1,26 @@
+[
+  {
+    "name": "ureq",
+    "platform": "macOS-15.5-arm64-arm-64bit",
+    "seconds": 14.73,
+    "exit_code": 0,
+    "binary_bytes": 2445728,
+    "smoke_exit_code": 0
+  },
+  {
+    "name": "minreq",
+    "platform": "macOS-15.5-arm64-arm-64bit",
+    "seconds": 34.28,
+    "exit_code": 0,
+    "binary_bytes": 3521936,
+    "smoke_exit_code": 0
+  },
+  {
+    "name": "reqwest",
+    "platform": "macOS-15.5-arm64-arm-64bit",
+    "seconds": 47.13,
+    "exit_code": 0,
+    "binary_bytes": 4873024,
+    "smoke_exit_code": 0
+  }
+]

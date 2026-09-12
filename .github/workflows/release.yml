@@ -2,8 +2,7 @@ name: Release
 
 on:
   push:
-    tags:
-      - "v*"
+    tags: ["v*"]
 
 permissions:
   contents: read
@@ -14,32 +13,7 @@ concurrency:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - name: Install uv and Python
-        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
-        with:
-          enable-cache: true
-          python-version: "3.13"
-
-      - name: Verify tag matches package version
-        run: test "$GITHUB_REF_NAME" = "v$(uv version --short)"
-
-      - name: Install locked environment
-        run: uv sync --frozen
-
-      - name: Verify release
-        run: |
-          uv lock --check
-          uv run ruff format --check .
-          uv run ruff check .
-          uv run ty check
-          uv run pytest
-          uv pip check
-          uv build
+    uses: ./.github/workflows/ci.yml
 
   github-release:
     needs: verify
@@ -50,19 +24,25 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: Install uv and Python
-        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
-        with:
-          python-version: "3.13"
+      - name: Install the pinned Rust toolchain
+        run: rustup show active-toolchain
 
-      - name: Build distributions
-        run: uv build
+      - name: Build the release CLI with analysis
+        run: cargo build --package deadlock-build-sync --features analysis --release --locked
 
-      - name: Create GitHub release
+      - name: Verify the release version
+        run: |
+          version_output=$(target/release/deadlock-build-sync --version)
+          test "$GITHUB_REF_NAME" = "v${version_output#deadlock-build-sync }"
+
+      - name: Inspect and check the release archive outside the checkout
+        run: sh scripts/package_release.sh "$PWD/target/release/deadlock-build-sync" x86_64-unknown-linux-gnu
+
+      - name: Create the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: >-
-          gh release create "$GITHUB_REF_NAME" dist/*
+          gh release create "$GITHUB_REF_NAME" dist/*.tar.gz dist/*.sha256
           --verify-tag
           --generate-notes
           --title "$GITHUB_REF_NAME"

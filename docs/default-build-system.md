@@ -1,6 +1,6 @@
 # Default build system
 
-`uv run build` and `deadlock-build-sync sync` use the admitted discovery builds.
+`deadlock-build-sync build` and `deadlock-build-sync sync` use the admitted discovery builds.
 `deadlock-build-sync refresh-evidence` produces the evidence. The producer requests
 the full current hero roster. It does not access Steam files.
 
@@ -132,7 +132,7 @@ Old or incompatible evidence must be refreshed and rebuilt:
 
 ```bash
 deadlock-build-sync refresh-evidence
-uv run build
+deadlock-build-sync build
 ```
 
 Markdown, JSON, Steam rows, recommendations, and artifact installation use the

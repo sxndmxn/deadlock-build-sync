@@ -1,0 +1,25 @@
+[package]
+publish = false
+name = "deadlock-steam"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Guarded Steam cache storage and binary serialization"
+
+[lints]
+workspace = true
+
+[dependencies]
+deadlock-data.workspace = true
+deadlock-guides.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+tempfile.workspace = true
+lz4_flex.workspace = true
+ruzstd.workspace = true
+base64.workspace = true
+prost.workspace = true
+regex-lite.workspace = true

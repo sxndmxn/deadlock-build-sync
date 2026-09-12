@@ -1,101 +1,131 @@
-# Python module boundaries
+# Architecture
 
-This CLI collects evidence, builds purchase guides, and installs reviewed builds in Steam.
-The dependency rules separate these responsibilities.
-
-The design follows roadmap.sh's guidance on boundaries, coupling, cohesion, and
-keeping code simple. Python modules provide the boundaries; Tach checks their
-imports before release. The existing typed records remain the data contracts.
-See the [design roadmap](https://roadmap.sh/pdfs/roadmaps/software-design-architecture.pdf),
-[system design roadmap](https://roadmap.sh/system-design), and
-[Python roadmap](https://roadmap.sh/python).
+The CLI separates evidence collection, guide generation, numerical analysis, and Steam storage.
+All repository code uses synchronous operations.
+The application uses standard threads for independent analysis jobs and API requests.
+It preserves input order when it collects their results.
 
 ## Dependency direction
 
-The six layers below run from callers to dependencies.
-An arrow shows an allowed dependency direction.
-Every dependency must also appear in `depends_on`.
+An arrow identifies an allowed project dependency.
 
 ```mermaid
 flowchart TD
-    commands[CLI entrypoints] --> workflows[Offline production and status workflows]
-    commands --> storage[Steam storage and serialization]
-    commands --> runtime[Guide generation and validation]
-    workflows --> runtime
-    workflows --> storage
-    storage --> runtime
-    runtime --> inputs[API access and item mechanics]
-    inputs --> foundation[Snapshot, rank, value, and binary records]
+    cli[deadlock-build-sync] --> analysis[deadlock-analysis]
+    cli --> steam[deadlock-steam]
+    cli --> guides[deadlock-guides]
+    cli --> input[deadlock-input]
+    cli --> data[deadlock-data]
+    analysis --> guides
+    analysis --> input
+    analysis --> data
+    steam --> guides
+    steam --> data
+    guides --> input
+    guides --> data
+    input --> data
 ```
 
-| Layer | Owners | Enforced boundary |
+| Crate | Responsibility | Allowed project dependencies |
 | --- | --- | --- |
-| `entrypoints` | `cli.py` and `cli_*` | CLI dispatch and output can call lower layers. Lower layers cannot import CLI code. |
-| `workflows` | `offline`, `freshness`, `steam_identity` | Only `cli.py` can import the offline producer, through `refresh.main`. Status code has read access to the cache. |
-| `storage` | `cache`, cache implementation files, `protobuf` | Guide code cannot call Steam storage. Cache implementation files are visible only within the cache boundary. |
-| `runtime` | Remaining `deadlock_build_sync` files | Generation, evidence admission, planning, descriptions, and artifact validation can use inputs and shared records. They cannot import storage, workflows, or CLI modules. |
-| `inputs` | API client, HTTP client, API records, mechanics files | Input code cannot import guide generation or installation code. Each input module has its own dependency list. |
-| `foundation` | `snapshot`, `ranks`, `value_validation`, `cache_types`, `kv3_binary` | Shared records and the binary codec cannot import higher layers. |
+| `deadlock-data` | Validation, canonical JSON, fingerprints, ranks, snapshots, artifacts, statistics, and tracing | None |
+| `deadlock-input` | Synchronous HTTP, source recording, API records, item mechanics, and API account names | Data |
+| `deadlock-guides` | Evidence admission, abilities, purchase planning, policies, descriptions, presentation, and replay reports | Data and inputs |
+| `deadlock-steam` | Steam discovery, KV3, protobuf, backups, installation, and recovery | Data and guides |
+| `deadlock-analysis` | Source extraction, exact-core discovery, numerical estimates, and evidence production | Data, inputs, and guides |
+| `deadlock-build-sync` | Argument parsing, workflow control, artifact transactions, and output | The five product libraries |
+| `deadlock-quality` | Repository source and dependency checks | None |
 
-The workflow layer contains separate components. Its position does not let the
-offline producer import Steam storage: that dependency is absent from its exact
-list. The status workflow can inspect installed builds but cannot import the
-installation or restore functions.
+The CLI enables the optional `analysis` dependency through its `analysis` feature.
+The default CLI excludes the database and numerical producer.
+Guide generation cannot import the producer or Steam storage.
+Analysis cannot import Steam storage.
+The quality checker enforces this table for normal, build, and development dependencies.
+It also rejects cyclic module dependencies within each library and executable.
+`arch-lint.toml` enforces the same crate boundaries in imports and inline qualified paths.
+It also blocks network and database access in guide logic.
+The quality checker requires Arch-lint 0.6.0 and checks its source-file count against the complete Rust source scan.
+Warnings fail the check.
+
+Arch-lint uses syntax analysis.
+Its scope dependency rules assume a single `src/` directory and do not resolve workspace crate imports.
+The workspace therefore uses explicit `restrict-use` rules for each crate.
+Cargo metadata and Cargo Modules retain dependency and cycle checks that require resolved information.
 
 ## Public interfaces
 
-`cache.py` exposes discovery, reading, and result types to its consumers.
-`install_guides` is visible only to `cli_support`, which owns the install call.
-`restore_latest` is visible only to `cli_export`, which owns the restore call.
-Consumers cannot import cache implementation files to avoid these interfaces.
+Each library exports its reviewed interfaces through `lib.rs`.
+Implementation modules remain private.
+Internal consumers use module imports with explicit dependency directions.
+Public records validate identifiers, completeness, numeric bounds, and related fingerprints at their admission boundaries.
 
-The offline producer exposes only `refresh.main` to the main CLI.
-Its discovery and estimation functions remain private to that component.
-Runtime code does not import optional analysis dependencies through the producer.
+`DeadlockApi` owns synchronous HTTP requests and exact response recording.
+Request workers share one rate limiter and connection pool.
+They return response records in source order.
+The input crate owns an optional response cache beside the evidence file.
+Cache keys include the API URL, request parameters, client version, and epochs.
+Cache admission checks response hashes and timestamps.
+Responses expire after one hour.
+Asset and patch requests always contact the API.
+`ItemGraph` owns item components, upgrade relationships, mechanics, and inventory restrictions.
+`BuildEvidenceCatalog`, `StrategyContext`, `PolicyArtifact`, and `NarrativeCatalog` admit the application artifacts.
+Guide functions produce validated policies, deterministic descriptions, purchase routes, and presentation records.
 
-The offline producer stores complete DuckDB statements in
-[`offline/sql`](../src/deadlock_build_sync/offline/sql).
-[`sql_resources.py`](../src/deadlock_build_sync/offline/sql_resources.py) loads each SQL file once per process.
-The wheel includes these files. SQL loading does not depend on the working directory.
-Python passes query values through bound parameters.
-[`query_table`](https://duckdb.org/docs/current/guides/sql_features/query_and_query_table_functions) accepts table names for counts and exports.
-[`DuckLake secrets`](https://ducklake.select/docs/stable/duckdb/usage/connecting) accept the metadata path through a bound parameter.
-The snapshot attachment binds the snapshot version and retains read-only access.
-Fixed table names remain in the SQL files. Python does not format SQL strings.
-Test SQL files are in [`tests/offline/sql`](../tests/offline/sql).
+`refresh_evidence` is the numerical producer entry point.
+Its `RefreshRequest` contains the fixed cohort, generator, worker count, output location, and resume options.
+The producer stores its source snapshot before discovery.
+Resume checks require unchanged source files, nominations, guide groups, cohort settings, and implementation identity.
 
-`core_discovery.py` selects supported cores.
-`discovery_artifacts.py` builds item pool evidence and purchase artifacts.
-`doubly_robust_estimation.py` estimates item outcome differences.
-`inventory_reconstruction.py` reconstructs inventory from purchases, sales, and consumed components.
+The producer embeds 53 SQL files with `include_str!`.
+SQL loading does not depend on the working directory.
+Queries bind values instead of formatting user input into SQL.
+Each hero worker has a separate DuckDB connection, one database thread, and a 512 MiB database memory limit.
+Workers take jobs from a shared queue and return results in source order.
+Validation starts larger estimated workloads first, using frozen candidate counts and discovery support.
+Branch validation indexes immutable source rows and reuses identical model inputs within each hero.
+Typed row visitors avoid duplicate JSON tables for large purchase and decision queries.
+After discovery freezes the cores, analysis collects their ability responses during numerical validation.
+This collection does not change nominations or admission decisions.
+Guide generation selects and validates ability paths from those exact cached responses.
+Missing or expired responses require fresh API requests.
+Malformed responses fail admission.
 
-These are static import rules.
-Runtime code checks purchase legality, artifact admission, running processes, backups, validation, and atomic replacement.
-Tach does not replace those checks.
+## Steam storage boundary
 
-## Scope and maintenance
+`prepare_cache_update` constructs and validates the complete replacement without writing Steam files.
+The request carries validated presentation, snapshot, policy, and hero coverage identities.
+The planner preserves unrelated values and rejects ambiguous managed paths or shared private build identifiers.
 
-[tach.toml](../tach.toml) declares 35 module boundaries. It checks all files under
-`src`, including imports under `TYPE_CHECKING`. Every declared dependency must
-be used. Upward imports, undeclared imports, cycles between declared modules,
-unused ignore directives, and ignore directives without reasons are errors.
-No module is unchecked or a globally available utility.
+`install_cache_update` owns process checks, concurrency checks, backup creation, temporary validation, and atomic replacement.
+`restore_latest` validates the backup and creates a recovery backup before restoration.
+Both functions require process inspection through `ProcessInspection`.
+The CLI always supplies `LinuxProcesses`.
+An unavailable process list prevents a write.
 
-The runtime component still contains 83 files, including policy and planner
-internals. Tach does not check dependency cycles inside that component. Splitting
-it needs changes to existing internal cycles and a separate ownership decision;
-this configuration does not claim to remove those cycles.
+The KV3 codec preserves value types, flags, blobs, object order, and unrelated sections.
+It bounds nesting, decoded size, collection counts, and decompression.
+The decoder supports binary versions 0 through 5.
+The encoder uses version 4 unless an entity-name flag requires version 5.
+Prost encodes the known hero-build schema.
+A bounded metadata reader inspects existing messages without replacing unrelated protobuf bytes.
 
-The source root remains `src`. Tach 0.35 gives ambiguous module identities with
-overlapping `src` and repository roots. The packaged narrative script therefore
-remains outside this Tach graph; Deptry, typing, lint, and coverage still check it.
+## Application artifacts
 
-Run `uv run tach check` locally.
-CI runs the same command.
-Do not use `tach sync` to accept an import without review.
-Check the module owner and direction before you change a dependency.
-Update the exact dependency list.
-Run the check again.
-Keep `layers_explicit_depends_on = true`: layers alone would otherwise permit
-undeclared imports into lower layers. See the [Tach layer rules](https://docs.gauge.sh/usage/layers/)
-and [interface rules](https://docs.gauge.sh/usage/interfaces/).
+Artifact generation remains separate from Steam transactions.
+The CLI writes a staged bundle, admits the complete artifact chain, and then commits the replacement.
+A failed commit restores the previous bundle or retains its recovery location.
+Managed Steam updates are idempotent.
+Compatible deterministic descriptions are reusable.
+
+A selected hero subset receives a new evidence identity and retains the parent identity in `source_artifact_id`.
+The subset must pass the complete coverage validator.
+Selection does not weaken fingerprint or coverage checks.
+
+## Reference
+
+The [package decisions](rust-package-research.md) record dependency scope and maintenance evidence.
+The [quality gates](quality-gates.md) define required checks.
+The [Rust verification report](rust-rewrite-verification.md) records migration checks and limitations.
+
+The Python reference remains in Git at `d603d6b53bb110d0ac48a689f037861e6453b243`.
+Historical reports describe that implementation unless their text identifies the Rust workspace.

@@ -1,0 +1,52 @@
+[graph]
+all-features = true
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "aarch64-apple-darwin",
+]
+
+[advisories]
+ignore = []
+
+[licenses]
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-3-Clause",
+    "CDLA-Permissive-2.0",
+    "ISC",
+    "MIT",
+    "Unicode-3.0",
+    "Zlib",
+]
+confidence-threshold = 0.8
+
+[bans]
+multiple-versions = "deny"
+wildcards = "deny"
+deny = [
+    { crate = "tokio", reason = "Use synchronous I/O." },
+    { crate = "async-std", reason = "Use synchronous I/O." },
+    { crate = "smol", reason = "Use synchronous I/O." },
+    { crate = "async-executor", reason = "Use synchronous I/O." },
+    { crate = "reqwest", reason = "The blocking client uses an asynchronous runtime." },
+]
+skip = [
+    { crate = "base64@0.22.1", reason = "Arrow requires base64 0.22; ureq requires base64 0.23." },
+    { crate = "getrandom@0.2.17", reason = "ring and tempfile require incompatible getrandom versions." },
+    { crate = "getrandom@0.3.4", reason = "Arrow and Leiden require getrandom 0.3; tempfile requires getrandom 0.4." },
+    { crate = "hashbrown@0.15.5", reason = "DuckDB hashlink requires hashbrown 0.15; Arrow requires hashbrown 0.17." },
+    { crate = "linux-raw-sys@0.4.15", reason = "DuckDB pins a table formatter that requires rustix 0.38 and linux-raw-sys 0.4." },
+    { crate = "rand@0.9.5", reason = "Leiden requires rand 0.9; Basin requires rand 0.10." },
+    { crate = "rand_chacha@0.9.0", reason = "Leiden rand requires rand_chacha 0.9; Basin requires rand_chacha 0.10." },
+    { crate = "rand_core@0.9.5", reason = "Leiden requires the rand 0.9 interface; Basin requires the rand 0.10 interface." },
+    { crate = "rustix@0.38.44", reason = "DuckDB pins a table formatter that requires rustix 0.38; tempfile requires rustix 1." },
+    { crate = "syn@2.0.119", reason = "prost-derive requires syn 2; serde_derive requires syn 3." },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

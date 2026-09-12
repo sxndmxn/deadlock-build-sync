@@ -1,130 +1,128 @@
 # Quality gates
 
-Local Python tools define the repository quality checks.
-CI runs all fast gates on each pull request and each push to `master`.
-A separate scheduled or manual workflow runs the slower mutation gate.
+All repository Rust code forbids unsafe code and treats warnings as errors.
+The application contains no asynchronous functions, blocks, or await expressions.
+No unit tests were added during the rewrite, as requested.
+The current gates do not claim unit-test coverage or mutation coverage.
 
-## Enforced limits
+## Required limits
 
-| Check | Limit | Tool |
-| --- | ---: | --- |
-| Cyclomatic complexity per function | less than 22 | Radon through `tools/quality_gate.py` |
-| Cognitive complexity per function | less than 22 | Complexipy |
-| Halstead difficulty per function | less than 80 | Radon through `tools/quality_gate.py` |
-| Physical lines per tracked Python file | less than 500 | `tools/quality_gate.py` |
-| Statement coverage | at least 90% | Coverage.py |
-| Branch coverage | at least 90% | Coverage.py |
-| CRAP score per product function | less than 25 | `tools/quality_gate.py` |
-| Surviving mutants in the Steam data boundary | zero | Mutmut |
-| Dead code | zero | Vulture |
-| Repeated code blocks | zero | Pylint similarities |
-| `Any` or `Unknown` annotation names | zero | `tools/quality_gate.py` |
-| Undeclared, unused, or development-only runtime dependencies | zero, with documented indirect-use exceptions | Deptry |
-| Imports across unapproved module boundaries | zero | Tach |
-| SQL rule violations | zero, with specified parser and dynamic-schema exceptions | SQLFluff with the DuckDB dialect |
+| Check | Requirement | Enforcement |
+| --- | --- | --- |
+| Compiler warnings | Zero | Cargo workspace lints and `.cargo/config.toml` |
+| Unsafe repository code | Forbidden | Compiler lint with `forbid` |
+| Clippy findings | Zero in `all`, `pedantic`, and `nursery` | Cargo workspace lints |
+| Cognitive complexity | At most 21 | Clippy and `clippy.toml` |
+| Asynchronous repository code | Zero | Parsed Rust syntax in `deadlock-quality` |
+| Cyclic crate or module dependencies | Zero | Cargo and `deadlock-quality` with Cargo Modules |
+| Project dependencies outside the architecture | Zero | Explicit crate rules in `deadlock-quality` |
+| Imports outside the architecture | Zero | Arch-lint rules in `arch-lint.toml` |
+| Panic helpers and unfinished macros | No `unwrap`, `expect`, `panic`, `todo`, `unimplemented`, or `dbg` calls | Clippy |
+| Lint exceptions without a reason | Zero | Clippy |
+| SQL violations | Zero outside the recorded syntax exceptions | SQLFluff |
+| Known dependency advisory failures | Zero | Cargo Deny |
+| Unapproved dependency sources or licenses | Zero | Cargo Deny |
+| Duplicate package versions | Only the named, explained exceptions | `deny.toml` |
 
-The numeric gate checks all tracked Python files for file size, cyclomatic
-complexity, Halstead difficulty, and forbidden type names. Coverage and CRAP
-apply to `src/` and `scripts/`, including discovery code. Historical comparison
-runners and their tests are [archived in Git history](../tools/comparisons/README.md).
-Complexipy checks `scripts/`, `src/`, `tests/`, and `tools/`.
+The unsafe restriction applies to repository crates, including build scripts.
+Safe interfaces in dependencies can use unsafe Rust or native implementation code.
+The dependency policy rejects asynchronous runtimes, including Tokio, Async-std, Smol, and Async-executor.
+It also rejects Reqwest because its blocking client requires Tokio.
 
-## Fast local gate
+## Tool setup
+
+Rustup selects Rust 1.92.0 through `rust-toolchain.toml`.
+A C++ compiler is necessary for bundled DuckDB.
+Install the three pinned Rust check tools:
+
+```bash
+cargo install cargo-modules --version 0.26.0 --locked
+cargo install cargo-deny --version 0.20.2 --locked
+cargo install arch-lint-cli --version 0.6.0 --locked
+```
+
+SQLFluff remains a development tool.
+Its isolated `uvx` environment does not supply an application runtime.
+No Python application environment or Node workflow is required.
+
+Arch-lint runs as a separate development executable.
+It adds no application dependency and generates no unit tests.
+The configuration selects architecture rules and rejects unwrap and expect calls.
+Compiler, Clippy, and source gates enforce the other Rust requirements.
+Do not enable rules that require asynchronous I/O or unselected logging and error packages.
+
+## Complete local gate
 
 Run these commands from the repository root:
 
 ```bash
-uv lock --check
-uv sync --frozen
-uv run ruff format --check .
-uv run ruff check .
-uv run sqlfluff lint .
-uv run ty check
-uv run deptry .
-uv run tach check
-uv run complexipy
-uv run coverage erase
-uv run coverage run -m pytest -W error
-uv run coverage json
-uv run tools/quality_gate.py
-uv run vulture
-uv run pylint --disable=all --enable=duplicate-code src scripts
-uv pip check
-uv build
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+cargo run --locked --package deadlock-quality
+uvx --from sqlfluff==4.3.0 sqlfluff lint crates/deadlock-analysis/sql
+cargo doc --workspace --all-features --no-deps --locked
+cargo deny --locked check --deny warnings
+cargo build --package deadlock-build-sync --locked
 ```
 
-The coverage command treats warnings as errors. `coverage.json` supplies both
-repository coverage and per-function data for the CRAP calculation.
-
-SQLFluff uses the DuckDB dialect and enables all rules.
-The configuration requires explicit aliases, qualified join references, uppercase keywords, lowercase identifiers, and final semicolons.
-The maximum line length is 88 characters.
-Large SQL files remain subject to the checks.
-The placeholder templater supplies lint values for `$name` and `?` parameters.
-Runtime queries retain their bound parameters.
-An AST regression check rejects literal and formatted SQL statements in Python database calls.
-Research statistics queries use SQL files and contribute to their data fingerprint.
-
-SQLFluff 4.3 cannot parse DuckDB `ATTACH`, `DETACH`, `INSTALL`, `LOAD`, or `CREATE SECRET` statements.
-Nine administration files contain a `PRS` exception.
-The generic table export contains one `AM04` exception because its output schema depends on the bound table name.
-Six external column names retain periods from the remote DuckLake schema.
-The configuration specifies these names individually.
-The existing DuckDB fixture tests check query behavior and packaged SQL parsing.
-Fixture setup keeps unsupported administration statements separate from SQL that SQLFluff can parse.
-
-Run `uv run sqlfluff lint .` after each SQL change.
-Review automatic fixes before acceptance.
-Column order and aliases with column lists can form part of a Python data contract.
-Run the fixture tests after fixes.
-
-[Deptry](https://deptry.com/usage/) checks the installed product code, including
-the optional offline producer and packaged narrative script. The `test` extra
-is a development group. Archived comparison tools retain their dependency manifests
-at the archived revision. Active discovery code is
-inside the product dependency check. Arrow conversion and timezone support
-load `pyarrow` and `pytz` indirectly; these are the only unused-import exceptions.
-
-[Tach](https://docs.gauge.sh/usage/configuration/) checks imports within `src`,
-including type-only imports, against the [module boundaries](architecture.md)
-in `tach.toml`. Six ordered layers require explicit dependencies. Only the main
-CLI may invoke the offline producer. Runtime guide code cannot import Steam
-storage or CLI code. Cache interfaces limit installation and restore access to
-their command owners. Unused dependency declarations, upward imports, circular
-module dependencies, unused ignores, and ignores without reasons fail the check.
-Deptry also scans the packaged narrative script. Comparison dependency manifests
-are available with the archived tools.
-Do not run `tach sync` to admit an unintended import. Review boundary changes.
-The Tach pytest plugin is disabled so the full coverage gate always runs the
-complete test suite.
-
-## Mutation gate
-
-Run the complete mutation gate with:
+`deadlock-quality` runs Arch-lint before the resolved module checks.
+It requires the pinned version, zero violations, and complete Rust source coverage.
+Run the architecture linter directly when you need its report:
 
 ```bash
-uv run mutmut run
-uv run mutmut export-cicd-stats
-uv run tools/mutation_gate.py
+arch-lint --config arch-lint.toml check --engine syn --format json .
 ```
 
-Mutmut changes the cache, KV3, and protobuf modules that form the Steam data
-boundary. This focused scope keeps the scheduled gate useful and gives the
-highest-risk code a strict zero-survivor limit. Mutmut itself returns success
-after a completed run even if a mutant survives. The final command reads its CI
-summary and fails unless each mutant was detected by a test failure or timeout.
-It also rejects untested, skipped, suspicious, interrupted, or crashed mutants.
-Two profiler-output tests do not run inside Mutmut because Mutmut's function
-wrappers change the frame names that those tests must check. The normal coverage
-run still runs both tests.
+Check the default binary before the analysis build:
 
-## SonarLint in VS Code
+```bash
+target/debug/deadlock-build-sync --help
+target/debug/deadlock-build-sync refresh-evidence
+```
 
-The checked-in `.vscode/settings.json` keeps SonarLint in standalone mode. No
-SonarQube server or project file is required. SonarLint findings appear in the
-VS Code Problems view and its output channel.
+The second command must fail with the analysis-feature requirement.
+It must not contact the API or modify Steam data.
+Build and inspect the complete release:
 
-The extension does not provide a stable repository CLI for CI or shell piping.
-Use the commands above for repeatable output that shell commands can process.
-Use SonarLint as an additional editor check.
-The repository quality gates remain required.
+```bash
+cargo build --package deadlock-build-sync --features analysis --release --locked
+sh scripts/package_release.sh "$PWD/target/release/deadlock-build-sync" "$(rustc -vV | sed -n 's/^host: //p')"
+```
+
+The packaging script creates an archive and SHA-256 file under `dist/`.
+It extracts the archive into a temporary directory outside the checkout.
+It checks the version, license, README, and help for all 13 commands there.
+The release workflow produces a Linux AMD64 archive with analysis enabled.
+Internal workspace crates are not published separately.
+
+Use `--jobs 2` for Cargo builds when memory or disk space is limited.
+Bundled DuckDB omits native debug symbols in development builds.
+Application Rust debug symbols remain enabled.
+The 512 MiB DuckDB query limit does not bound total producer memory.
+
+## SQL rules
+
+The configuration uses the DuckDB dialect, explicit aliases, uppercase keywords, lowercase identifiers, and final semicolons.
+The maximum line length is 88 characters.
+Placeholder values permit linting without changing runtime parameter bindings.
+
+SQLFluff 4.3 cannot parse DuckDB `ATTACH`, `DETACH`, `INSTALL`, `LOAD`, or `CREATE SECRET` statements.
+Nine administration files retain `PRS` exceptions.
+The generic export retains one `AM04` exception because a bound table determines its columns.
+Six external column names retain periods from the remote DuckLake schema.
+The configuration names these exceptions individually.
+
+Run the SQL check after each SQL change.
+Check changed query behavior with an isolated database fixture.
+Do not treat a successful parser check as evidence of correct query results.
+
+## Verification reports
+
+Identify every check that passed, failed, or did not run.
+Keep fixture checks separate from live verification.
+Do not run a live Steam sync without explicit user authorization.
+Record cache, backup, artifact, build-count, and skipped-hero results after an authorized live run.
+
+The [Rust verification report](rust-rewrite-verification.md) records the migration comparisons.
+The archived Python checks establish the reference behavior only.
+They do not certify the Rust executable or live builds.

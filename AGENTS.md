@@ -77,29 +77,40 @@ It must not damage or discard user-owned Steam data.
 
 ## Architecture boundaries
 
-- Follow the dependency layers and public interfaces in `tach.toml` and [docs/architecture.md](docs/architecture.md).
-  Do not add a dependency only to remove a Tach error.
-  Review the module owner and dependency direction first.
-- `api.py`, `purchase_guide.py`, `ability_order.py`, and `power_curve.py` contain deterministic analytics.
-- `strategy_context.py` exports evidence and calculates fingerprints.
-- `scripts/generate_narratives.py` generates descriptions deterministically and validates artifacts.
-- `narratives.py` accepts reviewed artifacts for use in guides.
-- `protobuf.py`, `kv3_binary.py`, and `cache.py` form the Steam write boundary.
-  Errors in these modules can damage user data.
-- `cli.py` controls user workflows. Keep the `sync` command simple to use without arguments.
-  Retain the commands for review and debugging.
+- Follow the crate dependencies and public interfaces in [docs/architecture.md](docs/architecture.md).
+  Review ownership and dependency direction before changing a boundary.
+- `deadlock-data` owns shared validation, fingerprints, snapshots, and artifact writes.
+- `deadlock-input` owns synchronous API access and item mechanics.
+- `deadlock-guides` owns deterministic analytics, policies, descriptions, and artifact admission.
+- `deadlock-analysis` owns optional DuckDB extraction and numerical production.
+  It cannot import Steam storage.
+- `deadlock-steam` owns KV3, protobuf, cache installation, and recovery.
+  Errors in this crate can damage user data.
+- `deadlock-build-sync` controls workflows through the library interfaces.
+  Keep `sync` simple to use without arguments.
+  Retain the review and debugging commands.
+- Reject cyclic crate and module dependencies.
+- Enforce the import boundaries in `arch-lint.toml` through the complete local gate.
+  Keep Arch-lint warnings at zero.
+- Use a dependency only when its scope, maintenance, and implementation benefit justify its cost.
+  Do not add a VDF package for the local account-name lookup.
 
 ## Verification and release requirements
 
-- Use the documented Python and uv workflow.
+- Use the documented Cargo workflow and pinned Rust toolchain.
+  SQLFluff runs separately through `uvx`.
   This repository has no Node package workflow.
-  Do not use npm or pnpm as a replacement for its quality gates.
+- Use synchronous code. Do not add async functions, async blocks, await expressions, or asynchronous runtimes.
+- Forbid unsafe repository code and treat warnings as errors.
+  Keep Clippy `all`, `pedantic`, and `nursery` findings at zero.
+  Keep cognitive complexity at or below 21.
 - Identify the checks you ran in pull request verification notes.
   State which checks passed, failed, or did not run.
   Fixture validation does not certify live builds.
-- Add a regression test for every correctness or safety fix.
+- Do not add unit tests until the user requests them.
+  Verify correctness and safety changes with isolated executable checks and existing reference fixtures.
 - Run the complete fast local gate in [docs/quality-gates.md](docs/quality-gates.md) before you deliver changes.
-- For packaging changes, inspect the built wheel outside the source checkout.
-  Run a smoke test on that wheel outside the source checkout.
+- For packaging changes, inspect the release archive outside the source checkout.
+  Run a smoke check on its executable outside the source checkout.
 - Do not run a live Steam sync without explicit user authorization.
   After a live run, report the artifact directory, cache path, backup path, created and updated counts, and skipped heroes.
