@@ -214,19 +214,16 @@ fn export_tables(database: &AnalysisDatabase, paths: &RunPaths) -> Result<()> {
     for table in TABLES {
         execute(
             database,
-            "export_table",
-            &Parameters::from([
-                ("table".into(), SqlValue::Text(table.into())),
-                (
-                    "path".into(),
-                    paths
-                        .data
-                        .join(format!("{table}.parquet"))
-                        .to_string_lossy()
-                        .into_owned()
-                        .into(),
-                ),
-            ]),
+            &format!("export_{table}"),
+            &Parameters::from([(
+                "path".into(),
+                paths
+                    .data
+                    .join(format!("{table}.parquet"))
+                    .to_string_lossy()
+                    .into_owned()
+                    .into(),
+            )]),
         )?;
     }
     Ok(())

@@ -18,7 +18,13 @@ WITH purchases AS (
 ),
 
 team_states AS (
-    SELECT s.* FROM team_snapshots AS s
+    SELECT
+        s.match_id,
+        s.team_id,
+        s.team_net_worth,
+        s.observed_players,
+        s.stat_time
+    FROM team_snapshots AS s
     SEMI JOIN purchases AS p ON s.match_id = p.match_id
 ),
 

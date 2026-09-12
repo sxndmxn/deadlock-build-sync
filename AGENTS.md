@@ -100,6 +100,11 @@ It must not damage or discard user-owned Steam data.
 - Use the documented Cargo workflow and pinned Rust toolchain.
   SQLFluff runs separately through `uvx`.
   This repository has no Node package workflow.
+- Use explicit columns in every SELECT projection, including CTEs and subqueries.
+  Do not use `SELECT *`, qualified wildcards, or wildcard `EXCLUDE` and `REPLACE` projections.
+  Use native `COPY table TO` statements for whole-table exports.
+  `COUNT(*)` and arithmetic multiplication remain permitted.
+  Enforce the projection ban through the documented SQLFluff parse check.
 - Use synchronous code. Do not add async functions, async blocks, await expressions, or asynchronous runtimes.
 - Forbid unsafe repository code and treat warnings as errors.
   Keep Clippy `all`, `pedantic`, and `nursery` findings at zero.

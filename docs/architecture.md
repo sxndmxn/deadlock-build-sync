@@ -89,7 +89,7 @@ Extraction defaults remain 12 GB and eight threads, independently of hero worker
 The producer stores its source snapshot before discovery.
 Resume checks require unchanged source files, nominations, guide groups, cohort settings, and implementation identity.
 
-The producer embeds 51 SQL files with `include_str!`.
+The producer embeds 62 SQL files with `include_str!`.
 SQL loading does not depend on the working directory.
 Queries bind values instead of formatting user input into SQL.
 Each hero worker has a separate DuckDB connection, one database thread, and a 512 MiB database memory limit.

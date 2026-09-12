@@ -170,8 +170,52 @@ const SQL: &[(&str, &str)] = &[
         include_str!("../sql/extract/drop_team_snapshots.sql"),
     ),
     (
-        "extract/export_table.sql",
-        include_str!("../sql/extract/export_table.sql"),
+        "extract/export_item_assets.sql",
+        include_str!("../sql/extract/export_item_assets.sql"),
+    ),
+    (
+        "extract/export_eligible_matches.sql",
+        include_str!("../sql/extract/export_eligible_matches.sql"),
+    ),
+    (
+        "extract/export_player_matches.sql",
+        include_str!("../sql/extract/export_player_matches.sql"),
+    ),
+    (
+        "extract/export_hero_account_counts.sql",
+        include_str!("../sql/extract/export_hero_account_counts.sql"),
+    ),
+    (
+        "extract/export_match_folds.sql",
+        include_str!("../sql/extract/export_match_folds.sql"),
+    ),
+    (
+        "extract/export_split_boundaries.sql",
+        include_str!("../sql/extract/export_split_boundaries.sql"),
+    ),
+    (
+        "extract/export_compositions.sql",
+        include_str!("../sql/extract/export_compositions.sql"),
+    ),
+    (
+        "extract/export_team_snapshots.sql",
+        include_str!("../sql/extract/export_team_snapshots.sql"),
+    ),
+    (
+        "extract/export_player_snapshots.sql",
+        include_str!("../sql/extract/export_player_snapshots.sql"),
+    ),
+    (
+        "extract/export_purchases.sql",
+        include_str!("../sql/extract/export_purchases.sql"),
+    ),
+    (
+        "extract/export_first_purchases.sql",
+        include_str!("../sql/extract/export_first_purchases.sql"),
+    ),
+    (
+        "extract/export_decision_opportunities.sql",
+        include_str!("../sql/extract/export_decision_opportunities.sql"),
     ),
     (
         "extract/fill_split_boundaries.sql",

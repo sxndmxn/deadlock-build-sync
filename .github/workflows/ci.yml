@@ -69,6 +69,12 @@ jobs:
       - name: Check DuckDB SQL
         run: uvx --from sqlfluff==4.3.0 sqlfluff lint crates/deadlock-analysis/sql
 
+      - name: Reject SQL wildcard projections
+        shell: bash
+        run: |
+          uvx --from sqlfluff==4.3.0 sqlfluff parse crates/deadlock-analysis/sql --format json --code-only |
+            jq -e 'all(.. | objects; has("wildcard_expression") | not)'
+
       - name: Check documentation
         run: cargo doc --workspace --all-features --no-deps --locked
 

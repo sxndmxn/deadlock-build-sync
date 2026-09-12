@@ -394,3 +394,40 @@ Its SHA-256 file remains beside it.
 No release was published.
 Temporary verification sources, execution plans, and results remain under `/tmp/deadlock-med-verification/`.
 Fixture results do not certify live builds.
+
+## SQL wildcard prohibition
+
+The repository now prohibits wildcard SELECT projections.
+The requirement covers bare wildcards, qualified wildcards, CTEs, subqueries, and wildcard `EXCLUDE`, `REPLACE`, and `COLUMNS` expressions.
+`COUNT(*)`, arithmetic multiplication, comments, and string literals remain permitted.
+
+SQLFluff parses the SQL, and a direct `jq` expression rejects wildcard projection nodes.
+CI runs the pipeline with Bash `pipefail` enabled.
+The complete local gate documents the same commands.
+No custom checker, SQLFluff plugin, or application dependency was added.
+The check requires the development executable `jq`.
+
+All 13 existing wildcard projections were removed.
+Queries now use explicit column lists.
+Twelve native `COPY table TO` statements replace the generic wildcard export.
+Output paths remain bound parameters.
+The export settings remain Parquet, Zstandard compression, and 100000 rows per row group.
+The `AM04` suppression was removed.
+The current producer embeds 62 SQL files.
+
+| Verification | Result |
+| --- | --- |
+| Nineteen isolated projection-gate cases | Passed; twelve rejected cases and seven permitted cases |
+| Malformed SQL and attempted `AM04` suppression | Rejected |
+| SQLFluff lint and projection check across all 62 SQL files | Passed |
+| Twelve extraction table schemas and complete fixture contents | Identical to the previous SQL |
+| Twelve Parquet export schemas and complete fixture contents | Identical to the previous exports |
+| Beam, landmark, and item-metric queries for heroes 1, 12, 31, and 35 | Identical outputs across 106,646 result rows |
+| Complete local gate | Passed |
+| Fresh analysis-enabled release and archive inspection outside the checkout | Passed |
+| Live extraction, complete numerical production, and Steam writes | Did not run |
+
+The export comparison checks previous and current Parquet results, including their schemas.
+It does not assume that Parquet preserves every original DuckDB type.
+The isolated checks used DuckDB 1.5.5 and the existing source fixtures and recorded database.
+Temporary verification records remain under `/tmp/deadlock-sql-projection-checks/`.

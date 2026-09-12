@@ -40,6 +40,8 @@ cargo install cargo-deny --version 0.20.2 --locked
 cargo install arch-lint-cli --version 0.6.0 --locked
 ```
 
+The projection check also requires `jq`.
+Run its pipeline with shell `pipefail` enabled so parser failures cannot pass the check.
 SQLFluff remains a development tool.
 Its isolated `uvx` environment does not supply an application runtime.
 No Python application environment or Node workflow is required.
@@ -60,6 +62,9 @@ cargo fmt --all --check
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 arch-lint --config arch-lint.toml check --engine syn .
 uvx --from sqlfluff==4.3.0 sqlfluff lint crates/deadlock-analysis/sql
+set -o pipefail
+uvx --from sqlfluff==4.3.0 sqlfluff parse crates/deadlock-analysis/sql --format json --code-only |
+  jq -e 'all(.. | objects; has("wildcard_expression") | not)'
 cargo doc --workspace --all-features --no-deps --locked
 cargo deny --locked check --deny warnings
 cargo build --package deadlock-build-sync --locked
@@ -146,7 +151,13 @@ Placeholder values permit linting without changing runtime parameter bindings.
 
 SQLFluff 4.3 cannot parse DuckDB `ATTACH`, `DETACH`, `INSTALL`, `LOAD`, or `CREATE SECRET` statements.
 Nine administration files retain `PRS` exceptions.
-The generic export retains one `AM04` exception because a bound table determines its columns.
+Every SELECT projection must name its columns explicitly.
+The SQLFluff parse check rejects wildcard projections, including qualified wildcards and CTE projections.
+It also rejects wildcard `EXCLUDE` and `REPLACE` projections.
+`AM04` alone cannot enforce this rule because it permits resolvable wildcards.
+Native `COPY table TO` statements export complete tables without SELECT projections.
+`COUNT(*)` and arithmetic multiplication remain permitted.
+No `AM04` exception remains.
 Six external column names retain periods from the remote DuckLake schema.
 The configuration names these exceptions individually.
 

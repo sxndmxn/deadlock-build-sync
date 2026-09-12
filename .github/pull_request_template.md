@@ -8,6 +8,7 @@ Describe the user-visible result and why it is needed.
 - [ ] `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`
 - [ ] `arch-lint --config arch-lint.toml check --engine syn .`
 - [ ] `uvx --from sqlfluff==4.3.0 sqlfluff lint crates/deadlock-analysis/sql`
+- [ ] SQLFluff parse check rejects wildcard projections
 - [ ] `cargo doc --workspace --all-features --no-deps --locked`
 - [ ] `cargo deny --locked check --deny warnings`
 - [ ] Default CLI build and missing-analysis-feature check
