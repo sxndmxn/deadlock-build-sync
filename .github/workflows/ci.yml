@@ -10,9 +10,19 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_BUILD_JOBS: 2
+  CARGO_INCREMENTAL: 0
+  CARGO_TERM_COLOR: always
+
 jobs:
   linux:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -20,11 +30,33 @@ jobs:
       - name: Install the pinned Rust toolchain
         run: rustup show active-toolchain
 
+      - name: Reject Python source and package files
+        run: |
+          python_paths=$(git ls-files '*.py' '*.pyi' '*.pyc' '*.pyo' '*.whl' pyproject.toml uv.lock .python-version)
+          if [ -n "$python_paths" ]; then
+            printf 'Python files are prohibited:\n%s\n' "$python_paths" >&2
+            exit 1
+          fi
+
+      - name: Restore Rust build and tool caches
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin/cargo-modules
+            ~/.cargo/bin/cargo-deny
+            ~/.cargo/bin/arch-lint
+            ~/.cargo/.crates.toml
+            ~/.cargo/.crates2.json
+            target
+          key: rust-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/config.toml', '.github/workflows/ci.yml') }}
+
       - name: Check formatting
         run: cargo fmt --all --check
 
       - name: Run strict Clippy
-        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+        run: cargo lint
 
       - name: Install the module analyzer
         run: cargo install cargo-modules --version 0.26.0 --locked
@@ -33,7 +65,7 @@ jobs:
         run: cargo install arch-lint-cli --version 0.6.0 --locked
 
       - name: Check architecture and synchronous code
-        run: cargo run --locked --package deadlock-quality
+        run: cargo architecture
 
       - name: Install the SQL tool runner
         uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
@@ -66,3 +98,13 @@ jobs:
 
       - name: Check dependencies
         run: cargo deny --locked check --deny warnings
+
+      - name: Retain the verified Linux release archive
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: deadlock-build-sync-x86_64-unknown-linux-gnu
+          path: |
+            dist/deadlock-build-sync-*-x86_64-unknown-linux-gnu.tar.gz
+            dist/deadlock-build-sync-*-x86_64-unknown-linux-gnu.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 7

@@ -21,22 +21,26 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Download the verified Linux release archive
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: deadlock-build-sync-x86_64-unknown-linux-gnu
+          path: dist
 
-      - name: Install the pinned Rust toolchain
-        run: rustup show active-toolchain
-
-      - name: Build the release CLI with analysis
-        run: cargo build --package deadlock-build-sync --features analysis --release --locked
-
-      - name: Verify the release version
+      - name: Verify the archive checksum and release version
         run: |
-          version_output=$(target/release/deadlock-build-sync --version)
-          test "$GITHUB_REF_NAME" = "v${version_output#deadlock-build-sync }"
-
-      - name: Inspect and check the release archive outside the checkout
-        run: sh scripts/package_release.sh "$PWD/target/release/deadlock-build-sync" x86_64-unknown-linux-gnu
+          version=${GITHUB_REF_NAME#v}
+          case "$version" in
+            ''|*[!a-zA-Z0-9.+-]*) exit 1 ;;
+          esac
+          package_name="deadlock-build-sync-$version-x86_64-unknown-linux-gnu"
+          cd dist
+          sha256sum --check "$package_name.tar.gz.sha256"
+          temporary_directory=$(mktemp -d)
+          trap 'rm -rf -- "$temporary_directory"' EXIT
+          tar -C "$temporary_directory" -xzf "$package_name.tar.gz"
+          version_output=$("$temporary_directory/$package_name/deadlock-build-sync" --version)
+          test "$version_output" = "deadlock-build-sync $version"
 
       - name: Create the GitHub release
         env:

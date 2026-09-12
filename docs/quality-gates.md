@@ -67,6 +67,17 @@ cargo build --package deadlock-build-sync --locked
 
 `deadlock-quality` runs Arch-lint before the resolved module checks.
 It requires the pinned version, zero violations, and complete Rust source coverage.
+Cargo aliases provide shorter commands for the same checks:
+
+```bash
+cargo lint
+cargo architecture
+```
+
+The aliases reside in `.cargo/config.toml`.
+`Cargo.toml` contains compiler and Clippy lint settings.
+Cargo settings cannot inspect async syntax or calculate module dependency cycles.
+The Rust quality tool implements those checks and validates the Arch-lint report.
 Run the architecture linter directly when you need its report:
 
 ```bash
@@ -93,7 +104,18 @@ The packaging script creates an archive and SHA-256 file under `dist/`.
 It extracts the archive into a temporary directory outside the checkout.
 It checks the version, license, README, and help for all 13 commands there.
 The release workflow produces a Linux AMD64 archive with analysis enabled.
+CI retains the verified archive and its checksum as a downloadable artifact.
+The release job publishes that same archive after checksum and version verification.
+It does not rebuild the executable after verification.
 Internal workspace crates are not published separately.
+
+CI rejects tracked Python source and Python package files.
+It limits Cargo compilation to two jobs and cancels superseded pull request runs.
+The Rust cache includes compiled dependencies and the three pinned development tools.
+The CodeQL workflow selects Rust and GitHub Actions explicitly.
+It uses GitHub's supported `none` build mode and runs on pull requests, master pushes, and a weekly schedule.
+The workflow requires advanced CodeQL setup because default setup overrides repository CodeQL workflows.
+See [GitHub's setup instructions](https://docs.github.com/en/code-security/how-tos/find-and-fix-code-vulnerabilities/configure-code-scanning/configuring-advanced-setup-for-code-scanning).
 
 Use `--jobs 2` for Cargo builds when memory or disk space is limited.
 Bundled DuckDB omits native debug symbols in development builds.
