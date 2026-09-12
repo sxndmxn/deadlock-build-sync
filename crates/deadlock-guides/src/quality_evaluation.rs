@@ -203,8 +203,8 @@ fn group_outcomes<'outcomes, 'case>(
     for row in outcomes {
         let state = row.case.state.content();
         let phase = match state.clock_s {
-            0..540 => "opening",
-            540..1200 => "midgame",
+            0..=539 => "opening",
+            540..=1199 => "midgame",
             _ => "late",
         };
         groups.entry(phase).or_default().push(row);

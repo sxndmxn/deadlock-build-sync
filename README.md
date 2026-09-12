@@ -200,7 +200,6 @@ deadlock-build-sync recommend --state state.json
 
 The result includes the next purchase, soul shortfall, remaining route, and supported choices.
 The CLI does not capture live game state.
-[Build quality](docs/build-quality.md) describes independent replay inputs and diagnostic limits.
 
 ## Execution tracing
 
@@ -236,10 +235,8 @@ Arch-lint checks crate import boundaries.
 Code review checks asynchronous syntax and cyclic module dependencies.
 No unit tests were added during the rewrite, as requested.
 
-Use the complete [quality gate](docs/quality-gates.md) before delivery.
-See [architecture](docs/architecture.md), [dependency research](docs/rust-package-research.md), and [Rust verification](docs/rust-rewrite-verification.md).
+Run the checks in the [CI workflow](.github/workflows/ci.yml) before delivery.
+See [AGENTS.md](AGENTS.md) for crate ownership and verification requirements.
 SQLFluff runs through an isolated `uvx` environment as a development tool.
 
 The Python implementation and its comparison tools remain in Git at `d603d6b53bb110d0ac48a689f037861e6453b243`.
-Earlier performance, admission, and research reports describe that reference implementation.
-Those reports do not certify the Rust executable or current live builds.

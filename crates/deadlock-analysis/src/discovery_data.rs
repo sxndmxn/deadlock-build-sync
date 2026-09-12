@@ -149,12 +149,11 @@ fn build_discovery_data(
         })
         .collect::<Result<Vec<_>>>()?;
     let mut support = BTreeMap::<u64, usize>::new();
-    for (row, owned) in rows
+    for (_, owned) in rows
         .iter()
         .zip(&inventories)
         .filter(|(row, _)| row.fold == "discovery")
     {
-        let _ = row;
         let mut distinct = owned.clone();
         distinct.sort_unstable();
         distinct.dedup();
