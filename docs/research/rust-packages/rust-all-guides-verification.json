@@ -1,0 +1,465 @@
+{
+  "verification_date": "2026-09-12",
+  "platform": {
+    "system": "macOS",
+    "architecture": "aarch64",
+    "logical_processors": 10,
+    "memory_gib": 16,
+    "rust_version": "1.92.0"
+  },
+  "review_commit": "bb9031709a7a18cfe4c645d2b5760800768ed90a",
+  "measured_implementation": {
+    "language": "rust",
+    "source_sha256": "451cf1369f22d6ae12cb57720835508b0e868b9b67cba6b00288fc30bb27504c"
+  },
+  "review_source_sha256": "bc2af8bf87fcc3e1b8af7fda76ee0685a118d3cfd6057c38a76f6734a8777ddf",
+  "measurement_source_matches_review_except_toolchain_blank_line": true,
+  "post_measurement_source_change": "Removed one trailing blank line from rust-toolchain.toml. Rust source, SQL, and dependency versions are unchanged.",
+  "timing_scope": "Fresh source capture and extraction, complete discovery and validation, evidence admission, and all-hero guide generation. Compilation and separate verification commands are excluded.",
+  "target_seconds": 600,
+  "target_met": true,
+  "final_run": {
+    "started_at": "2026-09-12T15:04:56.980803+00:00",
+    "target_seconds": 600,
+    "fresh_source_extraction": true,
+    "initial_response_cache_exists": false,
+    "stages": [
+      {
+        "name": "refresh",
+        "command": [
+          "target/release/deadlock-build-sync",
+          "refresh-evidence",
+          "--run-id",
+          "all-guides-20260912-vector",
+          "--workers",
+          "8",
+          "--rank-expansion",
+          "off",
+          "--as-of",
+          "2026-09-12T12:02:45Z",
+          "--artifacts",
+          "generated/rust-all-guides-final",
+          "--trace",
+          "stages"
+        ],
+        "started_at": "2026-09-12T15:04:56.981071+00:00",
+        "pid": 39770,
+        "elapsed_seconds": 520.5986829579342,
+        "exit_code": 0,
+        "finished_at": "2026-09-12T15:13:37.533383+00:00"
+      },
+      {
+        "name": "build",
+        "command": [
+          "target/release/deadlock-build-sync",
+          "build",
+          "--all",
+          "--build-evidence",
+          "generated/rust-all-guides-final/build-evidence.json",
+          "--artifacts",
+          "generated/rust-all-guides-final",
+          "--rank-expansion",
+          "off",
+          "--format",
+          "markdown",
+          "--details",
+          "--trace",
+          "stages"
+        ],
+        "started_at": "2026-09-12T15:13:37.533820+00:00",
+        "pid": 40407,
+        "elapsed_seconds": 25.292967625078745,
+        "exit_code": 0,
+        "finished_at": "2026-09-12T15:14:02.826710+00:00"
+      }
+    ],
+    "elapsed_seconds": 545.8925566249527,
+    "exit_code": 0,
+    "finished_at": "2026-09-12T15:14:02.826995+00:00"
+  },
+  "refresh_trace_seconds": {
+    "capture_sources": 2.093479834,
+    "extract_cohort": 129.094358917,
+    "freeze_roster": 67.598362,
+    "validate_roster": 315.290243,
+    "validate_evidence": 2.339127208,
+    "command": 520.501052334
+  },
+  "previous_complete_run": {
+    "started_at": "2026-09-12T14:39:31.589879+00:00",
+    "target_seconds": 600,
+    "fresh_source_extraction": true,
+    "initial_response_cache_exists": false,
+    "stages": [
+      {
+        "name": "refresh",
+        "command": [
+          "target/release/deadlock-build-sync",
+          "refresh-evidence",
+          "--run-id",
+          "all-guides-20260912-prefetch",
+          "--workers",
+          "8",
+          "--rank-expansion",
+          "off",
+          "--as-of",
+          "2026-09-12T12:02:45Z",
+          "--artifacts",
+          "generated/rust-all-guides-optimized",
+          "--trace",
+          "stages"
+        ],
+        "started_at": "2026-09-12T14:39:31.590121+00:00",
+        "pid": 21593,
+        "elapsed_seconds": 637.1075724170078,
+        "exit_code": 0,
+        "finished_at": "2026-09-12T14:50:08.706152+00:00"
+      },
+      {
+        "name": "build",
+        "command": [
+          "target/release/deadlock-build-sync",
+          "build",
+          "--all",
+          "--build-evidence",
+          "generated/rust-all-guides-optimized/build-evidence.json",
+          "--artifacts",
+          "generated/rust-all-guides-optimized",
+          "--rank-expansion",
+          "off",
+          "--format",
+          "markdown",
+          "--details",
+          "--trace",
+          "stages"
+        ],
+        "started_at": "2026-09-12T14:50:08.706660+00:00",
+        "pid": 21923,
+        "elapsed_seconds": 33.83479179197457,
+        "exit_code": 0,
+        "finished_at": "2026-09-12T14:50:42.541986+00:00"
+      }
+    ],
+    "elapsed_seconds": 670.943302916945,
+    "exit_code": 0,
+    "finished_at": "2026-09-12T14:50:42.542241+00:00"
+  },
+  "worker_count": 8,
+  "rank_expansion": "off",
+  "cohort": {
+    "as_of": "2026-09-12T12:02:45+00:00",
+    "game_mode": "Normal",
+    "match_mode": "Ranked",
+    "maximum_badge": 115,
+    "minimum_badge": 71,
+    "since": "2026-08-22T21:40:46+00:00"
+  },
+  "live_cohort_checks": {
+    "invalid_match_compositions": 0,
+    "appearances_after_cutoff": 0,
+    "previously_rejected_appearances": 0,
+    "player_appearances": 971340,
+    "matches": 80945,
+    "purchases": 16451812
+  },
+  "extraction": {
+    "decision_opportunities": 7795446,
+    "extracted_minimum_badge": 71,
+    "first_purchases": 16451812,
+    "hero_account_rows": 38,
+    "heroes": 38,
+    "match_folds": 80945,
+    "player_matches": 971340,
+    "purchases": 16451812,
+    "source_snapshot_version": 56,
+    "valid_purchase_net_worth": 15149856,
+    "valid_team_lead": 15149856
+  },
+  "output": {
+    "evidence": {
+      "path": "generated/rust-all-guides-final/build-evidence.json",
+      "bytes": 142488615,
+      "sha256": "d3cac2175cc4456143d472c6fb02485fad096696b3b2c3357a202be3572d9479"
+    },
+    "evidence_artifact_id": "90754c536aeb80fec7ed1aff369f045b617b31c5ac22fad5c6ed446d6f971fc0",
+    "guide_index": {
+      "path": "generated/rust-all-guides-final/builds.json",
+      "bytes": 5855745,
+      "sha256": "2599c60897a1a84ca1737a3aa16b9ca2eab2b47e8308c291b953439431a97e9e"
+    },
+    "guide_snapshot_id": "712682d757b48f4be7d399fe611b7d3e74ad58faf3ab753081f103670a53c1ff",
+    "heroes": 38,
+    "admitted_paths": 755,
+    "guides": 139,
+    "guide_hero_count": 38,
+    "guide_path_coverage": 755,
+    "excluded_hero_ids": [],
+    "missing_guide_files": []
+  },
+  "ability_response_collection": {
+    "responses": 793,
+    "earliest_fetched_at": "2026-09-12T15:08:18.165190+00:00",
+    "latest_fetched_at": "2026-09-12T15:12:28.528279+00:00",
+    "all_responses_collected_before_refresh_finished": true,
+    "maximum_reuse_age_seconds": 3600,
+    "shared_minimum_request_interval_seconds": 0.31
+  },
+  "checks": [
+    {
+      "check": "format",
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--check"
+      ],
+      "exit_code": 0,
+      "passed": true,
+      "elapsed_seconds": 0.22224087500944734,
+      "log": "/tmp/deadlock-rust-under-ten-gates/format.log"
+    },
+    {
+      "check": "sql",
+      "command": [
+        "uvx",
+        "--from",
+        "sqlfluff==4.3.0",
+        "sqlfluff",
+        "lint",
+        "crates/deadlock-analysis/sql"
+      ],
+      "exit_code": 0,
+      "passed": true,
+      "elapsed_seconds": 2.2992063330020756,
+      "log": "/tmp/deadlock-rust-under-ten-gates/sql.log"
+    },
+    {
+      "check": "documentation",
+      "command": [
+        "cargo",
+        "doc",
+        "--workspace",
+        "--all-features",
+        "--no-deps",
+        "--locked",
+        "--jobs",
+        "2"
+      ],
+      "exit_code": 0,
+      "passed": true,
+      "elapsed_seconds": 193.86516045802273,
+      "log": "/tmp/deadlock-rust-under-ten-gates/documentation.log"
+    },
+    {
+      "check": "dependencies",
+      "command": [
+        "cargo",
+        "deny",
+        "--locked",
+        "check",
+        "--deny",
+        "warnings"
+      ],
+      "exit_code": 0,
+      "passed": true,
+      "elapsed_seconds": 1.860402249963954,
+      "log": "/tmp/deadlock-rust-under-ten-gates/dependencies.log"
+    },
+    {
+      "check": "default-build",
+      "command": [
+        "cargo",
+        "build",
+        "--package",
+        "deadlock-build-sync",
+        "--locked",
+        "--jobs",
+        "2"
+      ],
+      "exit_code": 0,
+      "passed": true,
+      "elapsed_seconds": 8.98651058296673,
+      "log": "/tmp/deadlock-rust-under-ten-gates/default-build.log"
+    },
+    {
+      "check": "default-help",
+      "command": [
+        "target/debug/deadlock-build-sync",
+        "--help"
+      ],
+      "exit_code": 0,
+      "passed": true,
+      "elapsed_seconds": 0.5230290408944711,
+      "log": "/tmp/deadlock-rust-under-ten-gates/default-help.log"
+    },
+    {
+      "check": "default-analysis-error",
+      "command": [
+        "target/debug/deadlock-build-sync",
+        "refresh-evidence"
+      ],
+      "exit_code": 1,
+      "passed": true,
+      "elapsed_seconds": 0.011944665922783315,
+      "log": "/tmp/deadlock-rust-under-ten-gates/default-analysis-error.log"
+    },
+    {
+      "check": "release-package",
+      "command": [
+        "sh",
+        "scripts/package_release.sh",
+        "target/release/deadlock-build-sync",
+        "aarch64-apple-darwin"
+      ],
+      "exit_code": 0,
+      "passed": true,
+      "elapsed_seconds": 1.8957055829232559,
+      "log": "/tmp/deadlock-rust-under-ten-gates/release-package.log"
+    },
+    {
+      "check": "strict-clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--workspace",
+        "--all-targets",
+        "--all-features",
+        "--locked",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "passed": true,
+      "log": "/tmp/deadlock-rust-under-ten-clippy.log"
+    },
+    {
+      "check": "architecture-and-synchronous-code",
+      "command": [
+        "cargo",
+        "run",
+        "--locked",
+        "--package",
+        "deadlock-quality"
+      ],
+      "passed": true,
+      "log": "/tmp/deadlock-rust-under-ten-quality.log"
+    },
+    {
+      "check": "release-analysis-build",
+      "command": [
+        "cargo",
+        "build",
+        "--package",
+        "deadlock-build-sync",
+        "--features",
+        "analysis",
+        "--release",
+        "--locked"
+      ],
+      "passed": true,
+      "log": "/tmp/deadlock-rust-vector-build.json"
+    }
+  ],
+  "comparisons": {
+    "vector_probability": {
+      "cases": 169,
+      "maximum_probability_difference": 2.4108492979735274e-13,
+      "error_mismatches": [],
+      "seconds": [
+        0.22396333400000001,
+        0.11816466
+      ],
+      "large_case_seconds": [
+        [
+          0.002511542,
+          0.003127041,
+          0.003905583,
+          0.00474175,
+          0.005211833
+        ],
+        [
+          0.001665083,
+          0.001514875,
+          0.002120959,
+          0.002602625,
+          0.002732875
+        ]
+      ]
+    },
+    "api_concurrency_and_cache": {
+      "checks": [
+        "parallel_results_and_source_order",
+        "parallel_request_overlap",
+        "shared_request_interval",
+        "cache_reuses_exact_bytes_and_fetch_timestamps",
+        "cohort_boundary_is_part_of_cache_identity",
+        "expired_responses_require_fresh_requests",
+        "response_hash_mismatch",
+        "request_hash_mismatch",
+        "unknown_cache_schema",
+        "invalid_fetch_timestamp",
+        "future_fetch_timestamp",
+        "truncated_cache_rejected",
+        "missing_response_refetched",
+        "rate_limit_retry_keeps_complete_records",
+        "earliest_source_error_rejects_partial_records",
+        "zero_workers_rejected"
+      ],
+      "count": 16,
+      "serial_seconds": 1.1992015830473974,
+      "parallel_seconds": 0.4821976670064032,
+      "peak_concurrent_requests": 4,
+      "minimum_request_interval_seconds": 0.06994433410000056,
+      "fixture_directory": "/var/folders/jt/s88jx1px65n165_bhj0550cw0000gn/T/deadlock-api-concurrency-ry8epgbs"
+    },
+    "python_numerical_reference": {
+      "checks": 43527,
+      "maximum_absolute_error": 1.29641575252748e-11,
+      "group_fixtures": 24,
+      "group_differences": [],
+      "log": "/tmp/deadlock-rust-vector-pipeline.log"
+    },
+    "cli_and_parallel_projection": {
+      "passed": true,
+      "local_http_requests": 59,
+      "log": "/tmp/deadlock-rust-vector-cli.log"
+    },
+    "arch_lint": {
+      "version": "0.6.0",
+      "restriction_rules": 9,
+      "files_checked": 237,
+      "violations": 0,
+      "isolated_checks": {
+        "checks": 298,
+        "crate_pairs": 42,
+        "path_forms": 6,
+        "fixture_directory": "/var/folders/jt/s88jx1px65n165_bhj0550cw0000gn/T/deadlock-architecture-rules-_w71vqs5",
+        "version": "0.6.0"
+      }
+    }
+  },
+  "measured_release": {
+    "executable": {
+      "path": "target/release/deadlock-build-sync",
+      "bytes": 51236544,
+      "sha256": "9db0f0279e05a1c80d64adae3fd60e188a3f9bdbc7aa90eed5e1ee72ebb20ef3"
+    },
+    "archive": {
+      "path": "dist/deadlock-build-sync-0.1.0-aarch64-apple-darwin.tar.gz",
+      "bytes": 16840460,
+      "sha256": "01ad8102ba0220596df4824924307122bdee6323a0f26527b033ccecd5f2c678"
+    },
+    "archive_inspection_passed": true,
+    "executable_help_commands_checked": 13
+  },
+  "new_runtime_dependencies_for_performance_changes": [],
+  "new_repository_unit_tests": 0,
+  "live_steam_operations": false,
+  "linux_execution_local": false,
+  "pull_request": "https://github.com/sxndmxn/deadlock-build-sync/pull/30",
+  "remote_check_status": {
+    "rust_linux_ci": "in_progress",
+    "codeql_actions": "passed",
+    "codeql_python": "failed because the existing repository default setup selects Python and the branch removes Python source"
+  }
+}

@@ -292,7 +292,34 @@ The vector calculation differed from the previous Rust calculation by at most `2
 Solver tolerances and admission thresholds remain unchanged.
 All 16 API concurrency and cache checks passed.
 CLI workflow checks passed with 59 local HTTP requests.
-The complete timing measurement for these later changes remains in progress.
+The complete timing measurement for these later changes passed in 545.893 seconds, or 9 minutes 6 seconds.
+This includes fresh extraction, complete numerical validation, evidence admission, and every guide.
+The run started with an empty API response cache.
+Compilation and separate verification commands are outside this measurement.
+
+| Stage | Elapsed time |
+| --- | --- |
+| Source capture | 2.093 seconds |
+| Extraction | 129.094 seconds |
+| Discovery | 67.598 seconds |
+| Hero validation | 315.290 seconds |
+| Evidence admission | 2.339 seconds |
+| Complete refresh, including other work | 520.599 seconds |
+| All-hero guide generation | 25.293 seconds |
+| Combined CLI invocations | 545.893 seconds |
+
+The run processed 80,945 matches, 971,340 player appearances, and 16,451,812 purchases.
+These counts match the previous 11-minute 11-second run.
+Both runs used eight workers, the same cutoff, and no rank expansion.
+The current run generated 139 guides that cover all 755 admitted paths across all 38 heroes.
+All 793 ability responses arrived before the refresh finished.
+Each guide has a Markdown file and a Steam JSON file.
+No hero was excluded.
+
+The evidence identity is `90754c536aeb80fec7ed1aff369f045b617b31c5ac22fad5c6ed446d6f971fc0`.
+The guide snapshot identity is `712682d757b48f4be7d399fe611b7d3e74ad58faf3ab753081f103670a53c1ff`.
+The guide index is `generated/rust-all-guides-final/builds.json`.
+The [all-hero verification record](research/rust-packages/rust-all-guides-verification.json) contains timings, artifact identities, release hashes, and check results.
 
 Arch-lint 0.6.0 now enforces nine explicit restriction rules from `arch-lint.toml`.
 The rules cover crate boundaries, guide network and database access, and asynchronous runtime imports.
@@ -305,3 +332,8 @@ This includes formatting, strict Clippy, architecture checks, SQLFluff, document
 The release archive passed inspection and executable checks outside the checkout.
 Linux execution and live Steam operations did not run locally.
 No repository unit tests were added.
+
+The draft pull request starts the Rust Linux CI workflow.
+GitHub's existing default CodeQL configuration selects Actions and Python.
+The Python analysis failed because this branch removes the Python source.
+The CodeQL language configuration requires an update during migration to Rust.
