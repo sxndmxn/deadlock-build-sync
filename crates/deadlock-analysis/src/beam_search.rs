@@ -125,59 +125,14 @@ pub fn search_group(request: &SearchRequest<'_>) -> Result<SearchResult> {
         4
     };
     let mut frontier = vec![BeamRoute::default()];
-    let mut terminal = BTreeMap::new();
-    let mut expansions = 0;
-    let mut unassigned = 0;
+    let mut progress = SearchProgress::default();
     for _ in 0..maximum_depth {
-        let mut following = BTreeMap::<(Vec<u64>, Vec<u64>), BeamRoute>::new();
-        for route in &frontier {
-            for item in request.candidates {
-                if route.targets.is_empty() && !anchors.contains(item) {
-                    continue;
-                }
-                expansions += 1;
-                let Some(mut child) = extend_route(request, route, *item)? else {
-                    continue;
-                };
-                if request.ownership.count(&child.core, true) < 200 {
-                    continue;
-                }
-                let mut targets = child.targets.clone();
-                targets.sort_unstable();
-                let identity = (child.core.clone(), targets);
-                if following.get(&identity).is_none_or(|previous| {
-                    child.score > previous.score
-                        || (child.score.total_cmp(&previous.score).is_eq()
-                            && child.path < previous.path)
-                }) {
-                    following.insert(identity, child.clone());
-                }
-                if child.core.len() < minimum || request.ownership.count(&child.core, false) < 200 {
-                    continue;
-                }
-                match assign_core_group(&child.core, request.groups)? {
-                    Some(group) if group == request.group => {
-                        child.owners = request.ownership.count(&child.core, false);
-                        terminal.insert((child.core.clone(), child.path.clone()), child);
-                    }
-                    None => unassigned += 1,
-                    Some(_) => {}
-                }
-            }
-        }
-        frontier = following.into_values().collect();
-        frontier.sort_by(|left, right| {
-            right
-                .score
-                .total_cmp(&left.score)
-                .then_with(|| left.path.cmp(&right.path))
-        });
-        frontier.truncate(16);
+        frontier = progress.expand_frontier(request, &frontier, &anchors, minimum)?;
         if frontier.is_empty() {
             break;
         }
     }
-    let mut routes = terminal.into_values().collect::<Vec<_>>();
+    let mut routes = progress.terminal.into_values().collect::<Vec<_>>();
     routes.sort_by(|left, right| {
         right
             .score
@@ -188,7 +143,84 @@ pub fn search_group(request: &SearchRequest<'_>) -> Result<SearchResult> {
     });
     Ok(SearchResult {
         routes,
-        expansions,
-        unassigned,
+        expansions: progress.expansions,
+        unassigned: progress.unassigned,
     })
+}
+
+#[derive(Debug, Default)]
+struct SearchProgress {
+    terminal: BTreeMap<(Vec<u64>, Vec<u64>), BeamRoute>,
+    expansions: u64,
+    unassigned: u64,
+}
+
+impl SearchProgress {
+    fn expand_frontier(
+        &mut self,
+        request: &SearchRequest<'_>,
+        frontier: &[BeamRoute],
+        anchors: &BTreeSet<u64>,
+        minimum: usize,
+    ) -> Result<Vec<BeamRoute>> {
+        let mut following = BTreeMap::new();
+        for route in frontier {
+            for item in request.candidates {
+                if route.targets.is_empty() && !anchors.contains(item) {
+                    continue;
+                }
+                self.expansions += 1;
+                let Some(child) = extend_route(request, route, *item)? else {
+                    continue;
+                };
+                if request.ownership.count(&child.core, true) < 200 {
+                    continue;
+                }
+                retain_best_route(&mut following, &child);
+                self.admit_terminal(request, child, minimum)?;
+            }
+        }
+        let mut routes = following.into_values().collect::<Vec<_>>();
+        routes.sort_by(|left, right| {
+            right
+                .score
+                .total_cmp(&left.score)
+                .then_with(|| left.path.cmp(&right.path))
+        });
+        routes.truncate(16);
+        Ok(routes)
+    }
+
+    fn admit_terminal(
+        &mut self,
+        request: &SearchRequest<'_>,
+        mut child: BeamRoute,
+        minimum: usize,
+    ) -> Result<()> {
+        if child.core.len() < minimum || request.ownership.count(&child.core, false) < 200 {
+            return Ok(());
+        }
+        match assign_core_group(&child.core, request.groups)? {
+            Some(group) if group == request.group => {
+                child.owners = request.ownership.count(&child.core, false);
+                self.terminal
+                    .insert((child.core.clone(), child.path.clone()), child);
+            }
+            None => self.unassigned += 1,
+            Some(_) => {}
+        }
+        Ok(())
+    }
+}
+
+fn retain_best_route(following: &mut BTreeMap<(Vec<u64>, Vec<u64>), BeamRoute>, child: &BeamRoute) {
+    let mut targets = child.targets.clone();
+    targets.sort_unstable();
+    let identity = (child.core.clone(), targets);
+    if following.get(&identity).is_none_or(|previous| {
+        child.score > previous.score
+            || (child.score.total_cmp(&previous.score).is_eq() && child.path < previous.path)
+    }) {
+        following.insert(identity, child.clone());
+    }
 }

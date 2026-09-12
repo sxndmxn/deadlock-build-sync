@@ -2,18 +2,19 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::Utc;
 use deadlock_data::{
-    ArtifactCoverage, EvidenceSemantics, EvidenceUnit, Result, object, trace_operation,
+    ArtifactCoverage, EvidenceSemantics, EvidenceUnit, Result, SnapshotManifest, object,
+    trace_operation,
 };
 use deadlock_guides::{
-    BEAM_METHOD_VERSION, BuildEvidenceCatalog, BuildEvidenceIdentity, BuildGenerator,
-    CURRENT_METHOD_VERSION, NarrativeCatalog, build_item_mechanics_catalog,
+    BEAM_METHOD_VERSION, BuildEvidenceCatalog, BuildEvidenceIdentity, BuildGenerator, BuildPolicy,
+    CURRENT_METHOD_VERSION, NarrativeCatalog, PurchaseGuide, build_item_mechanics_catalog,
 };
 use deadlock_input::{BuildTagCatalog, DeadlockApi, ItemGraph};
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 
 use crate::generation_inputs::{collect_cohort_analytics, collect_hero_inputs};
 use crate::generation_projection::project_hero;
-use crate::generation_types::{GeneratedGuides, select_heroes};
+use crate::generation_types::{GeneratedGuides, HeroInputs, select_heroes};
 
 #[derive(Clone, Debug, Default)]
 pub struct GenerationRequest {
@@ -30,15 +31,12 @@ pub fn generate_guides(
     request: &GenerationRequest,
     narratives: Option<&NarrativeCatalog>,
 ) -> Result<GeneratedGuides> {
-    let GenerationAssets {
-        rank_catalog,
-        heroes,
-        assets,
-        tags,
-        patch,
-        start,
-    } = collect_generation_assets(api, evidence)?;
-    let selected = select_heroes(&heroes, request.hero_query.as_deref(), request.all_heroes)?;
+    let inputs = collect_generation_assets(api, evidence)?;
+    let selected = select_heroes(
+        &inputs.heroes,
+        request.hero_query.as_deref(),
+        request.all_heroes,
+    )?;
     let options = api.options().clone();
     let evidence = evidence.select_hero_subset(
         &selected
@@ -50,7 +48,7 @@ pub fn generate_guides(
     let analytics = trace_operation(
         "guides.collect_cohort_analytics",
         Some("collect_cohort_analytics"),
-        || collect_cohort_analytics(api, start),
+        || collect_cohort_analytics(api, inputs.start),
     )?;
     let persona = if request.account_id == 0 {
         "Build Preview".into()
@@ -60,14 +58,80 @@ pub fn generate_guides(
     let prepared = trace_operation(
         "guides.collect_hero_inputs",
         Some("collect_hero_inputs"),
-        || collect_hero_inputs(api, &selected, &evidence, &assets, start, &analytics),
+        || {
+            collect_hero_inputs(
+                api,
+                &selected,
+                &evidence,
+                &inputs.assets,
+                inputs.start,
+                &analytics,
+            )
+        },
     )?;
-    let manifest = api.snapshot_manifest(&patch, &rank_catalog, tags.sha256())?;
+    let manifest =
+        api.snapshot_manifest(&inputs.patch, &inputs.rank_catalog, inputs.tags.sha256())?;
+    let projected = project_roster(&prepared, &inputs, &manifest, narratives)?;
+    let eligible_hero_ids = inputs
+        .heroes
+        .iter()
+        .filter_map(|hero| hero["id"].as_u64())
+        .collect::<BTreeSet<_>>();
+    let requested = if request.all_heroes {
+        eligible_hero_ids.clone()
+    } else {
+        projected.guides.iter().map(|guide| guide.hero_id).collect()
+    };
+    let result = GeneratedGuides {
+        guides: projected.guides,
+        policies: projected.policies,
+        contexts: projected.contexts,
+        item_mechanics: projected.item_mechanics,
+        coverage: ArtifactCoverage::new(requested, BTreeMap::new())?,
+        eligible_hero_ids,
+        subset_selected: !request.all_heroes,
+        rank_range: options.rank_range,
+        rank_catalog: inputs.rank_catalog,
+        persona,
+        patch: inputs.patch,
+        manifest,
+        guide_groups: evidence
+            .heroes()
+            .values()
+            .flat_map(|hero| &hero.builds)
+            .map(|build| {
+                (
+                    (build.hero_id, build.path_id.clone()),
+                    build.guide_group_id.clone(),
+                )
+            })
+            .collect(),
+        evidence,
+    };
+    result.require_complete()?;
+    Ok(result)
+}
+
+#[derive(Debug)]
+struct ProjectedRoster {
+    guides: Vec<PurchaseGuide>,
+    policies: Vec<BuildPolicy>,
+    contexts: Vec<Value>,
+    item_mechanics: Map<String, Value>,
+}
+
+fn project_roster(
+    prepared: &[HeroInputs],
+    assets: &GenerationAssets,
+    manifest: &SnapshotManifest,
+    narratives: Option<&NarrativeCatalog>,
+) -> Result<ProjectedRoster> {
     let projected = trace_operation("guides.project_roster", Some("project_roster"), || {
-        deadlock_data::map_jobs(&prepared, 8, |inputs| {
-            let (mut guide, policy, context) = project_hero(inputs, &assets, &manifest, &tags)?;
+        deadlock_data::map_jobs(prepared, 8, |inputs| {
+            let (mut guide, policy, context) =
+                project_hero(inputs, &assets.assets, manifest, &assets.tags)?;
             if let Some(narratives) = narratives {
-                narratives.apply(&mut guide, &context, &patch)?;
+                narratives.apply(&mut guide, &context, &assets.patch)?;
             }
             Ok((guide, policy, context))
         })
@@ -90,43 +154,12 @@ pub fn generate_guides(
         })
         .filter_map(Value::as_u64)
         .collect();
-    let eligible_hero_ids = heroes
-        .iter()
-        .filter_map(|hero| hero["id"].as_u64())
-        .collect::<BTreeSet<_>>();
-    let requested = if request.all_heroes {
-        eligible_hero_ids.clone()
-    } else {
-        guides.iter().map(|guide| guide.hero_id).collect()
-    };
-    let result = GeneratedGuides {
+    Ok(ProjectedRoster {
         guides,
         policies,
         contexts,
-        item_mechanics: build_item_mechanics_catalog(&assets, &item_ids)?,
-        coverage: ArtifactCoverage::new(requested, BTreeMap::new())?,
-        eligible_hero_ids,
-        subset_selected: !request.all_heroes,
-        rank_range: options.rank_range,
-        rank_catalog,
-        persona,
-        patch,
-        manifest,
-        guide_groups: evidence
-            .heroes()
-            .values()
-            .flat_map(|hero| &hero.builds)
-            .map(|build| {
-                (
-                    (build.hero_id, build.path_id.clone()),
-                    build.guide_group_id.clone(),
-                )
-            })
-            .collect(),
-        evidence,
-    };
-    result.require_complete()?;
-    Ok(result)
+        item_mechanics: build_item_mechanics_catalog(&assets.assets, &item_ids)?,
+    })
 }
 
 #[derive(Debug)]

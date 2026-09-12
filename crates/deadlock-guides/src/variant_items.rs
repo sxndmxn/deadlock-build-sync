@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use deadlock_data::Result;
 
@@ -12,7 +12,7 @@ pub fn group_members(guide: &PurchaseGuide) -> impl Iterator<Item = &PurchaseGui
 
 pub fn collect_tier_items(guide: &PurchaseGuide, tier: u8) -> Result<Vec<GuideItem>> {
     let mut result = Vec::<GuideItem>::new();
-    let mut positions = BTreeMap::new();
+    let mut item_keys = BTreeSet::new();
     let mut instructions = BTreeSet::new();
     for (index, member) in group_members(guide).enumerate() {
         let scope = if index == 0 {
@@ -24,19 +24,11 @@ pub fn collect_tier_items(guide: &PurchaseGuide, tier: u8) -> Result<Vec<GuideIt
             .optional_core_items
             .iter()
             .chain(member.tiers.values().flatten())
+            .filter(|item| item.tier == u64::from(tier))
         {
-            if item.tier != u64::from(tier) {
-                continue;
-            }
             let key = (item.item_id, item.imbue_target_ability_id);
-            if let std::collections::btree_map::Entry::Vacant(entry) = positions.entry(key) {
-                entry.insert(result.len());
-                let mut item = item.clone();
-                let annotation = format!("Stats: {scope}.\n{}", item.annotation());
-                if annotation.len() <= MAX_ITEM_ANNOTATION_BYTES {
-                    item.annotation_text = annotation;
-                }
-                result.push(item);
+            if item_keys.insert(key) {
+                result.push(annotate_scope(item, &scope));
             }
             for card in instruction_items(member, item, &scope)? {
                 if instructions.insert((key, card.annotation_text.clone())) {
@@ -46,6 +38,15 @@ pub fn collect_tier_items(guide: &PurchaseGuide, tier: u8) -> Result<Vec<GuideIt
         }
     }
     Ok(result)
+}
+
+fn annotate_scope(item: &GuideItem, scope: &str) -> GuideItem {
+    let mut item = item.clone();
+    let annotation = format!("Stats: {scope}.\n{}", item.annotation());
+    if annotation.len() <= MAX_ITEM_ANNOTATION_BYTES {
+        item.annotation_text = annotation;
+    }
+    item
 }
 
 fn instruction_items(

@@ -11,8 +11,7 @@ Install a C++ compiler for bundled DuckDB.
 cargo build --package deadlock-build-sync --features analysis --locked
 ```
 
-Before opening a pull request, run the complete fast local gate in
-[docs/quality-gates.md](docs/quality-gates.md).
+Before opening a pull request, run the verification checks in [AGENTS.md](AGENTS.md).
 
 Unit tests remain deferred at the user's request.
 Verify changes with the documented checks and isolated reference fixtures.

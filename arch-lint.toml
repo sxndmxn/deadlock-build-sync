@@ -48,7 +48,7 @@ deny = [
     "deadlock_build_sync::**",
 ]
 message = "deadlock-data cannot import this crate. Check the documented dependency direction."
-doc = "docs/architecture.md"
+doc = "AGENTS.md"
 severity = "error"
 check-inline = true
 
@@ -62,7 +62,7 @@ deny = [
     "deadlock_build_sync::**",
 ]
 message = "deadlock-input cannot import this crate. Check the documented dependency direction."
-doc = "docs/architecture.md"
+doc = "AGENTS.md"
 severity = "error"
 check-inline = true
 
@@ -75,7 +75,7 @@ deny = [
     "deadlock_build_sync::**",
 ]
 message = "deadlock-guides cannot import this crate. Check the documented dependency direction."
-doc = "docs/architecture.md"
+doc = "AGENTS.md"
 severity = "error"
 check-inline = true
 
@@ -88,7 +88,7 @@ deny = [
     "deadlock_build_sync::**",
 ]
 message = "deadlock-steam cannot import this crate. Check the documented dependency direction."
-doc = "docs/architecture.md"
+doc = "AGENTS.md"
 severity = "error"
 check-inline = true
 
@@ -100,7 +100,7 @@ deny = [
     "deadlock_build_sync::**",
 ]
 message = "deadlock-analysis cannot import this crate. Check the documented dependency direction."
-doc = "docs/architecture.md"
+doc = "AGENTS.md"
 severity = "error"
 check-inline = true
 
@@ -118,7 +118,7 @@ deny = [
     "std::process::**",
 ]
 message = "Guide logic consumes collected evidence. Network and database access belong to input and analysis code."
-doc = "docs/architecture.md"
+doc = "AGENTS.md"
 severity = "error"
 check-inline = true
 
@@ -127,6 +127,6 @@ name = "synchronous-runtime-boundary"
 files = ["crates/**/*.rs", "tools/**/*.rs"]
 deny = ["tokio::**", "async_std::**", "smol::**", "async_executor::**", "reqwest::**"]
 message = "Use synchronous operations and standard threads."
-doc = "docs/quality-gates.md"
+doc = "AGENTS.md"
 severity = "error"
 check-inline = true

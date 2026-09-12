@@ -46,6 +46,7 @@ jobs:
             ~/.cargo/git
             ~/.cargo/bin/cargo-deny
             ~/.cargo/bin/arch-lint
+            ~/.cargo/bin/rust-code-analysis-cli
             ~/.cargo/.crates.toml
             ~/.cargo/.crates2.json
             target
@@ -53,6 +54,41 @@ jobs:
 
       - name: Check formatting
         run: cargo fmt --all --check
+
+      - name: Install Rust code analysis
+        run: cargo install rust-code-analysis-cli --version 0.0.25 --locked
+
+      - name: Check Rust code metrics
+        id: rust_code_analysis
+        shell: bash
+        run: |
+          output_directory="$RUNNER_TEMP/rust-code-analysis"
+          mkdir -p "$output_directory/metrics"
+          rust-code-analysis-cli -p crates -I '*.rs' -f error -j 2 |
+            tee "$output_directory/parser-errors.txt"
+          test ! -s "$output_directory/parser-errors.txt"
+          rust-code-analysis-cli -p crates -I '*.rs' -m -O json --pr \
+            -o "$output_directory/metrics" -w -j 2
+          source_count=$(find crates -type f -name '*.rs' | wc -l)
+          report_count=$(find "$output_directory/metrics" -type f -name '*.json' | wc -l)
+          test "$source_count" -gt 0
+          test "$source_count" -eq "$report_count"
+          find "$output_directory/metrics" -type f -name '*.json' -exec jq -s -e '
+            [.[] | . as $file | .. | objects
+              | select(.kind? == "function" and .metrics.cognitive.sum > 21)
+              | {file: $file.name, function: .name, line: .start_line,
+                 cognitive: .metrics.cognitive.sum}]
+            | if length == 0 then true else ., false end
+          ' {} +
+
+      - name: Retain Rust code metrics
+        if: ${{ !cancelled() && steps.rust_code_analysis.outcome != 'skipped' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: rust-code-analysis
+          path: ${{ runner.temp }}/rust-code-analysis
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Run strict Clippy
         run: cargo lint

@@ -77,7 +77,7 @@ It must not damage or discard user-owned Steam data.
 
 ## Architecture boundaries
 
-- Follow the crate dependencies and public interfaces in [docs/architecture.md](docs/architecture.md).
+- Follow the crate ownership rules below and the import boundaries in [arch-lint.toml](arch-lint.toml).
   Review ownership and dependency direction before changing a boundary.
 - `deadlock-data` owns shared validation, fingerprints, snapshots, and artifact writes.
 - `deadlock-input` owns synchronous API access and item mechanics.
@@ -114,7 +114,8 @@ It must not damage or discard user-owned Steam data.
   Fixture validation does not certify live builds.
 - Do not add unit tests until the user requests them.
   Verify correctness and safety changes with isolated executable checks and existing reference fixtures.
-- Run the complete fast local gate in [docs/quality-gates.md](docs/quality-gates.md) before you deliver changes.
+- Run formatting, strict Clippy, Arch-lint, Rust code analysis, SQLFluff, documentation, dependency, and default-build checks before delivery.
+  Use the commands and tool versions in [.github/workflows/ci.yml](.github/workflows/ci.yml).
 - For packaging changes, inspect the release archive outside the source checkout.
   Run a smoke check on its executable outside the source checkout.
 - Do not run a live Steam sync without explicit user authorization.
