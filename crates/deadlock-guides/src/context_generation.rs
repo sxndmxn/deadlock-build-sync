@@ -86,9 +86,9 @@ fn projection_context(guide: &PurchaseGuide) -> Result<Value> {
     Ok(
         json!({"build":{"path_id":guide.path_id,"path_label":guide.path_label,"archetype":guide.build_archetype,
         "tag_ids":guide.build_tag_ids,"tag_classes":guide.build_tag_classes,"tag_labels":guide.build_tag_labels,
-        "tag_catalog_sha256":guide.build_tag_catalog_sha256},"guide_version":3,
+        "tag_catalog_sha256":guide.build_tag_catalog_sha256},"guide_version":4,
         "categories":guide.rendered_categories()?.iter().map(crate::guide_category::GuideCategory::record).collect::<Vec<_>>(),
-        "semantics":"CORE steps are the validated component path in automatic Queue. OPTIONAL, PICK ONE, UPGRADE, and ITEM POOL rows are optional. Core substitutions require separate core and branch admission."}),
+        "semantics":"CORE steps are the validated component path in automatic Queue. OPTIONAL, PICK ONE, UPGRADE, and OPTIONAL ITEMS rows are optional. Core substitutions require separate core and branch admission."}),
     )
 }
 
@@ -97,7 +97,7 @@ const INTERPRETATION_CONSTRAINTS: [&str; 8] = [
     "Observed adopter outcomes and ending-duration profiles are descriptive associations. They do not establish item effects or live power curves.",
     "Ability actions use reached-state support and exact legal levels. Price tiers are not ability quarters.",
     "Explain only policy branches with supplied mechanics and observable states.",
-    "Only validated CORE component steps enter automatic Queue. All choice and ITEM POOL rows remain optional.",
+    "Only validated CORE component steps enter automatic Queue. All choice and OPTIONAL ITEMS rows remain optional.",
     "Cross-fitted doubly robust comparisons depend on assumptions. They do not prove that an item causes wins.",
     "Use VS, WHY, SWAP, WHEN, and SKIP lines for conditional item cards. Support each line with both item mechanics. Do not state an outcome effect.",
     "Do not invent mechanics, numeric effects, threats, combinations, or matchups absent from this context.",

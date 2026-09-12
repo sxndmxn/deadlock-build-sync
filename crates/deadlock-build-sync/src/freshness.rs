@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use deadlock_data::{Error, Result};
+use deadlock_data::Result;
 use deadlock_guides::{
     BuildEvidenceCatalog, NarrativeCatalog, PolicyArtifact, StrategyContext,
     load_artifact_guide_bundle,
@@ -54,7 +54,7 @@ pub fn build_freshness_report(
         policy_stage(directory, context.as_ref())?,
         narrative_stage(directory, context.as_ref()),
         bundle_stage(directory),
-        installed_stage(location, context.as_ref(), evidence.as_ref()),
+        installed_stage(location, directory),
     ];
     let code = if stages.iter().all(|stage| stage["state"] == "current") {
         0
@@ -157,23 +157,12 @@ fn bundle_stage(directory: &Path) -> Value {
     }
 }
 
-fn installed_stage(
-    location: Result<CacheLocation>,
-    context: Option<&StrategyContext>,
-    evidence: Option<&BuildEvidenceCatalog>,
-) -> Value {
+fn installed_stage(location: Result<CacheLocation>, directory: &Path) -> Value {
     let location = match location {
         Ok(location) => location,
         Err(error) => return stage("installed_cache", "unavailable", &error.to_string()),
     };
-    let Some(context) = context else {
-        return stage(
-            "installed_cache",
-            "stale",
-            "Strategy context is unavailable",
-        );
-    };
-    match compare_installed(&location, context, evidence) {
+    match compare_installed(&location, directory) {
         Ok(true) => stage("installed_cache", "current", "Validated"),
         Ok(false) => stage(
             "installed_cache",
@@ -184,46 +173,34 @@ fn installed_stage(
     }
 }
 
-fn compare_installed(
-    location: &CacheLocation,
-    context: &StrategyContext,
-    evidence: Option<&BuildEvidenceCatalog>,
-) -> Result<bool> {
+fn compare_installed(location: &CacheLocation, directory: &Path) -> Result<bool> {
+    let bundle = load_artifact_guide_bundle(
+        &directory.join("strategy-context.json"),
+        &directory.join("policies.json"),
+        &directory.join("narratives.json"),
+        &directory.join("build-evidence.json"),
+    )?;
     let installed =
         managed_build_descriptions(&read_cache(&location.cache_path)?, location.account_id)?;
-    let mut expected = BTreeMap::new();
-    for ((hero_id, path_id), hero) in context.heroes() {
-        let variant = evidence
-            .and_then(|catalog| catalog.heroes().get(hero_id))
-            .is_some_and(|hero| {
-                hero.builds.iter().any(|build| {
-                    &build.path_id == path_id
-                        && !build.guide_group_id.is_empty()
-                        && build.path_id != build.guide_group_id
-                })
-            });
-        if !variant {
-            let policy = hero["policy_id"]
-                .as_str()
-                .ok_or_else(|| Error::new("Strategy context has no policy identity"))?;
-            expected.insert(
+    let expected = bundle
+        .guides
+        .iter()
+        .map(|guide| {
+            let presentation = deadlock_guides::build_presentation(
+                guide,
+                "Build Preview",
+                &bundle.patch.title,
+                &bundle.patch.published_at,
+                bundle.rank_range,
+            )?;
+            Ok((
                 BuildKey {
-                    hero_id: *hero_id,
-                    path_id: path_id.clone(),
+                    hero_id: guide.hero_id,
+                    path_id: guide.path_id.clone(),
                 },
-                policy,
-            );
-        }
-    }
-    if installed.keys().ne(expected.keys()) {
-        return Ok(false);
-    }
-    Ok(expected.iter().all(|(key, policy)| {
-        installed[key]
-            .lines()
-            .any(|line| line == format!("Snapshot: {}.", context.manifest().identifier()))
-            && installed[key]
-                .lines()
-                .any(|line| line == format!("Policy: {policy}."))
-    }))
+                presentation.content().description.clone(),
+            ))
+        })
+        .collect::<Result<BTreeMap<_, _>>>()?;
+    Ok(installed == expected)
 }

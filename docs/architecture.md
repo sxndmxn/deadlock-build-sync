@@ -70,6 +70,15 @@ Asset and patch requests always contact the API.
 `ItemGraph` owns item components, upgrade relationships, mechanics, and inventory restrictions.
 `BuildEvidenceCatalog`, `StrategyContext`, `PolicyArtifact`, and `NarrativeCatalog` admit the application artifacts.
 Guide functions produce validated policies, deterministic descriptions, purchase routes, and presentation records.
+Display grouping follows evidence admission and retains each source evidence group identifier.
+Within each source group, the first purchase and imbue target determine display partitions.
+The frozen selection rank determines each main path and variant order.
+Alternative panels divide complete purchase paths into a shared prefix and separate continuations.
+The prefix comparison retains purchase costs, consumed components, inventory order, and imbue targets.
+Standalone builds retain paths without a valid prefix or continuation.
+Presentation validation requires the complete panel sequence, exact item records, dimensions, and queue flags.
+Only `MAIN CORE` enters the automatic purchase queue.
+
 
 `refresh_evidence` is the numerical producer entry point.
 Its `RefreshRequest` contains the fixed cohort, generator, worker count, output location, and resume options.

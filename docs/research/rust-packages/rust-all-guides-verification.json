@@ -458,8 +458,13 @@
   "linux_execution_local": false,
   "pull_request": "https://github.com/sxndmxn/deadlock-build-sync/pull/30",
   "remote_check_status": {
-    "rust_linux_ci": "in_progress",
+    "reference_commit": "fa20fe4170f2e56e20ebdc0bb2cb439ec33a73bd",
+    "rust_linux_ci": "passed",
+    "rust_linux_ci_run": 34702338110,
     "codeql_actions": "passed",
-    "codeql_python": "failed because the existing repository default setup selects Python and the branch removes Python source"
+    "codeql_rust": "passed",
+    "codeql_run": 34702338167,
+    "historical_default_codeql_python": "failed because the retired default setup selected Python after this branch removed Python source",
+    "final_layout_verification": "See steam-layout-verification.json and the final commit verification notes in PR #30"
   }
 }

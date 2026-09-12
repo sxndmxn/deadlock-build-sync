@@ -30,11 +30,12 @@ pub fn print_guides(
 ) -> Result<()> {
     if format == OutputFormat::Markdown {
         for guide in guides {
-            print_text(&if details {
-                render_purchase_markdown(guide, true)?
-            } else {
-                render_presentation_markdown(&presentation(guide, generated)?)?
-            })?;
+            print_text(&render_presentation_markdown(&presentation(
+                guide, generated,
+            )?)?)?;
+            if details {
+                print_text(&render_purchase_markdown(guide, true)?)?;
+            }
         }
     } else {
         print_json(

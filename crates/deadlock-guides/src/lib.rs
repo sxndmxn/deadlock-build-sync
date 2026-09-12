@@ -88,6 +88,7 @@ mod purchase_instructions;
 mod purchase_markdown;
 mod purchase_plan_types;
 mod purchase_planner;
+mod purchase_prefix;
 mod purchase_purposes;
 mod purchase_route;
 mod purchase_timing;

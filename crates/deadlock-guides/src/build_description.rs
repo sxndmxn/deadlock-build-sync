@@ -11,6 +11,7 @@ use crate::guide_item::format_integer;
 use crate::presentation::MANAGED_MARKER;
 use crate::purchase_guide::PurchaseGuide;
 use crate::purchase_instructions::format_choice_instruction;
+use crate::variant_items::group_members;
 
 pub fn build_description(
     guide: &PurchaseGuide,
@@ -56,6 +57,7 @@ pub fn build_description(
         role,
         queue_rule(guide, categories).into(),
         plan,
+        "Optional item tooltips identify their statistics source. Use the selected path instructions below.".into(),
         format!(
             "{queue} • {ranks} • data through {} • client {version}.",
             format_date(guide.as_of_timestamp, false)?
@@ -84,7 +86,7 @@ pub fn build_description(
     }
     lines.extend(describe_variants(guide, categories)?);
     if categories.iter().any(|category| category.compact) {
-        lines.extend(describe_purchase_details(guide)?);
+        lines.extend(describe_group_purchases(guide)?);
     }
     if let Some(path) = &guide.ability_path {
         let scope = if !path.filter_item_ids.is_empty() {
@@ -122,9 +124,9 @@ const fn resolved(value: &str) -> &str {
 
 fn queue_rule(guide: &PurchaseGuide, categories: &[GuideCategory]) -> &'static str {
     if categories.iter().any(|category| category.compact) {
-        "Queue follows CORE ITEMS only. All other panels are optional."
+        "Queue follows MAIN CORE only. All other panels are optional."
     } else if guide.purchase_guidance.is_some() {
-        "AUTO: CORE steps only. OPTIONAL, PICK ONE, UPGRADE, and ITEM POOL rows stay optional."
+        "AUTO: CORE steps only. OPTIONAL, PICK ONE, UPGRADE, and OPTIONAL ITEMS rows stay optional."
     } else if guide.optional_core_items.is_empty() {
         "AUTO: CORE left→right. TIER 1–4 never auto-queue."
     } else {
@@ -132,18 +134,19 @@ fn queue_rule(guide: &PurchaseGuide, categories: &[GuideCategory]) -> &'static s
     }
 }
 
-fn describe_variants(guide: &PurchaseGuide, categories: &[GuideCategory]) -> Result<Vec<String>> {
+fn describe_variants(guide: &PurchaseGuide, _categories: &[GuideCategory]) -> Result<Vec<String>> {
     if guide.variant_guides.is_empty() {
         return Ok(Vec::new());
     }
-    let mut lines = vec![format!("{} alternative variants. CORE ITEMS contains the complete default purchase path. V numbers identify the full variant paths below.", guide.variant_guides.len()),
-        if categories.iter().any(|category| category.name == "ALTERNATIVE CORE") {
-            "ALTERNATIVE CORE contains common final items. Combine it with one panel marked ALTERNATIVE CORE +. Each complete variant replaces CORE ITEMS. Follow that variant's complete purchase order. Shared and variant items can occur at different steps."
-        } else { "Each VARIANT panel contains its complete final core. Follow that variant's complete purchase order." }.into(),
-        "Variant notes show recorded wealth states and complete-core win rates. State labels describe observed matches. They do not establish when to change a partly purchased core.".into()];
+    let mut lines = vec![
+        format!("{} alternative variants. MAIN CORE contains the complete default purchase path.", guide.variant_guides.len()),
+        "Buy ALT CORE first. Then buy one complete VARIANT in its listed order. This path replaces MAIN CORE.".into(),
+        "ALT CORE tooltips show VARIANT 1 statistics. Purchase windows and outcomes can differ between paths.".into(),
+        "Variant notes describe recorded wealth states and complete-core win rates. They do not establish when to change a partly purchased core.".into(),
+    ];
     for (index, variant) in guide.variant_guides.iter().enumerate() {
         let order = variant
-            .core_purchase_items
+            .core_path_items()
             .iter()
             .map(|item| {
                 item.imbue_target_ability.as_ref().map_or_else(
@@ -177,17 +180,37 @@ fn describe_variants(guide: &PurchaseGuide, categories: &[GuideCategory]) -> Res
     Ok(lines)
 }
 
+fn describe_group_purchases(guide: &PurchaseGuide) -> Result<Vec<String>> {
+    let mut lines = Vec::new();
+    for (index, member) in group_members(guide).enumerate() {
+        lines.push(if index == 0 {
+            "MAIN CORE purchases:".into()
+        } else {
+            format!("VARIANT {index} complete purchases:")
+        });
+        lines.extend(describe_purchase_details(member)?);
+        if index > 0 {
+            lines.push(format!(
+                "Evidence limits: {}.",
+                python_display(&member.evidence_summary["limitations"])
+            ));
+        }
+    }
+    Ok(lines)
+}
+
 fn describe_purchase_details(guide: &PurchaseGuide) -> Result<Vec<String>> {
     let Some(guidance) = &guide.purchase_guidance else {
         return Ok(Vec::new());
     };
-    let mut lines = vec!["Buy CORE ITEMS from left to right. All other sections are optional. Tier numbers show item prices. Keep the selected variant's core and pool together.".into()];
+    let mut lines = vec!["Buy this path in the listed order. Tier numbers show item prices. Keep this path and its optional items together.".into()];
     lines.extend(guidance.default_path.actions.iter().map(|step| {
         format!(
-            "{}: +{} souls; total {}.",
+            "{}: +{} souls; total {}. Consumed components: {:?}.",
             step.name,
             format_integer(i128::from(step.incremental_cost)),
-            format_integer(i128::from(step.cumulative_cost))
+            format_integer(i128::from(step.cumulative_cost)),
+            step.consumed_items
         )
     }));
     for card in &guidance.choices {

@@ -34,7 +34,7 @@ pub fn render_purchase_markdown(guide: &PurchaseGuide, details: bool) -> Result<
     }
     render_route(&mut output, guidance)?;
     render_substitutions(&mut output, guide, guidance)?;
-    output.push_str("## Item pool\n\nThese tiers contain the full item pool. Tier order does not specify purchase order.\n\n");
+    output.push_str("## Optional items\n\nThese tiers contain the supported optional items. Tier order does not specify purchase order.\n\n");
     for tier in 1..=4 {
         let names = guide
             .tiers

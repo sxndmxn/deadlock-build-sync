@@ -1,134 +1,88 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use deadlock_data::Result;
+
 use crate::guide_item::{GuideItem, MAX_ITEM_ANNOTATION_BYTES};
 use crate::purchase_guide::PurchaseGuide;
-
-pub fn collect_variant_items(members: Vec<(&GuideItem, String)>) -> Vec<GuideItem> {
-    let mut order = Vec::new();
-    let mut grouped = BTreeMap::<u64, Vec<(&GuideItem, String)>>::new();
-    for (item, scope) in members {
-        if !grouped.contains_key(&item.item_id) {
-            order.push(item.item_id);
-        }
-        grouped.entry(item.item_id).or_default().push((item, scope));
-    }
-    order
-        .into_iter()
-        .filter_map(|id| grouped.remove(&id))
-        .filter_map(|rows| merge_item_scopes(&rows))
-        .collect()
-}
-
-fn merge_item_scopes(rows: &[(&GuideItem, String)]) -> Option<GuideItem> {
-    let (first, first_scope) = rows.first()?;
-    let mut seen = BTreeSet::new();
-    let scopes = rows
-        .iter()
-        .map(|(_, scope)| scope.as_str())
-        .filter(|scope| seen.insert(*scope))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let targets = rows
-        .iter()
-        .map(|(item, _)| item.imbue_target_ability_id)
-        .collect::<BTreeSet<_>>();
-    let mut text = if targets.len() > 1 {
-        format!("{scopes}. Imbue varies; use the selected variant's target.")
-    } else {
-        format!("{scopes}. Stats: {first_scope}.\n{}", first.annotation())
-    };
-    if text.len() > MAX_ITEM_ANNOTATION_BYTES {
-        text = "Multiple variants; check the selected variant's full guide for scope, timing, and imbue target.".into();
-    }
-    let mut item = (*first).clone();
-    item.annotation_text = text;
-    if targets.len() > 1 {
-        item.imbue_target_ability_id = None;
-    }
-    Some(item)
-}
+use crate::purchase_instructions::{format_choice_instruction, split_guidance};
 
 pub fn group_members(guide: &PurchaseGuide) -> impl Iterator<Item = &PurchaseGuide> {
     std::iter::once(guide).chain(&guide.variant_guides)
 }
 
-pub fn collect_conditional_items(guide: &PurchaseGuide) -> Vec<GuideItem> {
-    let core = guide
-        .core_path_items()
-        .iter()
-        .map(|item| item.item_id)
-        .collect::<BTreeSet<_>>();
-    let mut members = Vec::new();
+pub fn collect_tier_items(guide: &PurchaseGuide, tier: u8) -> Result<Vec<GuideItem>> {
+    let mut result = Vec::<GuideItem>::new();
+    let mut positions = BTreeMap::new();
+    let mut instructions = BTreeSet::new();
     for (index, member) in group_members(guide).enumerate() {
         let scope = if index == 0 {
-            "Conditional Default".into()
+            "MAIN CORE".into()
         } else {
-            format!("Conditional V{index}")
+            format!("VARIANT {index}")
         };
-        members.extend(
-            member
-                .optional_core_items
-                .iter()
-                .filter(|item| !core.contains(&item.item_id))
-                .map(|item| (item, scope.clone())),
-        );
+        for item in member
+            .optional_core_items
+            .iter()
+            .chain(member.tiers.values().flatten())
+        {
+            if item.tier != u64::from(tier) {
+                continue;
+            }
+            let key = (item.item_id, item.imbue_target_ability_id);
+            if let std::collections::btree_map::Entry::Vacant(entry) = positions.entry(key) {
+                entry.insert(result.len());
+                let mut item = item.clone();
+                let annotation = format!("Stats: {scope}.\n{}", item.annotation());
+                if annotation.len() <= MAX_ITEM_ANNOTATION_BYTES {
+                    item.annotation_text = annotation;
+                }
+                result.push(item);
+            }
+            for card in instruction_items(member, item, &scope)? {
+                if instructions.insert((key, card.annotation_text.clone())) {
+                    result.push(card);
+                }
+            }
+        }
     }
-    let optional = members
-        .iter()
-        .map(|(item, _)| item.item_id)
-        .collect::<BTreeSet<_>>();
-    for (index, member) in group_members(guide).enumerate() {
-        let scope = if index == 0 {
-            "Pool Default".into()
-        } else {
-            format!("Pool V{index}")
-        };
-        members.extend(
-            member
-                .tiers
-                .values()
-                .flatten()
-                .filter(|item| optional.contains(&item.item_id))
-                .map(|item| (item, scope.clone())),
-        );
-    }
-    collect_variant_items(members)
+    Ok(result)
 }
 
-pub fn collect_tier_items(
+fn instruction_items(
     guide: &PurchaseGuide,
-    tier: u8,
-    covered: &BTreeSet<u64>,
-) -> Vec<GuideItem> {
-    let mut members = Vec::new();
-    for (index, member) in group_members(guide).enumerate() {
-        let scope = if index == 0 {
-            "Default".into()
-        } else {
-            format!("V{index}")
-        };
-        members.extend(
-            member
-                .tiers
-                .get(&tier)
-                .into_iter()
-                .flatten()
-                .filter(|item| !covered.contains(&item.item_id))
-                .map(|item| (item, scope.clone())),
-        );
+    item: &GuideItem,
+    scope: &str,
+) -> Result<Vec<GuideItem>> {
+    let mut instructions = Vec::new();
+    if let Some(guidance) = &guide.purchase_guidance {
+        for card in guidance.choices.iter().filter(|card| {
+            card.item_id == item.item_id
+                && guidance
+                    .automatic_branches
+                    .iter()
+                    .any(|branch| branch.item_id == card.item_id)
+        }) {
+            instructions.push(format_choice_instruction(guidance, card)?);
+        }
     }
-    for (index, member) in guide.variant_guides.iter().enumerate() {
-        let mut excluded = covered.clone();
-        excluded.extend(member.core_items.iter().map(|item| item.item_id));
-        members.extend(
-            member
-                .core_purchase_items
-                .iter()
-                .filter(|item| item.tier == u64::from(tier) && !excluded.contains(&item.item_id))
-                .map(|item| (item, format!("Component V{}", index + 1))),
-        );
+    for alternative in &guide.core_alternatives {
+        let row = alternative.content();
+        if row.item_id == item.item_id {
+            instructions.push(format!(
+                "{} {}. {} {}",
+                row.when, row.swap, row.why, row.skip
+            ));
+        }
     }
-    collect_variant_items(members)
+    Ok(instructions
+        .iter()
+        .flat_map(|instruction| split_guidance(&format!("{scope}. {instruction}")))
+        .map(|annotation| {
+            let mut result = item.clone();
+            result.annotation_text = annotation;
+            result
+        })
+        .collect())
 }
 
 pub fn collect_group_item_ids(guide: &PurchaseGuide) -> BTreeSet<u64> {

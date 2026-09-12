@@ -333,7 +333,26 @@ The release archive passed inspection and executable checks outside the checkout
 Linux execution and live Steam operations did not run locally.
 No repository unit tests were added.
 
-The draft pull request starts the Rust Linux CI workflow.
-GitHub's existing default CodeQL configuration selects Actions and Python.
-The Python analysis failed because this branch removes the Python source.
-The CodeQL language configuration requires an update during migration to Rust.
+The reference commit `fa20fe4` passed Rust Linux CI and advanced CodeQL checks for Rust and GitHub Actions.
+The earlier default Python analysis failed because this branch removes Python source.
+The repository no longer uses that default configuration.
+
+## Purchase panel completion
+
+The [purchase panel report](steam-purchase-panels-2026-09-12.md) records the final layout and verification.
+The complete fresh pipeline passed in 562.381 seconds, or 9 minutes 22 seconds.
+It produced 270 builds from all 752 admitted paths across 38 heroes.
+The live source added 168 matches within the fixed cutoff after the earlier extraction.
+
+The recorded-data comparison retained all 755 reference paths in 260 display builds.
+Purchase data and evidence matched the previous Rust output.
+The Python comparison permitted six existing blocked-purchase error-message changes.
+
+The earlier Rust guide-generation comparison took 275.943 seconds; Python took 289.494 seconds.
+That comparison excludes extraction and evidence production.
+The earlier 545.893-second complete pipeline measurement remains a separate result.
+
+Linux CI and Rust/Actions CodeQL must pass on the final commit before the pull request becomes ready.
+The pull request verification notes record the final commit and downloadable Linux archive hash.
+No live Steam installation ran.
+In-game panel placement remains unverified.

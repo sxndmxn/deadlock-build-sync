@@ -10,10 +10,10 @@ use crate::variant_categories::{build_compact_categories, validate_group_categor
 use crate::variant_items::group_members;
 
 pub type GuideGroupIndex = BTreeMap<(u64, String), String>;
-pub const VARIANT_RULE: &str = "Choose CORE ITEMS or one complete variant before purchase. Queue follows CORE ITEMS only. Use the selected variant's order and item pool. Core changes during a match still require admitted substitution evidence.";
+pub const VARIANT_RULE: &str = "Choose MAIN CORE or ALT CORE followed by one complete VARIANT. Queue follows MAIN CORE only. Keep the selected path and its optional items together. Core changes require admitted substitution evidence.";
 
 /// # Errors
-/// Returns an error when the group omits an admitted path, lacks its default, or has invalid category coverage.
+/// Returns an error when groups omit or repeat admitted paths or contain invalid purchases.
 pub fn group_guides(
     guides: Vec<PurchaseGuide>,
     groups: &GuideGroupIndex,
@@ -22,78 +22,78 @@ pub fn group_guides(
         .iter()
         .map(|guide| guide.hero_id)
         .collect::<BTreeSet<_>>();
-    let present = guides
-        .iter()
-        .flat_map(|guide| {
-            group_members(guide).map(|member| (guide.hero_id, member.path_id.clone()))
-        })
-        .collect::<BTreeSet<_>>();
+    let mut present = BTreeSet::new();
+    let mut by_group = BTreeMap::<(u64, String, u64, Option<u64>), Vec<PurchaseGuide>>::new();
+    let mut order = Vec::new();
+    for mut guide in guides {
+        if !guide.variant_guides.is_empty()
+            || !present.insert((guide.hero_id, guide.path_id.clone()))
+        {
+            return Err(Error::new(
+                "Display grouping requires distinct ungrouped paths",
+            ));
+        }
+        crate::purchase_prefix::purchase_steps(&guide)?;
+        let first = &guide.core_path_items()[0];
+        let source = groups
+            .get(&(guide.hero_id, guide.path_id.clone()))
+            .unwrap_or(&guide.path_id)
+            .clone();
+        let key = (
+            guide.hero_id,
+            source.clone(),
+            first.item_id,
+            first.imbue_target_ability_id,
+        );
+        guide.source_group_id = source;
+        if !by_group.contains_key(&key) {
+            order.push(key.clone());
+        }
+        by_group.entry(key).or_default().push(guide);
+    }
     let expected = groups
         .keys()
         .filter(|(hero, _)| heroes.contains(hero))
         .cloned()
         .collect();
     if !groups.is_empty() && present != expected {
-        return Err(Error::new(
-            "Guide groups do not cover every supported variant",
-        ));
+        return Err(Error::new("Guide groups do not cover every supported path"));
     }
-    let mut order = Vec::new();
-    let mut by_group = BTreeMap::<(u64, String), Vec<PurchaseGuide>>::new();
-    for guide in guides {
-        let identity = (guide.hero_id, guide.path_id.clone());
-        let key = (
-            guide.hero_id,
-            groups.get(&identity).unwrap_or(&guide.path_id).clone(),
-        );
-        if !by_group.contains_key(&key) {
-            order.push(key.clone());
-        }
-        by_group.entry(key).or_default().push(guide);
+    let mut result = Vec::new();
+    for key in order {
+        let members = by_group
+            .remove(&key)
+            .ok_or_else(|| Error::new("Guide group has no members"))?;
+        result.extend(combine_guides(members)?);
     }
-    order
-        .into_iter()
-        .map(|key| {
-            let members = by_group
-                .remove(&key)
-                .ok_or_else(|| Error::new("Guide group has no members"))?;
-            combine_guides(members, &key.1)
-        })
-        .collect()
+    Ok(result)
 }
 
-fn combine_guides(mut members: Vec<PurchaseGuide>, group_id: &str) -> Result<PurchaseGuide> {
-    let index = members
-        .iter()
-        .position(|member| member.path_id == group_id)
-        .ok_or_else(|| Error::new("Guide group has no supported default"))?;
-    let mut default = members.remove(index);
-    if !members.is_empty() {
-        let mut counts = BTreeMap::<u64, usize>::new();
-        let mut names = BTreeMap::new();
-        for item in std::iter::once(&default)
-            .chain(&members)
-            .flat_map(|member| &member.core_items)
-        {
-            *counts.entry(item.item_id).or_default() += 1;
-            names.insert(item.item_id, item.name.clone());
+fn combine_guides(mut members: Vec<PurchaseGuide>) -> Result<Vec<PurchaseGuide>> {
+    members.sort_by_key(|member| member.selection_rank);
+    let mut members = members.into_iter();
+    let mut main = members
+        .next()
+        .ok_or_else(|| Error::new("Guide group has no default"))?;
+    let mut standalone = Vec::new();
+    for member in members {
+        if member.core_path_items().len() < 2 {
+            standalone.push(member);
+        } else {
+            main.variant_guides.push(member);
         }
-        let mut ids = counts.keys().copied().collect::<Vec<_>>();
-        ids.sort_by_key(|id| (std::cmp::Reverse(counts[id]), *id));
-        let label = ids
-            .iter()
-            .take(2)
-            .map(|id| names[id].as_str())
-            .collect::<Vec<_>>()
-            .join(" / ");
-        members.sort_by(|left, right| left.path_id.cmp(&right.path_id));
-        default.variant_guides = members;
-        default.path_label.clone_from(&label);
-        default.build_archetype = label;
     }
-    default.categories = build_compact_categories(&default)?;
-    validate_group_categories(&default)?;
-    Ok(default)
+    if crate::purchase_prefix::shared_prefix_length(&main.variant_guides)? == 0 {
+        standalone.append(&mut main.variant_guides);
+    }
+    let mut result = vec![main];
+    result.extend(standalone);
+    result.sort_by_key(|guide| guide.selection_rank);
+    for guide in &mut result {
+        guide.categories = build_compact_categories(guide)?;
+        validate_group_categories(guide)?;
+    }
+    Ok(result)
 }
 
 /// # Errors
@@ -101,6 +101,7 @@ fn combine_guides(mut members: Vec<PurchaseGuide>, group_id: &str) -> Result<Pur
 pub fn build_variant_record(guide: &PurchaseGuide) -> Result<Value> {
     let mut result = json!({
         "path_id": guide.path_id, "policy_id": guide.policy_id,
+        "selection_rank": guide.selection_rank,
         "core": guide.core_items.iter().map(|item| item.item_id).collect::<Vec<_>>(),
         "core_cost": guide.core_target_cost, "evidence": guide.evidence_summary,
         "cohort": guide.cohort.as_ref().map(HeroCohort::to_document).transpose()?.unwrap_or_else(|| json!({})),
@@ -121,7 +122,8 @@ pub fn build_group_record(guide: &PurchaseGuide) -> Result<Value> {
         .map(build_variant_record)
         .collect::<Result<Vec<_>>>()?;
     Ok(
-        json!({"schema_version":1, "group_id":guide.path_id, "default_path_id":guide.path_id, "variants":variants}),
+        json!({"schema_version":2, "group_id":guide.path_id, "source_group_id":guide.source_group_id,
+            "default_path_id":guide.path_id, "shared_prefix_length":crate::purchase_prefix::shared_prefix_length(&guide.variant_guides)?, "variants":variants}),
     )
 }
 

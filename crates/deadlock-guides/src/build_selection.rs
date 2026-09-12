@@ -53,6 +53,7 @@ pub fn select_hero_build(
     Ok(SelectedHeroBuild {
         hero_id: evidence.hero_id,
         path_id: evidence.path_id.clone(),
+        selection_rank: deadlock_data::integer(&evidence.discovery, "selection_rank")?,
         path_label: evidence.path_label.clone(),
         signature_item_ids: evidence.signature_item_ids.clone(),
         core: select_items(&items, &policy.default_item_ids)?,

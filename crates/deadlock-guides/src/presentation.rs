@@ -63,15 +63,7 @@ impl BuildPresentation {
         if !content.description.contains(MANAGED_MARKER) {
             return Err(Error::new("Build description has no managed marker"));
         }
-        if !content
-            .categories
-            .iter()
-            .any(|category| !category.optional && !category.items.is_empty())
-        {
-            return Err(Error::new(
-                "Build requires a nonempty automatic purchase category",
-            ));
-        }
+        validate_panel_order(&content.categories)?;
         for category in &content.categories {
             validate_category(category)?;
         }
@@ -85,6 +77,31 @@ impl BuildPresentation {
     pub const fn content(&self) -> &PresentationContent {
         &self.0
     }
+}
+
+fn validate_panel_order(categories: &[PresentationCategory]) -> Result<()> {
+    let variants = categories.len().saturating_sub(6);
+    let mut names = vec!["MAIN CORE".to_owned()];
+    if variants > 0 {
+        names.push("ALT CORE".into());
+        names.extend((1..=variants).map(|index| format!("VARIANT {index}")));
+    }
+    names.extend((1..=4).map(|tier| format!("TIER {tier}")));
+    if !categories
+        .iter()
+        .map(|category| &category.name)
+        .eq(names.iter())
+        || categories.iter().enumerate().any(|(index, category)| {
+            category.optional != (index > 0)
+                || (index < categories.len() - 4 && category.items.is_empty())
+                || (index > 0 && index < categories.len() - 4 && !category.description.is_empty())
+        })
+    {
+        return Err(Error::new(
+            "Build requires MAIN CORE, separate alternative panels, and four optional tiers",
+        ));
+    }
+    Ok(())
 }
 
 fn validate_category(category: &PresentationCategory) -> Result<()> {

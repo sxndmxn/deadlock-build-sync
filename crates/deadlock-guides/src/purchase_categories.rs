@@ -206,7 +206,7 @@ fn item_pool_categories(guide: &PurchaseGuide) -> Result<Vec<GuideCategory>> {
                 "Optional items. These tiers are not a purchase order."
             };
             GuideCategory::new(
-                format!("ITEM POOL | TIER {tier}"),
+                format!("OPTIONAL ITEMS | TIER {tier}"),
                 items,
                 description.into(),
                 true,

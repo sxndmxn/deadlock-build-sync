@@ -11,7 +11,7 @@ pub fn serialize_presentation(presentation: &BuildPresentation) -> Value {
     let categories = content.categories.iter().map(|category| json!({
         "name":category.name,"description":category.description,"optional":category.optional,
         "width":category.width,"height":category.height,"items":category.items.iter().map(|item| json!({
-            "item_id":item.item_id,"name":item.name,"annotation":item.annotation,
+            "item_id":item.item_id,"item":item.name,"annotation":item.annotation,
             "required_flex_slots":item.required_flex_slots,"sell_priority":item.sell_priority,
             "imbue_target_ability_id":item.imbue_target_ability_id})).collect::<Vec<_>>()
     })).collect::<Vec<_>>();

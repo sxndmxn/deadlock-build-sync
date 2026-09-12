@@ -12,6 +12,7 @@ use crate::purchase_timing::PurchaseTiming;
 pub struct SelectedHeroBuild {
     pub hero_id: u64,
     pub path_id: String,
+    pub selection_rank: u64,
     pub path_label: String,
     pub signature_item_ids: Vec<u64>,
     pub core: Vec<ItemEvidence>,

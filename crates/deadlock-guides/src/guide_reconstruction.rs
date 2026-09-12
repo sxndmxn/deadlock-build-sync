@@ -100,7 +100,7 @@ fn copy_build_identity(guide: &mut PurchaseGuide, build: &Value) -> Result<()> {
 
 fn validate_canonical_projection(hero: &Value, guide: &PurchaseGuide) -> Result<()> {
     let projection = &hero["projection"];
-    if projection["guide_version"].as_u64() != Some(3)
+    if projection["guide_version"].as_u64() != Some(4)
         || projection["categories"]
             != serde_json::to_value(
                 guide
