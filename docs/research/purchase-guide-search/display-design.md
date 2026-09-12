@@ -105,7 +105,7 @@ Alternative branches require their own validated order.
 Do not assume that an optional item automatically changes the default queue.
 State-aware recommendations remain static instructions unless the client supports a verified state-dependent control.
 
-The isolated [display module](../../../tools/purchase_search/display.py) calculates both the final-item intersection and the exact ordered prefix.
+The isolated [display module](https://github.com/sxndmxn/deadlock-build-sync/blob/d603d6b53bb110d0ac48a689f037861e6453b243/tools/purchase_search/display.py) calculates both the final-item intersection and the exact ordered prefix.
 Its regression tests reconstruct every complete variant from the shared core and additions.
 The tests also reject the assumption that shared ownership implies shared order.
 

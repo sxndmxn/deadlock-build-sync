@@ -44,7 +44,6 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            ~/.cargo/bin/cargo-modules
             ~/.cargo/bin/cargo-deny
             ~/.cargo/bin/arch-lint
             ~/.cargo/.crates.toml
@@ -58,20 +57,23 @@ jobs:
       - name: Run strict Clippy
         run: cargo lint
 
-      - name: Install the module analyzer
-        run: cargo install cargo-modules --version 0.26.0 --locked
-
       - name: Install the architecture linter
         run: cargo install arch-lint-cli --version 0.6.0 --locked
 
-      - name: Check architecture and synchronous code
-        run: cargo architecture
+      - name: Check architecture
+        run: arch-lint --config arch-lint.toml check --engine syn .
 
       - name: Install the SQL tool runner
         uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
 
       - name: Check DuckDB SQL
         run: uvx --from sqlfluff==4.3.0 sqlfluff lint crates/deadlock-analysis/sql
+
+      - name: Reject SQL wildcard projections
+        shell: bash
+        run: |
+          uvx --from sqlfluff==4.3.0 sqlfluff parse crates/deadlock-analysis/sql --format json --code-only |
+            jq -e 'all(.. | objects; has("wildcard_expression") | not)'
 
       - name: Check documentation
         run: cargo doc --workspace --all-features --no-deps --locked

@@ -44,7 +44,13 @@ team_states AS (
 
 states AS (
     SELECT
-        a.*,
+        a.match_id,
+        a.player_slot,
+        a.team_id,
+        a.won,
+        a.average_badge,
+        a.start_time,
+        a."partition",
         p.wealth,
         c.hero_ids,
         own.latest_state['wealth'] - enemy.latest_state['wealth'] AS team_difference,
@@ -67,7 +73,17 @@ states AS (
 
 landmarks AS (
     SELECT
-        *,
+        match_id,
+        player_slot,
+        team_id,
+        won,
+        average_badge,
+        start_time,
+        "partition",
+        wealth,
+        hero_ids,
+        team_difference,
+        team_wealth,
         CASE WHEN wealth > 0 THEN wealth END AS observed_wealth,
         team_difference / team_wealth AS team_lead,
         CASE WHEN wealth > 0 THEN wealth * 12 / team_wealth END AS relative_wealth

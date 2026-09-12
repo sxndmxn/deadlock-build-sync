@@ -17,9 +17,29 @@ pub struct RefreshRequest {
     pub ranks: RankRange,
     pub rank_expansion: RankExpansion,
     pub workers: u16,
+    pub extraction_resources: ExtractionResources,
     pub resume: bool,
     pub generator: BuildGenerator,
     pub api_base_url: String,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct ExtractionResources {
+    pub memory_limit_mb: u32,
+    pub threads: u16,
+}
+
+impl ExtractionResources {
+    /// # Errors
+    /// Returns an error when the memory limit or thread count is zero.
+    pub fn validate(self) -> Result<()> {
+        if self.memory_limit_mb == 0 || self.threads == 0 {
+            return Err(Error::new(
+                "Extraction requires positive memory and thread limits",
+            ));
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug)]

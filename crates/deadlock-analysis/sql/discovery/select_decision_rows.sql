@@ -1,6 +1,19 @@
 WITH eligible_decisions AS NOT MATERIALIZED (
     SELECT
-        p.*,
+        p.match_id,
+        p.player_slot,
+        p.team_id,
+        p.average_badge,
+        p.won,
+        p.item_id,
+        p.buy_time,
+        p.own_net_worth_at_buy,
+        p.state_observed_at_s,
+        p.fold,
+        p.phase,
+        p.state_age_s,
+        p.prior_catalog_spend,
+        p.prior_purchase_count,
         d."partition"
     FROM decision_opportunities AS p
     INNER JOIN discovery_partitions AS d ON p.match_id = d.match_id
@@ -20,13 +33,21 @@ checkpoints AS (
 ),
 
 team_states AS (
-    SELECT s.* FROM team_snapshots AS s
+    SELECT
+        s.match_id,
+        s.team_id,
+        s.team_net_worth,
+        s.observed_players,
+        s.stat_time
+    FROM team_snapshots AS s
     SEMI JOIN checkpoints AS p ON s.match_id = p.match_id
 ),
 
 states AS (
     SELECT
-        p.*,
+        p.match_id,
+        p.team_id,
+        p.buy_time,
         own_state.team_net_worth AS own_team_net_worth,
         enemy_state.team_net_worth AS enemy_team_net_worth,
         own_state.observed_players AS own_team_observed_players,
@@ -49,39 +70,17 @@ SELECT
     p.match_id,
     p.player_slot,
     p.team_id,
-    p.hero_id,
-    p.assigned_lane,
     p.average_badge,
     p.won,
-    p.start_time,
-    p.duration_s,
-    p.final_net_worth,
-    p.calibration,
     p.item_id,
     p.buy_time,
-    p.sold_time,
-    p.imbued_ability_id,
-    p.item_name,
-    p.class_name,
-    p.tier,
-    p."cost",
-    p.slot,
-    p.active,
-    p.unique_item,
-    p.component_items_json,
     p.own_net_worth_at_buy,
     p.state_observed_at_s,
-    p.event_order,
-    p.same_second_purchase_count,
-    p.item_purchase_ordinal,
     p.fold,
     p.phase,
     p.state_age_s,
     p.prior_catalog_spend,
     p.prior_purchase_count,
-    p.candidate_slate_json,
-    p.realized_action,
-    p.save_action_observed,
     p."partition",
     c.hero_ids AS enemy_heroes,
     s.own_team_net_worth,

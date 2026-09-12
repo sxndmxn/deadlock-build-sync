@@ -24,7 +24,21 @@ WITH expanded AS (
 
 valid_purchases AS (
     SELECT
-        e.*,
+        e.match_id,
+        e.player_slot,
+        e.team_id,
+        e.hero_id,
+        e.assigned_lane,
+        e.average_badge,
+        e.won,
+        e.start_time,
+        e.duration_s,
+        e.final_net_worth,
+        e.calibration,
+        e.item_id,
+        e.buy_time,
+        e.sold_time,
+        e.imbued_ability_id,
         a.item_name,
         a.class_name,
         a.tier,
@@ -53,7 +67,31 @@ valid_purchases AS (
 )
 
 SELECT
-    * EXCLUDE (stat_times, stat_net_worths),
+    match_id,
+    player_slot,
+    team_id,
+    hero_id,
+    assigned_lane,
+    average_badge,
+    won,
+    start_time,
+    duration_s,
+    final_net_worth,
+    calibration,
+    item_id,
+    buy_time,
+    sold_time,
+    imbued_ability_id,
+    item_name,
+    class_name,
+    tier,
+    "cost",
+    slot,
+    active,
+    unique_item,
+    component_items_json,
+    own_net_worth_at_buy,
+    state_observed_at_s,
     row_number() OVER (
         PARTITION BY match_id, player_slot
         ORDER BY buy_time, item_id

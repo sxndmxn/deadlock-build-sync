@@ -1,5 +1,18 @@
 WITH firsts AS (
-    SELECT p.* FROM first_purchases AS p
+    SELECT
+        p.hero_id,
+        p.item_id,
+        p.item_name,
+        p.tier,
+        p."cost",
+        p.slot,
+        p.active,
+        p.fold,
+        p.won,
+        p.buy_time,
+        p.own_net_worth_at_buy,
+        p.imbued_ability_id
+    FROM first_purchases AS p
     INNER JOIN
         _build_path_members AS m
         ON p.match_id = m.match_id AND p.player_slot = m.player_slot
@@ -32,7 +45,9 @@ imbue_counts AS (
 
 ranked_imbues AS (
     SELECT
-        *,
+        item_id,
+        imbued_ability_id,
+        target_matches,
         sum(target_matches) OVER (PARTITION BY item_id)
             AS imbue_observations,
         row_number() OVER (
@@ -123,7 +138,38 @@ items AS (
 )
 
 SELECT
-    i.*,
+    i.hero_id,
+    i.item_id,
+    i.item_name,
+    i.tier,
+    i."cost",
+    i.slot,
+    i.active,
+    i.adopter_matches,
+    i.selection_adopter_matches,
+    i.training_adopter_matches,
+    i.validation_adopter_matches,
+    i.test_adopter_matches,
+    i.wins,
+    i.raw_outcome_rate,
+    i.median_buy_time_s,
+    i.buy_time_q25_s,
+    i.buy_time_q75_s,
+    i.median_valid_buy_net_worth,
+    i.buy_nw_q25,
+    i.buy_nw_q75,
+    i.valid_buy_nw_share,
+    i.selection_median_buy_time_s,
+    i.selection_median_valid_buy_net_worth,
+    i.selection_buy_nw_q25,
+    i.selection_buy_nw_q75,
+    i.selection_valid_buy_nw_observations,
+    i.training_valid_buy_nw_observations,
+    i.validation_valid_buy_nw_observations,
+    i.training_buy_nw_q25,
+    i.training_buy_nw_q75,
+    i.validation_buy_nw_q25,
+    i.validation_buy_nw_q75,
     e.purchase_events,
     d.imbued_ability_id,
     d.target_matches,

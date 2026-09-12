@@ -6,8 +6,8 @@ exclude_rules =
 warnings =
 ignore =
 disable_noqa = True
-# Use standard SQLFluff exceptions for unsupported syntax and dynamic exports.
-disable_noqa_except = PRS,AM04
+# Use standard SQLFluff exceptions for unsupported administration syntax.
+disable_noqa_except = PRS
 warn_unused_ignores = True
 ignore_templated_areas = False
 fix_even_unparsable = False

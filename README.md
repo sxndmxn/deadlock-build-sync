@@ -121,13 +121,20 @@ Use separate artifact directories for the two generators.
 It does not discover or modify Steam data.
 DuckDB installs its ICU, DuckLake, and HTTPFS extensions when they are absent from its extension cache.
 Extraction uses UTC for timestamp parameters and match cutoff calculations.
+Extraction defaults to 12 GB of database memory and eight database threads.
+Use `--extraction-memory-mb N` to set the extraction memory limit in decimal megabytes.
+Use `--extraction-threads N` to set extraction database threads.
+Both values must be positive integers.
+These options apply to new extraction runs; resume reuses completed extraction.
+
 The default worker count is eight.
 Each worker uses a standard thread, a separate DuckDB connection, and one database execution thread.
 Workers take the next hero from a shared queue.
 Validation starts larger estimated workloads first, using frozen candidate counts and discovery support.
 Results retain the source hero order.
 Each connection has a 512 MiB database memory limit.
-Use `--workers N` to reduce concurrent work.
+Use `--workers N` to reduce concurrent hero work.
+This option does not change extraction limits.
 Total memory also includes source records and numerical matrices.
 
 Runs reside under the application's `offline/results` directory.
@@ -225,7 +232,8 @@ cargo run --locked --features analysis -- refresh-evidence
 The workspace forbids unsafe repository code and treats warnings as errors.
 Clippy denies `all`, `pedantic`, and `nursery` findings.
 Cognitive complexity cannot exceed 21.
-The architecture check rejects async syntax and cyclic module dependencies.
+Arch-lint checks crate import boundaries.
+Code review checks asynchronous syntax and cyclic module dependencies.
 No unit tests were added during the rewrite, as requested.
 
 Use the complete [quality gate](docs/quality-gates.md) before delivery.

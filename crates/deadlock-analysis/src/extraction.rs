@@ -3,7 +3,7 @@ use deadlock_guides::{RankExpansion, calculate_rank_cutoffs};
 use duckdb::types::{TimeUnit, Value as SqlValue};
 use serde_json::{Value, json};
 
-use crate::config::{Cohort, DUCKLAKE_URL, RunPaths};
+use crate::config::{Cohort, DUCKLAKE_URL, ExtractionResources, RunPaths};
 use crate::database::{AnalysisDatabase, Parameters};
 use crate::sql_resources::load_sql;
 
@@ -26,6 +26,7 @@ pub fn extract_cohort(
     paths: &RunPaths,
     cohort: &Cohort,
     expansion: RankExpansion,
+    resources: ExtractionResources,
 ) -> Result<Value> {
     trace_operation("analysis.extract_cohort", Some("extract_cohort"), || {
         cohort.validate()?;
@@ -35,7 +36,7 @@ pub fn extract_cohort(
         if let Some(minimum) = cutoffs.last() {
             extraction.ranks.minimum = *minimum;
         }
-        let database = connect_database(paths)?;
+        let database = connect_database(paths, resources)?;
         load_item_assets(&database, paths)?;
         execute(&database, "drop_eligible_matches", &Parameters::new())?;
         database.execute_remote(
@@ -65,11 +66,8 @@ pub fn extract_cohort(
     })
 }
 
-fn connect_database(paths: &RunPaths) -> Result<AnalysisDatabase> {
-    let database = AnalysisDatabase::open(&paths.raw.join("analysis.duckdb"))?;
-    for command in ["set_threads", "set_memory_limit"] {
-        execute(&database, command, &Parameters::new())?;
-    }
+fn connect_database(paths: &RunPaths, resources: ExtractionResources) -> Result<AnalysisDatabase> {
+    let database = AnalysisDatabase::open(&paths.raw.join("analysis.duckdb"), resources)?;
     execute(
         &database,
         "set_temp_directory",
@@ -216,19 +214,16 @@ fn export_tables(database: &AnalysisDatabase, paths: &RunPaths) -> Result<()> {
     for table in TABLES {
         execute(
             database,
-            "export_table",
-            &Parameters::from([
-                ("table".into(), SqlValue::Text(table.into())),
-                (
-                    "path".into(),
-                    paths
-                        .data
-                        .join(format!("{table}.parquet"))
-                        .to_string_lossy()
-                        .into_owned()
-                        .into(),
-                ),
-            ]),
+            &format!("export_{table}"),
+            &Parameters::from([(
+                "path".into(),
+                paths
+                    .data
+                    .join(format!("{table}.parquet"))
+                    .to_string_lossy()
+                    .into_owned()
+                    .into(),
+            )]),
         )?;
     }
     Ok(())

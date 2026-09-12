@@ -2,8 +2,9 @@
 
 Comparison runners, historical reports, and their tests remain in Git at
 [`80b9afc`](https://github.com/sxndmxn/deadlock-build-sync/tree/80b9afcc8a94831b5fbae5a2a291ec4127e241c7/tools/comparisons).
-The current application uses `src/deadlock_build_sync`. Tests for shared production
-functions remain in the current test suite and import those functions directly.
+The current application uses the Rust workspace under `crates/`.
+The archived Python tests apply only to their archived implementation.
+Use the [current Cargo workflow](../../docs/quality-gates.md) to verify the Rust workspace.
 
 Use a separate checkout to inspect or run the archived code:
 
