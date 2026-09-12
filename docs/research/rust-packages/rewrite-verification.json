@@ -1,0 +1,48 @@
+{
+  "date": "2026-09-11",
+  "reference_revision": "d603d6b53bb110d0ac48a689f037861e6453b243",
+  "target": "aarch64-apple-darwin",
+  "source_size": {
+    "rust_files": 228,
+    "rust_lines": 31306,
+    "python_files": 175,
+    "python_lines": 31334
+  },
+  "release": {
+    "analysis": true,
+    "binary_bytes": 51032624,
+    "archive_bytes": 16762288,
+    "archive_sha256": "e9e0b7d1954e57737f6bf9a52ad365b36ce025fd4ef2f00613d4c9c9adcd83d1",
+    "outside_checkout_help_commands": 13,
+    "outside_checkout_cli_workflows_passed": true,
+    "local_http_requests": 44
+  },
+  "comparisons": {
+    "canonical_json_cases": 100009,
+    "canonical_json_mismatches": 0,
+    "probability_fixtures": 100,
+    "maximum_probability_difference": 7.771561172376096e-16,
+    "analysis_comparisons": 43527,
+    "maximum_analysis_difference": 1.29641575252748e-11,
+    "discovery_group_fixtures": 24,
+    "discovery_group_differences": 0,
+    "current_builds_admitted": 3,
+    "supported_beam_routes_admitted": 3,
+    "sql_resources_byte_identical": 53,
+    "source_policy_rejections": 6,
+    "source_policy_synchronous_controls": 1,
+    "process_inspection_cases": 11,
+    "private_identifier_cases": 3,
+    "legacy_and_flag_codec_cases": 17
+  },
+  "limitations": {
+    "unit_tests_added": false,
+    "live_steam_sync": false,
+    "live_remote_database_extraction": false,
+    "linux_execution": false,
+    "application_benchmark": false,
+    "python_balance_oracle_centered": true
+  },
+  "verification_source_sha256": "6b4c0f2f6407f3dbc6492460040545080afc68535d48c5824376802e48324d87",
+  "verification_source_files": 300
+}

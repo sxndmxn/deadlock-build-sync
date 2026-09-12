@@ -1,0 +1,9 @@
+[build]
+rustflags = ["-Dwarnings", "-Funsafe-code"]
+
+[env]
+RUSTDOCFLAGS = "-Dwarnings"
+
+[alias]
+lint = "clippy --workspace --all-targets --all-features --locked -- -D warnings"
+architecture = "run --locked --package deadlock-quality"

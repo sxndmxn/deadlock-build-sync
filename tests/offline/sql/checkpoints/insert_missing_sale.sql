@@ -1,1 +1,0 @@
-INSERT INTO purchases VALUES (1, 0, 0, 9000000001, 100, NULL, 0);

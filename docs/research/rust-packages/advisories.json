@@ -1,0 +1,155 @@
+[
+  {
+    "name": "ureq",
+    "exit_code": 0,
+    "findings": []
+  },
+  {
+    "name": "minreq",
+    "exit_code": 0,
+    "findings": []
+  },
+  {
+    "name": "reqwest",
+    "exit_code": 0,
+    "findings": []
+  },
+  {
+    "name": "clap_explicit",
+    "exit_code": 0,
+    "findings": []
+  },
+  {
+    "name": "chrono_utc",
+    "exit_code": 0,
+    "findings": []
+  },
+  {
+    "name": "duckdb",
+    "exit_code": 0,
+    "findings": []
+  },
+  {
+    "name": "polars",
+    "exit_code": 0,
+    "findings": []
+  },
+  {
+    "name": "ndarray",
+    "exit_code": 0,
+    "findings": []
+  },
+  {
+    "name": "statrs_explicit",
+    "exit_code": 0,
+    "findings": []
+  },
+  {
+    "name": "argmin",
+    "exit_code": 1,
+    "findings": [
+      {
+        "severity": "error",
+        "code": "unmaintained",
+        "message": "paste - no longer maintained",
+        "advisories": [
+          "https://rustsec.org/advisories/RUSTSEC-2024-0436"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "linfa_logistic",
+    "exit_code": 1,
+    "findings": [
+      {
+        "severity": "error",
+        "code": "unmaintained",
+        "message": "paste - no longer maintained",
+        "advisories": [
+          "https://rustsec.org/advisories/RUSTSEC-2024-0436"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "leiden",
+    "exit_code": 0,
+    "findings": []
+  },
+  {
+    "name": "graphrs",
+    "exit_code": 1,
+    "findings": [
+      {
+        "severity": "error",
+        "code": "unmaintained",
+        "message": "ansi_term is Unmaintained",
+        "advisories": [
+          "https://rustsec.org/advisories/RUSTSEC-2021-0139"
+        ]
+      },
+      {
+        "severity": "error",
+        "code": "vulnerability",
+        "message": "Quadratic run time when checking a start tag for duplicate attribute names",
+        "advisories": [
+          "https://rustsec.org/advisories/RUSTSEC-2026-0194"
+        ]
+      },
+      {
+        "severity": "error",
+        "code": "vulnerability",
+        "message": "Unbounded namespace-declaration allocation in `NsReader` enables memory-exhaustion denial of service",
+        "advisories": [
+          "https://rustsec.org/advisories/RUSTSEC-2026-0195"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "prost",
+    "exit_code": 0,
+    "findings": []
+  },
+  {
+    "name": "lz4",
+    "exit_code": 0,
+    "findings": []
+  },
+  {
+    "name": "ruzstd",
+    "exit_code": 0,
+    "findings": []
+  },
+  {
+    "name": "basin",
+    "exit_code": 0,
+    "findings": []
+  },
+  {
+    "name": "smartcore",
+    "exit_code": 0,
+    "findings": []
+  },
+  {
+    "name": "keyvalues_parser",
+    "exit_code": 0,
+    "findings": []
+  },
+  {
+    "name": "keyvalues_serde",
+    "exit_code": 0,
+    "findings": []
+  },
+  {
+    "name": "vdf_reader",
+    "exit_code": 0,
+    "findings": []
+  },
+  {
+    "name": "steamlocate",
+    "exit_code": 0,
+    "findings": []
+  }
+]

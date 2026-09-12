@@ -2,8 +2,7 @@ name: Release
 
 on:
   push:
-    tags:
-      - "v*"
+    tags: ["v*"]
 
 permissions:
   contents: read
@@ -14,32 +13,7 @@ concurrency:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - name: Install uv and Python
-        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
-        with:
-          enable-cache: true
-          python-version: "3.13"
-
-      - name: Verify tag matches package version
-        run: test "$GITHUB_REF_NAME" = "v$(uv version --short)"
-
-      - name: Install locked environment
-        run: uv sync --frozen
-
-      - name: Verify release
-        run: |
-          uv lock --check
-          uv run ruff format --check .
-          uv run ruff check .
-          uv run ty check
-          uv run pytest
-          uv pip check
-          uv build
+    uses: ./.github/workflows/ci.yml
 
   github-release:
     needs: verify
@@ -47,22 +21,32 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - name: Install uv and Python
-        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      - name: Download the verified Linux release archive
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          python-version: "3.13"
+          name: deadlock-build-sync-x86_64-unknown-linux-gnu
+          path: dist
 
-      - name: Build distributions
-        run: uv build
+      - name: Verify the archive checksum and release version
+        run: |
+          version=${GITHUB_REF_NAME#v}
+          case "$version" in
+            ''|*[!a-zA-Z0-9.+-]*) exit 1 ;;
+          esac
+          package_name="deadlock-build-sync-$version-x86_64-unknown-linux-gnu"
+          cd dist
+          sha256sum --check "$package_name.tar.gz.sha256"
+          temporary_directory=$(mktemp -d)
+          trap 'rm -rf -- "$temporary_directory"' EXIT
+          tar -C "$temporary_directory" -xzf "$package_name.tar.gz"
+          version_output=$("$temporary_directory/$package_name/deadlock-build-sync" --version)
+          test "$version_output" = "deadlock-build-sync $version"
 
-      - name: Create GitHub release
+      - name: Create the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
         run: >-
-          gh release create "$GITHUB_REF_NAME" dist/*
+          gh release create "$GITHUB_REF_NAME" dist/*.tar.gz dist/*.sha256
           --verify-tag
           --generate-notes
           --title "$GITHUB_REF_NAME"

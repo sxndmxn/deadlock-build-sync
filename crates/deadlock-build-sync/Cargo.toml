@@ -1,0 +1,27 @@
+[package]
+publish = false
+name = "deadlock-build-sync"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Generate and install private Deadlock hero builds"
+
+[lints]
+workspace = true
+
+[features]
+default = []
+analysis = ["dep:deadlock-analysis"]
+
+[dependencies]
+deadlock-data.workspace = true
+deadlock-input.workspace = true
+deadlock-guides.workspace = true
+deadlock-steam.workspace = true
+deadlock-analysis = { workspace = true, optional = true }
+clap.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+tempfile.workspace = true

@@ -4,21 +4,16 @@ Describe the user-visible result and why it is needed.
 
 ## Validation
 
-- [ ] `uv lock --check`
-- [ ] `uv run ruff format --check .`
-- [ ] `uv run ruff check .`
-- [ ] `uv run sqlfluff lint .`
-- [ ] `uv run ty check`
-- [ ] `uv run deptry .`
-- [ ] `uv run tach check`
-- [ ] `uv run coverage run -m pytest -W error && uv run coverage json`
-- [ ] `uv run complexipy && uv run tools/quality_gate.py`
-- [ ] `uv run vulture`
-- [ ] `uv run pylint --disable=all --enable=duplicate-code src scripts`
-- [ ] `uv pip check`
-- [ ] `uv build`
-- [ ] Mutation gate passed, or the reason it was not run is documented
-- [ ] Relevant DeepEval suite run, or the reason it was skipped is documented
+- [ ] `cargo fmt --all --check`
+- [ ] `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`
+- [ ] `cargo run --locked --package deadlock-quality`
+- [ ] `uvx --from sqlfluff==4.3.0 sqlfluff lint crates/deadlock-analysis/sql`
+- [ ] `cargo doc --workspace --all-features --no-deps --locked`
+- [ ] `cargo deny --locked check --deny warnings`
+- [ ] Default CLI build and missing-analysis-feature check
+- [ ] Release build with analysis enabled
+- [ ] Release archive inspection and executable checks outside the checkout
+- [ ] Relevant fixture checks and limitations recorded
 
 ## Safety
 
