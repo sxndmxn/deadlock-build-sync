@@ -282,6 +282,12 @@ pub struct RefreshArguments {
     pub resume: bool,
     #[arg(long, default_value = "8", value_parser = clap::value_parser!(u16).range(1..))]
     pub workers: u16,
+    /// Extraction memory limit in decimal megabytes.
+    #[arg(long, default_value = "12000", value_parser = clap::value_parser!(u32).range(1..))]
+    pub extraction_memory_mb: u32,
+    /// Database threads during extraction. Hero workers use separate limits.
+    #[arg(long, default_value = "8", value_parser = clap::value_parser!(u16).range(1..))]
+    pub extraction_threads: u16,
     #[command(flatten)]
     pub ranks: RankArguments,
     #[arg(long, value_parser = clap::value_parser!(u16).range(1..))]

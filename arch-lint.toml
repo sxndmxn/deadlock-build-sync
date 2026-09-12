@@ -37,10 +37,6 @@ paths = ["crates/deadlock-analysis/**/*.rs"]
 name = "deadlock-build-sync"
 paths = ["crates/deadlock-build-sync/**/*.rs"]
 
-[[scopes]]
-name = "deadlock-quality"
-paths = ["tools/deadlock-quality/**/*.rs"]
-
 [[restrict-use]]
 name = "deadlock-data-dependencies"
 scope = "deadlock-data"
@@ -50,7 +46,6 @@ deny = [
     "deadlock_steam::**",
     "deadlock_analysis::**",
     "deadlock_build_sync::**",
-    "deadlock_quality::**",
 ]
 message = "deadlock-data cannot import this crate. Check the documented dependency direction."
 doc = "docs/architecture.md"
@@ -65,7 +60,6 @@ deny = [
     "deadlock_steam::**",
     "deadlock_analysis::**",
     "deadlock_build_sync::**",
-    "deadlock_quality::**",
 ]
 message = "deadlock-input cannot import this crate. Check the documented dependency direction."
 doc = "docs/architecture.md"
@@ -79,7 +73,6 @@ deny = [
     "deadlock_steam::**",
     "deadlock_analysis::**",
     "deadlock_build_sync::**",
-    "deadlock_quality::**",
 ]
 message = "deadlock-guides cannot import this crate. Check the documented dependency direction."
 doc = "docs/architecture.md"
@@ -93,7 +86,6 @@ deny = [
     "deadlock_input::**",
     "deadlock_analysis::**",
     "deadlock_build_sync::**",
-    "deadlock_quality::**",
 ]
 message = "deadlock-steam cannot import this crate. Check the documented dependency direction."
 doc = "docs/architecture.md"
@@ -106,36 +98,8 @@ scope = "deadlock-analysis"
 deny = [
     "deadlock_steam::**",
     "deadlock_build_sync::**",
-    "deadlock_quality::**",
 ]
 message = "deadlock-analysis cannot import this crate. Check the documented dependency direction."
-doc = "docs/architecture.md"
-severity = "error"
-check-inline = true
-
-[[restrict-use]]
-name = "deadlock-build-sync-dependencies"
-scope = "deadlock-build-sync"
-deny = [
-    "deadlock_quality::**",
-]
-message = "deadlock-build-sync cannot import this crate. Check the documented dependency direction."
-doc = "docs/architecture.md"
-severity = "error"
-check-inline = true
-
-[[restrict-use]]
-name = "deadlock-quality-dependencies"
-scope = "deadlock-quality"
-deny = [
-    "deadlock_data::**",
-    "deadlock_input::**",
-    "deadlock_guides::**",
-    "deadlock_steam::**",
-    "deadlock_analysis::**",
-    "deadlock_build_sync::**",
-]
-message = "deadlock-quality cannot import this crate. Check the documented dependency direction."
 doc = "docs/architecture.md"
 severity = "error"
 check-inline = true

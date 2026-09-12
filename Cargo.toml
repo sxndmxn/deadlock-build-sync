@@ -6,7 +6,6 @@ members = [
     "crates/deadlock-steam",
     "crates/deadlock-analysis",
     "crates/deadlock-build-sync",
-    "tools/deadlock-quality",
 ]
 default-members = ["crates/deadlock-build-sync"]
 resolver = "3"

@@ -11,7 +11,9 @@ pub fn run_refresh(_args: &RefreshArguments, _base_url: &str) -> Result<u8> {
 
 #[cfg(feature = "analysis")]
 pub fn run_refresh(args: &RefreshArguments, base_url: &str) -> Result<u8> {
-    use deadlock_analysis::{RefreshRequest, parse_timestamp, refresh_evidence};
+    use deadlock_analysis::{
+        ExtractionResources, RefreshRequest, parse_timestamp, refresh_evidence,
+    };
     use deadlock_data::{Rank, RankRange, state_directory};
     use deadlock_guides::{BuildGenerator, RankExpansion};
 
@@ -42,6 +44,10 @@ pub fn run_refresh(args: &RefreshArguments, base_url: &str) -> Result<u8> {
             ExpansionArgument::Off => RankExpansion::Off,
         },
         workers: args.workers,
+        extraction_resources: ExtractionResources {
+            memory_limit_mb: args.extraction_memory_mb,
+            threads: args.extraction_threads,
+        },
         resume: args.resume,
         generator: match args.generator {
             Generator::Current => BuildGenerator::Current,

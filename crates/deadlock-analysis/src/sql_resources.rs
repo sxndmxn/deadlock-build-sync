@@ -194,16 +194,8 @@ const SQL: &[(&str, &str)] = &[
         include_str!("../sql/extract/select_source_snapshot.sql"),
     ),
     (
-        "extract/set_memory_limit.sql",
-        include_str!("../sql/extract/set_memory_limit.sql"),
-    ),
-    (
         "extract/set_temp_directory.sql",
         include_str!("../sql/extract/set_temp_directory.sql"),
-    ),
-    (
-        "extract/set_threads.sql",
-        include_str!("../sql/extract/set_threads.sql"),
     ),
     (
         "production/select_path_cohort_summary.sql",

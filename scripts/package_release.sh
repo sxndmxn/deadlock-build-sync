@@ -29,6 +29,7 @@ package_directory="$temporary_directory/$package_name"
 mkdir "$package_directory"
 cp "$binary_path" "$package_directory/deadlock-build-sync"
 cp "$repository_directory/LICENSE" "$repository_directory/README.md" "$package_directory/"
+cp "$repository_directory/crates/deadlock-steam/THIRD_PARTY_NOTICES.md" "$package_directory/"
 mkdir -p "$repository_directory/dist"
 archive_path="$repository_directory/dist/$package_name.tar.gz"
 tar -C "$temporary_directory" -czf "$archive_path" "$package_name"
@@ -39,6 +40,8 @@ tar -C "$inspection_directory" -xzf "$archive_path"
 cd "$inspection_directory/$package_name"
 test -s LICENSE
 test -s README.md
+test -s THIRD_PARTY_NOTICES.md
+cmp "$repository_directory/crates/deadlock-steam/THIRD_PARTY_NOTICES.md" THIRD_PARTY_NOTICES.md
 test "$(./deadlock-build-sync --version)" = "$version_output"
 ./deadlock-build-sync --help >/dev/null
 for command in sync build status refresh-evidence recommend quality-report preview install install-artifacts export-context generate-narratives restore trace-summary; do

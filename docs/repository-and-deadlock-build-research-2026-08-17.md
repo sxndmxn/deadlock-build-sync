@@ -1,5 +1,8 @@
 # Repository and Deadlock Build Research
 
+This historical report describes the Python implementation.
+Permanent source links identify archived code. Historical results do not certify the Rust workspace.
+
 <!-- markdownlint-disable MD013 -->
 
 Research date: 2026-08-17
@@ -409,14 +412,14 @@ rate” is descriptive and must not be shown as the item's causal effect.
 
 The defect crosses four boundaries:
 
-1. [`offline/layout.py`](../src/deadlock_build_sync/offline/layout.py)
+1. [`offline/layout.py`](https://github.com/sxndmxn/deadlock-build-sync/blob/7703eae9ef0254f8f693e2ce3a75b799cdf5b496/src/deadlock_build_sync/offline/layout.py)
    selects exactly eight final CORE items.
-2. [`purchase_guide.py`](../src/deadlock_build_sync/purchase_guide.py)
+2. [`purchase_guide.py`](https://github.com/sxndmxn/deadlock-build-sync/blob/d603d6b53bb110d0ac48a689f037861e6453b243/src/deadlock_build_sync/purchase_guide.py)
    expands that set into a legal component purchase path.
-3. [`renderer.py`](../src/deadlock_build_sync/renderer.py) validates the eight
+3. [`renderer.py`](https://github.com/sxndmxn/deadlock-build-sync/blob/d603d6b53bb110d0ac48a689f037861e6453b243/src/deadlock_build_sync/renderer.py) validates the eight
    final items and the tier menus, but it does not limit the expanded CORE card
    count.
-4. [`protobuf.py`](../src/deadlock_build_sync/protobuf.py) always writes the
+4. [`protobuf.py`](https://github.com/sxndmxn/deadlock-build-sync/blob/d603d6b53bb110d0ac48a689f037861e6453b243/src/deadlock_build_sync/protobuf.py) always writes the
    fixed CORE size `(567.0, 307.5)`. Its comment says the box has room for 11
    cards, while the current client showed 12 complete cards.
 
@@ -4838,7 +4841,7 @@ admission contract described above instead of preserving a reassuring name.
 
 #### Split narrative generation by responsibility
 
-[`scripts/generate_narratives.py`](../scripts/generate_narratives.py) is 1,903
+[`scripts/generate_narratives.py`](https://github.com/sxndmxn/deadlock-build-sync/blob/d603d6b53bb110d0ac48a689f037861e6453b243/scripts/generate_narratives.py) is 1,903
 lines and is imported at runtime by `cli.py`. The wheel explicitly packages the
 generic top-level `scripts` directory.
 

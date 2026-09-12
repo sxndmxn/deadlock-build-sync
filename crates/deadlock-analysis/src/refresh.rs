@@ -29,6 +29,7 @@ pub fn refresh_evidence(request: &RefreshRequest) -> Result<RefreshResult> {
             "Refresh requires positive workers. Resume requires --run-id.",
         ));
     }
+    request.extraction_resources.validate()?;
     request.ranks.validate()?;
     let paths = RunPaths::create(&request.root, request.run_id.as_deref())?;
     let lock = OpenOptions::new()
@@ -133,6 +134,11 @@ fn capture_run(paths: &RunPaths, request: &RefreshRequest) -> Result<()> {
             json!({"generator":beam_generator_record()?,"implementation":implementation_record()});
     }
     atomic_write_json(&manifest_path, &manifest)?;
-    manifest["extraction"] = extract_cohort(paths, &cohort, request.rank_expansion)?;
+    manifest["extraction"] = extract_cohort(
+        paths,
+        &cohort,
+        request.rank_expansion,
+        request.extraction_resources,
+    )?;
     atomic_write_json(&manifest_path, &manifest)
 }

@@ -1,5 +1,8 @@
 # Deadlock build usage and design audit
 
+This historical report describes the Python implementation.
+Permanent source links identify archived code. Historical results do not certify the Rust workspace.
+
 Date: 2026-08-13
 
 Repository: deadlock-build-sync at 7464dd8d94192d75a40ad8d14cd7528e0e2e634e
@@ -220,7 +223,7 @@ The installed description says:
 
 > Ability-path pick rate compares reliable complete 16-step paths (20+ matches).
 
-That no longer describes the selector in [ability_order.py](../src/deadlock_build_sync/ability_order.py). The current algorithm accepts observed prefixes of length 1–16 and constructs a path one legal state at a time from all rows that reached that state. It does not choose the most popular exact complete path.
+That no longer describes the selector in [ability_order.py](https://github.com/sxndmxn/deadlock-build-sync/blob/d603d6b53bb110d0ac48a689f037861e6453b243/src/deadlock_build_sync/ability_order.py). The current algorithm accepts observed prefixes of length 1–16 and constructs a path one legal state at a time from all rows that reached that state. It does not choose the most popular exact complete path.
 
 The algorithm is the stronger part; the copy is wrong. Rename “pick rate” to “final-branch support share” everywhere and describe the result as a “state-composed observed default.” Do not imply that the final 16-step sequence was itself observed.
 
@@ -240,7 +243,7 @@ The installed state narrative artifact is internally compatible with its frozen 
 - eight core action explanations;
 - five category summaries.
 
-[narratives.py](../src/deadlock_build_sync/narratives.py) validates those fields but applies only the build summary. Core action explanations are never mapped back to GuideItem.tactical_annotation. The category summaries are admitted and then replaced by standard_category_description for every standard section.
+[narratives.py](https://github.com/sxndmxn/deadlock-build-sync/blob/d603d6b53bb110d0ac48a689f037861e6453b243/src/deadlock_build_sync/narratives.py) validates those fields but applies only the build summary. Core action explanations are never mapped back to GuideItem.tactical_annotation. The category summaries are admitted and then replaced by standard_category_description for every standard section.
 
 This is the largest return-on-effort opportunity in the project. Of the 304 generated core-item instructions, 302 already fit within the renderer’s 240-byte annotation ceiling. The pipeline has done the difficult work; the projection drops it.
 
@@ -263,7 +266,7 @@ The exact wording must remain mechanics-grounded. The example illustrates hierar
 
 ## Confirmed P0: the player-facing description is backwards
 
-[protobuf.py](../src/deadlock_build_sync/protobuf.py) places marker, generator provenance, patch, client, matchmaking mode, ranks, snapshot hash, policy hash, and a statistical disclaimer before the hero-specific summary. The live preview therefore reads like an audit manifest before it reads like a guide.
+[protobuf.py](https://github.com/sxndmxn/deadlock-build-sync/blob/d603d6b53bb110d0ac48a689f037861e6453b243/src/deadlock_build_sync/protobuf.py) places marker, generator provenance, patch, client, matchmaking mode, ranks, snapshot hash, policy hash, and a statistical disclaimer before the hero-specific summary. The live preview therefore reads like an audit manifest before it reads like a guide.
 
 Keep every identity because the cache validator and reproducibility model depend on it. Reorder, do not delete:
 
@@ -428,7 +431,7 @@ Do not rename tiers to early/mid/late. They are price tiers, and the evidence sh
 
 ## Keep the current geometry
 
-The current dimensions in [protobuf.py](../src/deadlock_build_sync/protobuf.py) were captured from a user-tuned 2560×1440 Viscous build:
+The current dimensions in [protobuf.py](https://github.com/sxndmxn/deadlock-build-sync/blob/d603d6b53bb110d0ac48a689f037861e6453b243/src/deadlock_build_sync/protobuf.py) were captured from a user-tuned 2560×1440 Viscous build:
 
 | Section | Width | Height | Observed flow |
 |---|---:|---:|---|
@@ -492,7 +495,7 @@ Deterministic code chooses items, ordering, Queue membership, legal ability leve
 
 ## Keep the Steam mutation boundary unchanged
 
-The safety work in [cache.py](../src/deadlock_build_sync/cache.py) is excellent and should not be mixed into a presentation refactor:
+The safety work in [cache.py](https://github.com/sxndmxn/deadlock-build-sync/blob/d603d6b53bb110d0ac48a689f037861e6453b243/src/deadlock_build_sync/cache.py) is excellent and should not be mixed into a presentation refactor:
 
 - refuse before any install while Deadlock is running;
 - recheck immediately before replacement;
@@ -581,7 +584,7 @@ Do not imitate public-guide outliers with dozens of categories. The current five
 
 ## Current CORE algorithm
 
-For each hero, the offline artifact provides up to 64 eight-item final-inventory candidates, sorted by joint player-match support. [build_evidence.py](../src/deadlock_build_sync/build_evidence.py) selects the first candidate that:
+For each hero, the offline artifact provides up to 64 eight-item final-inventory candidates, sorted by joint player-match support. [build_evidence.py](https://github.com/sxndmxn/deadlock-build-sync/blob/d603d6b53bb110d0ac48a689f037861e6453b243/src/deadlock_build_sync/build_evidence.py) selects the first candidate that:
 
 1. has at least 20 joint appearances;
 2. costs no more than the hero cohort’s median final net worth;

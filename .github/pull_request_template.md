@@ -6,7 +6,7 @@ Describe the user-visible result and why it is needed.
 
 - [ ] `cargo fmt --all --check`
 - [ ] `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`
-- [ ] `cargo run --locked --package deadlock-quality`
+- [ ] `arch-lint --config arch-lint.toml check --engine syn .`
 - [ ] `uvx --from sqlfluff==4.3.0 sqlfluff lint crates/deadlock-analysis/sql`
 - [ ] `cargo doc --workspace --all-features --no-deps --locked`
 - [ ] `cargo deny --locked check --deny warnings`

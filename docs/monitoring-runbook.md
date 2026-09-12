@@ -1,77 +1,59 @@
 ---
-title: "Deadlock build-policy monitoring and rollback runbook"
-status: implementation-contract
+title: "Deadlock monitoring and recovery runbook"
+status: current-operations-and-proposed-monitoring
 ---
 
-# Monitoring and rollback runbook
+# Monitoring and recovery runbook
 
-> [!CAUTION]
-> Current production recommendations remain mechanics-backed and descriptive. A
-> decision log or OPE result does not by itself authorize a causal claim, automated
-> learning, or a live Steam write.
+## Implemented operations
 
-## Signals
+The Rust CLI provides explicit commands and artifact validation.
+It does not run a continuous monitoring service or automatic policy rollback.
 
-| Boundary | Required signals |
-|---|---|
-| Source | snapshot age, mechanics identity, schema decode status |
-| Runtime policy | invalid-state rate, exposures, adoptions, deviations, recalculations, unhandled branches |
-| Statistical | held-out calibration error, selective risk/coverage, recommendation concentration |
-| Artifact | path/render rejection, exact-compatible reuse and regeneration |
-| Steam mutation | install failures, restore attempts/failures, preservation fingerprint |
+| Command or boundary | Current behavior |
+| --- | --- |
+| `status` | Reports freshness stages using artifacts, API inputs, and the selected Steam location. |
+| `quality-report` | Reports evidence support, compatibility, purchase windows, and optional runtime-policy replay results. |
+| `trace-summary` | Summarizes recorded operation traces. |
+| Artifact admission | Rejects malformed, incomplete, stale, or incompatible artifacts. |
+| Artifact installation | Preserves the previous bundle on handled installation failures or reports its recovery location. |
+| Steam installation and restoration | Checks the running process, creates recovery backups, and validates replacement data. |
 
-All counts use the unit printed beside them. `exposure`, `adoption`, and `deviation`
-are never substituted for purchase-event volume.
+`quality-report` returns zero for `pass`, one for `fail`, and two for `unevaluated`.
+Replay requires pinned assets and compatible replay records.
+These checks do not establish improved match outcomes or causal item effects.
 
-## Decision precedence
+## Investigation and recovery
 
-```text
-mechanics/schema/preservation/calibration/restore failure
-  └─> ROLLBACK to the last compatible snapshot and policy set
+- Record the rejected snapshot, policy identifiers, and command output.
+- Preserve source manifests, artifacts, traces, and Steam backups.
+- Compare rank, patch, client version, cutoff, and fingerprints before reusing artifacts.
+- Stop writes if preservation or restoration fails.
+- Inspect recovery files before another restoration attempt.
+- Do not weaken a validator to accept rejected artifacts.
 
-stale snapshot/path rejection/render rejection/install failure
-  └─> REFUSE the new policy; retain the last compatible artifact
+The `restore --latest` command writes Steam data.
+A backup inspection must establish compatibility before recovery.
+Do not delete backup files during an investigation.
 
-invalid-state/unhandled-branch/concentration drift
-  └─> ALERT and investigate; do not silently widen queues or epochs
+## Proposed monitoring requirements
 
-no triggered rule
-  └─> HEALTHY
-```
+The following requirements do not describe implemented Rust telemetry or automatic actions:
 
-## Mandatory rollback conditions
+- Continuous exposure, adoption, deviation, and recalculation counts.
+- Continuous invalid-state monitoring, concentration drift alerts, and calibration alerts.
+- Automatic policy rollback and automatic predictive-claim disabling.
+- A recommendation-event collection service with a 90-day retention limit.
 
-| Condition | Immediate action | Recovery evidence |
-|---|---|---|
-| Mechanics fingerprint mismatch | Stop admission and rollback. | Re-export from one pinned client; rerun mechanics and every-path tests. |
-| Material held-out calibration failure | Disable predictive claim class and rollback. | Re-select threshold on validation only; pass later patch test fold. |
-| Schema decode failure | Refuse artifact and rollback. | Decode, validate, and round-trip a regenerated artifact. |
-| User-data preservation change | Stop all writes and restore backup. | Match pre-write out-of-scope fingerprint and decode restored cache. |
-| Restore failure | Stop and surface backup path. | Manual recovery review; never overwrite the backup. |
+The [decision-log schema](../schemas/decision-log.schema.json) describes proposed event records.
+Its existence does not establish event collection or retention enforcement.
+Purchase-event volume is not an exposure or adoption count.
 
-## Investigation checklist
+## References
 
-- [ ] Record the rejected snapshot and policy IDs.
-- [ ] Identify the last exact-compatible snapshot and complete policy set.
-- [ ] Preserve source manifests, evaluation report, cache backup, and failure output.
-- [ ] Confirm queue, rank, epochs, client version, and cutoff before comparing metrics.
-- [ ] Separate data drift, mechanics drift, rendering failure, and mutation failure.
-- [ ] Add a regression fixture before re-enabling the boundary.
-- [ ] Never weaken a validator to admit the failed artifact.
+- Current [Rust quality report](../crates/deadlock-guides/src/quality_report.rs) and [replay evaluation](../crates/deadlock-guides/src/quality_evaluation.rs).
+- Historical [coverage manifest](evaluation-coverage.json) and [illustrative evaluation report](evaluation-sample-report.json).
+- Archived [Python evaluation module](https://github.com/sxndmxn/deadlock-build-sync/blob/d603d6b53bb110d0ac48a689f037861e6453b243/src/deadlock_build_sync/evaluation.py).
+- Archived [Python regression suite](https://github.com/sxndmxn/deadlock-build-sync/blob/d603d6b53bb110d0ac48a689f037861e6453b243/tests/test_evaluation.py).
 
-## Privacy and retention
-
-Recommendation events use
-[`schemas/decision-log.schema.json`](../schemas/decision-log.schema.json). They retain
-candidate order, exposure, adoption/deviation, recalculation, propensity or experiment
-assignment, and bounded outcomes for at most 90 days. Steam IDs, account IDs, player IDs,
-persona names, email addresses, and IP addresses are prohibited.
-
-## Verification references
-
-- Coverage manifest: [`evaluation-coverage.json`](evaluation-coverage.json)
-- Illustrative layer-separated report:
-  [`evaluation-sample-report.json`](evaluation-sample-report.json)
-- Deterministic implementation:
-  [archived Python evaluation module](https://github.com/sxndmxn/deadlock-build-sync/blob/d603d6b53bb110d0ac48a689f037861e6453b243/src/deadlock_build_sync/evaluation.py)
-- Regression suite: [`test_evaluation.py`](../tests/test_evaluation.py)
+Historical evaluation results do not certify the Rust executable or current live builds.

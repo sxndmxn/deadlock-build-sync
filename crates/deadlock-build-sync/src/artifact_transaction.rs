@@ -1,4 +1,4 @@
-use std::fs::{self, File};
+use std::fs::{self, File, FileType};
 use std::path::{Path, PathBuf};
 
 use deadlock_data::{Error, Result};
@@ -34,8 +34,8 @@ impl ArtifactTransaction {
             .tempdir_in(parent)?;
         let staged = temporary.path().join("new");
         fs::create_dir(&staged)?;
-        if destination.try_exists()? {
-            copy_directory(destination, &staged)?;
+        if file_type(destination)?.is_some_and(|kind| !kind.is_dir()) {
+            return Err(Error::new("The artifact destination must be a directory"));
         }
         Ok(Self {
             destination: destination.into(),
@@ -49,10 +49,20 @@ impl ArtifactTransaction {
         &self.staged
     }
 
+    pub fn existing_file(&self, name: &str) -> Result<Option<PathBuf>> {
+        let path = self.destination.join(name);
+        match file_type(&path)? {
+            Some(kind) if kind.is_file() => Ok(Some(path)),
+            Some(_) => Err(Error::new("The existing artifact must be a regular file")),
+            None => Ok(None),
+        }
+    }
+
     pub fn commit(self) -> Result<()> {
         let previous = self.temporary.path().join("previous");
-        let had_previous = self.destination.try_exists()?;
+        let had_previous = file_type(&self.destination)?.is_some();
         if had_previous {
+            copy_retained_files(&self.destination, &self.staged)?;
             fs::rename(&self.destination, &previous)?;
         }
         if let Err(error) = fs::rename(&self.staged, &self.destination) {
@@ -84,11 +94,9 @@ impl ArtifactTransaction {
     }
 }
 
-fn copy_directory(source: &Path, destination: &Path) -> Result<()> {
-    if fs::symlink_metadata(source)?.file_type().is_symlink() {
-        return Err(Error::new(
-            "Artifact directories must not be symbolic links",
-        ));
+fn copy_retained_files(source: &Path, destination: &Path) -> Result<()> {
+    if !fs::symlink_metadata(source)?.is_dir() {
+        return Err(Error::new("The artifact source must be a directory"));
     }
     let mut pending = vec![(source.to_path_buf(), destination.to_path_buf())];
     while let Some((source, destination)) = pending.pop() {
@@ -97,19 +105,39 @@ fn copy_directory(source: &Path, destination: &Path) -> Result<()> {
             let path = entry.path();
             let target = destination.join(entry.file_name());
             let kind = entry.file_type()?;
-            if kind.is_dir() {
-                fs::create_dir(&target)?;
-                pending.push((path, target));
-            } else if kind.is_file() {
-                fs::copy(&path, &target)?;
-                File::open(target)?.sync_all()?;
-            } else {
+            if !kind.is_dir() && !kind.is_file() {
                 return Err(Error::new(
                     "Artifact directory contains a symbolic link or special file",
                 ));
+            }
+            copy_retained_entry(&path, &target, kind)?;
+            if kind.is_dir() {
+                pending.push((path, target));
             }
         }
         File::open(destination)?.sync_all()?;
     }
     Ok(())
+}
+
+fn copy_retained_entry(source: &Path, destination: &Path, kind: FileType) -> Result<()> {
+    if let Some(existing) = file_type(destination)? {
+        if existing.is_dir() != kind.is_dir() || existing.is_file() != kind.is_file() {
+            return Err(Error::new("Artifact replacement has a file type conflict"));
+        }
+    } else if kind.is_dir() {
+        fs::create_dir(destination)?;
+    } else {
+        fs::copy(source, destination)?;
+        File::open(destination)?.sync_all()?;
+    }
+    Ok(())
+}
+
+fn file_type(path: &Path) -> Result<Option<FileType>> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) => Ok(Some(metadata.file_type())),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error.into()),
+    }
 }

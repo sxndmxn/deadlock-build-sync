@@ -7,6 +7,8 @@ use duckdb::{Connection, ToSql, types::Value as SqlValue};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
+use crate::config::ExtractionResources;
+
 pub type Parameters = BTreeMap<String, SqlValue>;
 
 #[derive(Debug)]
@@ -15,9 +17,16 @@ pub struct AnalysisDatabase {
 }
 
 impl AnalysisDatabase {
-    pub fn open(path: &Path) -> Result<Self> {
+    pub fn open(path: &Path, resources: ExtractionResources) -> Result<Self> {
+        resources.validate()?;
+        let configuration = duckdb::Config::default()
+            .threads(i64::from(resources.threads))
+            .map_err(|error| database_error(&error))?
+            .max_memory(&format!("{}MB", resources.memory_limit_mb))
+            .map_err(|error| database_error(&error))?;
         Ok(Self {
-            connection: Connection::open(path).map_err(|error| database_error(&error))?,
+            connection: Connection::open_with_flags(path, configuration)
+                .map_err(|error| database_error(&error))?,
         })
     }
 

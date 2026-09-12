@@ -40,12 +40,10 @@ pub fn write_build_artifacts(
     let staged = transaction.staged();
     let context = strategy_context(generated)?;
     let policies = policy_artifact(generated)?;
-    let existing_path = staged.join("narratives.json");
-    let existing = if existing_path.try_exists()? {
-        Some(NarrativeCatalog::load(&existing_path)?)
-    } else {
-        None
-    };
+    let existing = transaction
+        .existing_file("narratives.json")?
+        .map(|path| NarrativeCatalog::load(&path))
+        .transpose()?;
     let narratives = trace_operation(
         "artifacts.generate_narratives",
         Some("generate_narratives"),

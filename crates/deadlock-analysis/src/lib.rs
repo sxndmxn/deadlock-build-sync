@@ -42,5 +42,5 @@ mod sources;
 mod sql_resources;
 mod statistics;
 
-pub use config::{RefreshRequest, parse_timestamp};
+pub use config::{ExtractionResources, RefreshRequest, parse_timestamp};
 pub use refresh::{RefreshResult, refresh_evidence};

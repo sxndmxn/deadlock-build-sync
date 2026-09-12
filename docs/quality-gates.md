@@ -13,9 +13,9 @@ The current gates do not claim unit-test coverage or mutation coverage.
 | Unsafe repository code | Forbidden | Compiler lint with `forbid` |
 | Clippy findings | Zero in `all`, `pedantic`, and `nursery` | Cargo workspace lints |
 | Cognitive complexity | At most 21 | Clippy and `clippy.toml` |
-| Asynchronous repository code | Zero | Parsed Rust syntax in `deadlock-quality` |
-| Cyclic crate or module dependencies | Zero | Cargo and `deadlock-quality` with Cargo Modules |
-| Project dependencies outside the architecture | Zero | Explicit crate rules in `deadlock-quality` |
+| Asynchronous repository code | Zero | Code review; Cargo Deny separately rejects prohibited runtimes |
+| Cyclic crate or module dependencies | Zero | Cargo checks crate cycles; code review checks module cycles |
+| Project dependencies outside the architecture | Zero | Manifest review against the architecture |
 | Imports outside the architecture | Zero | Arch-lint rules in `arch-lint.toml` |
 | Panic helpers and unfinished macros | No `unwrap`, `expect`, `panic`, `todo`, `unimplemented`, or `dbg` calls | Clippy |
 | Lint exceptions without a reason | Zero | Clippy |
@@ -33,10 +33,9 @@ It also rejects Reqwest because its blocking client requires Tokio.
 
 Rustup selects Rust 1.92.0 through `rust-toolchain.toml`.
 A C++ compiler is necessary for bundled DuckDB.
-Install the three pinned Rust check tools:
+Install the two pinned Rust check tools:
 
 ```bash
-cargo install cargo-modules --version 0.26.0 --locked
 cargo install cargo-deny --version 0.20.2 --locked
 cargo install arch-lint-cli --version 0.6.0 --locked
 ```
@@ -48,7 +47,8 @@ No Python application environment or Node workflow is required.
 Arch-lint runs as a separate development executable.
 It adds no application dependency and generates no unit tests.
 The configuration selects architecture rules and rejects unwrap and expect calls.
-Compiler, Clippy, and source gates enforce the other Rust requirements.
+Compiler and Clippy settings enforce their configured Rust lints.
+Code review covers the requirements that these tools do not check.
 Do not enable rules that require asynchronous I/O or unselected logging and error packages.
 
 ## Complete local gate
@@ -58,31 +58,46 @@ Run these commands from the repository root:
 ```bash
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
-cargo run --locked --package deadlock-quality
+arch-lint --config arch-lint.toml check --engine syn .
 uvx --from sqlfluff==4.3.0 sqlfluff lint crates/deadlock-analysis/sql
 cargo doc --workspace --all-features --no-deps --locked
 cargo deny --locked check --deny warnings
 cargo build --package deadlock-build-sync --locked
 ```
 
-`deadlock-quality` runs Arch-lint before the resolved module checks.
-It requires the pinned version, zero violations, and complete Rust source coverage.
-Cargo aliases provide shorter commands for the same checks:
-
-```bash
-cargo lint
-cargo architecture
-```
-
-The aliases reside in `.cargo/config.toml`.
+Each command returns its own check result directly.
+`cargo lint` is an alias for the strict Clippy command above.
+The alias resides in `.cargo/config.toml`.
 `Cargo.toml` contains compiler and Clippy lint settings.
-Cargo settings cannot inspect async syntax or calculate module dependency cycles.
-The Rust quality tool implements those checks and validates the Arch-lint report.
-Run the architecture linter directly when you need its report:
+
+### Review requirements
+
+Review asynchronous functions, blocks, closures, await expressions, and macro tokens.
+Runtime dependency bans do not prohibit asynchronous syntax by themselves.
+Review normal, build, and development dependencies against [architecture](architecture.md).
+Review module changes for cycles.
+Review source-selection patterns to include every repository Rust source file, including build scripts.
+CI does not automatically check these review requirements.
+
+Cargo metadata supports manifest inspection:
 
 ```bash
-arch-lint --config arch-lint.toml check --engine syn --format json .
+cargo metadata --no-deps --format-version 1 --locked
 ```
+
+Cargo Modules is optional and is not installed by CI.
+Use its filtered graph for manual module review:
+
+```bash
+cargo install cargo-modules --version 0.26.0 --locked
+cargo modules dependencies --package deadlock-data --lib --all-features \
+  --no-externs --no-sysroot --no-owns --no-fns --no-types --no-traits
+```
+
+Select each changed package and its library or binary target.
+Version 0.26.0 applies `--acyclic` before the graph filters.
+That option rejects valid relationships between types and their methods.
+It does not provide the required cycle check restricted to modules.
 
 Check the default binary before the analysis build:
 
@@ -102,7 +117,8 @@ sh scripts/package_release.sh "$PWD/target/release/deadlock-build-sync" "$(rustc
 
 The packaging script creates an archive and SHA-256 file under `dist/`.
 It extracts the archive into a temporary directory outside the checkout.
-It checks the version, license, README, and help for all 13 commands there.
+It checks the version, license, README, codec notices, and help for all 13 commands there.
+The extracted codec notices must match the repository notice file exactly.
 The release workflow produces a Linux AMD64 archive with analysis enabled.
 CI retains the verified archive and its checksum as a downloadable artifact.
 The release job publishes that same archive after checksum and version verification.
@@ -111,7 +127,7 @@ Internal workspace crates are not published separately.
 
 CI rejects tracked Python source and Python package files.
 It limits Cargo compilation to two jobs and cancels superseded pull request runs.
-The Rust cache includes compiled dependencies and the three pinned development tools.
+The Rust cache includes compiled dependencies and the two pinned development tools.
 The CodeQL workflow selects Rust and GitHub Actions explicitly.
 It uses GitHub's supported `none` build mode and runs on pull requests, master pushes, and a weekly schedule.
 The workflow requires advanced CodeQL setup because default setup overrides repository CodeQL workflows.

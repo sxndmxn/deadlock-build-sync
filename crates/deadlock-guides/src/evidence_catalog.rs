@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
+use std::sync::Arc;
 
 use deadlock_data::{
     EpochSet, Error, MatchMode, RankCatalog, RankRange, Result, array, fingerprint, object,
@@ -13,6 +14,11 @@ use crate::hero_evidence::{HeroBuildEvidence, HeroEvidence};
 
 #[derive(Clone, Debug)]
 pub struct BuildEvidenceCatalog {
+    data: Arc<BuildEvidenceCatalogData>,
+}
+
+#[derive(Debug)]
+struct BuildEvidenceCatalogData {
     metadata: BuildEvidenceMetadata,
     heroes: BTreeMap<u64, HeroEvidence>,
     assets: Vec<Value>,
@@ -76,45 +82,47 @@ impl BuildEvidenceCatalog {
             object(asset)?;
         }
         Ok(Self {
-            metadata,
-            heroes,
-            assets: assets.to_vec(),
-            raw_bytes,
+            data: Arc::new(BuildEvidenceCatalogData {
+                metadata,
+                heroes,
+                assets: assets.to_vec(),
+                raw_bytes,
+            }),
         })
     }
 
     #[must_use]
-    pub const fn metadata(&self) -> &BuildEvidenceMetadata {
-        &self.metadata
+    pub fn metadata(&self) -> &BuildEvidenceMetadata {
+        &self.data.metadata
     }
 
     #[must_use]
-    pub const fn heroes(&self) -> &BTreeMap<u64, HeroEvidence> {
-        &self.heroes
+    pub fn heroes(&self) -> &BTreeMap<u64, HeroEvidence> {
+        &self.data.heroes
     }
 
     #[must_use]
     pub fn assets(&self) -> &[Value] {
-        &self.assets
+        &self.data.assets
     }
 
     #[must_use]
     pub fn raw_bytes(&self) -> &[u8] {
-        &self.raw_bytes
+        &self.data.raw_bytes
     }
 
     /// # Errors
     /// Returns an error when the requested subset is empty, contains unknown heroes, or fails artifact admission.
     pub fn select_hero_subset(&self, requested: &BTreeSet<u64>) -> Result<Self> {
-        if requested.is_empty() || !requested.is_subset(&self.metadata.requested_hero_ids) {
+        if requested.is_empty() || !requested.is_subset(&self.data.metadata.requested_hero_ids) {
             return Err(Error::new(
                 "Requested heroes are absent from the build evidence",
             ));
         }
-        if requested == &self.metadata.requested_hero_ids {
+        if requested == &self.data.metadata.requested_hero_ids {
             return Ok(self.clone());
         }
-        let mut document: Value = serde_json::from_slice(&self.raw_bytes)?;
+        let mut document: Value = serde_json::from_slice(&self.data.raw_bytes)?;
         let heroes = array(&document["heroes"])?
             .iter()
             .filter(|hero| {
@@ -126,7 +134,7 @@ impl BuildEvidenceCatalog {
             .collect::<Vec<_>>();
         document["heroes"] = heroes.into();
         document["requested_hero_ids"] = serde_json::to_value(requested)?;
-        document["source_artifact_id"] = self.metadata.artifact_id.clone().into();
+        document["source_artifact_id"] = self.data.metadata.artifact_id.clone().into();
         document
             .as_object_mut()
             .ok_or_else(|| Error::new("Build evidence must be an object"))?
@@ -139,7 +147,8 @@ impl BuildEvidenceCatalog {
     /// Returns an error when a frozen selection rank is invalid.
     pub fn primary_build(&self, hero_id: u64) -> Result<Option<&HeroBuildEvidence>> {
         primary_build(
-            self.heroes
+            self.data
+                .heroes
                 .get(&hero_id)
                 .into_iter()
                 .flat_map(|hero| &hero.builds),
@@ -150,7 +159,7 @@ impl BuildEvidenceCatalog {
     /// Returns an error when evidence differs from the current pinned inputs or cohort.
     pub fn assert_compatible(&self, expected: &BuildEvidenceIdentity<'_>) -> Result<()> {
         expected.rank_range.validate()?;
-        let metadata = &self.metadata;
+        let metadata = &self.data.metadata;
         let cohort = &metadata.cohort;
         let checks = [
             (
