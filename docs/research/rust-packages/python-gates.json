@@ -1,0 +1,175 @@
+[
+  {
+    "command": [
+      "uv",
+      "lock",
+      "--check"
+    ],
+    "exit_code": 0,
+    "seconds": 0.01
+  },
+  {
+    "command": [
+      "uv",
+      "sync",
+      "--frozen"
+    ],
+    "exit_code": 0,
+    "seconds": 0.02
+  },
+  {
+    "command": [
+      "uv",
+      "run",
+      "ruff",
+      "format",
+      "--check",
+      "."
+    ],
+    "exit_code": 0,
+    "seconds": 0.03
+  },
+  {
+    "command": [
+      "uv",
+      "run",
+      "ruff",
+      "check",
+      "."
+    ],
+    "exit_code": 0,
+    "seconds": 0.03
+  },
+  {
+    "command": [
+      "uv",
+      "run",
+      "sqlfluff",
+      "lint",
+      "."
+    ],
+    "exit_code": 0,
+    "seconds": 4.01
+  },
+  {
+    "command": [
+      "uv",
+      "run",
+      "ty",
+      "check"
+    ],
+    "exit_code": 0,
+    "seconds": 0.22
+  },
+  {
+    "command": [
+      "uv",
+      "run",
+      "deptry",
+      "."
+    ],
+    "exit_code": 0,
+    "seconds": 0.12
+  },
+  {
+    "command": [
+      "uv",
+      "run",
+      "tach",
+      "check"
+    ],
+    "exit_code": 0,
+    "seconds": 0.15
+  },
+  {
+    "command": [
+      "uv",
+      "run",
+      "complexipy"
+    ],
+    "exit_code": 0,
+    "seconds": 0.48
+  },
+  {
+    "command": [
+      "uv",
+      "run",
+      "coverage",
+      "erase"
+    ],
+    "exit_code": 0,
+    "seconds": 0.07
+  },
+  {
+    "command": [
+      "uv",
+      "run",
+      "coverage",
+      "run",
+      "-m",
+      "pytest",
+      "-W",
+      "error"
+    ],
+    "exit_code": 0,
+    "seconds": 13.56
+  },
+  {
+    "command": [
+      "uv",
+      "run",
+      "coverage",
+      "json"
+    ],
+    "exit_code": 0,
+    "seconds": 0.67
+  },
+  {
+    "command": [
+      "uv",
+      "run",
+      "tools/quality_gate.py"
+    ],
+    "exit_code": 0,
+    "seconds": 1.19
+  },
+  {
+    "command": [
+      "uv",
+      "run",
+      "vulture"
+    ],
+    "exit_code": 0,
+    "seconds": 0.67
+  },
+  {
+    "command": [
+      "uv",
+      "run",
+      "pylint",
+      "--disable=all",
+      "--enable=duplicate-code",
+      "src",
+      "scripts"
+    ],
+    "exit_code": 0,
+    "seconds": 5.71
+  },
+  {
+    "command": [
+      "uv",
+      "pip",
+      "check"
+    ],
+    "exit_code": 0,
+    "seconds": 0.01
+  },
+  {
+    "command": [
+      "uv",
+      "build"
+    ],
+    "exit_code": 0,
+    "seconds": 8.85
+  }
+]

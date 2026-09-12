@@ -5,75 +5,106 @@ on:
   push:
     branches: [master]
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_BUILD_JOBS: 2
+  CARGO_INCREMENTAL: 0
+  CARGO_TERM_COLOR: always
+
 jobs:
   linux:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: Install uv and Python
-        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      - name: Install the pinned Rust toolchain
+        run: rustup show active-toolchain
+
+      - name: Reject Python source and package files
+        run: |
+          python_paths=$(git ls-files '*.py' '*.pyi' '*.pyc' '*.pyo' '*.whl' pyproject.toml uv.lock .python-version)
+          if [ -n "$python_paths" ]; then
+            printf 'Python files are prohibited:\n%s\n' "$python_paths" >&2
+            exit 1
+          fi
+
+      - name: Restore Rust build and tool caches
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
-          enable-cache: true
-          python-version: "3.13"
-
-      - name: Verify lockfile
-        run: uv lock --check
-
-      - name: Install locked environment
-        run: uv sync --frozen
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/.cargo/bin/cargo-modules
+            ~/.cargo/bin/cargo-deny
+            ~/.cargo/bin/arch-lint
+            ~/.cargo/.crates.toml
+            ~/.cargo/.crates2.json
+            target
+          key: rust-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/config.toml', '.github/workflows/ci.yml') }}
 
       - name: Check formatting
-        run: uv run ruff format --check .
+        run: cargo fmt --all --check
 
-      - name: Lint
-        run: uv run ruff check .
+      - name: Run strict Clippy
+        run: cargo lint
 
-      - name: Lint DuckDB SQL
-        run: uv run sqlfluff lint .
+      - name: Install the module analyzer
+        run: cargo install cargo-modules --version 0.26.0 --locked
 
-      - name: Type-check
-        run: uv run ty check
+      - name: Install the architecture linter
+        run: cargo install arch-lint-cli --version 0.6.0 --locked
 
-      - name: Check declared dependencies
-        run: uv run deptry .
+      - name: Check architecture and synchronous code
+        run: cargo architecture
 
-      - name: Check module boundaries
-        run: uv run tach check
+      - name: Install the SQL tool runner
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
 
-      - name: Check cognitive complexity
-        run: uv run complexipy
+      - name: Check DuckDB SQL
+        run: uvx --from sqlfluff==4.3.0 sqlfluff lint crates/deadlock-analysis/sql
 
-      - name: Test with branch coverage
-        run: uv run coverage run -m pytest -W error
+      - name: Check documentation
+        run: cargo doc --workspace --all-features --no-deps --locked
 
-      - name: Write coverage report
-        run: uv run coverage json
+      - name: Build the default CLI
+        run: cargo build --package deadlock-build-sync --locked
 
-      - name: Enforce numeric quality limits
-        run: uv run tools/quality_gate.py
-
-      - name: Find dead code
-        run: uv run vulture
-
-      - name: Find repeated code
-        run: uv run pylint --disable=all --enable=duplicate-code src scripts
-
-      - name: Verify dependencies
-        run: uv pip check
-
-      - name: Build distributions
-        run: uv build
-
-      - name: Smoke-test wheel
+      - name: Check the default CLI
         run: |
-          uv venv /tmp/deadlock-build-sync-wheel
-          uv pip install --python /tmp/deadlock-build-sync-wheel/bin/python dist/*.whl
-          cd /tmp
-          /tmp/deadlock-build-sync-wheel/bin/deadlock-build-sync --help
-          /tmp/deadlock-build-sync-wheel/bin/build --help
+          target/debug/deadlock-build-sync --help
+          if target/debug/deadlock-build-sync refresh-evidence 2> /tmp/analysis-feature-error; then
+            exit 1
+          fi
+          grep -q 'requires the analysis feature' /tmp/analysis-feature-error
+
+      - name: Build the release CLI with analysis
+        run: cargo build --package deadlock-build-sync --features analysis --release --locked
+
+      - name: Inspect and check the release archive outside the checkout
+        run: sh scripts/package_release.sh "$PWD/target/release/deadlock-build-sync" x86_64-unknown-linux-gnu
+
+      - name: Install the dependency checker
+        run: cargo install cargo-deny --version 0.20.2 --locked
+
+      - name: Check dependencies
+        run: cargo deny --locked check --deny warnings
+
+      - name: Retain the verified Linux release archive
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: deadlock-build-sync-x86_64-unknown-linux-gnu
+          path: |
+            dist/deadlock-build-sync-*-x86_64-unknown-linux-gnu.tar.gz
+            dist/deadlock-build-sync-*-x86_64-unknown-linux-gnu.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 7

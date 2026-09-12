@@ -1,0 +1,29 @@
+[package]
+publish = false
+name = "deadlock-analysis"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Deterministic player-match evidence production"
+
+[lints]
+workspace = true
+
+[dependencies]
+deadlock-data.workspace = true
+deadlock-input.workspace = true
+deadlock-guides.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+serde.workspace = true
+duckdb.workspace = true
+basin.workspace = true
+leiden-rs.workspace = true
+ndarray.workspace = true
+num-traits.workspace = true
+statrs.workspace = true
+
+[build-dependencies]
+sha2.workspace = true

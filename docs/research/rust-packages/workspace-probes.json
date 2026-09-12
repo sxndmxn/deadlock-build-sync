@@ -1,0 +1,74 @@
+[
+  {
+    "name": "canonical_json",
+    "passed": true,
+    "cases": 100009,
+    "mismatches": 0,
+    "examples": []
+  },
+  {
+    "name": "rank_parsing",
+    "passed": true,
+    "cases": 7
+  },
+  {
+    "name": "atomic_artifact_replacement",
+    "passed": true
+  },
+  {
+    "name": "http_query_and_response_bytes",
+    "passed": true
+  },
+  {
+    "name": "http_redirect",
+    "passed": true
+  },
+  {
+    "name": "http_gzip",
+    "passed": true
+  },
+  {
+    "name": "http_rate",
+    "passed": true,
+    "requests": 2
+  },
+  {
+    "name": "http_retry",
+    "passed": true,
+    "requests": 2
+  },
+  {
+    "name": "http_permanent_error",
+    "passed": true,
+    "requests": 1
+  },
+  {
+    "name": "http_invalid_json",
+    "passed": true,
+    "requests": 3
+  },
+  {
+    "name": "http_invalid_parameters",
+    "passed": true
+  },
+  {
+    "name": "http_invalid_base",
+    "passed": true,
+    "base": "relative/path"
+  },
+  {
+    "name": "http_invalid_base",
+    "passed": true,
+    "base": "ftp://127.0.0.1"
+  },
+  {
+    "name": "http_invalid_base",
+    "passed": true,
+    "base": "https://credentials@example.test"
+  },
+  {
+    "name": "http_invalid_base",
+    "passed": true,
+    "base": "https://example.test?query=1"
+  }
+]

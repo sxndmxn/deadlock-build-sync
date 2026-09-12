@@ -1,0 +1,466 @@
+{
+  "date": "2026-09-12",
+  "platform": "aarch64-apple-darwin",
+  "rust_version": "1.92.0",
+  "implementation": {
+    "language": "rust",
+    "source_sha256": "4d37b17e9a73d61c88ab143369df8ae63cb6cffa42c481fb1284b2f69de8034f"
+  },
+  "checks": [
+    {
+      "check": "format",
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--check"
+      ],
+      "exit_code": 0,
+      "passed": true,
+      "elapsed_seconds": 0.21132004202809185,
+      "log": "/tmp/deadlock-rust-optimization-gates/format.log"
+    },
+    {
+      "check": "sql",
+      "command": [
+        "uvx",
+        "--from",
+        "sqlfluff==4.3.0",
+        "sqlfluff",
+        "lint",
+        "crates/deadlock-analysis/sql"
+      ],
+      "exit_code": 0,
+      "passed": true,
+      "elapsed_seconds": 2.3986860419390723,
+      "log": "/tmp/deadlock-rust-optimization-gates/sql.log"
+    },
+    {
+      "check": "documentation",
+      "command": [
+        "cargo",
+        "doc",
+        "--workspace",
+        "--all-features",
+        "--no-deps",
+        "--locked",
+        "--jobs",
+        "2"
+      ],
+      "exit_code": 0,
+      "passed": true,
+      "elapsed_seconds": 188.39720133400988,
+      "log": "/tmp/deadlock-rust-optimization-gates/documentation.log"
+    },
+    {
+      "check": "dependencies",
+      "command": [
+        "cargo",
+        "deny",
+        "--locked",
+        "check",
+        "--deny",
+        "warnings"
+      ],
+      "exit_code": 0,
+      "passed": true,
+      "elapsed_seconds": 0.7029168750159442,
+      "log": "/tmp/deadlock-rust-optimization-gates/dependencies.log"
+    },
+    {
+      "check": "default-build",
+      "command": [
+        "cargo",
+        "build",
+        "--package",
+        "deadlock-build-sync",
+        "--locked",
+        "--jobs",
+        "2"
+      ],
+      "exit_code": 0,
+      "passed": true,
+      "elapsed_seconds": 70.1113888330292,
+      "log": "/tmp/deadlock-rust-optimization-gates/default-build.log"
+    },
+    {
+      "check": "default-help",
+      "command": [
+        "target/debug/deadlock-build-sync",
+        "--help"
+      ],
+      "exit_code": 0,
+      "passed": true,
+      "elapsed_seconds": 0.3189437090186402,
+      "log": "/tmp/deadlock-rust-optimization-gates/default-help.log"
+    },
+    {
+      "check": "default-analysis-error",
+      "command": [
+        "target/debug/deadlock-build-sync",
+        "refresh-evidence"
+      ],
+      "exit_code": 1,
+      "passed": true,
+      "elapsed_seconds": 0.0038997920928522944,
+      "log": "/tmp/deadlock-rust-optimization-gates/default-analysis-error.log"
+    },
+    {
+      "check": "release-package",
+      "command": [
+        "sh",
+        "scripts/package_release.sh",
+        "/Users/sandmac/code/deadlock-build-sync/target/release/deadlock-build-sync",
+        "aarch64-apple-darwin"
+      ],
+      "exit_code": 0,
+      "passed": true,
+      "elapsed_seconds": 2.043743500020355,
+      "log": "/tmp/deadlock-rust-optimization-gates/release-package.log"
+    },
+    {
+      "check": "strict-clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--workspace",
+        "--all-targets",
+        "--all-features",
+        "--locked",
+        "--jobs",
+        "2",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit_code": 0,
+      "passed": true,
+      "log": "/tmp/deadlock-rust-feature-clippy.log"
+    },
+    {
+      "check": "architecture-and-source-policy",
+      "command": [
+        "cargo",
+        "run",
+        "--locked",
+        "--package",
+        "deadlock-quality"
+      ],
+      "exit_code": 0,
+      "passed": true,
+      "log": "/tmp/deadlock-rust-feature-quality.log"
+    },
+    {
+      "check": "release-build",
+      "command": [
+        "cargo",
+        "build",
+        "--package",
+        "deadlock-build-sync",
+        "--features",
+        "analysis",
+        "--release",
+        "--locked",
+        "--jobs",
+        "2",
+        "--message-format",
+        "json"
+      ],
+      "exit_code": 0,
+      "passed": true,
+      "log": "/tmp/deadlock-rust-feature-build.log"
+    }
+  ],
+  "comparisons": {
+    "logistic_probabilities": {
+      "cases": 105,
+      "maximum_probability_difference": 0.0,
+      "wide_matrix_cases": [
+        {
+          "case": 100,
+          "rows": 4000,
+          "columns": 240,
+          "before_seconds": 0.022742583,
+          "after_seconds": 0.016893458,
+          "maximum_probability_difference": 0.0
+        },
+        {
+          "case": 101,
+          "rows": 4000,
+          "columns": 240,
+          "before_seconds": 0.022059083,
+          "after_seconds": 0.015897959,
+          "maximum_probability_difference": 0.0
+        },
+        {
+          "case": 102,
+          "rows": 4000,
+          "columns": 240,
+          "before_seconds": 0.023011875,
+          "after_seconds": 0.016689166,
+          "maximum_probability_difference": 0.0
+        },
+        {
+          "case": 103,
+          "rows": 4000,
+          "columns": 240,
+          "before_seconds": 0.021928,
+          "after_seconds": 0.015815666,
+          "maximum_probability_difference": 0.0
+        },
+        {
+          "case": 104,
+          "rows": 4000,
+          "columns": 240,
+          "before_seconds": 8.9625e-05,
+          "after_seconds": 9.1583e-05,
+          "maximum_probability_difference": 0.0
+        }
+      ]
+    },
+    "branch_selection": {
+      "after_selection_seconds": 0.5282066810000001,
+      "before_selection_seconds": 4.932835073999996,
+      "candidate_comparisons": 1617,
+      "selected_rows_compared": 893940
+    },
+    "feature_matrices": {
+      "matched_cases": 205,
+      "rejected_cases": 4,
+      "maximum_feature_difference": 0.0,
+      "wide_matrix_cases": [
+        {
+          "after_seconds": 0.004078125,
+          "before_seconds": 0.118384042,
+          "columns": 250,
+          "rows": 4000
+        },
+        {
+          "after_seconds": 0.004026375,
+          "before_seconds": 0.117599291,
+          "columns": 249,
+          "rows": 4000
+        },
+        {
+          "after_seconds": 0.004116375,
+          "before_seconds": 0.119016292,
+          "columns": 250,
+          "rows": 4000
+        },
+        {
+          "after_seconds": 0.003832541,
+          "before_seconds": 0.116092083,
+          "columns": 251,
+          "rows": 4000
+        },
+        {
+          "after_seconds": 0.004024208,
+          "before_seconds": 0.118207417,
+          "columns": 249,
+          "rows": 4000
+        }
+      ]
+    },
+    "numerical_pipeline": {
+      "checks": 43527,
+      "maximum_absolute_error": 1.29641575252748e-11,
+      "group_differences": [],
+      "log": "/tmp/deadlock-rust-feature-pipeline.log"
+    },
+    "worker_queue": {
+      "worker_counts": [
+        1,
+        2,
+        4,
+        8,
+        64
+      ],
+      "checks": [
+        "coverage",
+        "priority_order",
+        "source_result_order",
+        "source_error_order",
+        "zero_workers",
+        "empty_jobs"
+      ],
+      "result": "passed",
+      "executable": "/tmp/deadlock-rust-feature-baseline/worker_check"
+    }
+  },
+  "first_optimized_refresh": {
+    "command": [
+      "/Users/sandmac/code/deadlock-build-sync/target/release/deadlock-build-sync",
+      "refresh-evidence",
+      "--run-id",
+      "viscous-review-20260912-indexed",
+      "--workers",
+      "8",
+      "--rank-expansion",
+      "off",
+      "--as-of",
+      "2026-09-12T12:02:45Z",
+      "--artifacts",
+      "generated/viscous-rust",
+      "--trace",
+      "stages"
+    ],
+    "started_at": "2026-09-12T13:05:37.777095+00:00",
+    "target_seconds": 1200,
+    "preferred_seconds": 600,
+    "elapsed_seconds": 1321.0925803330028,
+    "exit_code": 0,
+    "finished_at": "2026-09-12T13:27:38.869228+00:00"
+  },
+  "first_rust_viscous_generation": {
+    "command": [
+      "target/release/deadlock-build-sync",
+      "build",
+      "--hero",
+      "viscous",
+      "--build-evidence",
+      "generated/viscous-rust/build-evidence.json",
+      "--artifacts",
+      "generated/viscous-rust-build",
+      "--rank-expansion",
+      "off",
+      "--format",
+      "markdown",
+      "--details"
+    ],
+    "elapsed_seconds": 19.360781708033755,
+    "exit_code": 0
+  },
+  "final_refresh": {
+    "command": [
+      "/Users/sandmac/code/deadlock-build-sync/target/release/deadlock-build-sync",
+      "refresh-evidence",
+      "--run-id",
+      "viscous-review-20260912-features",
+      "--workers",
+      "8",
+      "--rank-expansion",
+      "off",
+      "--as-of",
+      "2026-09-12T12:02:45Z",
+      "--artifacts",
+      "generated/viscous-rust-optimized",
+      "--trace",
+      "stages"
+    ],
+    "started_at": "2026-09-12T13:42:32.802751+00:00",
+    "target_seconds": 1200,
+    "preferred_seconds": 600,
+    "elapsed_seconds": 673.1216992080444,
+    "exit_code": 0,
+    "finished_at": "2026-09-12T13:53:45.902346+00:00",
+    "status": "passed",
+    "under_twenty_minutes": true,
+    "under_ten_minutes": false,
+    "run_directory": "generated/viscous-rust-state/deadlock-build-sync/offline/results/viscous-review-20260912-features",
+    "trace": "generated/viscous-rust-state/deadlock-build-sync/traces/20260912T134232.811178Z-12359/trace.jsonl",
+    "stage_seconds": {
+      "capture_sources": 2.319034583,
+      "extract_cohort": 130.140626375,
+      "freeze_roster": 68.373867958,
+      "validate_roster": 465.75202125,
+      "validate_evidence": 2.367212375,
+      "command": 673.023827167
+    },
+    "cohort": {
+      "as_of": "2026-09-12T12:02:45+00:00",
+      "game_mode": "Normal",
+      "match_mode": "Ranked",
+      "maximum_badge": 115,
+      "minimum_badge": 71,
+      "since": "2026-08-22T21:40:46+00:00"
+    },
+    "extraction": {
+      "decision_opportunities": 7792210,
+      "extracted_minimum_badge": 71,
+      "first_purchases": 16445070,
+      "hero_account_rows": 38,
+      "heroes": 38,
+      "match_folds": 80911,
+      "player_matches": 970932,
+      "purchases": 16445070,
+      "source_snapshot_version": 56,
+      "valid_purchase_net_worth": 15143653,
+      "valid_team_lead": 15143653
+    },
+    "client_version": 6689,
+    "artifact_id": "19b0d7fedadaa7218299fada41af8d95f34441d9ee1af75d617756b8fa4f1a66",
+    "artifact_path": "generated/viscous-rust-optimized/build-evidence.json",
+    "artifact_bytes": 142174659,
+    "admitted_heroes": 38,
+    "admitted_build_paths": 754,
+    "frozen_branch_candidates": 164966,
+    "excluded_heroes": []
+  },
+  "release": {
+    "binary": "target/release/deadlock-build-sync",
+    "binary_bytes": 51090688,
+    "binary_sha256": "bf66a2ecf925b799c647e6e86bfd16d72437586e392a0fb90b5a8f5657a77074",
+    "archive": "dist/deadlock-build-sync-0.1.0-aarch64-apple-darwin.tar.gz",
+    "archive_bytes": 16780260,
+    "archive_sha256": "bb2ed4ced0da5052ba18e58149e722149407815af0d001efaaf2a97179467aee",
+    "external_archive_inspection": "passed"
+  },
+  "source_size": {
+    "rust_product_files": 230,
+    "rust_product_lines": 31523,
+    "python_product_files": 175,
+    "python_product_lines": 31334
+  },
+  "new_dependencies": false,
+  "new_repository_unit_tests": false,
+  "live_steam_operations": false,
+  "linux_execution": "not run locally",
+  "final_viscous_generation": {
+    "command": [
+      "target/release/deadlock-build-sync",
+      "build",
+      "--hero",
+      "viscous",
+      "--build-evidence",
+      "generated/viscous-rust-optimized/build-evidence.json",
+      "--artifacts",
+      "generated/viscous-rust-optimized-build",
+      "--rank-expansion",
+      "off",
+      "--format",
+      "markdown",
+      "--details"
+    ],
+    "elapsed_seconds": 10.680292208911851,
+    "exit_code": 0,
+    "snapshot_id": "54572acc072f5f34c876940652fc9442dcbfc4ae5694e6b202a91a7723989638",
+    "guide_count": 3,
+    "index": "generated/viscous-rust-optimized-build/builds.json",
+    "guide_directory": "generated/viscous-rust-optimized-build/builds/54572acc072f5f34c876940652fc9442dcbfc4ae5694e6b202a91a7723989638",
+    "path_ids": [
+      "35-bab039a0afcdab62",
+      "35-f12615451f5ef815",
+      "35-d41842ad5e6e28e7"
+    ]
+  },
+  "combined_refresh_and_viscous_seconds": 683.8019914169563,
+  "live_cohort_checks": {
+    "invalid_match_compositions": 0,
+    "matches_after_cutoff": 0,
+    "previous_invalid_matches": 0
+  },
+  "timing_scope": {
+    "measurement": "Elapsed time around each release CLI invocation",
+    "hardware": {
+      "logical_processors": 10,
+      "memory_gib": 16
+    },
+    "workers": 8,
+    "rank_expansion": "off",
+    "compilation_included": false,
+    "baseline_matches": 80850,
+    "final_matches": 80911,
+    "source_note": "The public source added 61 matches within the fixed cutoff between refreshes.",
+    "complete_validation": true
+  }
+}

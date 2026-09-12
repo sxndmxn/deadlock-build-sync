@@ -1,0 +1,226 @@
+{
+  "date": "2026-09-12",
+  "platform": "aarch64-apple-darwin",
+  "rust_version": "1.92.0",
+  "implementation": {
+    "language": "rust",
+    "source_sha256": "b1aa5d34926cd29b35c641f6d23987c10731fc204bf4d834f8755181b2f52bb7"
+  },
+  "checks": [
+    {
+      "check": "format",
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--check"
+      ],
+      "exit_code": 0,
+      "passed": true,
+      "log": "/tmp/deadlock-rust-viscous-gates/format.log"
+    },
+    {
+      "check": "clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--workspace",
+        "--all-targets",
+        "--all-features",
+        "--locked",
+        "--jobs",
+        "2",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit_code": 0,
+      "passed": true,
+      "log": "/tmp/deadlock-rust-viscous-gates/clippy.log"
+    },
+    {
+      "check": "architecture",
+      "command": [
+        "cargo",
+        "run",
+        "--locked",
+        "--package",
+        "deadlock-quality"
+      ],
+      "exit_code": 0,
+      "passed": true,
+      "log": "/tmp/deadlock-rust-viscous-gates/architecture.log"
+    },
+    {
+      "check": "sql",
+      "command": [
+        "uvx",
+        "--from",
+        "sqlfluff==4.3.0",
+        "sqlfluff",
+        "lint",
+        "crates/deadlock-analysis/sql"
+      ],
+      "exit_code": 0,
+      "passed": true,
+      "log": "/tmp/deadlock-rust-viscous-gates/sql.log"
+    },
+    {
+      "check": "documentation",
+      "command": [
+        "cargo",
+        "doc",
+        "--workspace",
+        "--all-features",
+        "--no-deps",
+        "--locked",
+        "--jobs",
+        "2"
+      ],
+      "exit_code": 0,
+      "passed": true,
+      "log": "/tmp/deadlock-rust-viscous-gates/documentation.log"
+    },
+    {
+      "check": "dependencies",
+      "command": [
+        "cargo",
+        "deny",
+        "--locked",
+        "check",
+        "--deny",
+        "warnings"
+      ],
+      "exit_code": 0,
+      "passed": true,
+      "log": "/tmp/deadlock-rust-viscous-gates/dependencies.log"
+    },
+    {
+      "check": "default-build",
+      "command": [
+        "cargo",
+        "build",
+        "--package",
+        "deadlock-build-sync",
+        "--locked",
+        "--jobs",
+        "2"
+      ],
+      "exit_code": 0,
+      "passed": true,
+      "log": "/tmp/deadlock-rust-viscous-gates/default-build.log"
+    },
+    {
+      "check": "default-help",
+      "command": [
+        "target/debug/deadlock-build-sync",
+        "--help"
+      ],
+      "exit_code": 0,
+      "passed": true,
+      "log": "/tmp/deadlock-rust-viscous-gates/default-help.log"
+    },
+    {
+      "check": "default-analysis-error",
+      "command": [
+        "target/debug/deadlock-build-sync",
+        "refresh-evidence"
+      ],
+      "exit_code": 1,
+      "passed": true,
+      "log": "/tmp/deadlock-rust-viscous-gates/default-analysis-error.log"
+    },
+    {
+      "check": "format-after-match-filter",
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--check"
+      ],
+      "exit_code": 0,
+      "passed": true,
+      "log": "/tmp/deadlock-rust-viscous-gates/format-after-match-filter.log"
+    },
+    {
+      "check": "sql-after-match-filter",
+      "command": [
+        "uvx",
+        "--from",
+        "sqlfluff==4.3.0",
+        "sqlfluff",
+        "lint",
+        "crates/deadlock-analysis/sql"
+      ],
+      "exit_code": 0,
+      "passed": true,
+      "log": "/tmp/deadlock-rust-viscous-gates/sql-after-match-filter.log"
+    },
+    {
+      "check": "clippy-after-match-filter",
+      "command": [
+        "cargo",
+        "clippy",
+        "--workspace",
+        "--all-targets",
+        "--all-features",
+        "--locked",
+        "--jobs",
+        "2",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit_code": 0,
+      "passed": true,
+      "log": "/tmp/deadlock-rust-viscous-gates/clippy-after-match-filter.log"
+    },
+    {
+      "check": "release-package",
+      "command": [
+        "sh",
+        "scripts/package_release.sh",
+        "/Users/sandmac/code/deadlock-build-sync/target/release/deadlock-build-sync",
+        "aarch64-apple-darwin"
+      ],
+      "exit_code": 0,
+      "passed": true,
+      "log": "/tmp/deadlock-rust-viscous-gates/release-package.log"
+    }
+  ],
+  "extraction_regression": {
+    "isolated_rust_executable": "/tmp/deadlock-rust-package-research/duckdb_timezone_probe",
+    "startup_timezone": "America/Los_Angeles",
+    "expected_timezone": "UTC",
+    "timestamp_parameter_check": "passed",
+    "match_cases": 7,
+    "expected_admitted_matches": [
+      1,
+      7
+    ],
+    "reference_admitted_matches": [
+      1,
+      4,
+      6,
+      7
+    ],
+    "result": "passed",
+    "new_repository_unit_tests": false
+  },
+  "live_cohort_checks": {
+    "invalid_match_compositions": 0,
+    "matches_after_cutoff": 0,
+    "previous_invalid_matches": 0
+  },
+  "release": {
+    "binary": "target/release/deadlock-build-sync",
+    "binary_bytes": 51032624,
+    "binary_sha256": "8bc7ed9fe85f70dd4737d0d90431911e161e077ecac76dd0fcaa1f04f37f5154",
+    "archive": "dist/deadlock-build-sync-0.1.0-aarch64-apple-darwin.tar.gz",
+    "archive_bytes": 16762576,
+    "archive_sha256": "5956138b3f048e1a65c55e2b06af65076e9cb50c40844e589326d44091ed9b76",
+    "external_archive_inspection": "passed"
+  },
+  "live_steam_operations": false,
+  "application_benchmark": false
+}

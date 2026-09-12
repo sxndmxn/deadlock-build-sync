@@ -7,6 +7,7 @@ The group identifier remains stable when its default core changes.
 
 ## Commands
 
+Rust builds require the `analysis` feature for `refresh-evidence`.
 Use a separate directory for each generator.
 
 ```bash
@@ -105,6 +106,9 @@ They do not represent the complete core rate.
 
 ## Comparison protocol
 
+This section records the historical Python comparison.
+It does not certify the Rust implementation.
+
 The comparison uses master commit `0ecad50cbf5500763d6dbd235c13a0263db7180b` and the same captured source run.
 It includes 38 heroes, 142 groups, and all current variants.
 The source cutoff is September 9, 2026, at 00:19:49 UTC.
@@ -135,6 +139,9 @@ No untouched later cohort has established a win-rate benefit.
 The generator remains optional.
 
 ## Reproduction
+
+Run these historical commands from the Python checkout at `d603d6b53bb110d0ac48a689f037861e6453b243`.
+The Rust workspace does not include the archived comparison runners.
 
 The comparison root is `generated/beam-integration`.
 Its `source/results/master-0ecad50` directory holds the captured source snapshot.

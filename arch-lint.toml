@@ -1,0 +1,168 @@
+# Compiler and source gates enforce the remaining Rust requirements.
+preset = "minimal"
+fail_on = "warning"
+
+[analyzer]
+root = "."
+include = ["crates/**/*.rs", "tools/**/*.rs"]
+exclude = ["**/target/**", "generated/**", ".git/**", ".venv/**", "dist/**"]
+respect_gitignore = false
+
+[rules.no-unwrap-expect]
+allow_in_tests = false
+allow_expect = false
+severity = "error"
+
+[[scopes]]
+name = "deadlock-data"
+paths = ["crates/deadlock-data/**/*.rs"]
+
+[[scopes]]
+name = "deadlock-input"
+paths = ["crates/deadlock-input/**/*.rs"]
+
+[[scopes]]
+name = "deadlock-guides"
+paths = ["crates/deadlock-guides/**/*.rs"]
+
+[[scopes]]
+name = "deadlock-steam"
+paths = ["crates/deadlock-steam/**/*.rs"]
+
+[[scopes]]
+name = "deadlock-analysis"
+paths = ["crates/deadlock-analysis/**/*.rs"]
+
+[[scopes]]
+name = "deadlock-build-sync"
+paths = ["crates/deadlock-build-sync/**/*.rs"]
+
+[[scopes]]
+name = "deadlock-quality"
+paths = ["tools/deadlock-quality/**/*.rs"]
+
+[[restrict-use]]
+name = "deadlock-data-dependencies"
+scope = "deadlock-data"
+deny = [
+    "deadlock_input::**",
+    "deadlock_guides::**",
+    "deadlock_steam::**",
+    "deadlock_analysis::**",
+    "deadlock_build_sync::**",
+    "deadlock_quality::**",
+]
+message = "deadlock-data cannot import this crate. Check the documented dependency direction."
+doc = "docs/architecture.md"
+severity = "error"
+check-inline = true
+
+[[restrict-use]]
+name = "deadlock-input-dependencies"
+scope = "deadlock-input"
+deny = [
+    "deadlock_guides::**",
+    "deadlock_steam::**",
+    "deadlock_analysis::**",
+    "deadlock_build_sync::**",
+    "deadlock_quality::**",
+]
+message = "deadlock-input cannot import this crate. Check the documented dependency direction."
+doc = "docs/architecture.md"
+severity = "error"
+check-inline = true
+
+[[restrict-use]]
+name = "deadlock-guides-dependencies"
+scope = "deadlock-guides"
+deny = [
+    "deadlock_steam::**",
+    "deadlock_analysis::**",
+    "deadlock_build_sync::**",
+    "deadlock_quality::**",
+]
+message = "deadlock-guides cannot import this crate. Check the documented dependency direction."
+doc = "docs/architecture.md"
+severity = "error"
+check-inline = true
+
+[[restrict-use]]
+name = "deadlock-steam-dependencies"
+scope = "deadlock-steam"
+deny = [
+    "deadlock_input::**",
+    "deadlock_analysis::**",
+    "deadlock_build_sync::**",
+    "deadlock_quality::**",
+]
+message = "deadlock-steam cannot import this crate. Check the documented dependency direction."
+doc = "docs/architecture.md"
+severity = "error"
+check-inline = true
+
+[[restrict-use]]
+name = "deadlock-analysis-dependencies"
+scope = "deadlock-analysis"
+deny = [
+    "deadlock_steam::**",
+    "deadlock_build_sync::**",
+    "deadlock_quality::**",
+]
+message = "deadlock-analysis cannot import this crate. Check the documented dependency direction."
+doc = "docs/architecture.md"
+severity = "error"
+check-inline = true
+
+[[restrict-use]]
+name = "deadlock-build-sync-dependencies"
+scope = "deadlock-build-sync"
+deny = [
+    "deadlock_quality::**",
+]
+message = "deadlock-build-sync cannot import this crate. Check the documented dependency direction."
+doc = "docs/architecture.md"
+severity = "error"
+check-inline = true
+
+[[restrict-use]]
+name = "deadlock-quality-dependencies"
+scope = "deadlock-quality"
+deny = [
+    "deadlock_data::**",
+    "deadlock_input::**",
+    "deadlock_guides::**",
+    "deadlock_steam::**",
+    "deadlock_analysis::**",
+    "deadlock_build_sync::**",
+]
+message = "deadlock-quality cannot import this crate. Check the documented dependency direction."
+doc = "docs/architecture.md"
+severity = "error"
+check-inline = true
+
+[[restrict-use]]
+name = "guide-network-and-database-boundary"
+scope = "deadlock-guides"
+deny = [
+    "deadlock_input::DeadlockApi::**",
+    "deadlock_input::JsonHttpClient::**",
+    "deadlock_input::ApiOptions::**",
+    "ureq::**",
+    "reqwest::**",
+    "duckdb::**",
+    "std::net::**",
+    "std::process::**",
+]
+message = "Guide logic consumes collected evidence. Network and database access belong to input and analysis code."
+doc = "docs/architecture.md"
+severity = "error"
+check-inline = true
+
+[[restrict-use]]
+name = "synchronous-runtime-boundary"
+files = ["crates/**/*.rs", "tools/**/*.rs"]
+deny = ["tokio::**", "async_std::**", "smol::**", "async_executor::**", "reqwest::**"]
+message = "Use synchronous operations and standard threads."
+doc = "docs/quality-gates.md"
+severity = "error"
+check-inline = true

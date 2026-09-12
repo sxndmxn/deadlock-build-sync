@@ -1,0 +1,62 @@
+[
+  {
+    "case": "balanced",
+    "rows": 400,
+    "features": 12,
+    "input_sha256": "ce6c5fa5f53205d1645c679728b10d1c9c3155ff9a1d30747977501ceae0880e",
+    "rust_status": "ProjectedGradientTolerance 5 6",
+    "python_converged": true,
+    "maximum_coefficient_difference": 2.220446049250313e-16,
+    "maximum_probability_difference": 2.220446049250313e-16
+  },
+  {
+    "case": "imbalanced",
+    "rows": 400,
+    "features": 12,
+    "input_sha256": "801821152331282373bfe2ca60ac6f8c40ae54911b4a8359f6654f352936e984",
+    "rust_status": "ProjectedGradientTolerance 9 10",
+    "python_converged": true,
+    "maximum_coefficient_difference": 4.440892098500626e-16,
+    "maximum_probability_difference": 2.7755575615628914e-16
+  },
+  {
+    "case": "correlated",
+    "rows": 400,
+    "features": 12,
+    "input_sha256": "c4cf0776559c1732ab3d122442e3f9aff359447c2189277fa2cad085601e0322",
+    "rust_status": "ProjectedGradientTolerance 7 8",
+    "python_converged": true,
+    "maximum_coefficient_difference": 1.9949319973733282e-16,
+    "maximum_probability_difference": 2.220446049250313e-16
+  },
+  {
+    "case": "constant",
+    "rows": 400,
+    "features": 12,
+    "input_sha256": "f503c6b1de37fb6e380e647ab76b9e9ec3fc08aab93286897a60f64f2d556b1f",
+    "rust_status": "ProjectedGradientTolerance 6 7",
+    "python_converged": true,
+    "maximum_coefficient_difference": 2.220446049250313e-16,
+    "maximum_probability_difference": 2.220446049250313e-16
+  },
+  {
+    "case": "separable",
+    "rows": 400,
+    "features": 12,
+    "input_sha256": "04410a92576e41d48b2157db46f606e8264a93c647470205dda1e10ba1601ac1",
+    "rust_status": "ProjectedGradientTolerance 9 10",
+    "python_converged": true,
+    "maximum_coefficient_difference": 4.440892098500626e-16,
+    "maximum_probability_difference": 4.996003610813204e-16
+  },
+  {
+    "case": "scaled",
+    "rows": 400,
+    "features": 12,
+    "input_sha256": "74e793bcd0cc8bd0086fd66e725ad27d3ddeec57137a2e7a6b44406040202e8d",
+    "rust_status": "MaxIter 500 569",
+    "python_converged": true,
+    "maximum_coefficient_difference": 0.007051629368426071,
+    "maximum_probability_difference": 0.001120541438051903
+  }
+]

@@ -1,0 +1,579 @@
+{
+  "date": "2026-09-12",
+  "scope": "Purchase display grouping and final Rust rewrite verification. No live Steam installation.",
+  "presentation": {
+    "group_schema_version": 2,
+    "guide_projection_version": 4,
+    "steam_json_schema_version": 1,
+    "steam_json_item_name_field": "item",
+    "automatic_queue": [
+      "MAIN CORE"
+    ],
+    "alternative_panel_descriptions": "empty",
+    "runtime_dependencies_added": [],
+    "repository_unit_tests_added": 0
+  },
+  "pipeline": {
+    "started_at": "2026-09-12T17:18:38.091545+00:00",
+    "fresh_source_extraction": true,
+    "initial_response_cache_exists": false,
+    "target_seconds": 600,
+    "workers": 8,
+    "rank_expansion": "off",
+    "stages": [
+      {
+        "name": "refresh",
+        "command": [
+          "/Users/sandmac/code/deadlock-build-sync/target/release/deadlock-build-sync",
+          "refresh-evidence",
+          "--run-id",
+          "all-guides-20260912-layout",
+          "--workers",
+          "8",
+          "--rank-expansion",
+          "off",
+          "--as-of",
+          "2026-09-12T12:02:45Z",
+          "--artifacts",
+          "/Users/sandmac/code/deadlock-build-sync/generated/rust-layout-final",
+          "--trace",
+          "stages"
+        ],
+        "started_at": "2026-09-12T17:18:38.091634+00:00",
+        "elapsed_seconds": 516.161125499988,
+        "exit_code": 0
+      },
+      {
+        "name": "build",
+        "command": [
+          "/Users/sandmac/code/deadlock-build-sync/target/release/deadlock-build-sync",
+          "build",
+          "--all",
+          "--build-evidence",
+          "/Users/sandmac/code/deadlock-build-sync/generated/rust-layout-final/build-evidence.json",
+          "--artifacts",
+          "/Users/sandmac/code/deadlock-build-sync/generated/rust-layout-final",
+          "--rank-expansion",
+          "off",
+          "--format",
+          "markdown",
+          "--trace",
+          "stages"
+        ],
+        "started_at": "2026-09-12T17:27:14.255206+00:00",
+        "elapsed_seconds": 46.21901854197495,
+        "exit_code": 0
+      }
+    ],
+    "elapsed_seconds": 562.3810240830062,
+    "exit_code": 0,
+    "finished_at": "2026-09-12T17:28:00.474707+00:00",
+    "below_ten_minutes": true
+  },
+  "live_source": {
+    "cohort": {
+      "as_of": "2026-09-12T12:02:45+00:00",
+      "game_mode": "Normal",
+      "match_mode": "Ranked",
+      "maximum_badge": 115,
+      "minimum_badge": 71,
+      "since": "2026-08-22T21:40:46+00:00"
+    },
+    "extraction": {
+      "decision_opportunities": 7811327,
+      "extracted_minimum_badge": 71,
+      "first_purchases": 16485567,
+      "hero_account_rows": 38,
+      "heroes": 38,
+      "match_folds": 81113,
+      "player_matches": 973356,
+      "purchases": 16485567,
+      "source_snapshot_version": 56,
+      "valid_purchase_net_worth": 15180912,
+      "valid_team_lead": 15180912
+    },
+    "implementation": {
+      "language": "rust",
+      "source_sha256": "a6295d8b6b2389a3960cb6295c9c6140b1295f55b40651e4b0bce040658ab685"
+    },
+    "method_version": "eclat-leiden-pairwise-v4",
+    "production_method": "eclat_leiden_pairwise",
+    "rank_expansion": "off",
+    "schema_version": 2,
+    "sources": {
+      "active_heroes": 38,
+      "client_version": 6689,
+      "shop_items": 156,
+      "source_sha256": {
+        "client_versions.json": "0b84c2282614194de4e0a4a1aa336bc1985116f764c21eaf9bdb6484fa3cab76",
+        "heroes.json": "6c9fb0854a01340632e669eeefac3ec18e081410eab6ff697becc0a4b64051c3",
+        "items-all.json": "d56aa8bb6e0270a9e2d342671e2dd465189a389078a4e506958ce0f6b85fd2e6",
+        "items.json": "9cb8e778f0a2319ec095facfc41a312e94a813b1c2a141011ba038f5609a4a49",
+        "openapi.json": "a6bc97f908b5399799262cd4394ca2fd492ceab3885d3699e0a870a696db490a",
+        "patches.json": "4983d5587b2c30bed9a0b9b617cb07c2727489fb3eb946c079da2cb10350b12d",
+        "ranks.json": "2e297a6f348fd685233e98f78584766435dfd16f3d88ea135a6bc46783a0590d"
+      }
+    },
+    "test_usage": "reserved"
+  },
+  "output": {
+    "heroes": 38,
+    "paths": 752,
+    "builds": 270,
+    "variant_paths": 482,
+    "standalone_builds": 105,
+    "maximum_shared_prefix_purchases": 9,
+    "source_groups": 141,
+    "missing_paths": [],
+    "duplicate_paths": [],
+    "cli_matches_saved_markdown": true,
+    "evidence_artifact_id": "21b0b8e2f318a04b1978fdb8e80f2cd86eef4473fa83a1ecde91b9008bece1ec",
+    "snapshot_id": "32a80ccac48a111a404674e93421ba32fde3b9aef8a07e4dcb0a9a74713db3c8",
+    "artifacts": [
+      {
+        "path": "/Users/sandmac/code/deadlock-build-sync/generated/rust-layout-final/build-evidence.json",
+        "bytes": 141656493,
+        "sha256": "e3e9ca603451031e0caeb9a4596f6f4ea4c2de2c50a968efc1d99c5be0f1794b"
+      },
+      {
+        "path": "/Users/sandmac/code/deadlock-build-sync/generated/rust-layout-final/builds.json",
+        "bytes": 12819675,
+        "sha256": "cf95576447c84041c51e055e5e8f7b5186bcf5ab9013c1de8474a11b7393b6b3"
+      },
+      {
+        "path": "/Users/sandmac/code/deadlock-build-sync/target/release/deadlock-build-sync",
+        "bytes": 51218544,
+        "sha256": "0be6ae1ee17a07aa531be18b5e8bb107609c4cfda760682c31c24790c5f4ab39"
+      },
+      {
+        "path": "/Users/sandmac/code/deadlock-build-sync/dist/deadlock-build-sync-0.1.0-aarch64-apple-darwin.tar.gz",
+        "bytes": 16830577,
+        "sha256": "0369b6f25dcf35667d0ccab29f764422fd8d68f393992847d485cd1226931623"
+      }
+    ]
+  },
+  "recorded_output_comparison": {
+    "paths": 755,
+    "heroes": 38,
+    "builds": 260,
+    "original_builds": 139,
+    "compared_path_fields": [
+      "core",
+      "core_cost",
+      "evidence",
+      "cohort",
+      "purchase_guidance",
+      "item_pool",
+      "ability_order"
+    ],
+    "differences": [],
+    "permitted_wording_changes": [
+      {
+        "hero_id": 50,
+        "path_id": "50-ed14d9f35803ad5e",
+        "choice": 3,
+        "field": "blocked_reason",
+        "python": "purchase exceeds four active-item bindings",
+        "rust": "Purchase exceeds four active item bindings"
+      },
+      {
+        "hero_id": 50,
+        "path_id": "50-ed14d9f35803ad5e",
+        "choice": 8,
+        "field": "blocked_reason",
+        "python": "purchase exceeds four active-item bindings",
+        "rust": "Purchase exceeds four active item bindings"
+      },
+      {
+        "hero_id": 50,
+        "path_id": "50-ed14d9f35803ad5e",
+        "choice": 9,
+        "field": "blocked_reason",
+        "python": "purchase exceeds four active-item bindings",
+        "rust": "Purchase exceeds four active item bindings"
+      },
+      {
+        "hero_id": 50,
+        "path_id": "50-ed14d9f35803ad5e",
+        "choice": 13,
+        "field": "blocked_reason",
+        "python": "purchase exceeds four active-item bindings",
+        "rust": "Purchase exceeds four active item bindings"
+      },
+      {
+        "hero_id": 50,
+        "path_id": "50-ed14d9f35803ad5e",
+        "choice": 16,
+        "field": "blocked_reason",
+        "python": "purchase exceeds four active-item bindings",
+        "rust": "Purchase exceeds four active item bindings"
+      },
+      {
+        "hero_id": 50,
+        "path_id": "50-ed14d9f35803ad5e",
+        "choice": 18,
+        "field": "blocked_reason",
+        "python": "purchase exceeds four active-item bindings",
+        "rust": "Purchase exceeds four active item bindings"
+      }
+    ]
+  },
+  "earlier_guide_generation_timing": {
+    "runs": [
+      {
+        "language": "python",
+        "command": [
+          "/Users/sandmac/code/deadlock-build-sync/.venv/bin/python",
+          "-c",
+          "from deadlock_build_sync.cli import main; raise SystemExit(main())",
+          "--api-base-url",
+          "http://127.0.0.1:52986",
+          "build",
+          "--all",
+          "--build-evidence",
+          "/tmp/deadlock-rust-guide-comparison/python-artifacts/build-evidence.json",
+          "--artifacts",
+          "/tmp/deadlock-rust-guide-comparison/python-artifacts",
+          "--rank-expansion",
+          "off",
+          "--format",
+          "markdown",
+          "--details"
+        ],
+        "started_at": "2026-09-12T15:46:41.193104+00:00",
+        "initial_api_cache_exists": false,
+        "elapsed_seconds": 289.4940952920588,
+        "exit_code": 0,
+        "requests": 810,
+        "guides": 139,
+        "heroes": 38
+      },
+      {
+        "language": "rust",
+        "command": [
+          "/Users/sandmac/code/deadlock-build-sync/target/release/deadlock-build-sync",
+          "--api-base-url",
+          "http://127.0.0.1:52986",
+          "build",
+          "--all",
+          "--build-evidence",
+          "/tmp/deadlock-rust-guide-comparison/rust-artifacts/build-evidence.json",
+          "--artifacts",
+          "/tmp/deadlock-rust-guide-comparison/rust-artifacts",
+          "--rank-expansion",
+          "off",
+          "--format",
+          "markdown",
+          "--details"
+        ],
+        "started_at": "2026-09-12T15:51:30.794948+00:00",
+        "initial_api_cache_exists": false,
+        "elapsed_seconds": 275.9434952919837,
+        "exit_code": 0,
+        "requests": 810,
+        "guides": 139,
+        "heroes": 38
+      }
+    ],
+    "missing_requests": [],
+    "scope": "All-guide generation from identical evidence and captured API responses. Both clients retain their normal request intervals and start without a response cache. Extraction and evidence production are excluded."
+  },
+  "earlier_complete_pipeline_seconds": 545.893,
+  "pilot_generation": {
+    "runs": [
+      {
+        "hero": "Kelvin",
+        "elapsed_seconds": 12.186677834019065,
+        "exit_code": 0,
+        "command": [
+          "/Users/sandmac/code/deadlock-build-sync/target/release/deadlock-build-sync",
+          "--api-base-url",
+          "http://127.0.0.1:56208",
+          "build",
+          "--hero",
+          "Kelvin",
+          "--build-evidence",
+          "/Users/sandmac/code/deadlock-build-sync/generated/rust-all-guides-final/build-evidence.json",
+          "--artifacts",
+          "/tmp/deadlock-layout-verification/kelvin",
+          "--rank-expansion",
+          "off",
+          "--format",
+          "markdown"
+        ]
+      },
+      {
+        "hero": "Viscous",
+        "elapsed_seconds": 10.86691812495701,
+        "exit_code": 0,
+        "command": [
+          "/Users/sandmac/code/deadlock-build-sync/target/release/deadlock-build-sync",
+          "--api-base-url",
+          "http://127.0.0.1:56208",
+          "build",
+          "--hero",
+          "Viscous",
+          "--build-evidence",
+          "/Users/sandmac/code/deadlock-build-sync/generated/rust-all-guides-final/build-evidence.json",
+          "--artifacts",
+          "/tmp/deadlock-layout-verification/viscous",
+          "--rank-expansion",
+          "off",
+          "--format",
+          "markdown"
+        ]
+      },
+      {
+        "hero": "Abrams",
+        "elapsed_seconds": 15.165145665989257,
+        "exit_code": 0,
+        "command": [
+          "/Users/sandmac/code/deadlock-build-sync/target/release/deadlock-build-sync",
+          "--api-base-url",
+          "http://127.0.0.1:56208",
+          "build",
+          "--hero",
+          "Abrams",
+          "--build-evidence",
+          "/Users/sandmac/code/deadlock-build-sync/generated/rust-all-guides-final/build-evidence.json",
+          "--artifacts",
+          "/tmp/deadlock-layout-verification/abrams",
+          "--rank-expansion",
+          "off",
+          "--format",
+          "markdown"
+        ]
+      }
+    ],
+    "missing": []
+  },
+  "pilot_output_checks": [
+    "Isolated layout cases passed",
+    "/tmp/deadlock-layout-verification/kelvin: 10 builds; 13 distinct paths; Markdown, JSON, and protobuf agree",
+    "/tmp/deadlock-layout-verification/viscous: 5 builds; 11 distinct paths; Markdown, JSON, and protobuf agree",
+    "/tmp/deadlock-layout-verification/abrams: 3 builds; 24 distinct paths; Markdown, JSON, and protobuf agree"
+  ],
+  "complete_output_checks": [
+    "Isolated layout cases passed",
+    "generated/rust-layout-final: 270 builds; 752 distinct paths; Markdown, JSON, and protobuf agree"
+  ],
+  "isolated_cases": [
+    "shared purchase prefix",
+    "frozen main selection and variant order",
+    "complete alternative reconstruction",
+    "incompatible starting items",
+    "component consumption",
+    "different component consumption shortens the prefix",
+    "repeated purchases",
+    "conflicting first imbue targets",
+    "conflicting later imbue targets",
+    "single alternative",
+    "single-purchase alternative becomes standalone",
+    "standalone main build",
+    "31-purchase shared prefix",
+    "duplicate path rejection",
+    "missing path rejection",
+    "changed purchase order rejection",
+    "missing panel rejection",
+    "combined variant panel rejection",
+    "missing item rejection",
+    "incorrect queue flag rejection",
+    "changed imbue target rejection",
+    "changed dimensions rejection",
+    "variant description rejection",
+    "changed annotation rejection"
+  ],
+  "steam_cache_fixtures": [
+    "Split-group cache checks passed: coverage freshness, process refusal, recovery backups, unrelated data, and idempotence. Fixture directory: /tmp/deadlock-layout-verification/cache-77246"
+  ],
+  "local_checks": [
+    {
+      "check": "clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--workspace",
+        "--all-targets",
+        "--all-features",
+        "--locked",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit_code": 0,
+      "passed": true,
+      "elapsed_seconds": 4.128357250010595,
+      "log": "/tmp/deadlock-layout-verification/gates/clippy.log"
+    },
+    {
+      "check": "architecture",
+      "command": [
+        "cargo",
+        "run",
+        "--locked",
+        "--package",
+        "deadlock-quality"
+      ],
+      "exit_code": 0,
+      "passed": true,
+      "elapsed_seconds": 97.4851396670565,
+      "log": "/tmp/deadlock-layout-verification/gates/architecture.log"
+    },
+    {
+      "check": "format",
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--check"
+      ],
+      "exit_code": 0,
+      "passed": true,
+      "elapsed_seconds": 0.21426379203330725,
+      "log": "/tmp/deadlock-layout-verification/gates/format.log"
+    },
+    {
+      "check": "sql",
+      "command": [
+        "uvx",
+        "--from",
+        "sqlfluff==4.3.0",
+        "sqlfluff",
+        "lint",
+        "crates/deadlock-analysis/sql"
+      ],
+      "exit_code": 0,
+      "passed": true,
+      "elapsed_seconds": 2.2764899589819834,
+      "log": "/tmp/deadlock-layout-verification/gates/sql.log"
+    },
+    {
+      "check": "documentation",
+      "command": [
+        "cargo",
+        "doc",
+        "--workspace",
+        "--all-features",
+        "--no-deps",
+        "--locked",
+        "--jobs",
+        "2"
+      ],
+      "exit_code": 0,
+      "passed": true,
+      "elapsed_seconds": 193.44341587508097,
+      "log": "/tmp/deadlock-layout-verification/gates/documentation.log"
+    },
+    {
+      "check": "dependencies",
+      "command": [
+        "cargo",
+        "deny",
+        "--locked",
+        "check",
+        "--deny",
+        "warnings"
+      ],
+      "exit_code": 0,
+      "passed": true,
+      "elapsed_seconds": 1.9972159169847146,
+      "log": "/tmp/deadlock-layout-verification/gates/dependencies.log"
+    },
+    {
+      "check": "default-build",
+      "command": [
+        "cargo",
+        "build",
+        "--package",
+        "deadlock-build-sync",
+        "--locked",
+        "--jobs",
+        "2"
+      ],
+      "exit_code": 0,
+      "passed": true,
+      "elapsed_seconds": 0.29483966703992337,
+      "log": "/tmp/deadlock-layout-verification/gates/default-build.log"
+    },
+    {
+      "check": "default-help",
+      "command": [
+        "target/debug/deadlock-build-sync",
+        "--help"
+      ],
+      "exit_code": 0,
+      "passed": true,
+      "elapsed_seconds": 0.5531347920186818,
+      "log": "/tmp/deadlock-layout-verification/gates/default-help.log"
+    },
+    {
+      "check": "default-analysis-error",
+      "command": [
+        "target/debug/deadlock-build-sync",
+        "refresh-evidence"
+      ],
+      "exit_code": 1,
+      "passed": true,
+      "elapsed_seconds": 0.013252875069156289,
+      "log": "/tmp/deadlock-layout-verification/gates/default-analysis-error.log"
+    },
+    {
+      "check": "release-package",
+      "command": [
+        "sh",
+        "scripts/package_release.sh",
+        "/Users/sandmac/code/deadlock-build-sync/target/release/deadlock-build-sync",
+        "aarch64-apple-darwin"
+      ],
+      "exit_code": 0,
+      "passed": true,
+      "elapsed_seconds": 2.207743874983862,
+      "log": "/tmp/deadlock-layout-verification/gates/release-package.log"
+    },
+    {
+      "check": "release-analysis-build",
+      "command": [
+        "cargo",
+        "build",
+        "--package",
+        "deadlock-build-sync",
+        "--features",
+        "analysis",
+        "--release",
+        "--locked",
+        "--message-format",
+        "json"
+      ],
+      "passed": true,
+      "elapsed_seconds": 37.72,
+      "log": "/tmp/deadlock-layout-release-build.log"
+    }
+  ],
+  "local_archive_inspection": {
+    "outside_checkout": true,
+    "passed": true,
+    "command_help_checks": 13
+  },
+  "reference_linux_ci": {
+    "commit": "fa20fe4170f2e56e20ebdc0bb2cb439ec33a73bd",
+    "ci_run": 34702338110,
+    "codeql_run": 34702338167,
+    "linux": "passed",
+    "codeql_rust": "passed",
+    "codeql_actions": "passed"
+  },
+  "final_commit_checks": {
+    "location": "Final commit verification notes in the pull request description",
+    "url": "https://github.com/sxndmxn/deadlock-build-sync/pull/30",
+    "required": [
+      "Linux CI",
+      "CodeQL Rust",
+      "CodeQL Actions",
+      "downloaded Linux archive checksum and contents"
+    ]
+  },
+  "live_steam_installation": false,
+  "in_game_placement": "unverified",
+  "merge_performed": false,
+  "release_published": false
+}

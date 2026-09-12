@@ -1,0 +1,16 @@
+{
+  "researched_at_utc": "2026-09-11T22:53:41.818590+00:00",
+  "repository_revision": "d603d6b53bb110d0ac48a689f037861e6453b243",
+  "toolchain": "rustc 1.92.0 (ded5c06cf 2025-12-08)",
+  "cargo": "cargo 1.92.0 (344c4567c 2025-10-21)",
+  "graph_target": "x86_64-unknown-linux-gnu",
+  "graph_edges": [
+    "normal",
+    "build"
+  ],
+  "registry_crates": 58,
+  "dependency_probes": 28,
+  "advisory_tool": "cargo-deny 0.20.2",
+  "leiden_upstream_revision": "fad950eea78feab2c9a839c93986edc3ac8d716f",
+  "advisory_database_revision": "b50980aad8b8f14f77e25a97b32dd94bf008b0af"
+}

@@ -9,3 +9,4 @@ coverage.json
 mutants/
 *.py[cod]
 generated/
+/target/

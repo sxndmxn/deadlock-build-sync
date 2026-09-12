@@ -20,7 +20,7 @@ body:
     id: environment
     attributes:
       label: Environment
-      description: Linux distribution, Python version, Steam packaging, and Codex CLI version when relevant.
+      description: Linux distribution, CPU architecture, Steam installation type, and enabled Cargo features.
     validations:
       required: true
   - type: textarea
