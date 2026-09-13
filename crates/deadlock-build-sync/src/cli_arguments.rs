@@ -11,12 +11,6 @@ pub enum OutputFormat {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
-pub enum Generator {
-    Current,
-    Beam,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 pub enum RankExpansion {
     Auto,
     Off,
@@ -53,8 +47,6 @@ pub enum Command {
     Status(StatusArguments),
     /// Rebuild current evidence without Steam.
     RefreshEvidence(Box<RefreshArguments>),
-    /// Return a purchase recommendation for a state file.
-    Recommend(RecommendArguments),
     /// Audit build quality and optional later replay without network access.
     QualityReport(QualityArguments),
     /// Generate and display guides without Steam changes.
@@ -81,7 +73,6 @@ impl Command {
             Self::Build(_) => "build",
             Self::Status(_) => "status",
             Self::RefreshEvidence(_) => "refresh-evidence",
-            Self::Recommend(_) => "recommend",
             Self::QualityReport(_) => "quality-report",
             Self::Preview(_) => "preview",
             Self::Install(_) => "install",
@@ -156,8 +147,6 @@ pub struct BuildArguments {
     pub generation: GenerationArguments,
     #[arg(long)]
     pub artifacts: Option<PathBuf>,
-    #[arg(long, value_enum, default_value = "current")]
-    pub generator: Generator,
     #[arg(long, value_enum, default_value = "markdown")]
     pub format: OutputFormat,
     #[arg(long)]
@@ -172,8 +161,6 @@ pub struct SyncArguments {
     pub location: LocationArguments,
     #[arg(long)]
     pub artifacts: Option<PathBuf>,
-    #[arg(long, value_enum, default_value = "current")]
-    pub generator: Generator,
 }
 
 #[derive(Debug, Args)]
@@ -249,20 +236,6 @@ pub struct NarrativeArguments {
 }
 
 #[derive(Debug, Args)]
-pub struct RecommendArguments {
-    #[arg(long)]
-    pub state: PathBuf,
-    #[arg(long)]
-    pub build_evidence: Option<PathBuf>,
-    #[arg(long)]
-    pub policies: Option<PathBuf>,
-    #[arg(long)]
-    pub artifacts: Option<PathBuf>,
-    #[arg(long, value_enum, default_value = "json")]
-    pub format: OutputFormat,
-}
-
-#[derive(Debug, Args)]
 pub struct QualityArguments {
     #[arg(long)]
     pub artifacts: Option<PathBuf>,
@@ -298,8 +271,6 @@ pub struct RefreshArguments {
     pub since: Option<String>,
     #[arg(long)]
     pub as_of: Option<String>,
-    #[arg(long, value_enum, default_value = "current")]
-    pub generator: Generator,
 }
 
 #[derive(Debug, Args)]

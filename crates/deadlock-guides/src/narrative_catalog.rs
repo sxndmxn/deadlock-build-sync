@@ -202,7 +202,6 @@ impl NarrativeCatalog {
             ));
         }
         guide.summary = entry.build_description.trim().into();
-        guide.tactical_profile = None;
         Ok(())
     }
 }

@@ -115,18 +115,6 @@ fn validate_owned_items(graph: &ItemGraph, state: &InventoryState) -> Result<()>
     Ok(())
 }
 
-/// # Errors
-/// Returns an error when the current inventory or exact item purchase violates the component or inventory rules.
-pub fn plan_exact_item_purchase(
-    graph: &ItemGraph,
-    item: u64,
-    state: &PurchaseState,
-) -> Result<PurchasePlan> {
-    let mut planner = PurchasePlanner::new(graph, state)?;
-    planner.add_item_purchases(item, true, 0)?;
-    Ok(planner.build_plan(state.liquid_souls))
-}
-
 /// Calculates remaining purchases from the current inventory and available souls.
 ///
 /// # Errors

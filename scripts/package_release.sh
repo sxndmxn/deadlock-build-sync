@@ -44,7 +44,7 @@ test -s THIRD_PARTY_NOTICES.md
 cmp "$repository_directory/crates/deadlock-steam/THIRD_PARTY_NOTICES.md" THIRD_PARTY_NOTICES.md
 test "$(./deadlock-build-sync --version)" = "$version_output"
 ./deadlock-build-sync --help >/dev/null
-for command in sync build status refresh-evidence recommend quality-report preview install install-artifacts export-context generate-narratives restore trace-summary; do
+for command in sync build status refresh-evidence quality-report preview install install-artifacts export-context generate-narratives restore trace-summary; do
     ./deadlock-build-sync "$command" --help >/dev/null
 done
 

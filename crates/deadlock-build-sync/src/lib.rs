@@ -13,7 +13,6 @@ mod cli_installation;
 mod cli_output;
 mod cli_paths;
 mod cli_quality;
-mod cli_recommendation;
 mod cli_refresh;
 mod cli_status;
 mod freshness;

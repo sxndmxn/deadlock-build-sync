@@ -113,7 +113,7 @@ fn select_items(items: &ItemEvidenceIndex<'_>, ids: &[u64]) -> Result<Vec<ItemEv
 
 fn summarize_evidence(evidence: &HeroBuildEvidence) -> Value {
     let discovery = &evidence.discovery;
-    let mut summary = json!({
+    let summary = json!({
         "status": discovery.get("evidence_status").cloned().unwrap_or_else(|| "observed".into()),
         "limitations": discovery.get("evidence_limitations").cloned().unwrap_or_else(|| json!([])),
         "discovery_owners": discovery["discovery_support"],
@@ -121,8 +121,5 @@ fn summarize_evidence(evidence: &HeroBuildEvidence) -> Value {
         "validation_owners": discovery["validation"]["owners"],
         "timing_status": discovery["frozen_guide"].get("timing_status").cloned().unwrap_or_else(|| "uncertain".into()),
     });
-    if let Some(generator) = &evidence.generator {
-        summary["generator"] = generator.document().clone();
-    }
     summary
 }

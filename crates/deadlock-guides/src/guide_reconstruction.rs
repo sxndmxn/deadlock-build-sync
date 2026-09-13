@@ -6,16 +6,15 @@ use serde_json::{Value, json};
 
 use crate::ability_definition::parse_ability_definitions;
 use crate::ability_reconstruction::reconstruct_ability_path;
-use crate::beam_display::attach_beam_ability_names;
 use crate::build_selection::select_hero_build;
 use crate::guide_category::GuideCategory;
 use crate::hero_evidence::HeroBuildEvidence;
 use crate::policy_model::BuildPolicy;
 use crate::policy_projection::{ProjectionIdentity, project_policy_to_guide};
 use crate::policy_state::ValidationContext;
-use crate::purchase_categories::build_purchase_categories;
 use crate::purchase_guidance::build_purchase_guidance;
 use crate::purchase_guide::PurchaseGuide;
+use crate::variant_categories::build_compact_categories;
 
 /// # Errors
 /// Returns an error when source identity, policy legality, canonical categories, or purchase guidance differs from the reviewed context.
@@ -42,17 +41,16 @@ pub fn reconstruct_guide(
         level_info: kit["level_info"].clone(),
         learned_abilities: BTreeSet::new(),
     };
-    let mut guide = project_policy_to_guide(policy, &validation, assets, &identity, Some(&layout))?;
+    let mut guide = project_policy_to_guide(policy, &validation, &identity, &layout)?;
     guide.ability_path = Some(ability);
     copy_build_identity(&mut guide, &hero["projection"]["build"])?;
     guide.analysis_start_timestamp =
         u64::try_from(manifest.content().epochs.analysis_start_timestamp())?;
     guide.as_of_timestamp = u64::try_from(manifest.content().as_of_timestamp)?;
-    attach_beam_ability_names(&mut guide, kit);
     let mut guidance = build_purchase_guidance(&selected, assets)?;
     guidance.evidence = guide.evidence_summary.clone();
     guide.purchase_guidance = Some(guidance);
-    guide.categories = build_purchase_categories(&guide)?;
+    guide.categories = build_compact_categories(&guide)?;
     validate_canonical_projection(hero, &guide)?;
     Ok(guide)
 }
@@ -100,7 +98,7 @@ fn copy_build_identity(guide: &mut PurchaseGuide, build: &Value) -> Result<()> {
 
 fn validate_canonical_projection(hero: &Value, guide: &PurchaseGuide) -> Result<()> {
     let projection = &hero["projection"];
-    if projection["guide_version"].as_u64() != Some(4)
+    if projection["guide_version"].as_u64() != Some(5)
         || projection["categories"]
             != serde_json::to_value(
                 guide

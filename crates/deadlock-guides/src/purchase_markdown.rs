@@ -27,7 +27,7 @@ pub fn render_purchase_markdown(guide: &PurchaseGuide, details: bool) -> Result<
             .and_then(serde_json::Value::as_str)
             .unwrap_or("observed")
     );
-    output.push_str("Follow the core unless you need an optional effect. PICK ONE identifies the next purchase for that need.\n\nCore prices are incremental. Optional cost includes components and rebuys. An upgrade consumes its component and credits its cost.\n\n");
+    output.push_str("Follow the core purchase path. Select optional items at their listed checkpoints.\n\nCore prices are incremental. Optional cost includes components and rebuys. An upgrade consumes its component and credits its cost.\n\n");
     render_variants(&mut output, guide)?;
     if let Some(ability) = &guide.ability_path {
         writeln!(output, "## Ability order\n\n{}\n", ability.annotation())?;
@@ -86,32 +86,24 @@ fn render_route(output: &mut String, guidance: &PurchaseGuidance) -> Result<()> 
                 step.name, step.incremental_cost
             )?;
         }
-        for decision in guidance
-            .decisions
+        for card in guidance
+            .choices
             .iter()
-            .filter(|decision| decision.after_step == index)
+            .filter(|card| card.after_step == Some(index))
         {
-            writeln!(output, "**{} — {}**\n", decision.kind, decision.purpose)?;
-            for id in &decision.options {
-                let card = guidance
-                    .choices
-                    .iter()
-                    .find(|card| card.item_id == *id)
-                    .ok_or_else(|| Error::new("Purchase decision references an unknown choice"))?;
-                writeln!(
-                    output,
-                    "- **{}:** {}",
-                    card.name,
-                    format_choice_instruction(guidance, card)?
-                )?;
-            }
+            writeln!(
+                output,
+                "- **{}:** {}",
+                card.name,
+                format_choice_instruction(guidance, card)?
+            )?;
             output.push('\n');
         }
     }
     for card in guidance
         .choices
         .iter()
-        .filter(|card| card.after_step.is_none() || card.blocked_reason.is_some())
+        .filter(|card| card.after_step.is_none())
     {
         writeln!(
             output,
@@ -168,12 +160,10 @@ fn render_details(output: &mut String, guidance: &PurchaseGuidance) -> Result<()
     for card in &guidance.choices {
         writeln!(
             output,
-            "### {}\n\n{}\nTiming: {}.\nMechanic source: {}; {}.\n",
+            "### {}\n\n{}\nTiming: {}.\n",
             card.name,
             format_choice_instruction(guidance, card)?,
-            card.timing_basis,
-            card.purpose.basis,
-            card.purpose.evidence
+            card.timing_basis
         )?;
         if let Some(plan) = &card.plan {
             writeln!(

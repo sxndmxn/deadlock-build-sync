@@ -2,10 +2,6 @@ use deadlock_data::{Error, Result};
 
 const SQL: &[(&str, &str)] = &[
     (
-        "beam/select_item_counts.sql",
-        include_str!("../sql/beam/select_item_counts.sql"),
-    ),
-    (
         "discovery/count_hero_appearances.sql",
         include_str!("../sql/discovery/count_hero_appearances.sql"),
     ),
@@ -26,8 +22,16 @@ const SQL: &[(&str, &str)] = &[
         include_str!("../sql/discovery/select_decision_rows.sql"),
     ),
     (
-        "discovery/select_item_pool_purchases.sql",
-        include_str!("../sql/discovery/select_item_pool_purchases.sql"),
+        "discovery/create_item_pool_purchases.sql",
+        include_str!("../sql/discovery/create_item_pool_purchases.sql"),
+    ),
+    (
+        "discovery/select_item_pool_statistics.sql",
+        include_str!("../sql/discovery/select_item_pool_statistics.sql"),
+    ),
+    (
+        "discovery/select_purchase_checkpoint_counts.sql",
+        include_str!("../sql/discovery/select_purchase_checkpoint_counts.sql"),
     ),
     (
         "discovery/select_landmark_rows.sql",

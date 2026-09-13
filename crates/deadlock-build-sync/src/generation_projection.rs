@@ -1,8 +1,8 @@
 use deadlock_data::{Error, Result, SnapshotManifest};
 use deadlock_guides::{
     BuildPolicy, HeroContextInputs, PolicyInputs, ProjectionIdentity, PurchaseGuide,
-    attach_beam_ability_names, build_hero_strategy_context, build_purchase_categories,
-    build_purchase_guidance, generate_policy, project_policy_to_guide, select_build_tags,
+    build_compact_categories, build_hero_strategy_context, build_purchase_guidance,
+    generate_policy, project_policy_to_guide, select_build_tags,
 };
 use deadlock_input::BuildTagCatalog;
 use serde_json::Value;
@@ -30,16 +30,14 @@ pub fn project_hero(
         match_mode: manifest.content().match_mode.as_str().into(),
         rank_identity: manifest.rank_identity()?,
     };
-    let mut projected =
-        project_policy_to_guide(&policy, &validation, assets, &identity, Some(&inputs.guide))?;
+    let mut projected = project_policy_to_guide(&policy, &validation, &identity, &inputs.guide)?;
     projected
         .ability_path
         .clone_from(&inputs.guide.ability_path);
-    attach_beam_ability_names(&mut projected, &inputs.kit);
     let mut guidance = build_purchase_guidance(&inputs.selected, assets)?;
     guidance.evidence = projected.evidence_summary.clone();
     projected.purchase_guidance = Some(guidance);
-    projected.categories = build_purchase_categories(&projected)?;
+    projected.categories = build_compact_categories(&projected)?;
     attach_tags(&mut projected, assets, tags)?;
     attach_run_identity(&mut projected, manifest)?;
     let mut analytic = inputs.guide.clone();

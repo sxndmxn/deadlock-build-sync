@@ -28,7 +28,7 @@ Verify changes with the documented checks and isolated reference fixtures.
 
 Use ASD-STE100 Simplified Technical English for documentation, comments, error messages, commits, and pull request descriptions.
 Name each function for its action and the data it processes.
-For example, use `select_core_owners` and `classify_item_purpose`.
+For example, use `select_core_owners` and `build_purchase_guidance`.
 Use precise module names, such as `inventory_history.rs`.
 
 Update imports, callers, test references, and configuration when you change a name.

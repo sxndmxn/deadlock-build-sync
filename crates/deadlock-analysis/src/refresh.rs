@@ -2,7 +2,7 @@ use std::fs::OpenOptions;
 use std::path::PathBuf;
 
 use deadlock_data::{Error, Result, atomic_write_json, read_json, text, trace_operation};
-use deadlock_guides::{BuildGenerator, CURRENT_METHOD_VERSION, beam_generator_record};
+use deadlock_guides::CURRENT_METHOD_VERSION;
 use deadlock_input::parse_patch_feed;
 use serde_json::json;
 
@@ -50,7 +50,6 @@ pub fn refresh_evidence(request: &RefreshRequest) -> Result<RefreshResult> {
         &request.output,
         request.workers,
         request.resume,
-        request.generator,
         &request.api_base_url,
     )?;
     Ok(RefreshResult {
@@ -62,7 +61,7 @@ pub fn refresh_evidence(request: &RefreshRequest) -> Result<RefreshResult> {
 
 fn validate_resume(paths: &RunPaths, request: &RefreshRequest) -> Result<()> {
     let manifest = read_json(&paths.run.join("manifest.json"))?;
-    let generator = manifest["generator"].as_str().unwrap_or("current");
+    let generator = manifest.get("generator");
     if manifest["schema_version"] != 2
         || manifest["production_method"] != "eclat_leiden_pairwise"
         || manifest["test_usage"] != "reserved"
@@ -82,12 +81,13 @@ fn validate_resume(paths: &RunPaths, request: &RefreshRequest) -> Result<()> {
             "Source extraction implementation differs. Start a new --run-id.",
         ));
     }
-    if generator != request.generator.as_str()
+    if generator.is_some_and(|value| value != "current")
+        || manifest.get("beam_resume").is_some()
         || manifest["rank_expansion"] != serde_json::to_value(request.rank_expansion)?
         || cohort_ranks(&manifest["cohort"])? != request.ranks
     {
         return Err(Error::new(
-            "Resume generator and ranks must match the source snapshot",
+            "Resume requires Eclat evidence and matching source ranks",
         ));
     }
     for (name, requested) in [("since", request.since), ("as_of", request.as_of)] {
@@ -128,11 +128,6 @@ fn capture_run(paths: &RunPaths, request: &RefreshRequest) -> Result<()> {
     cohort.validate()?;
     let mut manifest = json!({"schema_version":2,"rank_expansion":request.rank_expansion,"cohort":cohort.to_document()?,"sources":sources,
         "production_method":"eclat_leiden_pairwise","method_version":CURRENT_METHOD_VERSION,"implementation":implementation_record(),"test_usage":"reserved"});
-    if request.generator == BuildGenerator::Beam {
-        manifest["generator"] = "beam".into();
-        manifest["beam_resume"] =
-            json!({"generator":beam_generator_record()?,"implementation":implementation_record()});
-    }
     atomic_write_json(&manifest_path, &manifest)?;
     manifest["extraction"] = extract_cohort(
         paths,

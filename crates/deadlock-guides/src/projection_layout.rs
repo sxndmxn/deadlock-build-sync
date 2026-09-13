@@ -2,9 +2,6 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use deadlock_data::{Error, Result};
 
-use crate::guide_category::{
-    CORE_CATEGORY_DESCRIPTION, GuideCategory, OPTIONAL_CORE_CATEGORY_DESCRIPTION,
-};
 use crate::guide_item::{GuideItem, format_integer};
 use crate::policy_model::BuildPolicy;
 use crate::policy_node::{NodeKind, PolicyNode};
@@ -42,35 +39,7 @@ pub fn project_evidence_layout(
     project_optional_core(policy, &mut guide.optional_core_items, &core, &tiers)?;
     apply_sell_priorities(&mut guide.core_items, &policy.content().nodes)?;
     apply_sell_priorities(&mut guide.core_purchase_items, &policy.content().nodes)?;
-    guide.categories = vec![GuideCategory::new(
-        "CORE ITEMS".into(),
-        guide.core_purchase_items.clone(),
-        CORE_CATEGORY_DESCRIPTION.into(),
-        false,
-        false,
-    )?];
-    if !guide.optional_core_items.is_empty() {
-        guide.categories.push(GuideCategory::new(
-            "OPTIONAL CORE".into(),
-            guide.optional_core_items.clone(),
-            OPTIONAL_CORE_CATEGORY_DESCRIPTION.into(),
-            true,
-            false,
-        )?);
-    }
-    for tier in 1..=4 {
-        let items = guide
-            .tiers
-            .get(&tier)
-            .ok_or_else(|| Error::new("Evidence projection is missing a tier"))?;
-        guide.categories.push(GuideCategory::new(
-            format!("TIER {tier}"),
-            items.clone(),
-            String::new(),
-            true,
-            false,
-        )?);
-    }
+    guide.categories.clear();
     guide.summary = format!(
         "{}; supported {}-item backbone observed in {} player-matches ({:.2}%). OPTIONAL CORE and tier rows never enter the automatic Queue.",
         policy.content().strategic_role,
@@ -80,8 +49,6 @@ pub fn project_evidence_layout(
     );
     guide.ability_path = None;
     guide.purchase_guidance = None;
-    guide.tactical_profile = None;
-    guide.tier_summaries.clear();
     guide.variant_guides.clear();
     Ok(guide)
 }

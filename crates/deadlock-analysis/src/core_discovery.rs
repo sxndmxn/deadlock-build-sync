@@ -186,7 +186,6 @@ fn nominate(
         &candidate.items,
         &item_ids(&path["order"])?,
         &context.graph,
-        None,
     )?;
     Ok(Nomination {
         candidate: candidate.clone(),

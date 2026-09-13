@@ -44,8 +44,7 @@ pub fn format_choice_instruction(
     let route = item_names(guidance, &card.route, " -> ")?;
     let Some(position) = card.after_step else {
         return Ok(format!(
-            "{}. Timing unknown. Route: {route}. Catalog cost: {} souls. Select a checkpoint before purchase.",
-            card.purpose.trigger,
+            "Timing unknown. Route: {route}. Catalog cost: {} souls. Select a checkpoint before purchase.",
             format_integer(i128::from(card.catalog_cost))
         ));
     };
@@ -58,10 +57,8 @@ pub fn format_choice_instruction(
         || "Cost unavailable.".into(),
         |cost| format!("Extra cost: {} souls.", format_integer(cost)),
     );
-    let mut instruction = format!(
-        "{}. After core step {position}. Route: {route}. {cost} Resume: {resume}.",
-        card.purpose.trigger
-    );
+    let mut instruction =
+        format!("After core step {position}. Route: {route}. {cost} Resume: {resume}.");
     if !card.rebought_components.is_empty() {
         write!(
             instruction,
@@ -115,28 +112,4 @@ pub fn format_branch_instruction(
         )?;
     }
     Ok(instruction)
-}
-
-pub fn format_conditional_route(
-    guidance: &PurchaseGuidance,
-    branch: &AutomaticBranch,
-    card: &PurchaseChoice,
-) -> Result<String> {
-    let plan = branch
-        .default_plan
-        .as_ref()
-        .ok_or_else(|| Error::new("Automatic branch has no canonical purchase plan"))?;
-    let route = item_names(guidance, &card.route, " -> ")?;
-    let resume_at = branch.after_step + usize::from(!branch.substituted_core.is_empty());
-    let resume = guidance
-        .default_path
-        .actions
-        .get(resume_at)
-        .map_or("core complete", |step| step.name.as_str());
-    let extra = i128::from(plan.remaining_cost) - i128::from(guidance.default_path.remaining_cost);
-    Ok(format!(
-        "{} Route: {route}. Extra cost: {} souls. Resume: {resume}.",
-        format_branch_instruction(guidance, branch)?,
-        format_integer(extra)
-    ))
 }

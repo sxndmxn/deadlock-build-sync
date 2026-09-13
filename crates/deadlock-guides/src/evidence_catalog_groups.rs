@@ -2,9 +2,8 @@ use std::collections::BTreeMap;
 
 use deadlock_data::{Error, Result};
 
-use crate::evidence_catalog_header::{BuildEvidenceMetadata, BuildGenerator};
+use crate::evidence_catalog_header::BuildEvidenceMetadata;
 use crate::evidence_values::integer;
-use crate::generator_evidence::validate_generator_group;
 use crate::hero_evidence::{HeroBuildEvidence, HeroEvidence};
 
 pub fn validate_hero_groups(hero: &HeroEvidence, metadata: &BuildEvidenceMetadata) -> Result<()> {
@@ -32,10 +31,6 @@ pub fn validate_hero_groups(hero: &HeroEvidence, metadata: &BuildEvidenceMetadat
         if group_id != default.path_id {
             return Err(Error::new("Guide group differs from its frozen default"));
         }
-        match metadata.generator {
-            BuildGenerator::Current => validate_current_group(&members)?,
-            BuildGenerator::Beam => validate_beam_group(&members, default)?,
-        }
     }
     Ok(())
 }
@@ -57,35 +52,4 @@ pub fn primary_build<'build>(
         }
     }
     Ok(best)
-}
-
-fn validate_current_group(members: &[&HeroBuildEvidence]) -> Result<()> {
-    if members.iter().any(|build| build.generator.is_some()) {
-        return Err(Error::new("Current evidence cannot contain beam paths"));
-    }
-    if members
-        .iter()
-        .any(|build| build.discovery["method"].as_str() != Some("eclat_leiden_pairwise"))
-    {
-        return Err(Error::new("Current evidence cannot contain beam discovery"));
-    }
-    Ok(())
-}
-
-fn validate_beam_group(members: &[&HeroBuildEvidence], default: &HeroBuildEvidence) -> Result<()> {
-    let records = members
-        .iter()
-        .map(|build| {
-            let record = build
-                .generator
-                .as_ref()
-                .ok_or_else(|| Error::new("Beam group lacks generator records"))?;
-            Ok((record, &build.discovery))
-        })
-        .collect::<Result<Vec<_>>>()?;
-    let default = default
-        .generator
-        .as_ref()
-        .ok_or_else(|| Error::new("Beam default lacks generator evidence"))?;
-    validate_generator_group(&records, default)
 }

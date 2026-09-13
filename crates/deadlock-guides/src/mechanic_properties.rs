@@ -1,8 +1,30 @@
 use std::collections::BTreeMap;
 
 use deadlock_data::{Result, canonical_json};
-use deadlock_input::{extract_asset_mechanics, is_populated, normalize_mechanical_value};
+use deadlock_input::{
+    clean_mechanical_text, extract_asset_mechanics, is_populated, normalize_mechanical_value,
+};
 use serde_json::{Map, Value};
+
+#[must_use]
+pub fn extract_description_text(value: &Value) -> String {
+    match value {
+        Value::Null => String::new(),
+        Value::Object(fields) => fields
+            .values()
+            .map(extract_description_text)
+            .collect::<Vec<_>>()
+            .join(" "),
+        Value::Array(values) => values
+            .iter()
+            .map(extract_description_text)
+            .collect::<Vec<_>>()
+            .join(" "),
+        Value::String(_) => clean_mechanical_text(value),
+        Value::Bool(value) => if *value { "True" } else { "False" }.into(),
+        Value::Number(value) => value.to_string(),
+    }
+}
 
 const PROPERTY_FIELDS: [&str; 9] = [
     "css_class",

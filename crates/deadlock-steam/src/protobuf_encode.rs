@@ -2,7 +2,8 @@ use std::collections::BTreeMap;
 
 use deadlock_data::{Error, Result};
 use deadlock_guides::{
-    BuildPresentation, PresentationAbilities, PresentationCategory, PresentationItem,
+    BuildPresentation, PresentationAbilities, PresentationCategory, PresentationContent,
+    PresentationItem,
 };
 use prost::Message;
 
@@ -36,10 +37,7 @@ pub fn encode_hero_build(
         update_timestamp: 0,
         version: 0,
         source_build_id: 0,
-        details: Details {
-            categories: content.categories.iter().map(category).collect(),
-            abilities: content.abilities.as_ref().map(ability_order).transpose()?,
-        },
+        details: presentation_details(content)?,
         tag_ids: content.tag_ids.to_vec(),
         published: false,
     };
@@ -69,6 +67,23 @@ pub fn same_build_content(previous: &[u8], current: &[u8]) -> Result<bool> {
     previous.timestamp = 0;
     current.timestamp = 0;
     Ok(previous == current)
+}
+
+pub fn matches_presentation(bytes: &[u8], presentation: &BuildPresentation) -> Result<bool> {
+    let installed = HeroBuild::decode(extract_build(bytes)?)
+        .map_err(|error| Error::new(format!("Invalid hero build: {error}")))?;
+    let expected = presentation.content();
+    Ok(installed.hero_id == expected.hero_id
+        && installed.description == expected.description
+        && installed.tag_ids == expected.tag_ids
+        && installed.details == presentation_details(expected)?)
+}
+
+fn presentation_details(content: &PresentationContent) -> Result<Details> {
+    Ok(Details {
+        categories: content.categories.iter().map(category).collect(),
+        abilities: content.abilities.as_ref().map(ability_order).transpose()?,
+    })
 }
 
 fn item(value: &PresentationItem) -> ItemModification {

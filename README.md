@@ -71,6 +71,12 @@ Use `--details` for complete optional routes.
 Use `--format json` for structured output.
 Use `--artifacts DIR` to select the output directory.
 
+Hero subsets preserve the main artifact directory and its full-roster evidence.
+For `--artifacts /path/artifacts`, subset builds use `/path/artifacts-subsets/HERO_ID`.
+The default directory follows the same rule.
+`build` reports the subset index path, and `sync` reports the subset artifact directory.
+Use that directory with `install-artifacts --artifacts DIR` to install the subset bundle.
+
 ## Evidence and guide rules
 
 Each snapshot pins the client version, patch, cutoff, rank labels, cohort, assets, roster, and independent epochs.
@@ -109,11 +115,7 @@ PR: 80.6% | WR: 49.0% | TOTAL GAMES: 12,611
 `TOTAL GAMES` is its buyer match count.
 Admission recomputes each card from its evidence.
 
-The default generator is `current`.
-`refresh-evidence`, `build`, and `sync` also accept `--generator beam`.
-Beam searches supported cores and component paths within frozen groups.
-It retains current-guide fallbacks when support is insufficient.
-Use separate artifact directories for the two generators.
+Eclat / Leiden generates all builds.
 
 ## Evidence refresh
 
@@ -170,7 +172,6 @@ Every included hero must still pass complete coverage and fingerprint checks.
 | `build` | Generate Markdown, JSON, policies, and descriptions without Steam |
 | `status` | Check artifact and installed-build freshness |
 | `refresh-evidence` | Extract and produce evidence with the analysis feature |
-| `recommend` | Calculate the next purchase from a supplied state document |
 | `quality-report` | Check guide quality and optional independent replay |
 | `preview` | Display generated guides for an explicit hero selection |
 | `install` | Install guides for an explicit hero selection |
@@ -181,6 +182,16 @@ Every included hero must still pass complete coverage and fingerprint checks.
 | `trace-summary` | Display a bounded execution trace summary |
 
 `status` returns 0 for current data, 2 when regeneration is required, and 1 for malformed or unavailable inputs.
+It compares managed item panels, queue flags, ability orders, annotations, descriptions, and tags with the reviewed bundle.
+Build titles and Steam identity timestamps do not affect this comparison.
+
+`install-artifacts` checks the current patch and client version before installation.
+It requires network access for these checks but makes no new analytics requests.
+Stale bundles and unavailable freshness checks prevent installation.
+
+`restore --latest` selects the latest backup for the selected account and canonical cache path.
+Backups for other Steam installations do not affect this selection.
+
 Use `--help` on each command for its input requirements.
 The review commands `preview`, `install`, and `export-context` require `--hero NAME` or `--all`.
 They discover the selected Steam account.
@@ -192,14 +203,23 @@ Generate descriptions from a reviewed context with:
 deadlock-build-sync generate-narratives --context generated/strategy-context.json --output generated/narratives.json
 ```
 
-Purchase recommendations consume [decision-state schema 3](schemas/decision-state.schema.json):
+Quality replay uses [decision-state schema 3](schemas/decision-state.schema.json).
+The library retains purchase recommendations for these replay checks.
+The CLI has no `recommend` command.
 
-```bash
-deadlock-build-sync recommend --state state.json
-```
+Strategy context uses schema 17, projection guide version 5, and purchase guidance schema 4.
+Regenerate older bundles with `build` before installation.
+Compact categories form the canonical projection in both context and Steam output.
+Purchase instructions retain routes, costs, checkpoints, and supported conditions.
+They omit generic item-purpose advice.
 
-The result includes the next purchase, soul shortfall, remaining route, and supported choices.
-The CLI does not capture live game state.
+The library requires an evidence layout in `project_policy_to_guide`.
+Its arguments are policy, validation context, projection identity, and layout.
+`build_compact_categories` replaces `build_purchase_categories`.
+`extract_description_text` keeps its existing public interface.
+The library removes `ItemPurpose`, `PurchaseDecision`, `TacticalProfile`, and their unused text builders.
+It also removes `EvaluationState`, `PolicyDecision`, `next_policy_decision`, and `render_recommendation_markdown`.
+Purchase recommendations require a policy path from admitted evidence.
 
 ## Execution tracing
 

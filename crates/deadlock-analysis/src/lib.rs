@@ -3,12 +3,6 @@
 
 mod ability_prefetch;
 
-mod beam_admission;
-mod beam_export;
-mod beam_model;
-mod beam_nomination;
-mod beam_search;
-mod beam_support;
 mod branch_candidates;
 mod branch_cohort;
 mod branch_evaluation;

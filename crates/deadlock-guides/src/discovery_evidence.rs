@@ -48,7 +48,7 @@ pub fn exclusion_reason(value: &Value) -> Result<String> {
 pub fn validate_discovery(discovery: &Value, core: &[u64], path: &[u64]) -> Result<()> {
     object(discovery)?;
     let method = discovery["method"].as_str();
-    if !matches!(method, Some("eclat_leiden_pairwise" | "eclat_leiden_beam"))
+    if method != Some("eclat_leiden_pairwise")
         || discovery["test_evaluated"].as_bool() != Some(false)
     {
         return Err(Error::new(format!(
@@ -72,17 +72,12 @@ pub fn validate_discovery(discovery: &Value, core: &[u64], path: &[u64]) -> Resu
         }
     }
     let outcome_supported = validate_outcome_status(discovery)?;
-    let order_method = if method == Some("eclat_leiden_beam") {
-        "beam16"
-    } else {
-        "pairwise"
-    };
     validate_order(
         &discovery["path"],
         core,
         path,
         &discovery["frozen_guide"],
-        order_method,
+        "pairwise",
     )?;
     validate_order_record(&discovery["order_validation"], outcome_supported)
 }

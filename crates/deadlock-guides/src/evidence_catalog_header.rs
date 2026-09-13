@@ -4,34 +4,12 @@ use chrono::DateTime;
 use deadlock_data::{
     EpochSet, Error, Rank, RankRange, Result, array, fingerprint, object, text, validate_sha256,
 };
-use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
 use crate::discovery_evidence::REFRESH_INSTRUCTION;
 use crate::evidence_values::integer;
-use crate::generator_evidence::{
-    BEAM_METHOD_VERSION, BEAM_SCHEMA_VERSION, validate_generator_header,
-};
-
 pub const BUILD_EVIDENCE_SCHEMA_VERSION: u64 = 12;
 pub const CURRENT_METHOD_VERSION: &str = "eclat-leiden-pairwise-v4";
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum BuildGenerator {
-    Current,
-    Beam,
-}
-
-impl BuildGenerator {
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Current => "current",
-            Self::Beam => "beam",
-        }
-    }
-}
 
 #[derive(Clone, Debug)]
 pub struct BuildEvidenceMetadata {
@@ -45,7 +23,6 @@ pub struct BuildEvidenceMetadata {
     pub items_sha256: String,
     pub requested_hero_ids: BTreeSet<u64>,
     pub as_of_timestamp: i64,
-    pub generator: BuildGenerator,
 }
 
 pub fn parse_header(document: &Value) -> Result<BuildEvidenceMetadata> {
@@ -57,8 +34,8 @@ pub fn parse_header(document: &Value) -> Result<BuildEvidenceMetadata> {
             "Build evidence fingerprint does not match its contents",
         ));
     }
-    let generator = parse_generator(document)?;
-    validate_method(document, generator)?;
+    validate_schema(document)?;
+    validate_method(document)?;
     let patch = object(&document["patch"])?.clone();
     sha256_field(&document["patch"], "identity")?;
     let cohort = object(&document["cohort"])?.clone();
@@ -84,7 +61,6 @@ pub fn parse_header(document: &Value) -> Result<BuildEvidenceMetadata> {
         cohort,
         epochs,
         as_of_timestamp,
-        generator,
         rank_labels_sha256: sha256_field(document, "rank_labels_sha256")?,
         heroes_sha256: sha256_field(document, "heroes_sha256")?,
         items_sha256: sha256_field(document, "items_sha256")?,
@@ -92,29 +68,23 @@ pub fn parse_header(document: &Value) -> Result<BuildEvidenceMetadata> {
     })
 }
 
-fn parse_generator(document: &Value) -> Result<BuildGenerator> {
-    match document["schema_version"].as_u64() {
-        Some(BUILD_EVIDENCE_SCHEMA_VERSION) => {
-            if document.get("generator").is_some() {
-                return Err(Error::new(
-                    "Current evidence cannot contain a beam generator header",
-                ));
-            }
-            Ok(BuildGenerator::Current)
-        }
-        Some(BEAM_SCHEMA_VERSION) => {
-            validate_generator_header(&document["generator"])?;
-            Ok(BuildGenerator::Beam)
-        }
-        _ => Err(Error::new(format!(
+fn validate_schema(document: &Value) -> Result<()> {
+    if document["schema_version"].as_u64() != Some(BUILD_EVIDENCE_SCHEMA_VERSION) {
+        return Err(Error::new(format!(
             "Unsupported build evidence schema. {REFRESH_INSTRUCTION}"
-        ))),
+        )));
     }
+    if document.get("generator").is_some() {
+        return Err(Error::new(
+            "Build evidence cannot contain a generator header",
+        ));
+    }
+    Ok(())
 }
 
-fn validate_method(document: &Value, generator: BuildGenerator) -> Result<()> {
+fn validate_method(document: &Value) -> Result<()> {
     let method = object(&document["method"])?;
-    let expected = expected_selection_method(generator);
+    let expected = expected_selection_method();
     if object(&expected)?
         .iter()
         .any(|(key, value)| method.get(key) != Some(value))
@@ -127,11 +97,8 @@ fn validate_method(document: &Value, generator: BuildGenerator) -> Result<()> {
 }
 
 #[must_use]
-pub fn expected_selection_method(generator: BuildGenerator) -> Value {
-    let version = match generator {
-        BuildGenerator::Current => CURRENT_METHOD_VERSION,
-        BuildGenerator::Beam => BEAM_METHOD_VERSION,
-    };
+pub fn expected_selection_method() -> Value {
+    let version = CURRENT_METHOD_VERSION;
     json!({"version":version,"minimum_core_item_count":3,"maximum_core_item_count":9,"minimum_core_support":100,
         "minimum_tier_support":20,"minimum_tier_adoption":0.05,"maximum_tier_adoption_drift":0.10,"tier_item_count":10,
         "minimum_purchase_window_coverage":0.50,"minimum_purchase_window_observations":20,"minimum_imbue_support":20,"minimum_imbue_share":0.5})

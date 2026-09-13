@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use deadlock_data::{Error, Result, count_as_f64, count_ratio};
+use deadlock_data::{Error, Result, count_ratio};
 use deadlock_guides::{
     PurchasePriorities, PurchaseState, SUPPORT, nondecreasing_window_schedule, plan_purchases,
     schedule_component_path,
@@ -13,7 +13,6 @@ use crate::database::{AnalysisDatabase, Parameters};
 use crate::discovery_data::DiscoveryData;
 use crate::inventory_history::Actor;
 use crate::sql_resources::load_sql;
-use crate::statistics::quantiles;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct PoolStatistics {
@@ -28,7 +27,6 @@ pub struct PoolStatistics {
 pub struct PurchaseEvidence {
     pub population: u64,
     pub items: BTreeMap<u64, PoolStatistics>,
-    pub histories: BTreeMap<Actor, BTreeMap<u64, f64>>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -45,13 +43,10 @@ pub struct FrozenGuide {
 }
 
 #[derive(Debug, Deserialize)]
-struct FirstPurchase {
-    match_id: u64,
-    player_slot: u64,
+struct ItemPoolStatistics {
     item_id: u64,
-    buy_time: i64,
-    own_net_worth_at_buy: Option<f64>,
-    state_observed_at_s: Option<i64>,
+    #[serde(flatten)]
+    statistics: PoolStatistics,
 }
 
 pub fn replace_members(
@@ -84,60 +79,23 @@ pub fn load_purchase_evidence(
     hero: u64,
 ) -> Result<PurchaseEvidence> {
     replace_members(database, "_discovery_buyers", members)?;
-    let mut evidence = PurchaseEvidence {
-        population: u64::try_from(members.len())?,
-        items: BTreeMap::new(),
-        histories: BTreeMap::new(),
-    };
-    let mut times = BTreeMap::<u64, Vec<f64>>::new();
-    let mut wealths = BTreeMap::<u64, Vec<f64>>::new();
-    let parameters = Parameters::from([("hero".into(), duckdb::types::Value::UBigInt(hero))]);
-    database.visit_rows(
-        load_sql("discovery/select_item_pool_purchases.sql")?,
-        &parameters,
-        |row: FirstPurchase| {
-            let bought = count_as_f64(u64::try_from(row.buy_time)?)?;
-            if evidence
-                .histories
-                .entry((row.match_id, row.player_slot))
-                .or_default()
-                .insert(row.item_id, bought)
-                .is_some()
-            {
-                return Err(Error::new(
-                    "First-purchase evidence contains a duplicate player and item",
-                ));
-            }
-            times.entry(row.item_id).or_default().push(bought);
-            if let (Some(wealth), Some(observed)) =
-                (row.own_net_worth_at_buy, row.state_observed_at_s)
-                && (1..=300).contains(&(row.buy_time - observed))
-            {
-                wealths.entry(row.item_id).or_default().push(wealth);
-            }
-            Ok(())
-        },
+    let population = u64::try_from(members.len())?;
+    database.execute(
+        load_sql("discovery/create_item_pool_purchases.sql")?,
+        &Parameters::from([("hero".into(), duckdb::types::Value::UBigInt(hero))]),
     )?;
-    if evidence.histories.len() > members.len() {
-        return Err(Error::new(
-            "Purchase evidence exceeds the discovered owner population",
-        ));
-    }
-    for (item, mut values) in times {
-        let wealth = wealths.entry(item).or_default();
-        evidence.items.insert(
-            item,
-            PoolStatistics {
-                buyers: u64::try_from(values.len())?,
-                adoption: count_ratio(u64::try_from(values.len())?, evidence.population.max(1))?,
-                time_seconds_q25_q50_q75: quantiles(&mut values)?
-                    .ok_or_else(|| Error::new("Purchase time sample is empty"))?,
-                fresh_wealth_observations: u64::try_from(wealth.len())?,
-                net_worth_q25_q50_q75: quantiles(wealth)?,
-            },
-        );
-    }
-    Ok(evidence)
+    let items = database
+        .query_rows::<ItemPoolStatistics>(
+            load_sql("discovery/select_item_pool_statistics.sql")?,
+            &Parameters::from([(
+                "population".into(),
+                duckdb::types::Value::UBigInt(population.max(1)),
+            )]),
+        )?
+        .into_iter()
+        .map(|row| (row.item_id, row.statistics))
+        .collect();
+    Ok(PurchaseEvidence { population, items })
 }
 
 pub fn freeze_guide(
@@ -146,15 +104,11 @@ pub fn freeze_guide(
     core: &[u64],
     order: &[u64],
     graph: &ItemGraph,
-    exact_path: Option<&[u64]>,
 ) -> Result<FrozenGuide> {
     let evidence =
         load_purchase_evidence(database, &data.owners(core, &["discovery"])?, data.hero)?;
     let (priorities, bounds) = timing_policy(&evidence.items)?;
-    let path = exact_path.map_or_else(
-        || schedule_component_path(graph, order, &priorities),
-        |path| Ok(path.to_vec()),
-    )?;
+    let path = schedule_component_path(graph, order, &priorities)?;
     let plan = plan_purchases(
         graph,
         &path,
@@ -187,14 +141,17 @@ pub fn freeze_guide(
         )));
     }
     let pool = select_pool(graph, &evidence, &path);
-    let timing = pool
-        .values()
-        .flatten()
-        .copied()
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .map(|item| count_intervals(item, &path, &evidence.histories))
-        .collect::<Vec<_>>();
+    let optional_items = pool.values().flatten().copied().collect::<BTreeSet<_>>();
+    let timing = database.query(
+        load_sql("discovery/select_purchase_checkpoint_counts.sql")?,
+        &Parameters::from([
+            ("path".into(), serde_json::to_string(&path)?.into()),
+            (
+                "items".into(),
+                serde_json::to_string(&optional_items)?.into(),
+            ),
+        ]),
+    )?;
     Ok(FrozenGuide {
         ready: true,
         reason: None,
@@ -274,38 +231,4 @@ fn select_pool(
             (tier, items)
         })
         .collect()
-}
-
-pub fn count_intervals(
-    item: u64,
-    path: &[u64],
-    histories: &BTreeMap<Actor, BTreeMap<u64, f64>>,
-) -> Value {
-    let mut counts = vec![0_u64; path.len() + 1];
-    let mut buyers = 0_u64;
-    for history in histories.values() {
-        let Some(bought) = history.get(&item) else {
-            continue;
-        };
-        buyers += 1;
-        for (position, count) in counts.iter_mut().enumerate() {
-            let left = if position == 0 {
-                Some(-1.0)
-            } else {
-                history.get(&path[position - 1]).copied()
-            };
-            let right = if position == path.len() {
-                Some(f64::INFINITY)
-            } else {
-                history.get(&path[position]).copied()
-            };
-            if left
-                .zip(right)
-                .is_some_and(|(left, right)| left < *bought && *bought < right)
-            {
-                *count += 1;
-            }
-        }
-    }
-    json!({"item_id":item,"buyers":buyers,"counts_by_checkpoint":counts})
 }

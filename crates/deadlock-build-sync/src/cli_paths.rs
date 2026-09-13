@@ -32,6 +32,15 @@ pub fn artifact_directory(configured: Option<&Path>) -> Result<PathBuf> {
     configured.map_or_else(|| Ok(state_directory()?.join("artifacts")), absolute_path)
 }
 
+pub fn subset_artifact_directory(directory: &Path, hero_id: u64) -> Result<PathBuf> {
+    let mut name = directory
+        .file_name()
+        .ok_or_else(|| Error::new("Artifact directory has no name"))?
+        .to_os_string();
+    name.push("-subsets");
+    Ok(directory.with_file_name(name).join(hero_id.to_string()))
+}
+
 pub fn evidence_path(configured: Option<&Path>, artifacts: Option<&Path>) -> Result<PathBuf> {
     configured.map_or_else(
         || Ok(artifact_directory(artifacts)?.join("build-evidence.json")),

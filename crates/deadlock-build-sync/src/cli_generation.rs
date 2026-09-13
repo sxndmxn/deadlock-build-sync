@@ -1,11 +1,12 @@
 use std::path::Path;
 
 use deadlock_data::{EpochSet, Error, RankRange, Result};
-use deadlock_guides::{BuildEvidenceCatalog, BuildGenerator, NarrativeCatalog};
+use deadlock_guides::{BuildEvidenceCatalog, NarrativeCatalog};
 use deadlock_input::{ApiOptions, ApiResponseCache, DeadlockApi};
+use serde_json::{Map, Value};
 
 use crate::cli_arguments::{
-    GenerationArguments, Generator, NarrativeSelection, RankExpansion, SnapshotArguments,
+    GenerationArguments, NarrativeSelection, RankExpansion, SnapshotArguments,
 };
 use crate::cli_paths::absolute_path;
 use crate::generation::{GenerationRequest, generate_guides};
@@ -13,30 +14,29 @@ use crate::generation_types::GeneratedGuides;
 
 pub fn require_current_evidence(source: &Path, base_url: &str) -> Result<BuildEvidenceCatalog> {
     let evidence = BuildEvidenceCatalog::read(source)?;
+    require_current_build_identity(
+        evidence.metadata().client_version,
+        &evidence.metadata().patch,
+        base_url,
+    )?;
+    Ok(evidence)
+}
+
+pub fn require_current_build_identity(
+    client_version: u64,
+    patch: &Map<String, Value>,
+    base_url: &str,
+) -> Result<()> {
     let mut api = DeadlockApi::new(ApiOptions {
         base_url: base_url.into(),
         ..ApiOptions::default()
     })?;
     let version = api.resolve_client_version()?;
-    let patch = api.current_patch()?;
-    if evidence.metadata().client_version != version
-        || evidence.metadata().patch.get("identity") != Some(&patch.identity()?.into())
+    let current_patch = api.current_patch()?;
+    if client_version != version || patch.get("identity") != Some(&current_patch.identity()?.into())
     {
         return Err(Error::new(
             "Build evidence is stale. Run deadlock-build-sync refresh-evidence",
-        ));
-    }
-    Ok(evidence)
-}
-
-pub fn require_generator(evidence: &BuildEvidenceCatalog, generator: Generator) -> Result<()> {
-    let expected = match generator {
-        Generator::Current => BuildGenerator::Current,
-        Generator::Beam => BuildGenerator::Beam,
-    };
-    if evidence.metadata().generator != expected {
-        return Err(Error::new(
-            "Build evidence uses a different generator. Run refresh-evidence with the selected generator",
         ));
     }
     Ok(())

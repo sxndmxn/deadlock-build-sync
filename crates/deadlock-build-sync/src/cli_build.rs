@@ -1,4 +1,6 @@
-use deadlock_data::{Result, atomic_write_json};
+use std::path::PathBuf;
+
+use deadlock_data::{Error, Result, atomic_write_json};
 use deadlock_guides::{BuildEvidenceCatalog, group_guides};
 use deadlock_steam::require_deadlock_stopped;
 
@@ -7,12 +9,14 @@ use crate::cli_arguments::{
     BuildArguments, ExportArguments, InstallArguments, PreviewArguments, SyncArguments,
 };
 use crate::cli_generation::{
-    generate_requested, load_narratives, require_current_evidence, require_generator,
-    require_selection,
+    generate_requested, load_narratives, require_current_evidence, require_selection,
 };
 use crate::cli_installation::{InstallationParameters, install_guides, print_installation};
 use crate::cli_output::print_guides;
-use crate::cli_paths::{absolute_path, artifact_directory, cache_location, evidence_path};
+use crate::cli_paths::{
+    absolute_path, artifact_directory, cache_location, evidence_path, subset_artifact_directory,
+};
+use crate::generation_types::GeneratedGuides;
 
 pub fn run_build(args: &BuildArguments, base_url: &str) -> Result<u8> {
     let directory = artifact_directory(args.artifacts.as_deref())?;
@@ -21,8 +25,8 @@ pub fn run_build(args: &BuildArguments, base_url: &str) -> Result<u8> {
         Some(&directory),
     )?;
     let evidence = require_current_evidence(&path, base_url)?;
-    require_generator(&evidence, args.generator)?;
     let generated = generate_requested(base_url, &args.generation, &evidence, &path, 0, None)?;
+    let directory = select_artifact_output_directory(directory, &generated)?;
     let guides = write_build_artifacts(&directory, &generated)?;
     print_guides(&guides, &generated, args.format, args.details, 0)?;
     eprintln!("Build index: {}", directory.join("builds.json").display());
@@ -38,7 +42,6 @@ pub fn run_sync(args: &SyncArguments, base_url: &str) -> Result<u8> {
         Some(&directory),
     )?;
     let evidence = require_current_evidence(&path, base_url)?;
-    require_generator(&evidence, args.generator)?;
     let generated = generate_requested(
         base_url,
         &args.generation,
@@ -47,6 +50,7 @@ pub fn run_sync(args: &SyncArguments, base_url: &str) -> Result<u8> {
         location.account_id,
         None,
     )?;
+    let directory = select_artifact_output_directory(directory, &generated)?;
     let guides = write_build_artifacts(&directory, &generated)?;
     let result = install_guides(
         &location,
@@ -67,6 +71,21 @@ pub fn run_sync(args: &SyncArguments, base_url: &str) -> Result<u8> {
         &generated.coverage,
     )?;
     Ok(0)
+}
+
+fn select_artifact_output_directory(
+    directory: PathBuf,
+    generated: &GeneratedGuides,
+) -> Result<PathBuf> {
+    if !generated.subset_selected {
+        return Ok(directory);
+    }
+    let mut heroes = generated.coverage.requested().iter();
+    let hero = heroes
+        .next()
+        .filter(|_| heroes.next().is_none())
+        .ok_or_else(|| Error::new("Subset output requires exactly one hero"))?;
+    subset_artifact_directory(&directory, *hero)
 }
 
 pub fn run_preview(args: &PreviewArguments, base_url: &str) -> Result<u8> {

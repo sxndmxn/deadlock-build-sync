@@ -6,8 +6,8 @@ use deadlock_data::{
     trace_operation,
 };
 use deadlock_guides::{
-    BEAM_METHOD_VERSION, BuildEvidenceCatalog, BuildEvidenceIdentity, BuildGenerator, BuildPolicy,
-    CURRENT_METHOD_VERSION, NarrativeCatalog, PurchaseGuide, build_item_mechanics_catalog,
+    BuildEvidenceCatalog, BuildEvidenceIdentity, BuildPolicy, CURRENT_METHOD_VERSION,
+    NarrativeCatalog, PurchaseGuide, build_item_mechanics_catalog,
 };
 use deadlock_input::{BuildTagCatalog, DeadlockApi, ItemGraph};
 use serde_json::{Map, Value, json};
@@ -216,14 +216,10 @@ fn record_build_evidence(api: &mut DeadlockApi, evidence: &BuildEvidenceCatalog)
             warnings: Vec::new(),
         },
     )?;
-    let method = match evidence.metadata().generator {
-        BuildGenerator::Current => CURRENT_METHOD_VERSION,
-        BuildGenerator::Beam => BEAM_METHOD_VERSION,
-    };
     api.recorder_mut().record(
         "artifact:build-evidence",
         object(&json!({"artifact_id":evidence.metadata().artifact_id,
-        "method":method,"hero_count":evidence.heroes().len()}))?
+        "method":CURRENT_METHOD_VERSION,"hero_count":evidence.heroes().len()}))?
         .clone(),
         evidence.raw_bytes(),
         Utc::now(),

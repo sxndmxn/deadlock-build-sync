@@ -18,7 +18,6 @@ pub struct Landmark {
     pub observed_wealth: Option<f64>,
     pub team_lead: Option<f64>,
     pub average_badge: u16,
-    pub relative_wealth: Option<f64>,
 }
 
 #[derive(Clone, Debug)]
@@ -27,7 +26,6 @@ pub struct DiscoveryData {
     pub items: Vec<u64>,
     pub times: Vec<Vec<i64>>,
     pub rows: Vec<Landmark>,
-    pub inventories: Vec<Vec<u64>>,
 }
 
 impl DiscoveryData {
@@ -194,6 +192,5 @@ fn build_discovery_data(
         items,
         times,
         rows,
-        inventories,
     })
 }

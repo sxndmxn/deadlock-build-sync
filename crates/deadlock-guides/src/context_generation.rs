@@ -86,9 +86,9 @@ fn projection_context(guide: &PurchaseGuide) -> Result<Value> {
     Ok(
         json!({"build":{"path_id":guide.path_id,"path_label":guide.path_label,"archetype":guide.build_archetype,
         "tag_ids":guide.build_tag_ids,"tag_classes":guide.build_tag_classes,"tag_labels":guide.build_tag_labels,
-        "tag_catalog_sha256":guide.build_tag_catalog_sha256},"guide_version":4,
+        "tag_catalog_sha256":guide.build_tag_catalog_sha256},"guide_version":5,
         "categories":guide.rendered_categories()?.iter().map(crate::guide_category::GuideCategory::record).collect::<Vec<_>>(),
-        "semantics":"CORE steps are the validated component path in automatic Queue. OPTIONAL, PICK ONE, UPGRADE, and OPTIONAL ITEMS rows are optional. Core substitutions require separate core and branch admission."}),
+        "semantics":"MAIN CORE contains the validated component path in automatic Queue. All other panels are optional. Core substitutions require separate core and branch admission."}),
     )
 }
 

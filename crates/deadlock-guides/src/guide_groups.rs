@@ -3,7 +3,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use deadlock_data::{Error, Result};
 use serde_json::{Value, json};
 
-use crate::beam_display::generator_metadata;
 use crate::hero_cohort::HeroCohort;
 use crate::purchase_guide::PurchaseGuide;
 use crate::variant_categories::{build_compact_categories, validate_group_categories};
@@ -99,7 +98,7 @@ fn combine_guides(mut members: Vec<PurchaseGuide>) -> Result<Vec<PurchaseGuide>>
 /// # Errors
 /// Returns an error when cohort or purchase guidance serialization fails.
 pub fn build_variant_record(guide: &PurchaseGuide) -> Result<Value> {
-    let mut result = json!({
+    let result = json!({
         "path_id": guide.path_id, "policy_id": guide.policy_id,
         "selection_rank": guide.selection_rank,
         "core": guide.core_items.iter().map(|item| item.item_id).collect::<Vec<_>>(),
@@ -109,9 +108,6 @@ pub fn build_variant_record(guide: &PurchaseGuide) -> Result<Value> {
         "item_pool": guide.tiers.iter().map(|(tier, items)| (tier.to_string(), items.iter().map(|item| item.item_id).collect::<Vec<_>>())).collect::<BTreeMap<_, _>>(),
         "ability_order": guide.ability_path.as_ref().map(|path| path.ability_ids.clone()).unwrap_or_default(),
     });
-    if let Some(generator) = generator_metadata(guide) {
-        result["generator"] = generator.clone();
-    }
     Ok(result)
 }
 
