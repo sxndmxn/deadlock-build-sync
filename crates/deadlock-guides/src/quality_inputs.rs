@@ -37,14 +37,16 @@ impl QualityInputs {
             .flat_map(|hero| &hero.builds)
             .map(|build| (build.hero_id, build.path_id.clone()))
             .collect::<BTreeSet<_>>();
-        if evidence_keys != context.heroes().keys().cloned().collect()
+        if evidence_keys != context.heroes().map(|(key, _)| key.clone()).collect()
             || evidence_keys != policies.policies().keys().cloned().collect()
         {
             return Err(Error::new("Quality artifacts cover different build paths"));
         }
         let mut abilities = BTreeMap::new();
         for (key, policy) in policies.policies() {
-            let hero = &context.heroes()[key];
+            let hero = context
+                .hero(key)
+                .ok_or_else(|| Error::new("Quality context is missing a build path"))?;
             if hero["policy_id"] != policy.policy_id() {
                 return Err(Error::new("Quality context references another policy"));
             }

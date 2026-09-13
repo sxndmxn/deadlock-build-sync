@@ -69,11 +69,27 @@ pub fn fingerprint(value: &Value) -> Result<String> {
     Ok(sha256(&canonical_json(value)?))
 }
 
+/// # Errors
+/// Returns an error if the value is not an object or JSON serialization fails.
+pub fn fingerprint_without_field(value: &Value, field: &str) -> Result<String> {
+    let entries = object(value)?
+        .iter()
+        .filter(|(key, _)| key.as_str() != field)
+        .collect();
+    let mut output = String::new();
+    write_json_object(entries, &mut output)?;
+    Ok(sha256(output.as_bytes()))
+}
+
 #[must_use]
 pub fn sha256(bytes: &[u8]) -> String {
+    format_sha256(&Sha256::digest(bytes))
+}
+
+pub fn format_sha256(bytes: &[u8]) -> String {
     const DIGITS: &[u8; 16] = b"0123456789abcdef";
     let mut output = String::with_capacity(64);
-    for byte in Sha256::digest(bytes) {
+    for &byte in bytes {
         output.push(char::from(DIGITS[usize::from(byte >> 4)]));
         output.push(char::from(DIGITS[usize::from(byte & 15)]));
     }
@@ -104,20 +120,24 @@ fn write_json_value(value: &Value, output: &mut String) -> Result<()> {
             output.push(']');
         }
         Value::Object(values) => {
-            output.push('{');
-            let mut entries: Vec<_> = values.iter().collect();
-            entries.sort_by_key(|(key, _)| *key);
-            for (index, (key, value)) in entries.into_iter().enumerate() {
-                if index != 0 {
-                    output.push(',');
-                }
-                output.push_str(&serde_json::to_string(key)?);
-                output.push(':');
-                write_json_value(value, output)?;
-            }
-            output.push('}');
+            write_json_object(values.iter().collect(), output)?;
         }
     }
+    Ok(())
+}
+
+fn write_json_object(mut entries: Vec<(&String, &Value)>, output: &mut String) -> Result<()> {
+    entries.sort_by_key(|(key, _)| *key);
+    output.push('{');
+    for (index, (key, value)) in entries.into_iter().enumerate() {
+        if index != 0 {
+            output.push(',');
+        }
+        output.push_str(&serde_json::to_string(key)?);
+        output.push(':');
+        write_json_value(value, output)?;
+    }
+    output.push('}');
     Ok(())
 }
 

@@ -1,6 +1,6 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
-use deadlock_data::{Error, Result, integer};
+use deadlock_data::{Error, Rank, RankRange, Result, integer};
 use deadlock_guides::{
     AbilityPath, BuildEvidenceCatalog, HeroBuildEvidence, PurchaseGuide, SelectedHeroBuild,
     parse_ability_definitions, schedule_ability_path, select_ability_path, select_hero_build,
@@ -11,7 +11,32 @@ use serde_json::{Value, json};
 
 use crate::generation_types::{CohortAnalytics, HeroInputs};
 
-pub fn collect_cohort_analytics(api: &mut DeadlockApi, start: i64) -> Result<CohortAnalytics> {
+pub fn collect_roster_analytics(
+    api: &mut DeadlockApi,
+    evidence: &BuildEvidenceCatalog,
+    start: i64,
+) -> Result<BTreeMap<(Rank, Rank), CohortAnalytics>> {
+    let ranges = evidence
+        .heroes()
+        .keys()
+        .map(|id| {
+            let builds = require_hero_builds(evidence, *id)?;
+            let ranks = builds[0].cohort.rank_range()?;
+            Ok((ranks.minimum, ranks.maximum))
+        })
+        .collect::<Result<BTreeSet<_>>>()?;
+    ranges
+        .into_iter()
+        .map(|(minimum, maximum)| {
+            let analytics = api.with_rank_range(RankRange { minimum, maximum }, |api| {
+                collect_cohort_analytics(api, start)
+            })?;
+            Ok(((minimum, maximum), analytics))
+        })
+        .collect()
+}
+
+fn collect_cohort_analytics(api: &mut DeadlockApi, start: i64) -> Result<CohortAnalytics> {
     let duration = api.hero_stats_by_duration(start)?;
     let distribution = summarize_duration_distribution(&duration)?;
     let same_lane = group_matchups(api.hero_counter_stats(start, true)?, "same_lane");
@@ -45,37 +70,36 @@ pub fn collect_hero_inputs(
     evidence: &BuildEvidenceCatalog,
     assets: &[Value],
     start: i64,
-    analytics: &CohortAnalytics,
+    analytics: &BTreeMap<(Rank, Rank), CohortAnalytics>,
 ) -> Result<Vec<HeroInputs>> {
     let prepared = api.map_requests(heroes, 8, |api, hero| {
         let id = integer(hero, "id")?;
-        let record = evidence
-            .heroes()
-            .get(&id)
-            .ok_or_else(|| Error::new(format!("Hero {id} is missing build evidence")))?;
-        if let Some(reason) = &record.exclusion {
-            return Err(Error::new(format!(
-                "Requested hero {id} has no supported build: {reason}"
-            )));
-        }
-        let first = record
-            .builds
-            .first()
-            .ok_or_else(|| Error::new("Hero has no admitted build"))?;
-        let ranks = first.cohort.rank_range()?;
-        let expanded = ranks != api.options().rank_range;
+        let builds = require_hero_builds(evidence, id)?;
+        let ranks = builds[0].cohort.rank_range()?;
+        let analytics = analytics
+            .get(&(ranks.minimum, ranks.maximum))
+            .ok_or_else(|| Error::new("Hero cohort statistics are missing"))?;
         api.with_rank_range(ranks, |api| {
-            let scoped;
-            let analytics = if expanded {
-                scoped = collect_cohort_analytics(api, start)?;
-                &scoped
-            } else {
-                analytics
-            };
-            prepare_hero(api, hero, &record.builds, assets, start, analytics)
+            prepare_hero(api, hero, builds, assets, start, analytics)
         })
     })?;
     Ok(prepared.into_iter().flatten().collect())
+}
+
+fn require_hero_builds(evidence: &BuildEvidenceCatalog, id: u64) -> Result<&[HeroBuildEvidence]> {
+    let record = evidence
+        .heroes()
+        .get(&id)
+        .ok_or_else(|| Error::new(format!("Hero {id} is missing build evidence")))?;
+    if let Some(reason) = &record.exclusion {
+        return Err(Error::new(format!(
+            "Requested hero {id} has no supported build: {reason}"
+        )));
+    }
+    if record.builds.is_empty() {
+        return Err(Error::new("Hero has no admitted build"));
+    }
+    Ok(&record.builds)
 }
 
 fn prepare_hero(

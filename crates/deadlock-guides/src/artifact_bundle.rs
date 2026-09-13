@@ -55,14 +55,17 @@ pub fn reconstruct_artifact_bundle(
         .flat_map(|hero| &hero.builds)
         .map(|build| (build.hero_id, build.path_id.clone()))
         .collect::<BTreeSet<_>>();
-    let context_keys = context.heroes().keys().cloned().collect::<BTreeSet<_>>();
+    let context_keys = context
+        .heroes()
+        .map(|(key, _)| key.clone())
+        .collect::<BTreeSet<_>>();
     if admitted != context_keys || context_keys != policies.policies().keys().cloned().collect() {
         return Err(Error::new(
             "Artifact bundle does not contain every admitted build identity",
         ));
     }
-    let mut guides = Vec::new();
-    for (key, hero) in context.heroes() {
+    let entries = context.heroes().collect::<Vec<_>>();
+    let guides = deadlock_data::map_jobs(&entries, 8, |(key, hero)| {
         let build = evidence
             .heroes()
             .get(&key.0)
@@ -72,13 +75,13 @@ pub fn reconstruct_artifact_bundle(
             .ok_or_else(|| Error::new("Build evidence has no matching path"))?;
         let policy = policies
             .policies()
-            .get(key)
+            .get(*key)
             .ok_or_else(|| Error::new("Artifact policy is absent"))?;
         let mut guide =
             reconstruct_guide(hero, policy, build, context.manifest(), evidence.assets())?;
         narratives.apply(&mut guide, hero, &patch)?;
-        guides.push(guide);
-    }
+        Ok(guide)
+    })?;
     let groups = evidence
         .heroes()
         .values()

@@ -93,8 +93,7 @@ pub fn hero_stats_by_duration(
     session: &mut ApiSession,
     minimum_timestamp: i64,
 ) -> Result<BTreeMap<u64, Vec<HeroDurationStat>>> {
-    let mut curves = BTreeMap::<u64, Vec<HeroDurationStat>>::new();
-    for (label, minimum, maximum) in [
+    let windows = [
         ("<25m", 0, 1500),
         ("25–30m", 1500, 1800),
         ("30–35m", 1800, 2100),
@@ -102,14 +101,21 @@ pub fn hero_stats_by_duration(
         ("40–45m", 2400, 2700),
         ("45–50m", 2700, 3000),
         ("50m+", 3000, 7000),
-    ] {
-        let mut parameters = session.analytic_parameters(minimum_timestamp)?;
+    ];
+    let parameters = session.analytic_parameters(minimum_timestamp)?;
+    let responses = deadlock_data::map_jobs(&windows, 7, |(_, minimum, maximum)| {
+        let mut request = session.fork();
+        let mut parameters = parameters.clone();
         parameters.extend([
             ("bucket".into(), "no_bucket".into()),
-            ("min_duration_s".into(), minimum.into()),
+            ("min_duration_s".into(), (*minimum).into()),
             ("max_duration_s".into(), (maximum - 1).into()),
         ]);
-        let rows = session.get("/v1/analytics/hero-stats", parameters)?;
+        let rows = request.get("/v1/analytics/hero-stats", parameters)?;
+        Ok((rows, request.recorder))
+    })?;
+    let mut curves = BTreeMap::<u64, Vec<HeroDurationStat>>::new();
+    for ((label, minimum, maximum), (rows, recorder)) in windows.into_iter().zip(responses) {
         let rows = rows
             .as_array()
             .ok_or_else(|| Error::new("Hero duration statistics must be a list"))?;
@@ -118,6 +124,7 @@ pub fn hero_stats_by_duration(
                 curves.entry(hero_id).or_default().push(statistic);
             }
         }
+        session.recorder.append(recorder);
     }
     Ok(curves)
 }

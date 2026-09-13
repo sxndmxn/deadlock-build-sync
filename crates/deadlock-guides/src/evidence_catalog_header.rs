@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use chrono::DateTime;
 use deadlock_data::{
-    EpochSet, Error, Rank, RankRange, Result, array, fingerprint, object, text, validate_sha256,
+    EpochSet, Error, Rank, RankRange, Result, array, object, text, validate_sha256,
 };
 use serde_json::{Map, Value, json};
 
@@ -25,11 +25,9 @@ pub struct BuildEvidenceMetadata {
     pub as_of_timestamp: i64,
 }
 
-pub fn parse_header(document: &Value) -> Result<BuildEvidenceMetadata> {
-    let mut payload = object(document)?.clone();
+pub fn parse_header(document: &Value, content_sha256: &str) -> Result<BuildEvidenceMetadata> {
     let artifact_id = sha256_field(document, "artifact_id")?;
-    payload.remove("artifact_id");
-    if fingerprint(&Value::Object(payload))? != artifact_id {
+    if content_sha256 != artifact_id {
         return Err(Error::new(
             "Build evidence fingerprint does not match its contents",
         ));

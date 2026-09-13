@@ -19,7 +19,7 @@ pub struct StrategyContext {
     document: Value,
     manifest: SnapshotManifest,
     coverage: ArtifactCoverage,
-    heroes: BTreeMap<BuildKey, Value>,
+    hero_indices: BTreeMap<BuildKey, usize>,
     item_mechanics: Map<String, Value>,
 }
 
@@ -36,16 +36,16 @@ impl StrategyContext {
         let coverage = ArtifactCoverage::from_document(&document)?;
         let item_mechanics = object(&document["item_mechanics"])?.clone();
         validate_mechanics_catalog(&item_mechanics)?;
-        let mut heroes = BTreeMap::new();
+        let mut hero_indices = BTreeMap::new();
         let mut referenced = BTreeSet::new();
-        for entry in array(&document["heroes"])? {
+        for (index, entry) in array(&document["heroes"])?.iter().enumerate() {
             let key = parse_build_key(entry)?;
             referenced.extend(validate_hero(entry, &manifest, &item_mechanics)?);
-            if heroes.insert(key, entry.clone()).is_some() {
+            if hero_indices.insert(key, index).is_some() {
                 return Err(Error::new("Strategy context repeats a build path"));
             }
         }
-        coverage.validate_keys(heroes.keys().map(|(id, path)| (*id, path.as_str())))?;
+        coverage.validate_keys(hero_indices.keys().map(|(id, path)| (*id, path.as_str())))?;
         let referenced = referenced
             .into_iter()
             .map(|id| id.to_string())
@@ -62,7 +62,7 @@ impl StrategyContext {
             document,
             manifest,
             coverage,
-            heroes,
+            hero_indices,
             item_mechanics,
         })
     }
@@ -89,8 +89,17 @@ impl StrategyContext {
     }
 
     #[must_use]
-    pub const fn heroes(&self) -> &BTreeMap<BuildKey, Value> {
-        &self.heroes
+    pub fn heroes(&self) -> impl ExactSizeIterator<Item = (&BuildKey, &Value)> {
+        self.hero_indices
+            .iter()
+            .map(|(key, index)| (key, &self.document["heroes"][*index]))
+    }
+
+    #[must_use]
+    pub fn hero(&self, key: &BuildKey) -> Option<&Value> {
+        self.hero_indices
+            .get(key)
+            .map(|index| &self.document["heroes"][*index])
     }
 
     #[must_use]

@@ -94,7 +94,7 @@ fn select_heroes<'source>(
     selectors: &[String],
 ) -> Result<Vec<&'source Value>> {
     if selectors.is_empty() {
-        return Ok(source.heroes().values().collect());
+        return Ok(source.heroes().map(|(_, hero)| hero).collect());
     }
     let requested = selectors
         .iter()

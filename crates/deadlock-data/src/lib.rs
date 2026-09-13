@@ -9,6 +9,7 @@ mod execution_trace;
 mod file_fingerprint;
 mod fingerprint_layers;
 mod json;
+mod json_records;
 mod rank;
 mod rank_catalog;
 mod snapshot;
@@ -16,8 +17,8 @@ mod statistics;
 mod workers;
 
 pub use artifact::{
-    atomic_write, atomic_write_json, read_fingerprinted_json, read_json, read_json_bytes,
-    state_directory,
+    atomic_write, atomic_write_json, read_artifact_bytes, read_fingerprinted_json, read_json,
+    read_json_bytes, state_directory,
 };
 pub use artifact_coverage::{ArtifactCoverage, BuildKey, parse_build_key};
 pub use error::{Error, Result};
@@ -28,7 +29,11 @@ pub use evidence::{
 pub use execution_trace::{TraceSession, trace_operation};
 pub use file_fingerprint::file_sha256;
 pub use fingerprint_layers::{ArtifactCompatibility, FingerprintLayers};
-pub use json::{array, canonical_json, field, fingerprint, integer, object, real, sha256, text};
+pub use json::{
+    array, canonical_json, field, fingerprint, fingerprint_without_field, integer, object, real,
+    sha256, text,
+};
+pub use json_records::JsonRecordDocument;
 pub use rank::{Rank, RankRange};
 pub use rank_catalog::RankCatalog;
 pub use snapshot::{SnapshotContent, SnapshotManifest, default_outcome_policy};
