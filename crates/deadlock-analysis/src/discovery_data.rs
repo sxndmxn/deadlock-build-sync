@@ -5,7 +5,7 @@ use deadlock_input::ItemGraph;
 use serde::Deserialize;
 
 use crate::database::{AnalysisDatabase, Parameters};
-use crate::inventory_history::{Actor, Purchase, inventory_before};
+use crate::inventory_history::{MatchPlayer, Purchase, inventory_before};
 use crate::sql_resources::load_sql;
 
 #[derive(Clone, Debug, Deserialize)]
@@ -52,7 +52,7 @@ impl DiscoveryData {
         columns.iter().all(|column| self.times[row][*column] >= 0)
     }
 
-    pub fn owners(&self, items: &[u64], folds: &[&str]) -> Result<BTreeSet<Actor>> {
+    pub fn owners(&self, items: &[u64], folds: &[&str]) -> Result<BTreeSet<MatchPlayer>> {
         let columns = self.columns(items)?;
         Ok(self
             .rows
@@ -102,7 +102,7 @@ pub fn load_discovery_data(
         .into_iter()
         .filter(|row| (ranks.minimum.badge()..=ranks.maximum.badge()).contains(&row.average_badge))
         .collect::<Vec<_>>();
-    let mut histories = BTreeMap::<Actor, Vec<Purchase>>::new();
+    let mut histories = BTreeMap::<MatchPlayer, Vec<Purchase>>::new();
     database.visit_rows(
         load_sql("discovery/select_purchase_histories.sql")?,
         &parameters,
@@ -120,7 +120,7 @@ pub fn load_discovery_data(
 fn build_discovery_data(
     hero: u64,
     rows: Vec<Landmark>,
-    histories: &BTreeMap<Actor, Vec<Purchase>>,
+    histories: &BTreeMap<MatchPlayer, Vec<Purchase>>,
     graph: &ItemGraph,
 ) -> Result<DiscoveryData> {
     if rows

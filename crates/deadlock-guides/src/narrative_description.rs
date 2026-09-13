@@ -27,7 +27,7 @@ pub fn build_deterministic_description(context: &Value) -> Result<String> {
     } else {
         format!("Follow the shown {} CORE order", archetype.trim())
     };
-    if let Some(ability) = first_maxed_ability(context) {
+    if let Some(ability) = first_fully_upgraded_ability(context) {
         write!(plan, " and max {ability} first")?;
     }
     let plan = normalize_sentence(&plan);
@@ -68,7 +68,7 @@ fn normalize_sentence(value: &str) -> String {
     value
 }
 
-fn first_maxed_ability(context: &Value) -> Option<&str> {
+fn first_fully_upgraded_ability(context: &Value) -> Option<&str> {
     context["ability_policy"]["steps"]
         .as_array()?
         .iter()

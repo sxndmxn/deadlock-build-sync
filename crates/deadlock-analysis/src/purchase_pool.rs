@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 
 use crate::database::{AnalysisDatabase, Parameters};
 use crate::discovery_data::DiscoveryData;
-use crate::inventory_history::Actor;
+use crate::inventory_history::MatchPlayer;
 use crate::sql_resources::load_sql;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -52,7 +52,7 @@ struct ItemPoolStatistics {
 pub fn replace_members(
     database: &AnalysisDatabase,
     name: &str,
-    members: &BTreeSet<Actor>,
+    members: &BTreeSet<MatchPlayer>,
 ) -> Result<()> {
     if !["_discovery_buyers", "_build_path_members"].contains(&name) {
         return Err(Error::new("Unknown analysis membership table"));
@@ -75,7 +75,7 @@ pub fn replace_members(
 
 pub fn load_purchase_evidence(
     database: &AnalysisDatabase,
-    members: &BTreeSet<Actor>,
+    members: &BTreeSet<MatchPlayer>,
     hero: u64,
 ) -> Result<PurchaseEvidence> {
     replace_members(database, "_discovery_buyers", members)?;
@@ -132,7 +132,7 @@ pub fn freeze_guide(
             evidence
                 .items
                 .get(item)
-                .is_none_or(|stats| stats.buyers < SUPPORT.pool_buyers)
+                .is_none_or(|item_statistics| item_statistics.buyers < SUPPORT.pool_buyers)
         })
         .collect::<Vec<_>>();
     if !missing.is_empty() {
@@ -180,15 +180,18 @@ fn timing_policy(
 ) -> Result<(PurchasePriorities, PurchaseBounds)> {
     let mut priorities = BTreeMap::new();
     let mut bounds = BTreeMap::new();
-    for (item, stats) in statistics {
-        let reliable = stats.fresh_wealth_observations >= 20
-            && count_ratio(stats.fresh_wealth_observations, stats.buyers.max(1))? >= 0.5;
-        let wealth = stats.net_worth_q25_q50_q75.filter(|_| reliable);
+    for (item, item_statistics) in statistics {
+        let reliable = item_statistics.fresh_wealth_observations >= 20
+            && count_ratio(
+                item_statistics.fresh_wealth_observations,
+                item_statistics.buyers.max(1),
+            )? >= 0.5;
+        let wealth = item_statistics.net_worth_q25_q50_q75.filter(|_| reliable);
         priorities.insert(
             *item,
             (
                 wealth.map_or(f64::INFINITY, |wealth| wealth[1]),
-                stats.time_seconds_q25_q50_q75[1],
+                item_statistics.time_seconds_q25_q50_q75[1],
                 *item,
             ),
         );
@@ -207,12 +210,12 @@ fn select_pool(
     let mut ranked = evidence
         .items
         .iter()
-        .filter(|(item, stats)| {
+        .filter(|(item, item_statistics)| {
             graph.nodes().contains_key(item)
                 && !path.contains(item)
-                && stats.buyers >= SUPPORT.pool_buyers
+                && item_statistics.buyers >= SUPPORT.pool_buyers
         })
-        .map(|(item, stats)| (*item, stats.buyers))
+        .map(|(item, item_statistics)| (*item, item_statistics.buyers))
         .collect::<Vec<_>>();
     ranked.sort_by(|left, right| right.1.cmp(&left.1).then(left.0.cmp(&right.0)));
     (1..=4)

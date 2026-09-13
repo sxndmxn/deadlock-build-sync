@@ -5,12 +5,12 @@ pub const MAX_VALUE_COUNT: usize = 1_000_000;
 pub const MAX_VALUE_DEPTH: usize = 64;
 
 #[derive(Clone, Debug)]
-pub struct Cursor<'data> {
+pub struct BinaryCursor<'data> {
     bytes: &'data [u8],
     offset: usize,
 }
 
-impl<'data> Cursor<'data> {
+impl<'data> BinaryCursor<'data> {
     pub(super) const fn new(bytes: &'data [u8]) -> Self {
         Self { bytes, offset: 0 }
     }

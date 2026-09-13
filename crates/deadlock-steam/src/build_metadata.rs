@@ -1,7 +1,7 @@
 use deadlock_data::{Error, Result};
 use deadlock_guides::{LEGACY_MANAGED_MARKER, MANAGED_MARKER};
 
-use crate::binary::{Cursor, check_count};
+use crate::binary_reader::{BinaryCursor, check_count};
 use crate::protobuf_fields::{Field, FieldValue, Fields, varint};
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -109,7 +109,7 @@ fn record_field(metadata: &mut HeroBuildMetadata, field: Field<'_>) -> Result<()
 }
 
 fn read_packed_tags(metadata: &mut HeroBuildMetadata, bytes: &[u8]) -> Result<()> {
-    let mut input = Cursor::new(bytes);
+    let mut input = BinaryCursor::new(bytes);
     while input.remaining() > 0 {
         check_count(metadata.tag_ids.len() + 1)?;
         metadata.tag_ids.push(varint(&mut input)?);

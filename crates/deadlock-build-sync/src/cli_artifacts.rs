@@ -13,10 +13,10 @@ use crate::cli_installation::{InstallationParameters, install_guides, print_inst
 use crate::cli_output::print_json;
 use crate::cli_paths::{absolute_path, artifact_directory, cache_location, home_directory};
 
-pub fn run_install_artifacts(args: &InstallArtifactArguments, base_url: &str) -> Result<u8> {
-    let location = cache_location(&args.location)?;
+pub fn run_install_artifacts(arguments: &InstallArtifactArguments, base_url: &str) -> Result<u8> {
+    let location = cache_location(&arguments.location)?;
     require_deadlock_stopped()?;
-    let directory = artifact_directory(args.artifacts.as_deref())?;
+    let directory = artifact_directory(arguments.artifacts.as_deref())?;
     let bundle = load_artifact_guide_bundle(
         &directory.join("strategy-context.json"),
         &directory.join("policies.json"),
@@ -28,7 +28,7 @@ pub fn run_install_artifacts(args: &InstallArtifactArguments, base_url: &str) ->
         &bundle.manifest.content().patch,
         base_url,
     )?;
-    let persona = args
+    let persona = arguments
         .persona
         .clone()
         .or(local_steam_persona(
@@ -66,19 +66,19 @@ pub fn run_install_artifacts(args: &InstallArtifactArguments, base_url: &str) ->
     Ok(0)
 }
 
-pub fn run_narratives(args: &NarrativeArguments) -> Result<u8> {
-    let context = StrategyContext::load(&absolute_path(&args.context)?)?;
-    let output = absolute_path(&args.output)?;
-    let existing = if output.try_exists()? && !args.force {
+pub fn run_narratives(arguments: &NarrativeArguments) -> Result<u8> {
+    let context = StrategyContext::load(&absolute_path(&arguments.context)?)?;
+    let output = absolute_path(&arguments.output)?;
+    let existing = if output.try_exists()? && !arguments.force {
         Some(NarrativeCatalog::load(&output)?)
     } else {
         None
     };
     let generated = generate_narrative_document(
         &context,
-        &args.hero,
+        &arguments.hero,
         existing.as_ref(),
-        args.force,
+        arguments.force,
         &chrono::Utc::now().to_rfc3339(),
     )?;
     atomic_write_json(&output, generated.catalog.document())?;
@@ -86,13 +86,13 @@ pub fn run_narratives(args: &NarrativeArguments) -> Result<u8> {
     Ok(0)
 }
 
-pub fn run_restore(args: &RestoreArguments) -> Result<u8> {
-    if !args.latest {
+pub fn run_restore(arguments: &RestoreArguments) -> Result<u8> {
+    if !arguments.latest {
         return Err(Error::new(
             "Supply --latest to select the latest complete backup",
         ));
     }
-    let location = cache_location(&args.location)?;
+    let location = cache_location(&arguments.location)?;
     let result = restore_latest(&location, &state_directory()?, &LinuxProcesses)?;
     print_json(
         &json!({"cache_path":result.cache_path,"source_backup":result.source_directory,"recovery_backup":result.recovery_backup_directory}),

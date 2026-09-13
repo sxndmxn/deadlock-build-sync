@@ -2,7 +2,9 @@ use std::collections::HashSet;
 
 use deadlock_data::{Error, Result};
 
-use crate::binary::{Cursor, MAX_VALUE_COUNT, check_count, check_depth, checked_total};
+use crate::binary_reader::{
+    BinaryCursor, MAX_VALUE_COUNT, check_count, check_depth, checked_total,
+};
 use crate::kv3_streams::Streams;
 use crate::kv3_value::{Kv3Flag, Kv3Kind, Kv3Value};
 
@@ -10,9 +12,9 @@ use crate::kv3_value::{Kv3Flag, Kv3Kind, Kv3Value};
 pub struct DecodeBuffers<'data> {
     pub(super) primary: Streams<'data>,
     pub(super) alternate: Option<Streams<'data>>,
-    pub(super) types: Cursor<'data>,
-    pub(super) objects: Option<Cursor<'data>>,
-    pub(super) blobs: Cursor<'data>,
+    pub(super) types: BinaryCursor<'data>,
+    pub(super) objects: Option<BinaryCursor<'data>>,
+    pub(super) blobs: BinaryCursor<'data>,
     pub(super) blob_lengths: Vec<usize>,
     pub(super) strings: Vec<String>,
 }

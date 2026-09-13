@@ -2,7 +2,7 @@ use std::path::Path;
 
 use deadlock_data::{Error, Result, sha256};
 
-use crate::binary::MAX_BINARY_BYTES;
+use crate::binary_reader::MAX_BINARY_BYTES;
 use crate::cache_files::read_limited;
 use crate::kv3_read::decode_kv3;
 use crate::kv3_value::Kv3Document;

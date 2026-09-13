@@ -44,18 +44,18 @@ pub fn require_current_build_identity(
 
 pub fn generate_requested(
     base_url: &str,
-    args: &GenerationArguments,
+    arguments: &GenerationArguments,
     evidence: &BuildEvidenceCatalog,
     evidence_path: &Path,
     account_id: u32,
     narratives: Option<&NarrativeCatalog>,
 ) -> Result<GeneratedGuides> {
     let ranks = RankRange {
-        minimum: args.ranks.min_rank,
-        maximum: args.ranks.max_rank,
+        minimum: arguments.ranks.min_rank,
+        maximum: arguments.ranks.max_rank,
     }
     .validate()?;
-    if args.ranks.rank_expansion == RankExpansion::Off
+    if arguments.ranks.rank_expansion == RankExpansion::Off
         && evidence
             .heroes()
             .values()
@@ -66,7 +66,7 @@ pub fn generate_requested(
             "Build evidence contains expanded hero cohorts. Refresh with --rank-expansion off",
         ));
     }
-    let snapshot = &args.snapshot;
+    let snapshot = &arguments.snapshot;
     let mut api = DeadlockApi::new(ApiOptions {
         base_url: base_url.into(),
         rank_range: ranks,
@@ -90,19 +90,19 @@ pub fn generate_requested(
         evidence,
         &GenerationRequest {
             account_id,
-            hero_query: args.selection.hero.clone(),
-            all_heroes: args.selection.all || args.selection.hero.is_none(),
+            hero_query: arguments.selection.hero.clone(),
+            all_heroes: arguments.selection.all || arguments.selection.hero.is_none(),
         },
         narratives,
     )
 }
 
-fn selected_epochs(args: &SnapshotArguments) -> Result<Option<EpochSet>> {
+fn selected_epochs(arguments: &SnapshotArguments) -> Result<Option<EpochSet>> {
     match (
-        &args.mechanics_epoch,
-        &args.matchmaking_epoch,
-        &args.map_objectives_epoch,
-        &args.telemetry_epoch,
+        &arguments.mechanics_epoch,
+        &arguments.matchmaking_epoch,
+        &arguments.map_objectives_epoch,
+        &arguments.telemetry_epoch,
     ) {
         (None, None, None, None) => Ok(None),
         (Some(mechanics), Some(matchmaking), Some(map_objectives), Some(telemetry)) => {
@@ -117,20 +117,21 @@ fn selected_epochs(args: &SnapshotArguments) -> Result<Option<EpochSet>> {
     }
 }
 
-pub fn load_narratives(args: &NarrativeSelection) -> Result<Option<NarrativeCatalog>> {
-    if args.without_narratives {
+pub fn load_narratives(arguments: &NarrativeSelection) -> Result<Option<NarrativeCatalog>> {
+    if arguments.without_narratives {
         return Ok(None);
     }
     let path = absolute_path(
-        args.narratives
+        arguments
+            .narratives
             .as_deref()
             .unwrap_or_else(|| Path::new("generated/narratives.json")),
     )?;
     Ok(Some(NarrativeCatalog::load(&path)?))
 }
 
-pub fn require_selection(args: &GenerationArguments) -> Result<()> {
-    if args.selection.hero.is_none() && !args.selection.all {
+pub fn require_selection(arguments: &GenerationArguments) -> Result<()> {
+    if arguments.selection.hero.is_none() && !arguments.selection.all {
         return Err(Error::new("Supply --hero NAME or --all"));
     }
     Ok(())

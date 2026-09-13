@@ -5,7 +5,7 @@ use serde_json::{Map, Value, json};
 
 use crate::api_cache::CachedResponse;
 use crate::api_options::ApiOptions;
-use crate::http::JsonHttpClient;
+use crate::http_client::JsonHttpClient;
 
 #[derive(Debug)]
 pub struct ApiSession {

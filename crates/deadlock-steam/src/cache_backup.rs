@@ -6,7 +6,7 @@ use chrono::Utc;
 use deadlock_data::{Error, Result, atomic_write_json, sha256};
 use serde_json::Value;
 
-use crate::binary::MAX_BINARY_BYTES;
+use crate::binary_reader::MAX_BINARY_BYTES;
 use crate::cache_files::{read_limited, sync_directory};
 use crate::cache_location::{CACHE_FILENAME, CacheLocation};
 

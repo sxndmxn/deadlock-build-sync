@@ -18,33 +18,33 @@ use crate::cli_paths::{
 };
 use crate::generation_types::GeneratedGuides;
 
-pub fn run_build(args: &BuildArguments, base_url: &str) -> Result<u8> {
-    let directory = artifact_directory(args.artifacts.as_deref())?;
+pub fn run_build(arguments: &BuildArguments, base_url: &str) -> Result<u8> {
+    let directory = artifact_directory(arguments.artifacts.as_deref())?;
     let path = evidence_path(
-        args.generation.snapshot.build_evidence.as_deref(),
+        arguments.generation.snapshot.build_evidence.as_deref(),
         Some(&directory),
     )?;
     let evidence = require_current_evidence(&path, base_url)?;
-    let generated = generate_requested(base_url, &args.generation, &evidence, &path, 0, None)?;
+    let generated = generate_requested(base_url, &arguments.generation, &evidence, &path, 0, None)?;
     let directory = select_artifact_output_directory(directory, &generated)?;
     let guides = write_build_artifacts(&directory, &generated)?;
-    print_guides(&guides, &generated, args.format, args.details, 0)?;
+    print_guides(&guides, &generated, arguments.format, arguments.details, 0)?;
     eprintln!("Build index: {}", directory.join("builds.json").display());
     Ok(0)
 }
 
-pub fn run_sync(args: &SyncArguments, base_url: &str) -> Result<u8> {
-    let location = cache_location(&args.location)?;
+pub fn run_sync(arguments: &SyncArguments, base_url: &str) -> Result<u8> {
+    let location = cache_location(&arguments.location)?;
     require_deadlock_stopped()?;
-    let directory = artifact_directory(args.artifacts.as_deref())?;
+    let directory = artifact_directory(arguments.artifacts.as_deref())?;
     let path = evidence_path(
-        args.generation.snapshot.build_evidence.as_deref(),
+        arguments.generation.snapshot.build_evidence.as_deref(),
         Some(&directory),
     )?;
     let evidence = require_current_evidence(&path, base_url)?;
     let generated = generate_requested(
         base_url,
-        &args.generation,
+        &arguments.generation,
         &evidence,
         &path,
         location.account_id,
@@ -88,8 +88,8 @@ fn select_artifact_output_directory(
     subset_artifact_directory(&directory, *hero)
 }
 
-pub fn run_preview(args: &PreviewArguments, base_url: &str) -> Result<u8> {
-    let install = &args.install;
+pub fn run_preview(arguments: &PreviewArguments, base_url: &str) -> Result<u8> {
+    let install = &arguments.install;
     require_selection(&install.generation)?;
     let location = cache_location(&install.location)?;
     let path = evidence_path(install.generation.snapshot.build_evidence.as_deref(), None)?;
@@ -107,23 +107,26 @@ pub fn run_preview(args: &PreviewArguments, base_url: &str) -> Result<u8> {
     print_guides(
         &guides,
         &generated,
-        args.format,
-        args.details,
+        arguments.format,
+        arguments.details,
         location.account_id,
     )?;
     Ok(0)
 }
 
-pub fn run_install(args: &InstallArguments, base_url: &str) -> Result<u8> {
-    require_selection(&args.generation)?;
-    let location = cache_location(&args.location)?;
+pub fn run_install(arguments: &InstallArguments, base_url: &str) -> Result<u8> {
+    require_selection(&arguments.generation)?;
+    let location = cache_location(&arguments.location)?;
     require_deadlock_stopped()?;
-    let path = evidence_path(args.generation.snapshot.build_evidence.as_deref(), None)?;
+    let path = evidence_path(
+        arguments.generation.snapshot.build_evidence.as_deref(),
+        None,
+    )?;
     let evidence = BuildEvidenceCatalog::read(&path)?;
-    let narratives = load_narratives(&args.narrative)?;
+    let narratives = load_narratives(&arguments.narrative)?;
     let generated = generate_requested(
         base_url,
-        &args.generation,
+        &arguments.generation,
         &evidence,
         &path,
         location.account_id,
@@ -147,14 +150,17 @@ pub fn run_install(args: &InstallArguments, base_url: &str) -> Result<u8> {
     Ok(0)
 }
 
-pub fn run_export(args: &ExportArguments, base_url: &str) -> Result<u8> {
-    require_selection(&args.generation)?;
-    let location = cache_location(&args.location)?;
-    let path = evidence_path(args.generation.snapshot.build_evidence.as_deref(), None)?;
+pub fn run_export(arguments: &ExportArguments, base_url: &str) -> Result<u8> {
+    require_selection(&arguments.generation)?;
+    let location = cache_location(&arguments.location)?;
+    let path = evidence_path(
+        arguments.generation.snapshot.build_evidence.as_deref(),
+        None,
+    )?;
     let evidence = BuildEvidenceCatalog::read(&path)?;
     let generated = generate_requested(
         base_url,
-        &args.generation,
+        &arguments.generation,
         &evidence,
         &path,
         location.account_id,
@@ -162,8 +168,8 @@ pub fn run_export(args: &ExportArguments, base_url: &str) -> Result<u8> {
     )?;
     let context = strategy_context(&generated)?;
     let policies = policy_artifact(&generated)?;
-    let output = absolute_path(&args.output)?;
-    let policy_output = args
+    let output = absolute_path(&arguments.output)?;
+    let policy_output = arguments
         .policy_output
         .as_deref()
         .map(absolute_path)

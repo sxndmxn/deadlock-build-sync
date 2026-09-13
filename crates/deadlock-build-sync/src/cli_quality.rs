@@ -5,12 +5,12 @@ use crate::cli_arguments::QualityArguments;
 use crate::cli_output::print_json;
 use crate::cli_paths::{absolute_path, artifact_directory};
 
-pub fn run_quality(args: &QualityArguments) -> Result<u8> {
-    let inputs = QualityInputs::load(&artifact_directory(args.artifacts.as_deref())?)?;
+pub fn run_quality(arguments: &QualityArguments) -> Result<u8> {
+    let inputs = QualityInputs::load(&artifact_directory(arguments.artifacts.as_deref())?)?;
     let mut cases = Vec::new();
     let mut assets = Vec::new();
-    let replay_sha256 = if let Some(path) = &args.replay {
-        let asset_path = args.assets.as_deref().ok_or_else(|| {
+    let replay_sha256 = if let Some(path) = &arguments.replay {
+        let asset_path = arguments.assets.as_deref().ok_or_else(|| {
             Error::new("Quality replay requires --assets with pinned item assets")
         })?;
         let document = read_json(&absolute_path(path)?)?;

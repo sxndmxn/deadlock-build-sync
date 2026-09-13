@@ -5,14 +5,14 @@ use deadlock_guides::{SUPPORT, calculate_rank_cutoffs};
 use serde_json::{Value, json};
 
 use crate::branch_candidates::{freeze_candidates, freeze_substitutions};
+use crate::candidate_grouping::{group_candidates, group_item_candidates};
 use crate::checkpoint_data::load_checkpoints;
 use crate::core_outcomes::evaluate_core;
 use crate::database::AnalysisDatabase;
 use crate::discovery_data::{DiscoveryData, load_discovery_data};
 use crate::discovery_models::{ExportContext, FrozenHero, Nomination, item_ids};
-use crate::grouping::{group_candidates, group_item_candidates};
+use crate::itemset_mining::{ItemsetCandidate, mine_candidates};
 use crate::mechanic_overlap::describe_overlap;
-use crate::mining::{Candidate, mine_candidates};
 use crate::purchase_orders::select_order;
 use crate::purchase_pool::freeze_guide;
 
@@ -108,7 +108,7 @@ fn select_nominations(
     database: &AnalysisDatabase,
     hero: &Value,
     data: &DiscoveryData,
-    candidates: &mut [Candidate],
+    candidates: &mut [ItemsetCandidate],
     context: &ExportContext,
 ) -> Result<(Vec<Nomination>, Value)> {
     candidates.sort_by(|left, right| left.items.cmp(&right.items));
@@ -133,7 +133,7 @@ fn select_nominations(
     ranked.sort_by(|left, right| {
         let first = &candidates[*left];
         let second = &candidates[*right];
-        let lower = |candidate: &Candidate| {
+        let lower = |candidate: &ItemsetCandidate| {
             candidate.selection["adjusted"]["lower_95"]
                 .as_f64()
                 .unwrap_or(f64::NEG_INFINITY)
@@ -170,7 +170,7 @@ fn nominate(
     database: &AnalysisDatabase,
     hero: &Value,
     data: &DiscoveryData,
-    candidate: &Candidate,
+    candidate: &ItemsetCandidate,
     rank: usize,
     context: &ExportContext,
 ) -> Result<Nomination> {

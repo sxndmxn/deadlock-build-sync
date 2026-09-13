@@ -5,7 +5,7 @@ use deadlock_data::{Error, Result, array, atomic_write_json, fingerprint, intege
 use deadlock_input::JsonHttpClient;
 use serde_json::{Value, json};
 
-use crate::config::RunPaths;
+use crate::refresh_configuration::RunPaths;
 
 pub fn capture_sources(paths: &RunPaths, base_url: &str) -> Result<Value> {
     let client = JsonHttpClient::new(base_url, Duration::from_secs(120), 5)?;

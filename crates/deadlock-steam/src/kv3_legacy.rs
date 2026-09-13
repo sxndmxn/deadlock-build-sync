@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use deadlock_data::{Error, Result};
 
-use crate::binary::{Cursor, MAX_VALUE_COUNT, check_depth, checked_total};
+use crate::binary_reader::{BinaryCursor, MAX_VALUE_COUNT, check_depth, checked_total};
 use crate::kv3_compression::decompress;
 use crate::kv3_streams::read_strings;
 use crate::kv3_value::{Kv3Document, Kv3Flag, Kv3Kind, Kv3Value};
@@ -19,13 +19,13 @@ const LZ4_ENCODING: [u8; 16] = [
 
 #[derive(Debug)]
 struct LegacyDecoder<'data> {
-    input: Cursor<'data>,
+    input: BinaryCursor<'data>,
     strings: Vec<String>,
     remaining_values: usize,
     value_bytes: usize,
 }
 
-pub fn read_legacy(input: &mut Cursor<'_>) -> Result<Kv3Document> {
+pub fn read_legacy(input: &mut BinaryCursor<'_>) -> Result<Kv3Document> {
     let encoding = input.fixed::<16>()?;
     let format = input.fixed()?;
     let data = match encoding {
@@ -37,7 +37,7 @@ pub fn read_legacy(input: &mut Cursor<'_>) -> Result<Kv3Document> {
         }
         _ => return Err(Error::new("Legacy KV3 encoding is unsupported")),
     };
-    let mut payload = Cursor::new(&data);
+    let mut payload = BinaryCursor::new(&data);
     let string_count = payload.count()?;
     let strings = read_strings(&mut payload, string_count)?;
     let mut decoder = LegacyDecoder {
@@ -62,7 +62,7 @@ pub fn read_legacy(input: &mut Cursor<'_>) -> Result<Kv3Document> {
     })
 }
 
-fn read_compressed_blocks(input: &mut Cursor<'_>) -> Result<Vec<u8>> {
+fn read_compressed_blocks(input: &mut BinaryCursor<'_>) -> Result<Vec<u8>> {
     let header = input.u32()?;
     let expected = usize::try_from(header & 0x00ff_ffff)?;
     checked_total([expected])?;

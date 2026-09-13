@@ -4,9 +4,9 @@ use deadlock_data::{EpochBoundary, EpochSet, RankRange, Result, integer, text};
 use deadlock_input::{ApiOptions, ApiResponseCache, DeadlockApi, Patch};
 use serde_json::Value;
 
-use crate::config::{cohort_ranks, parse_timestamp};
 use crate::discovery_models::item_ids;
 use crate::discovery_snapshot::FrozenRoster;
+use crate::refresh_configuration::{cohort_ranks, parse_timestamp};
 
 #[derive(Debug)]
 pub struct AbilityPrefetch {

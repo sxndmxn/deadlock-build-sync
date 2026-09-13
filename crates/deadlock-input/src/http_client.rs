@@ -31,7 +31,7 @@ pub struct JsonHttpClient {
 }
 
 #[derive(Debug)]
-enum Attempt {
+enum RequestOutcome {
     Complete(JsonHttpResponse),
     Retry {
         error: Error,
@@ -108,10 +108,10 @@ impl JsonHttpClient {
         let parameters = query_parameters(parameters)?;
         for attempt in 0..self.maximum_attempts {
             self.wait_for_request_slot()?;
-            match self.attempt(&url, &parameters, attempt) {
-                Attempt::Complete(response) => return Ok(response),
-                Attempt::Failed(error) => return Err(error.context("JSON GET failed")),
-                Attempt::Retry {
+            match self.send_request(&url, &parameters, attempt) {
+                RequestOutcome::Complete(response) => return Ok(response),
+                RequestOutcome::Failed(error) => return Err(error.context("JSON GET failed")),
+                RequestOutcome::Retry {
                     error,
                     delay,
                     rate_limited,
@@ -160,7 +160,12 @@ impl JsonHttpClient {
         Ok(())
     }
 
-    fn attempt(&self, url: &str, parameters: &[(String, String)], attempt: u32) -> Attempt {
+    fn send_request(
+        &self,
+        url: &str,
+        parameters: &[(String, String)],
+        attempt: u32,
+    ) -> RequestOutcome {
         let response = self
             .agent
             .get(url)
@@ -188,7 +193,7 @@ impl JsonHttpClient {
                     .filter(|value| value.is_finite())
                     .and_then(|value| Duration::try_from_secs_f64(value.clamp(0.0, 30.0)).ok())
                     .unwrap_or_else(|| retry_delay(attempt));
-                return Attempt::Retry {
+                return RequestOutcome::Retry {
                     error,
                     delay,
                     rate_limited: true,
@@ -197,7 +202,7 @@ impl JsonHttpClient {
             return if status.is_server_error() {
                 retry(error, attempt)
             } else {
-                Attempt::Failed(error)
+                RequestOutcome::Failed(error)
             };
         }
         let final_url = response.get_uri().to_string();
@@ -211,7 +216,7 @@ impl JsonHttpClient {
             Err(error) => return retry(Error::new(error.to_string()), attempt),
         };
         match serde_json::from_slice(&content) {
-            Ok(data) => Attempt::Complete(JsonHttpResponse {
+            Ok(data) => RequestOutcome::Complete(JsonHttpResponse {
                 data,
                 content,
                 url: final_url,
@@ -247,8 +252,8 @@ fn query_scalar(key: &str, value: &Value) -> Result<String> {
     }
 }
 
-fn retry(error: Error, attempt: u32) -> Attempt {
-    Attempt::Retry {
+fn retry(error: Error, attempt: u32) -> RequestOutcome {
+    RequestOutcome::Retry {
         error,
         delay: retry_delay(attempt),
         rate_limited: false,

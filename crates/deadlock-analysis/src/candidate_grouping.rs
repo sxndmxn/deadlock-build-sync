@@ -3,14 +3,14 @@ use leiden_rs::{GraphDataBuilder, Leiden, LeidenConfig, QualityType};
 use serde_json::{Value, json};
 
 use crate::discovery_data::DiscoveryData;
-use crate::mining::Candidate;
+use crate::itemset_mining::ItemsetCandidate;
 
-pub fn group_candidates(candidates: &[Candidate], data: &DiscoveryData) -> Result<Value> {
+pub fn group_candidates(candidates: &[ItemsetCandidate], data: &DiscoveryData) -> Result<Value> {
     let weights = ownership_similarities(candidates, data)?;
     group_weights(candidates, &weights, true)
 }
 
-pub fn group_item_candidates(candidates: &[Candidate]) -> Result<Value> {
+pub fn group_item_candidates(candidates: &[ItemsetCandidate]) -> Result<Value> {
     let mut weights = vec![vec![0.0; candidates.len()]; candidates.len()];
     for first in 0..candidates.len() {
         weights[first][first] = 1.0;
@@ -32,7 +32,7 @@ pub fn group_item_candidates(candidates: &[Candidate]) -> Result<Value> {
 }
 
 fn group_weights(
-    candidates: &[Candidate],
+    candidates: &[ItemsetCandidate],
     weights: &[Vec<f64>],
     positive_edges: bool,
 ) -> Result<Value> {
@@ -84,7 +84,10 @@ fn group_weights(
     )
 }
 
-fn ownership_similarities(candidates: &[Candidate], data: &DiscoveryData) -> Result<Vec<Vec<f64>>> {
+fn ownership_similarities(
+    candidates: &[ItemsetCandidate],
+    data: &DiscoveryData,
+) -> Result<Vec<Vec<f64>>> {
     let masks = candidates
         .iter()
         .map(|candidate| {

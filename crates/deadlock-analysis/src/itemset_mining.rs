@@ -11,7 +11,7 @@ type SupportCounts = BTreeMap<Vec<usize>, u64>;
 type VerticalColumns = Vec<(usize, Vec<u64>)>;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Candidate {
+pub struct ItemsetCandidate {
     pub items: Vec<u64>,
     pub names: Vec<String>,
     pub cost: u64,
@@ -29,14 +29,14 @@ pub struct Candidate {
 }
 
 #[derive(Debug)]
-pub struct MiningResult {
-    pub candidates: Vec<Candidate>,
+pub struct ItemsetMiningResult {
+    pub candidates: Vec<ItemsetCandidate>,
     pub sizes: Value,
 }
 
-pub fn mine_candidates(data: &DiscoveryData, graph: &ItemGraph) -> Result<MiningResult> {
+pub fn mine_candidates(data: &DiscoveryData, graph: &ItemGraph) -> Result<ItemsetMiningResult> {
     let rows = data.fold_rows("discovery").collect::<Vec<_>>();
-    let mut result = MiningResult {
+    let mut result = ItemsetMiningResult {
         candidates: Vec::new(),
         sizes: json!({}),
     };
@@ -63,7 +63,7 @@ pub fn mine_candidates(data: &DiscoveryData, graph: &ItemGraph) -> Result<Mining
         let mut qualified = SupportCounts::new();
         let mut candidates = Vec::new();
         for (indices, count) in &raw {
-            if let Some(candidate) = qualify(
+            if let Some(candidate) = qualify_candidate(
                 data,
                 graph,
                 &marginal,
@@ -100,12 +100,12 @@ fn vertical_columns(data: &DiscoveryData, rows: &[usize]) -> VerticalColumns {
                     bits[index / 64] |= 1 << (index % 64);
                 }
             }
-            (population(&bits) >= 100).then_some((column, bits))
+            (count_set_bits(&bits) >= 100).then_some((column, bits))
         })
         .collect()
 }
 
-fn population(bits: &[u64]) -> u64 {
+fn count_set_bits(bits: &[u64]) -> u64 {
     bits.iter().map(|value| u64::from(value.count_ones())).sum()
 }
 
@@ -122,7 +122,7 @@ fn enumerate_itemsets(
         let mut next = prefix.to_vec();
         next.push(*column);
         if next.len() == length {
-            output.insert(next, population(bits));
+            output.insert(next, count_set_bits(bits));
             continue;
         }
         let suffix = columns[position + 1..]
@@ -133,14 +133,14 @@ fn enumerate_itemsets(
                     .zip(other)
                     .map(|(left, right)| left & right)
                     .collect::<Vec<_>>();
-                (population(&intersection) >= 100).then_some((*following, intersection))
+                (count_set_bits(&intersection) >= 100).then_some((*following, intersection))
             })
             .collect();
         enumerate_itemsets(&next, &suffix, length, output);
     }
 }
 
-fn qualify(
+fn qualify_candidate(
     data: &DiscoveryData,
     graph: &ItemGraph,
     marginal: &[f64],
@@ -148,7 +148,7 @@ fn qualify(
     columns: &[usize],
     count: u64,
     rows: u64,
-) -> Result<Option<Candidate>> {
+) -> Result<Option<ItemsetCandidate>> {
     let items = columns
         .iter()
         .map(|column| data.items[*column])
@@ -181,7 +181,7 @@ fn qualify(
     if lift < 1.1 {
         return Ok(None);
     }
-    Ok(Some(Candidate {
+    Ok(Some(ItemsetCandidate {
         names: assets.iter().map(|item| item.name.clone()).collect(),
         items,
         cost,

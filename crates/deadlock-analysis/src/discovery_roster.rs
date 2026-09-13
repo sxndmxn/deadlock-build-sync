@@ -120,7 +120,7 @@ fn validate_hero(
     let identifier = integer(hero, "id")?;
     eprintln!("Validating {}", hero["name"].as_str().unwrap_or("hero"));
     let database = context.open_database(identifier)?;
-    let ranks = crate::config::cohort_ranks(&report.cohort)?;
+    let ranks = crate::refresh_configuration::cohort_ranks(&report.cohort)?;
     let data = load_discovery_data(&database, identifier, &context.graph, ranks)?;
     let reviewed = report
         .rows

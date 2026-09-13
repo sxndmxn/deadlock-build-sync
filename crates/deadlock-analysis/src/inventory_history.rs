@@ -4,7 +4,7 @@ use deadlock_data::Result;
 use deadlock_input::ItemGraph;
 use serde::Deserialize;
 
-pub type Actor = (u64, u64);
+pub type MatchPlayer = (u64, u64);
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Purchase {

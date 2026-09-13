@@ -7,7 +7,7 @@ use deadlock_guides::{
 };
 use prost::Message;
 
-use crate::binary::checked_total;
+use crate::binary_reader::checked_total;
 use crate::build_metadata::extract_build;
 use crate::protobuf_schema::{
     AbilityOrder, AbilityPurchase, Category, Details, Envelope, HeroBuild, ItemModification,

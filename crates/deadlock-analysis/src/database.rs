@@ -7,7 +7,7 @@ use duckdb::{Connection, ToSql, types::Value as SqlValue};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
-use crate::config::ExtractionResources;
+use crate::refresh_configuration::ExtractionResources;
 
 pub type Parameters = BTreeMap<String, SqlValue>;
 

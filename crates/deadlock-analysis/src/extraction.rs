@@ -3,8 +3,8 @@ use deadlock_guides::{RankExpansion, calculate_rank_cutoffs};
 use duckdb::types::{TimeUnit, Value as SqlValue};
 use serde_json::{Value, json};
 
-use crate::config::{Cohort, DUCKLAKE_URL, ExtractionResources, RunPaths};
 use crate::database::{AnalysisDatabase, Parameters};
+use crate::refresh_configuration::{Cohort, DUCKLAKE_URL, ExtractionResources, RunPaths};
 use crate::sql_resources::load_sql;
 
 const TABLES: [&str; 12] = [

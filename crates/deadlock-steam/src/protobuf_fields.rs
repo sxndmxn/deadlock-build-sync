@@ -1,6 +1,6 @@
 use deadlock_data::{Error, Result};
 
-use crate::binary::{Cursor, MAX_VALUE_COUNT, checked_total};
+use crate::binary_reader::{BinaryCursor, MAX_VALUE_COUNT, checked_total};
 
 #[derive(Clone, Copy, Debug)]
 pub enum FieldValue<'data> {
@@ -18,7 +18,7 @@ pub struct Field<'data> {
 
 #[derive(Debug)]
 pub struct Fields<'data> {
-    input: Cursor<'data>,
+    input: BinaryCursor<'data>,
     remaining_fields: usize,
 }
 
@@ -26,7 +26,7 @@ impl<'data> Fields<'data> {
     pub(super) fn new(bytes: &'data [u8]) -> Result<Self> {
         checked_total([bytes.len()])?;
         Ok(Self {
-            input: Cursor::new(bytes),
+            input: BinaryCursor::new(bytes),
             remaining_fields: MAX_VALUE_COUNT,
         })
     }
@@ -76,13 +76,13 @@ impl<'data> Iterator for Fields<'data> {
         }
         let result = self.read();
         if result.is_err() {
-            self.input = Cursor::new(&[]);
+            self.input = BinaryCursor::new(&[]);
         }
         Some(result)
     }
 }
 
-pub fn varint(input: &mut Cursor<'_>) -> Result<u64> {
+pub fn varint(input: &mut BinaryCursor<'_>) -> Result<u64> {
     let mut value = 0_u64;
     for shift in (0..70).step_by(7) {
         let byte = input.byte()?;

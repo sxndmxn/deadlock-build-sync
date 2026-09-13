@@ -4,13 +4,13 @@ use deadlock_data::{Error, Result, count_ratio, integer, real};
 use serde_json::{Value, json};
 
 use crate::database::{AnalysisDatabase, Parameters};
-use crate::inventory_history::Actor;
+use crate::inventory_history::MatchPlayer;
 use crate::purchase_pool::replace_members;
 use crate::sql_resources::load_sql;
 
 pub fn load_item_metrics(
     database: &AnalysisDatabase,
-    members: &BTreeSet<Actor>,
+    members: &BTreeSet<MatchPlayer>,
     hero: u64,
     assets: &BTreeMap<u64, Value>,
     folds: &Value,

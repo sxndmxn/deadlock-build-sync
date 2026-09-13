@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use deadlock_data::{Error, Result, sha256};
 use serde_json::json;
 
-use crate::binary::MAX_BINARY_BYTES;
+use crate::binary_reader::MAX_BINARY_BYTES;
 use crate::cache_backup::create_backup;
 use crate::cache_files::{read_limited, sync_directory};
 use crate::cache_location::CacheLocation;

@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 #![deny(warnings)]
 
-mod binary;
+mod binary_reader;
 mod build_metadata;
 mod cache_backup;
 mod cache_discovery;

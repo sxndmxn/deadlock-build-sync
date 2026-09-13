@@ -1,6 +1,6 @@
 use deadlock_data::{Error, Result};
 
-use crate::binary::{Cursor, checked_total};
+use crate::binary_reader::{BinaryCursor, checked_total};
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Counts {
@@ -35,7 +35,7 @@ pub struct Version5 {
 }
 
 impl Header {
-    pub(super) fn read(input: &mut Cursor<'_>) -> Result<Self> {
+    pub(super) fn read(input: &mut BinaryCursor<'_>) -> Result<Self> {
         let magic = input.fixed::<4>()?;
         if magic[1..] != [0x33, 0x56, 0x4b] || !(2..=5).contains(&magic[0]) {
             return Err(Error::new("Expected binary KV3 version 2, 3, 4, or 5"));
@@ -90,7 +90,7 @@ impl Header {
 }
 
 impl Version5 {
-    fn read(input: &mut Cursor<'_>) -> Result<Self> {
+    fn read(input: &mut BinaryCursor<'_>) -> Result<Self> {
         let decoded0 = input.length()?;
         let encoded0 = input.length()?;
         let decoded1 = input.length()?;

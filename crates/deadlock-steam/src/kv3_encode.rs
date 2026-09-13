@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use deadlock_data::{Error, Result};
 
-use crate::binary::{MAX_VALUE_COUNT, check_count, check_depth, checked_total};
+use crate::binary_reader::{MAX_VALUE_COUNT, check_count, check_depth, checked_total};
 use crate::kv3_value::{Kv3Document, Kv3Flag, Kv3Kind, Kv3Value, TRAILER};
 
 #[derive(Debug)]

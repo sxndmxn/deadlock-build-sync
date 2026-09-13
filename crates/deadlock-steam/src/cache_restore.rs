@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 use deadlock_data::{Error, Result, sha256};
 use serde_json::{Value, json};
 
-use crate::binary::MAX_BINARY_BYTES;
+use crate::binary_reader::MAX_BINARY_BYTES;
 use crate::cache_backup::create_backup;
 use crate::cache_files::read_limited;
 use crate::cache_location::{CACHE_FILENAME, CacheLocation};

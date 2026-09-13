@@ -1,6 +1,6 @@
 use deadlock_data::{Error, Result};
 
-use crate::binary::{Cursor, checked_total};
+use crate::binary_reader::{BinaryCursor, checked_total};
 use crate::kv3_compression::{decompress, decompress_chain};
 use crate::kv3_decode::{DecodeBuffers, read_root};
 use crate::kv3_header::{Counts, Header};
@@ -14,7 +14,7 @@ use crate::kv3_value::{Kv3Document, Kv3Kind, TRAILER};
 /// Returns an error for unsupported formats, malformed data, or exceeded resource limits.
 pub fn decode_kv3(bytes: &[u8]) -> Result<Kv3Document> {
     checked_total([bytes.len()])?;
-    let mut input = Cursor::new(bytes);
+    let mut input = BinaryCursor::new(bytes);
     if bytes.starts_with(b"VKV\x03") {
         input.read(4)?;
         return read_legacy(&mut input);
@@ -40,7 +40,7 @@ pub fn decode_kv3(bytes: &[u8]) -> Result<Kv3Document> {
     })
 }
 
-fn read_v1(input: &mut Cursor<'_>) -> Result<Kv3Document> {
+fn read_v1(input: &mut BinaryCursor<'_>) -> Result<Kv3Document> {
     let format = input.fixed()?;
     let compression = input.u32()?;
     if compression > 1 {
@@ -59,21 +59,21 @@ fn read_v1(input: &mut Cursor<'_>) -> Result<Kv3Document> {
         input.remaining()
     };
     let data = decompress(input.read(encoded)?, expected, compression)?;
-    let mut payload = Cursor::new(&data);
+    let mut payload = BinaryCursor::new(&data);
     let mut primary = Streams::read(&mut payload, counts, true)?;
     let strings = read_strings(&mut payload, primary.integers.count()?)?;
     let type_size = payload
         .remaining()
         .checked_sub(4)
         .ok_or_else(|| Error::new("KV3 version 1 trailer is missing"))?;
-    let types = Cursor::new(payload.read(type_size)?);
+    let types = BinaryCursor::new(payload.read(type_size)?);
     read_trailer(&mut payload)?;
     let buffers = DecodeBuffers {
         primary,
         alternate: None,
         types,
         objects: None,
-        blobs: Cursor::new(&[]),
+        blobs: BinaryCursor::new(&[]),
         blob_lengths: Vec::new(),
         strings,
     };
@@ -86,7 +86,7 @@ fn read_v1(input: &mut Cursor<'_>) -> Result<Kv3Document> {
     })
 }
 
-fn read_v2_v4(input: &mut Cursor<'_>, header: &Header) -> Result<crate::kv3_value::Kv3Value> {
+fn read_v2_v4(input: &mut BinaryCursor<'_>, header: &Header) -> Result<crate::kv3_value::Kv3Value> {
     let expected = if header.compression == 2 {
         checked_total([header.decoded_size, header.blob_size])?
     } else {
@@ -97,9 +97,9 @@ fn read_v2_v4(input: &mut Cursor<'_>, header: &Header) -> Result<crate::kv3_valu
         expected,
         header.compression,
     )?;
-    let mut payload = Cursor::new(&data);
+    let mut payload = BinaryCursor::new(&data);
     let mut primary = Streams::read(&mut payload, header.counts, true)?;
-    let mut types = Cursor::new(payload.read(header.type_size)?);
+    let mut types = BinaryCursor::new(payload.read(header.type_size)?);
     let strings = read_strings(&mut types, primary.integers.count()?)?;
     let lengths = read_blob_lengths(&mut payload, header)?;
     let blobs = read_older_blobs(input, &mut payload, header, &lengths)?;
@@ -112,7 +112,7 @@ fn read_v2_v4(input: &mut Cursor<'_>, header: &Header) -> Result<crate::kv3_valu
         alternate: None,
         types,
         objects: None,
-        blobs: Cursor::new(&blobs),
+        blobs: BinaryCursor::new(&blobs),
         blob_lengths: lengths,
         strings,
     };
@@ -120,8 +120,8 @@ fn read_v2_v4(input: &mut Cursor<'_>, header: &Header) -> Result<crate::kv3_valu
 }
 
 fn read_older_blobs(
-    input: &mut Cursor<'_>,
-    payload: &mut Cursor<'_>,
+    input: &mut BinaryCursor<'_>,
+    payload: &mut BinaryCursor<'_>,
     header: &Header,
     lengths: &[usize],
 ) -> Result<Vec<u8>> {
@@ -144,7 +144,7 @@ fn read_older_blobs(
     }
 }
 
-fn read_v5(input: &mut Cursor<'_>, header: &Header) -> Result<crate::kv3_value::Kv3Value> {
+fn read_v5(input: &mut BinaryCursor<'_>, header: &Header) -> Result<crate::kv3_value::Kv3Value> {
     let version5 = header
         .version5
         .as_ref()
@@ -169,14 +169,14 @@ fn read_v5(input: &mut Cursor<'_>, header: &Header) -> Result<crate::kv3_value::
         version5.decoded[1],
         header.compression,
     )?;
-    let mut payload0 = Cursor::new(&data0);
+    let mut payload0 = BinaryCursor::new(&data0);
     let mut alternate = Streams::read(&mut payload0, header.counts, false)?;
     let strings = read_strings(&mut alternate.bytes, alternate.integers.count()?)?;
     payload0.finish("KV3 first data buffer")?;
-    let mut payload1 = Cursor::new(&data1);
-    let objects = Cursor::new(payload1.read(version5.object_count * 4)?);
+    let mut payload1 = BinaryCursor::new(&data1);
+    let objects = BinaryCursor::new(payload1.read(version5.object_count * 4)?);
     let primary = Streams::read(&mut payload1, version5.counts, false)?;
-    let types = Cursor::new(payload1.read(header.type_size)?);
+    let types = BinaryCursor::new(payload1.read(header.type_size)?);
     let lengths = read_blob_lengths(&mut payload1, header)?;
     let frames = read_frame_lengths(&mut payload1, header.blob_frame_count)?;
     payload1.finish("KV3 second data buffer")?;
@@ -189,7 +189,7 @@ fn read_v5(input: &mut Cursor<'_>, header: &Header) -> Result<crate::kv3_value::
         alternate: Some(alternate),
         types,
         objects: Some(objects),
-        blobs: Cursor::new(&blobs),
+        blobs: BinaryCursor::new(&blobs),
         blob_lengths: lengths,
         strings,
     };
@@ -197,7 +197,7 @@ fn read_v5(input: &mut Cursor<'_>, header: &Header) -> Result<crate::kv3_value::
 }
 
 fn read_v5_blobs(
-    input: &mut Cursor<'_>,
+    input: &mut BinaryCursor<'_>,
     header: &Header,
     lengths: &[usize],
     frames: &[usize],
@@ -227,7 +227,7 @@ fn read_v5_blobs(
     }
 }
 
-fn read_blob_lengths(payload: &mut Cursor<'_>, header: &Header) -> Result<Vec<usize>> {
+fn read_blob_lengths(payload: &mut BinaryCursor<'_>, header: &Header) -> Result<Vec<usize>> {
     let lengths = (0..header.blob_count)
         .map(|_| payload.length())
         .collect::<Result<Vec<_>>>()?;
@@ -238,11 +238,11 @@ fn read_blob_lengths(payload: &mut Cursor<'_>, header: &Header) -> Result<Vec<us
     Ok(lengths)
 }
 
-fn read_frame_lengths(payload: &mut Cursor<'_>, count: usize) -> Result<Vec<usize>> {
+fn read_frame_lengths(payload: &mut BinaryCursor<'_>, count: usize) -> Result<Vec<usize>> {
     (0..count).map(|_| payload.u16().map(usize::from)).collect()
 }
 
-fn read_trailer(input: &mut Cursor<'_>) -> Result<()> {
+fn read_trailer(input: &mut BinaryCursor<'_>) -> Result<()> {
     if input.u32()? != TRAILER {
         return Err(Error::new("KV3 trailer is invalid"));
     }
