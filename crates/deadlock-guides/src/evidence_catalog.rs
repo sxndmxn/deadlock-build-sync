@@ -3,8 +3,8 @@ use std::path::Path;
 use std::sync::Arc;
 
 use deadlock_data::{
-    EpochSet, Error, MatchMode, RankCatalog, RankRange, Result, array, fingerprint, object,
-    read_json_bytes,
+    EpochSet, Error, JsonRecordDocument, MatchMode, RankCatalog, RankRange, Result, array,
+    fingerprint, object, read_artifact_bytes,
 };
 use serde_json::Value;
 
@@ -42,8 +42,7 @@ impl BuildEvidenceCatalog {
     /// # Errors
     /// Returns an error when an evidence artifact is unreadable, malformed, or fails admission checks.
     pub fn read(path: &Path) -> Result<Self> {
-        let (bytes, document) = read_json_bytes(path)?;
-        Self::parse(bytes, &document).map_err(|error| error.context(path.display()))
+        Self::from_bytes(read_artifact_bytes(path)?).map_err(|error| error.context(path.display()))
     }
 
     /// # Errors
@@ -52,27 +51,31 @@ impl BuildEvidenceCatalog {
         if bytes.len() > 512 * 1024 * 1024 {
             return Err(Error::new("Build evidence exceeds the artifact size limit"));
         }
-        let document = serde_json::from_slice(&bytes)?;
-        Self::parse(bytes, &document)
+        Self::parse(bytes)
     }
 
-    fn parse(raw_bytes: Vec<u8>, document: &Value) -> Result<Self> {
-        let metadata = parse_header(document)?;
+    fn parse(raw_bytes: Vec<u8>) -> Result<Self> {
+        let document = JsonRecordDocument::parse(&raw_bytes, "heroes")?;
         let mut heroes = BTreeMap::new();
-        for row in array(&document["heroes"])? {
+        let content_sha256 = document.fingerprint("artifact_id", |row| {
             let hero = HeroEvidence::from_document(row)?;
-            validate_hero_groups(&hero, &metadata)?;
             if heroes.insert(hero.hero_id, hero).is_some() {
                 return Err(Error::new("Build evidence contains duplicate heroes"));
             }
+            Ok(())
+        })?;
+        let metadata = parse_header(document.header(), &content_sha256)?;
+        for hero in heroes.values() {
+            validate_hero_groups(hero, &metadata)?;
         }
         if heroes.keys().copied().collect::<BTreeSet<_>>() != metadata.requested_hero_ids {
             return Err(Error::new(
                 "Build evidence does not exactly cover its requested heroes",
             ));
         }
-        let assets = array(&document["mechanics_assets"])?;
-        if assets.is_empty() || fingerprint(&document["mechanics_assets"])? != metadata.items_sha256
+        let assets = array(&document.header()["mechanics_assets"])?;
+        if assets.is_empty()
+            || fingerprint(&document.header()["mechanics_assets"])? != metadata.items_sha256
         {
             return Err(Error::new(
                 "Build evidence has no compatible mechanics assets; run refresh-evidence",
@@ -122,16 +125,18 @@ impl BuildEvidenceCatalog {
         if requested == &self.data.metadata.requested_hero_ids {
             return Ok(self.clone());
         }
-        let mut document: Value = serde_json::from_slice(&self.data.raw_bytes)?;
-        let heroes = array(&document["heroes"])?
-            .iter()
-            .filter(|hero| {
-                hero["hero_id"]
-                    .as_u64()
-                    .is_some_and(|hero| requested.contains(&hero))
-            })
-            .cloned()
-            .collect::<Vec<_>>();
+        let source = JsonRecordDocument::parse(&self.data.raw_bytes, "heroes")?;
+        let mut heroes = Vec::new();
+        source.visit_records(|hero| {
+            if hero["hero_id"]
+                .as_u64()
+                .is_some_and(|id| requested.contains(&id))
+            {
+                heroes.push(hero.clone());
+            }
+            Ok(())
+        })?;
+        let mut document = source.into_header();
         document["heroes"] = heroes.into();
         document["requested_hero_ids"] = serde_json::to_value(requested)?;
         document["source_artifact_id"] = self.data.metadata.artifact_id.clone().into();

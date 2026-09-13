@@ -50,6 +50,15 @@ pub fn read_fingerprinted_json(path: &Path, expected_sha256: &str) -> Result<Val
 /// # Errors
 /// Returns an error if the file exceeds the size limit, cannot be read, or contains invalid JSON.
 pub fn read_json_bytes(path: &Path) -> Result<(Vec<u8>, Value)> {
+    let bytes = read_artifact_bytes(path)?;
+    let value = serde_json::from_slice(&bytes)
+        .map_err(|error| Error::from(error).context(path.display()))?;
+    Ok((bytes, value))
+}
+
+/// # Errors
+/// Returns an error if the file exceeds the JSON size limit or cannot be read.
+pub fn read_artifact_bytes(path: &Path) -> Result<Vec<u8>> {
     let mut bytes = Vec::new();
     File::open(path)?
         .take(MAXIMUM_JSON_BYTES + 1)
@@ -60,9 +69,7 @@ pub fn read_json_bytes(path: &Path) -> Result<(Vec<u8>, Value)> {
             path.display()
         )));
     }
-    let value = serde_json::from_slice(&bytes)
-        .map_err(|error| Error::from(error).context(path.display()))?;
-    Ok((bytes, value))
+    Ok(bytes)
 }
 
 /// # Errors

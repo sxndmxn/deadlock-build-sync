@@ -12,7 +12,7 @@ use deadlock_guides::{
 use deadlock_input::{BuildTagCatalog, DeadlockApi, ItemGraph};
 use serde_json::{Map, Value, json};
 
-use crate::generation_inputs::{collect_cohort_analytics, collect_hero_inputs};
+use crate::generation_inputs::{collect_hero_inputs, collect_roster_analytics};
 use crate::generation_projection::project_hero;
 use crate::generation_types::{GeneratedGuides, HeroInputs, select_heroes};
 
@@ -47,8 +47,8 @@ pub fn generate_guides(
     record_build_evidence(api, &evidence)?;
     let analytics = trace_operation(
         "guides.collect_cohort_analytics",
-        Some("collect_cohort_analytics"),
-        || collect_cohort_analytics(api, inputs.start),
+        Some("collect_roster_analytics"),
+        || collect_roster_analytics(api, &evidence, inputs.start),
     )?;
     let persona = if request.account_id == 0 {
         "Build Preview".into()

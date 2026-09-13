@@ -1,4 +1,4 @@
-use deadlock_data::{Result, fingerprint, object};
+use deadlock_data::{Result, fingerprint, fingerprint_without_field};
 use serde_json::{Map, Value, json};
 
 pub const CONTEXT_SCHEMA_VERSION: u8 = 17;
@@ -52,10 +52,4 @@ pub fn calculate_context_sha256(context: &Value) -> Result<String> {
 /// Returns an error when the context document is not an object or cannot serialize.
 pub fn calculate_source_context_sha256(document: &Value) -> Result<String> {
     fingerprint_without_field(document, "source_context_sha256")
-}
-
-fn fingerprint_without_field(value: &Value, field: &str) -> Result<String> {
-    let mut fields = object(value)?.clone();
-    fields.remove(field);
-    fingerprint(&fields.into())
 }
