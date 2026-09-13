@@ -7,7 +7,7 @@ use deadlock_guides::{
     load_artifact_guide_bundle,
 };
 use deadlock_input::DeadlockApi;
-use deadlock_steam::{BuildKey, CacheLocation, managed_build_descriptions, read_cache};
+use deadlock_steam::{BuildKey, CacheLocation, managed_builds_match, read_cache};
 use serde_json::{Value, json};
 
 pub fn build_freshness_report(
@@ -167,7 +167,7 @@ fn installed_stage(location: Result<CacheLocation>, directory: &Path) -> Value {
         Ok(false) => stage(
             "installed_cache",
             "stale",
-            "Managed builds differ from the expected coverage, snapshot, or policy",
+            "Managed builds differ from the expected coverage or guide contents",
         ),
         Err(error) => stage("installed_cache", "malformed", &error.to_string()),
     }
@@ -180,8 +180,6 @@ fn compare_installed(location: &CacheLocation, directory: &Path) -> Result<bool>
         &directory.join("narratives.json"),
         &directory.join("build-evidence.json"),
     )?;
-    let installed =
-        managed_build_descriptions(&read_cache(&location.cache_path)?, location.account_id)?;
     let expected = bundle
         .guides
         .iter()
@@ -198,9 +196,13 @@ fn compare_installed(location: &CacheLocation, directory: &Path) -> Result<bool>
                     hero_id: guide.hero_id,
                     path_id: guide.path_id.clone(),
                 },
-                presentation.content().description.clone(),
+                presentation,
             ))
         })
         .collect::<Result<BTreeMap<_, _>>>()?;
-    Ok(installed == expected)
+    managed_builds_match(
+        &read_cache(&location.cache_path)?,
+        location.account_id,
+        &expected,
+    )
 }

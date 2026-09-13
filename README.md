@@ -71,6 +71,12 @@ Use `--details` for complete optional routes.
 Use `--format json` for structured output.
 Use `--artifacts DIR` to select the output directory.
 
+Hero subsets preserve the main artifact directory and its full-roster evidence.
+For `--artifacts /path/artifacts`, subset builds use `/path/artifacts-subsets/HERO_ID`.
+The default directory follows the same rule.
+`build` reports the subset index path, and `sync` reports the subset artifact directory.
+Use that directory with `install-artifacts --artifacts DIR` to install the subset bundle.
+
 ## Evidence and guide rules
 
 Each snapshot pins the client version, patch, cutoff, rank labels, cohort, assets, roster, and independent epochs.
@@ -176,6 +182,16 @@ Every included hero must still pass complete coverage and fingerprint checks.
 | `trace-summary` | Display a bounded execution trace summary |
 
 `status` returns 0 for current data, 2 when regeneration is required, and 1 for malformed or unavailable inputs.
+It compares managed item panels, queue flags, ability orders, annotations, descriptions, and tags with the reviewed bundle.
+Build titles and Steam identity timestamps do not affect this comparison.
+
+`install-artifacts` checks the current patch and client version before installation.
+It requires network access for these checks but makes no new analytics requests.
+Stale bundles and unavailable freshness checks prevent installation.
+
+`restore --latest` selects the latest backup for the selected account and canonical cache path.
+Backups for other Steam installations do not affect this selection.
+
 Use `--help` on each command for its input requirements.
 The review commands `preview`, `install`, and `export-context` require `--hero NAME` or `--all`.
 They discover the selected Steam account.

@@ -42,7 +42,7 @@ fn dispatch(cli: &Cli) -> Result<u8> {
         Command::Preview(args) => run_preview(args, base_url),
         Command::Install(args) => run_install(args, base_url),
         Command::ExportContext(args) => run_export(args, base_url),
-        Command::InstallArtifacts(args) => run_install_artifacts(args),
+        Command::InstallArtifacts(args) => run_install_artifacts(args, base_url),
         Command::GenerateNarratives(args) => run_narratives(args),
         Command::Restore(args) => run_restore(args),
         Command::QualityReport(args) => run_quality(args),

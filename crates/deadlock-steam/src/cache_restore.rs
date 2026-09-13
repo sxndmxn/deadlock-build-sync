@@ -33,7 +33,9 @@ pub fn restore_latest(
     let _lock = lock_cache(location)?;
     let source_directory = latest_backup(location, state_directory)?;
     let manifest = read_manifest(&source_directory)?;
-    validate_backup_identity(location, &manifest)?;
+    if !backup_matches_location(location, &manifest)? {
+        return Err(Error::new("Backup identity differs from the destination"));
+    }
     let source = read_cache(&source_directory.join(CACHE_FILENAME))?;
     if let Some(expected) = manifest.get("cache_sha256").and_then(Value::as_str)
         && source.fingerprint() != expected
@@ -72,6 +74,9 @@ fn latest_backup(location: &CacheLocation, state_directory: &Path) -> Result<Pat
             continue;
         }
         let manifest = read_manifest(&path)?;
+        if !backup_matches_location(location, &manifest)? {
+            continue;
+        }
         let created = manifest["created_at"]
             .as_str()
             .ok_or_else(|| Error::new("Backup manifest has no creation time"))?;
@@ -84,7 +89,7 @@ fn latest_backup(location: &CacheLocation, state_directory: &Path) -> Result<Pat
     }
     latest
         .map(|(_, path)| path)
-        .ok_or_else(|| Error::new("No complete Steam cache backup exists for this account"))
+        .ok_or_else(|| Error::new("No complete Steam cache backup exists for this destination"))
 }
 
 fn read_manifest(directory: &Path) -> Result<Value> {
@@ -92,19 +97,16 @@ fn read_manifest(directory: &Path) -> Result<Value> {
     Ok(serde_json::from_slice(&bytes)?)
 }
 
-fn validate_backup_identity(location: &CacheLocation, manifest: &Value) -> Result<()> {
+fn backup_matches_location(location: &CacheLocation, manifest: &Value) -> Result<bool> {
     if manifest["account_id"].as_u64() != Some(u64::from(location.account_id)) {
-        return Err(Error::new(
-            "Backup account does not match the destination account",
-        ));
+        return Ok(false);
     }
     let path = manifest["cache_path"]
         .as_str()
         .ok_or_else(|| Error::new("Backup manifest has no cache path"))?;
-    if Path::new(path).canonicalize()? != location.cache_path.canonicalize()? {
-        return Err(Error::new(
-            "Backup cache path does not match the destination",
-        ));
+    match Path::new(path).canonicalize() {
+        Ok(path) => Ok(path == location.cache_path.canonicalize()?),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error.into()),
     }
-    Ok(())
 }

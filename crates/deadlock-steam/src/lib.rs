@@ -35,7 +35,7 @@ pub use cache_plan::{CacheUpdate, prepare_cache_update};
 pub use cache_read::{SteamCache, read_cache};
 pub use cache_request::{BuildKey, CacheUpdateRequest, ManagedBuild};
 pub use cache_restore::{RestoreResult, restore_latest};
-pub use cache_status::managed_build_descriptions;
+pub use cache_status::managed_builds_match;
 pub use cache_transaction::{InstallResult, install_cache_update};
 pub use kv3_encode::encode_kv3;
 pub use kv3_read::decode_kv3;

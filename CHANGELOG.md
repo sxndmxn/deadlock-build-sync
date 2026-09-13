@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Preserve full-roster artifacts when `build` or `sync` selects one hero.
+  Write subset bundles to an adjacent directory and report their location.
+- Check the current patch and client version before installing reviewed artifacts.
+- Compare complete managed guide contents when reporting installed-build freshness.
+- Select restore backups by account and canonical cache path before comparing creation times.
+
 - Calculate purchase-pool statistics and checkpoint counts in DuckDB.
   Reuse extracted first purchases and preserve purchase-order rules.
 - Calculate checkpoint wealth and select checkpoint fields in SQL.

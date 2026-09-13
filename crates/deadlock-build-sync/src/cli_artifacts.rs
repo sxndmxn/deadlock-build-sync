@@ -8,11 +8,12 @@ use deadlock_steam::{
 use serde_json::json;
 
 use crate::cli_arguments::{InstallArtifactArguments, NarrativeArguments, RestoreArguments};
+use crate::cli_generation::require_current_build_identity;
 use crate::cli_installation::{InstallationParameters, install_guides, print_installation};
 use crate::cli_output::print_json;
 use crate::cli_paths::{absolute_path, artifact_directory, cache_location, home_directory};
 
-pub fn run_install_artifacts(args: &InstallArtifactArguments) -> Result<u8> {
+pub fn run_install_artifacts(args: &InstallArtifactArguments, base_url: &str) -> Result<u8> {
     let location = cache_location(&args.location)?;
     require_deadlock_stopped()?;
     let directory = artifact_directory(args.artifacts.as_deref())?;
@@ -21,6 +22,11 @@ pub fn run_install_artifacts(args: &InstallArtifactArguments) -> Result<u8> {
         &directory.join("policies.json"),
         &directory.join("narratives.json"),
         &directory.join("build-evidence.json"),
+    )?;
+    require_current_build_identity(
+        bundle.manifest.content().client_version,
+        &bundle.manifest.content().patch,
+        base_url,
     )?;
     let persona = args
         .persona
