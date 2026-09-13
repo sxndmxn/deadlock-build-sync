@@ -2,7 +2,7 @@ use std::io::Read;
 
 use deadlock_data::{Error, Result};
 
-use crate::binary::{Cursor, MAX_BINARY_BYTES, checked_total};
+use crate::binary_reader::{BinaryCursor, MAX_BINARY_BYTES, checked_total};
 
 pub fn decompress(bytes: &[u8], expected: usize, method: u32) -> Result<Vec<u8>> {
     checked_total([expected])?;
@@ -39,7 +39,7 @@ fn decompress_zstandard(bytes: &[u8], expected: usize) -> Result<Vec<u8>> {
 }
 
 pub fn decompress_chain(
-    input: &mut Cursor<'_>,
+    input: &mut BinaryCursor<'_>,
     lengths: &[usize],
     encoded: &[usize],
     frame_size: usize,

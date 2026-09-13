@@ -59,7 +59,7 @@ pub fn real(value: &Value, name: &str) -> Result<f64> {
 /// Returns an error if JSON serialization fails.
 pub fn canonical_json(value: &Value) -> Result<Vec<u8>> {
     let mut output = String::new();
-    write_value(value, &mut output)?;
+    write_json_value(value, &mut output)?;
     Ok(output.into_bytes())
 }
 
@@ -80,14 +80,14 @@ pub fn sha256(bytes: &[u8]) -> String {
     output
 }
 
-fn write_value(value: &Value, output: &mut String) -> Result<()> {
+fn write_json_value(value: &Value, output: &mut String) -> Result<()> {
     match value {
         Value::Null => output.push_str("null"),
         Value::Bool(value) => output.push_str(if *value { "true" } else { "false" }),
         Value::Number(value) => {
             let encoded = value.to_string();
             if value.is_f64() {
-                output.push_str(&python_float(&encoded)?);
+                output.push_str(&format_python_float(&encoded)?);
             } else {
                 output.push_str(&encoded);
             }
@@ -99,7 +99,7 @@ fn write_value(value: &Value, output: &mut String) -> Result<()> {
                 if index != 0 {
                     output.push(',');
                 }
-                write_value(value, output)?;
+                write_json_value(value, output)?;
             }
             output.push(']');
         }
@@ -113,7 +113,7 @@ fn write_value(value: &Value, output: &mut String) -> Result<()> {
                 }
                 output.push_str(&serde_json::to_string(key)?);
                 output.push(':');
-                write_value(value, output)?;
+                write_json_value(value, output)?;
             }
             output.push('}');
         }
@@ -121,7 +121,7 @@ fn write_value(value: &Value, output: &mut String) -> Result<()> {
     Ok(())
 }
 
-fn python_float(encoded: &str) -> Result<String> {
+fn format_python_float(encoded: &str) -> Result<String> {
     let (sign, unsigned) = encoded
         .strip_prefix('-')
         .map_or(("", encoded), |value| ("-", value));

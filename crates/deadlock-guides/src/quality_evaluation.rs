@@ -24,10 +24,10 @@ struct ReplayOutcome<'case> {
 }
 
 impl ReplayOutcome<'_> {
-    fn valid(&self) -> bool {
+    fn is_valid(&self) -> bool {
         self.action != "invalid"
     }
-    fn covered(&self) -> bool {
+    fn is_covered(&self) -> bool {
         matches!(self.action, "buy" | "save" | "end")
     }
 }
@@ -57,16 +57,18 @@ pub fn evaluate_policy(
             ));
         }
     }
-    let strata = group_outcomes(&outcomes, evidence);
+    let strata = group_replay_outcomes(&outcomes, evidence);
     let supported = strata.values().all(|rows| {
         rows.iter()
-            .filter(|row| row.covered() && !row.case.ambiguous_purchase)
+            .filter(|row| row.is_covered() && !row.case.ambiguous_purchase)
             .map(|row| &row.case.match_group)
             .collect::<BTreeSet<_>>()
             .len()
             >= MINIMUM_REPLAY_MATCHES
     });
-    let failed = outcomes.iter().any(|row| !row.valid() || row.illegal_buy);
+    let failed = outcomes
+        .iter()
+        .any(|row| !row.is_valid() || row.illegal_buy);
     let ranks = outcomes
         .iter()
         .map(|row| row.case.state.content().average_badge / 10)
@@ -76,7 +78,7 @@ pub fn evaluate_policy(
         .map(|rank| {
             Ok((
                 rank.to_string(),
-                summarize(
+                summarize_replay_outcomes(
                     &outcomes
                         .iter()
                         .filter(|row| row.case.state.content().average_badge / 10 == *rank)
@@ -91,7 +93,7 @@ pub fn evaluate_policy(
         "minimum_matches":MINIMUM_REPLAY_MATCHES,"reason":if failed {"Replay contains invalid states or illegal purchases"}
             else if supported {"Technical replay checks passed. Strategic superiority remains unproven"}
             else {"One or more required groups lack independent replay matches"},
-        "summary":summarize(&outcomes.iter().collect::<Vec<_>>())?,"strata":strata.iter().map(|(name, rows)| Ok((*name, summarize(rows)?))).collect::<Result<BTreeMap<_, _>>>()?,
+        "summary":summarize_replay_outcomes(&outcomes.iter().collect::<Vec<_>>())?,"strata":strata.iter().map(|(name, rows)| Ok((*name, summarize_replay_outcomes(rows)?))).collect::<Result<BTreeMap<_, _>>>()?,
         "rank_tiers":rank_tiers,"claim":"The report measures action agreement, coverage, and legality. It does not establish item effects or improved match outcomes."}),
     )
 }
@@ -114,7 +116,7 @@ fn evaluate_case<'case>(
         };
     };
     let buy = decision.action == RecommendationAction::Buy;
-    let baseline = baseline_item(evidence, case, graph);
+    let baseline = select_baseline_item(evidence, case, graph);
     ReplayOutcome {
         case,
         action: action_name(decision.action),
@@ -127,7 +129,7 @@ fn evaluate_case<'case>(
                     && case.observed_item_id == Some(id)
             },
         ),
-        illegal_buy: buy && !legal_buy(&decision, case, graph),
+        illegal_buy: buy && !can_purchase_recommendation(&decision, case, graph),
     }
 }
 
@@ -140,7 +142,7 @@ const fn action_name(action: RecommendationAction) -> &'static str {
     }
 }
 
-fn baseline_item(
+fn select_baseline_item(
     evidence: &HeroBuildEvidence,
     case: &ReplayCase,
     graph: &ItemGraph,
@@ -171,7 +173,11 @@ fn baseline_item(
         .map(|item| item.item_id)
 }
 
-fn legal_buy(decision: &Recommendation, case: &ReplayCase, graph: &ItemGraph) -> bool {
+fn can_purchase_recommendation(
+    decision: &Recommendation,
+    case: &ReplayCase,
+    graph: &ItemGraph,
+) -> bool {
     let state = case.state.content();
     let Some(id) = decision.item_id else {
         return false;
@@ -187,7 +193,7 @@ fn legal_buy(decision: &Recommendation, case: &ReplayCase, graph: &ItemGraph) ->
             .is_ok_and(|cost| cost <= state.liquid_souls && Some(cost) == decision.incremental_cost)
 }
 
-fn group_outcomes<'outcomes, 'case>(
+fn group_replay_outcomes<'outcomes, 'case>(
     outcomes: &'outcomes [ReplayOutcome<'case>],
     evidence: &HeroBuildEvidence,
 ) -> BTreeMap<&'static str, Vec<&'outcomes ReplayOutcome<'case>>> {
@@ -224,11 +230,11 @@ fn group_outcomes<'outcomes, 'case>(
     groups
 }
 
-fn summarize(outcomes: &[&ReplayOutcome<'_>]) -> Result<Value> {
+fn summarize_replay_outcomes(outcomes: &[&ReplayOutcome<'_>]) -> Result<Value> {
     let usable = outcomes
         .iter()
         .copied()
-        .filter(|row| row.valid())
+        .filter(|row| row.is_valid())
         .collect::<Vec<_>>();
     let scored = usable
         .iter()
@@ -242,7 +248,7 @@ fn summarize(outcomes: &[&ReplayOutcome<'_>]) -> Result<Value> {
     Ok(
         json!({"decisions":outcomes.len(),"matches":usable.iter().map(|row| &row.case.match_group).collect::<BTreeSet<_>>().len(),
         "invalid_states":outcomes.len() - usable.len(),"illegal_buys":outcomes.iter().filter(|row| row.illegal_buy).count(),"actions":actions,
-        "decision_coverage":ratio(usable.iter().filter(|row| row.covered()).count(), outcomes.len())?,
+        "decision_coverage":ratio(usable.iter().filter(|row| row.is_covered()).count(), outcomes.len())?,
         "affordable_buy_share":ratio(actions.get("buy").copied().unwrap_or(0), usable.len())?,
         "scored_decisions":scored.len(),"ambiguous_decisions":usable.len() - scored.len(),
         "top1_action_agreement":ratio(scored.iter().filter(|row| row.agreement).count(), scored.len())?,

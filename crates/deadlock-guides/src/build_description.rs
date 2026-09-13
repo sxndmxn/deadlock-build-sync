@@ -18,7 +18,7 @@ pub fn build_description(
     let queue = if guide.match_mode.is_empty() {
         "Unresolved".into()
     } else {
-        title_case(&guide.match_mode)
+        format_title_case(&guide.match_mode)
     };
     let ranks = if guide.rank_identity.is_empty() {
         ranks.label()
@@ -34,7 +34,7 @@ pub fn build_description(
             "{queue} • {ranks} • data through {} • client {version}.",
             format_date(guide.as_of_timestamp, false)?
         ),
-        queue_rule(guide, categories).into(),
+        describe_queue_rules(guide, categories).into(),
         "Buy the selected path in the listed order. Keep its optional items with that path.".into(),
     ];
     if !guide.variant_guides.is_empty() {
@@ -64,13 +64,16 @@ pub fn build_description(
         MANAGED_MARKER.into(),
         format!("Build path: {}.", guide.path_id),
         format!("Patch: {patch_title} ({patch_published_at})."),
-        format!("Snapshot: {}.", resolved(&guide.snapshot_id)),
-        format!("Policy: {}.", resolved(&guide.policy_id)),
+        format!(
+            "Snapshot: {}.",
+            identifier_or_placeholder(&guide.snapshot_id)
+        ),
+        format!("Policy: {}.", identifier_or_placeholder(&guide.policy_id)),
     ]);
     Ok(lines.join("\n"))
 }
 
-const fn resolved(value: &str) -> &str {
+const fn identifier_or_placeholder(value: &str) -> &str {
     if value.is_empty() {
         "UNRESOLVED"
     } else {
@@ -78,7 +81,7 @@ const fn resolved(value: &str) -> &str {
     }
 }
 
-fn queue_rule(guide: &PurchaseGuide, categories: &[GuideCategory]) -> &'static str {
+fn describe_queue_rules(guide: &PurchaseGuide, categories: &[GuideCategory]) -> &'static str {
     if categories.iter().any(|category| category.compact) {
         "Queue follows MAIN CORE only. All other panels are optional."
     } else if guide.purchase_guidance.is_some() {
@@ -150,7 +153,7 @@ fn describe_purchase_details(guide: &PurchaseGuide) -> Result<Vec<String>> {
     Ok(lines)
 }
 
-fn title_case(value: &str) -> String {
+fn format_title_case(value: &str) -> String {
     let mut start = true;
     let mut result = String::new();
     for character in value.chars() {

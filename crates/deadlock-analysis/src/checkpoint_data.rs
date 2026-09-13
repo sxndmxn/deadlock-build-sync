@@ -6,10 +6,10 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::database::{AnalysisDatabase, Parameters};
-use crate::inventory_history::{Actor, Purchase, inventory_before};
+use crate::inventory_history::{MatchPlayer, Purchase, reconstruct_inventory_before};
 use crate::sql_resources::load_sql;
 
-type Histories = BTreeMap<u64, BTreeMap<u64, (u64, Vec<Purchase>)>>;
+type MatchPurchaseHistories = BTreeMap<u64, BTreeMap<u64, (u64, Vec<Purchase>)>>;
 
 #[derive(Debug, Deserialize)]
 struct TeamPurchase {
@@ -37,13 +37,13 @@ pub fn load_checkpoints(
         ("minimum".into(), i64::from(minimum).into()),
         ("maximum".into(), i64::from(maximum).into()),
     ]);
-    let mut histories = Histories::new();
+    let mut purchase_histories = MatchPurchaseHistories::new();
     database.visit_rows(
         load_sql("discovery/select_purchase_event_histories.sql")?,
         &parameters,
         |row: TeamPurchase| {
             let purchase = row.purchase;
-            histories
+            purchase_histories
                 .entry(purchase.match_id)
                 .or_default()
                 .entry(purchase.player_slot)
@@ -61,28 +61,33 @@ pub fn load_checkpoints(
         &parameters,
         |input: DecisionRow| {
             let mut row = input.decision;
-            let actor: Actor = (integer(&row, "match_id")?, integer(&row, "player_slot")?);
+            let match_player: MatchPlayer =
+                (integer(&row, "match_id")?, integer(&row, "player_slot")?);
             let team = input.team_id;
             let clock = integer(&row, "buy_time")?;
-            if previous_match != Some(actor.0) {
+            if previous_match != Some(match_player.0) {
                 enemy_cache.clear();
-                previous_match = Some(actor.0);
+                previous_match = Some(match_player.0);
             }
-            let inventory = histories
-                .get(&actor.0)
-                .and_then(|players| players.get(&actor.1))
+            let inventory = purchase_histories
+                .get(&match_player.0)
+                .and_then(|players| players.get(&match_player.1))
                 .map_or(&[][..], |(_, purchases)| purchases.as_slice());
-            row["owned_before"] = json!(inventory_before(inventory, graph, i64::try_from(clock)?)?);
+            row["owned_before"] = json!(reconstruct_inventory_before(
+                inventory,
+                graph,
+                i64::try_from(clock)?
+            )?);
             let enemy_observed = input.enemy_observed;
             row["enemy_items"] = json!(
                 enemy_observed
                     .map(|observed| {
-                        let key = (actor.0, team, observed);
+                        let key = (match_player.0, team, observed);
                         if let std::collections::btree_map::Entry::Vacant(entry) =
                             enemy_cache.entry(key)
                         {
                             entry.insert(enemy_inventory(
-                                histories.get(&actor.0),
+                                purchase_histories.get(&match_player.0),
                                 team,
                                 observed,
                                 graph,
@@ -113,7 +118,7 @@ fn enemy_inventory(
         .filter(|(owner, _)| *owner != team)
     {
         let _ = owner;
-        result.extend(inventory_before(
+        result.extend(reconstruct_inventory_before(
             purchases,
             graph,
             i64::try_from(observed)?.saturating_add(1),

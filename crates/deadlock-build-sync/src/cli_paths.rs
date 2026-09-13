@@ -48,11 +48,15 @@ pub fn evidence_path(configured: Option<&Path>, artifacts: Option<&Path>) -> Res
     )
 }
 
-pub fn cache_location(args: &LocationArguments) -> Result<CacheLocation> {
+pub fn cache_location(arguments: &LocationArguments) -> Result<CacheLocation> {
     discover_cache(
         &CacheSearch {
-            account_id: args.account_id,
-            cache_path: args.cache_path.as_deref().map(absolute_path).transpose()?,
+            account_id: arguments.account_id,
+            cache_path: arguments
+                .cache_path
+                .as_deref()
+                .map(absolute_path)
+                .transpose()?,
             steam_root: None,
         },
         &home_directory()?,

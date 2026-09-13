@@ -4,19 +4,19 @@ use deadlock_data::{RankRange, Result, integer, sha256};
 use deadlock_guides::{SUPPORT, calculate_rank_cutoffs};
 use serde_json::{Value, json};
 
-use crate::branch_candidates::{freeze_candidates, freeze_substitutions};
+use crate::branch_candidates::{add_substitution_candidates, build_branch_candidates};
+use crate::candidate_grouping::{group_candidates, group_item_candidates};
 use crate::checkpoint_data::load_checkpoints;
 use crate::core_outcomes::evaluate_core;
 use crate::database::AnalysisDatabase;
 use crate::discovery_data::{DiscoveryData, load_discovery_data};
 use crate::discovery_models::{ExportContext, FrozenHero, Nomination, item_ids};
-use crate::grouping::{group_candidates, group_item_candidates};
+use crate::itemset_mining::{ItemsetCandidate, mine_candidates};
 use crate::mechanic_overlap::describe_overlap;
-use crate::mining::{Candidate, mine_candidates};
 use crate::purchase_orders::select_order;
-use crate::purchase_pool::freeze_guide;
+use crate::purchase_pool::build_guide_snapshot;
 
-pub fn core_identity(hero: u64, items: &[u64]) -> String {
+pub fn calculate_core_identity(hero: u64, items: &[u64]) -> String {
     let mut items = items.to_vec();
     items.sort_unstable();
     let content = format!(
@@ -30,7 +30,7 @@ pub fn core_identity(hero: u64, items: &[u64]) -> String {
     format!("{hero}-{}", &sha256(content.as_bytes())[..16])
 }
 
-pub fn freeze_hero(hero: &Value, context: &ExportContext) -> Result<FrozenHero> {
+pub fn discover_hero_builds(hero: &Value, context: &ExportContext) -> Result<FrozenHero> {
     let identifier = integer(hero, "id")?;
     eprintln!("Discovering {}", hero["name"].as_str().unwrap_or("hero"));
     let database = context.open_database(identifier)?;
@@ -86,9 +86,9 @@ pub fn freeze_hero(hero: &Value, context: &ExportContext) -> Result<FrozenHero> 
                 ranks.maximum.badge(),
             )?;
             for row in &mut rows {
-                row.branch_candidates = freeze_candidates(&decisions, row, &context.graph)?;
+                row.branch_candidates = build_branch_candidates(&decisions, row, &context.graph)?;
             }
-            freeze_substitutions(&decisions, &mut rows, &context.graph)?;
+            add_substitution_candidates(&decisions, &mut rows, &context.graph)?;
         }
         final_result = Some(FrozenHero {
             cohort: json!({"minimum_badge":minimum.badge(),"maximum_badge":ranks.maximum.badge(),"rank_expansion":context.expansion,"expansion_history":history}),
@@ -108,7 +108,7 @@ fn select_nominations(
     database: &AnalysisDatabase,
     hero: &Value,
     data: &DiscoveryData,
-    candidates: &mut [Candidate],
+    candidates: &mut [ItemsetCandidate],
     context: &ExportContext,
 ) -> Result<(Vec<Nomination>, Value)> {
     candidates.sort_by(|left, right| left.items.cmp(&right.items));
@@ -120,7 +120,7 @@ fn select_nominations(
         .flat_map(|(group, indices)| indices.iter().map(move |index| (*index, group)))
         .collect::<BTreeMap<_, _>>();
     for candidate in &mut *candidates {
-        candidate.identity_id = core_identity(data.hero, &candidate.items);
+        candidate.identity_id = calculate_core_identity(data.hero, &candidate.items);
         candidate.selection = evaluate_core(data, &candidate.items, "selection")?;
         candidate.selection_rejections = SUPPORT.core_reasons(
             candidate.discovery_support,
@@ -133,7 +133,7 @@ fn select_nominations(
     ranked.sort_by(|left, right| {
         let first = &candidates[*left];
         let second = &candidates[*right];
-        let lower = |candidate: &Candidate| {
+        let lower = |candidate: &ItemsetCandidate| {
             candidate.selection["adjusted"]["lower_95"]
                 .as_f64()
                 .unwrap_or(f64::NEG_INFINITY)
@@ -153,7 +153,7 @@ fn select_nominations(
         if used.contains(&memberships[&index]) {
             continue;
         }
-        match nominate(database, hero, data, &candidates[index], rank, context) {
+        match build_nomination(database, hero, data, &candidates[index], rank, context) {
             Ok(nomination) => {
                 used.insert(memberships[&index]);
                 rows.push(nomination);
@@ -166,11 +166,11 @@ fn select_nominations(
     Ok((rows, grouping))
 }
 
-fn nominate(
+fn build_nomination(
     database: &AnalysisDatabase,
     hero: &Value,
     data: &DiscoveryData,
-    candidate: &Candidate,
+    candidate: &ItemsetCandidate,
     rank: usize,
     context: &ExportContext,
 ) -> Result<Nomination> {
@@ -180,7 +180,7 @@ fn nominate(
             path["reason"].as_str().unwrap_or("No supported legal path"),
         ));
     }
-    let guide = freeze_guide(
+    let guide = build_guide_snapshot(
         database,
         data,
         &candidate.items,

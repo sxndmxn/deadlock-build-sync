@@ -7,9 +7,9 @@ use deadlock_data::{
 use deadlock_guides::CURRENT_METHOD_VERSION;
 use serde_json::{Value, json};
 
-use crate::config::RunPaths;
 use crate::core_discovery::assign_group_ids;
 use crate::discovery_models::FrozenHero;
+use crate::refresh_configuration::RunPaths;
 
 pub type FrozenRoster = BTreeMap<u64, FrozenHero>;
 pub type GuideGroups = BTreeMap<u64, BTreeMap<String, String>>;

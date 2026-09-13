@@ -7,7 +7,7 @@ use duckdb::{Connection, ToSql, types::Value as SqlValue};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
-use crate::config::ExtractionResources;
+use crate::refresh_configuration::ExtractionResources;
 
 pub type Parameters = BTreeMap<String, SqlValue>;
 
@@ -21,12 +21,12 @@ impl AnalysisDatabase {
         resources.validate()?;
         let configuration = duckdb::Config::default()
             .threads(i64::from(resources.threads))
-            .map_err(|error| database_error(&error))?
+            .map_err(|error| convert_database_error(&error))?
             .max_memory(&format!("{}MB", resources.memory_limit_mb))
-            .map_err(|error| database_error(&error))?;
+            .map_err(|error| convert_database_error(&error))?;
         Ok(Self {
             connection: Connection::open_with_flags(path, configuration)
-                .map_err(|error| database_error(&error))?,
+                .map_err(|error| convert_database_error(&error))?,
         })
     }
 
@@ -34,16 +34,16 @@ impl AnalysisDatabase {
         std::fs::create_dir_all(temporary)?;
         let configuration = duckdb::Config::default()
             .access_mode(duckdb::AccessMode::ReadOnly)
-            .map_err(|error| database_error(&error))?
+            .map_err(|error| convert_database_error(&error))?
             .threads(1)
-            .map_err(|error| database_error(&error))?
+            .map_err(|error| convert_database_error(&error))?
             .max_memory("512MiB")
-            .map_err(|error| database_error(&error))?
+            .map_err(|error| convert_database_error(&error))?
             .with("temp_directory", temporary.to_string_lossy())
-            .map_err(|error| database_error(&error))?;
+            .map_err(|error| convert_database_error(&error))?;
         Ok(Self {
             connection: Connection::open_with_flags(path, configuration)
-                .map_err(|error| database_error(&error))?,
+                .map_err(|error| convert_database_error(&error))?,
         })
     }
 
@@ -52,11 +52,11 @@ impl AnalysisDatabase {
             if parameters.is_empty() {
                 self.connection
                     .execute_batch(sql)
-                    .map_err(|error| database_error(&error))?;
+                    .map_err(|error| convert_database_error(&error))?;
             } else {
                 self.connection
-                    .execute(sql, parameter_references(parameters).as_slice())
-                    .map_err(|error| database_error(&error))?;
+                    .execute(sql, collect_parameter_references(parameters).as_slice())
+                    .map_err(|error| convert_database_error(&error))?;
             }
             Ok(())
         })
@@ -66,7 +66,7 @@ impl AnalysisDatabase {
         for attempt in 0..4 {
             match self.execute(sql, parameters) {
                 Ok(()) => return Ok(()),
-                Err(error) if attempt < 3 && retryable(&error) => {
+                Err(error) if attempt < 3 && is_retryable_error(&error) => {
                     let delay = 1 << attempt;
                     eprintln!("Remote snapshot data is unavailable. Retry after {delay} seconds");
                     std::thread::sleep(Duration::from_secs(delay));
@@ -79,10 +79,12 @@ impl AnalysisDatabase {
 
     pub fn count(&self, sql: &str, parameters: &Parameters) -> Result<u64> {
         self.connection
-            .query_row(sql, parameter_references(parameters).as_slice(), |row| {
-                row.get(0)
-            })
-            .map_err(|error| database_error(&error))
+            .query_row(
+                sql,
+                collect_parameter_references(parameters).as_slice(),
+                |row| row.get(0),
+            )
+            .map_err(|error| convert_database_error(&error))
     }
 
     pub fn query(&self, sql: &str, parameters: &Parameters) -> Result<Vec<Value>> {
@@ -116,15 +118,15 @@ impl AnalysisDatabase {
             let mut statement = self
                 .connection
                 .prepare(&query)
-                .map_err(|error| database_error(&error))?;
+                .map_err(|error| convert_database_error(&error))?;
             let rows = statement
-                .query_map(parameter_references(parameters).as_slice(), |row| {
+                .query_map(collect_parameter_references(parameters).as_slice(), |row| {
                     row.get::<_, String>(0)
                 })
-                .map_err(|error| database_error(&error))?;
+                .map_err(|error| convert_database_error(&error))?;
             for row in rows {
                 visit(serde_json::from_str(
-                    &row.map_err(|error| database_error(&error))?,
+                    &row.map_err(|error| convert_database_error(&error))?,
                 )?)?;
             }
             Ok(())
@@ -135,24 +137,24 @@ impl AnalysisDatabase {
         let mut statement = self
             .connection
             .prepare(sql)
-            .map_err(|error| database_error(&error))?;
+            .map_err(|error| convert_database_error(&error))?;
         for row in rows {
             statement
                 .execute(duckdb::params_from_iter(row))
-                .map_err(|error| database_error(&error))?;
+                .map_err(|error| convert_database_error(&error))?;
         }
         Ok(())
     }
 }
 
-fn parameter_references(parameters: &Parameters) -> Vec<(&str, &dyn ToSql)> {
+fn collect_parameter_references(parameters: &Parameters) -> Vec<(&str, &dyn ToSql)> {
     parameters
         .iter()
         .map(|(name, value)| (name.as_str(), value as &dyn ToSql))
         .collect()
 }
 
-fn retryable(error: &Error) -> bool {
+fn is_retryable_error(error: &Error) -> bool {
     [
         "No magic bytes found at end of file",
         "HTTP GET error",
@@ -162,6 +164,6 @@ fn retryable(error: &Error) -> bool {
     .any(|marker| error.to_string().contains(marker))
 }
 
-fn database_error(error: &duckdb::Error) -> Error {
+fn convert_database_error(error: &duckdb::Error) -> Error {
     Error::new(format!("Analysis database operation failed: {error}"))
 }

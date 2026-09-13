@@ -17,7 +17,7 @@ pub fn build_freshness_report(
 ) -> Result<(u8, Value)> {
     let client = api.resolve_client_version()?;
     let patch = api.current_patch()?;
-    let (mut evidence_stage, evidence) = check_file(
+    let (mut evidence_stage, evidence) = load_artifact_status(
         &directory.join("build-evidence.json"),
         "build_evidence",
         BuildEvidenceCatalog::read,
@@ -31,7 +31,7 @@ pub fn build_freshness_report(
             "Build evidence uses another patch or client version",
         );
     }
-    let (mut context_stage, context) = check_file(
+    let (mut context_stage, context) = load_artifact_status(
         &directory.join("strategy-context.json"),
         "strategy_context",
         StrategyContext::load,
@@ -51,10 +51,10 @@ pub fn build_freshness_report(
     let stages = vec![
         evidence_stage,
         context_stage,
-        policy_stage(directory, context.as_ref())?,
-        narrative_stage(directory, context.as_ref()),
-        bundle_stage(directory),
-        installed_stage(location, directory),
+        check_policy_status(directory, context.as_ref())?,
+        check_narrative_status(directory, context.as_ref()),
+        check_bundle_status(directory),
+        check_installation_status(location, directory),
     ];
     let code = if stages.iter().all(|stage| stage["state"] == "current") {
         0
@@ -73,21 +73,30 @@ pub fn build_freshness_report(
     ))
 }
 
-fn check_file<T>(
+fn load_artifact_status<T>(
     path: &Path,
     name: &str,
     load: impl FnOnce(&Path) -> Result<T>,
 ) -> (Value, Option<T>) {
     if !path.is_file() {
-        return (stage(name, "missing", &path.display().to_string()), None);
+        return (
+            build_stage_status(name, "missing", &path.display().to_string()),
+            None,
+        );
     }
     match load(path) {
-        Ok(value) => (stage(name, "current", "Validated"), Some(value)),
-        Err(error) => (stage(name, "malformed", &error.to_string()), None),
+        Ok(value) => (
+            build_stage_status(name, "current", "Validated"),
+            Some(value),
+        ),
+        Err(error) => (
+            build_stage_status(name, "malformed", &error.to_string()),
+            None,
+        ),
     }
 }
 
-fn stage(name: &str, state: &str, detail: &str) -> Value {
+fn build_stage_status(name: &str, state: &str, detail: &str) -> Value {
     json!({"stage":name,"state":state,"detail":detail})
 }
 
@@ -96,8 +105,8 @@ fn mark_stale(stage: &mut Value, detail: &str) {
     stage["detail"] = detail.into();
 }
 
-fn policy_stage(directory: &Path, context: Option<&StrategyContext>) -> Result<Value> {
-    let (mut stage, policies) = check_file(
+fn check_policy_status(directory: &Path, context: Option<&StrategyContext>) -> Result<Value> {
+    let (mut stage, policies) = load_artifact_status(
         &directory.join("policies.json"),
         "policies",
         PolicyArtifact::load,
@@ -111,8 +120,8 @@ fn policy_stage(directory: &Path, context: Option<&StrategyContext>) -> Result<V
     Ok(stage)
 }
 
-fn narrative_stage(directory: &Path, context: Option<&StrategyContext>) -> Value {
-    let (mut stage, narratives) = check_file(
+fn check_narrative_status(directory: &Path, context: Option<&StrategyContext>) -> Value {
+    let (mut stage, narratives) = load_artifact_status(
         &directory.join("narratives.json"),
         "narratives",
         NarrativeCatalog::load,
@@ -126,7 +135,7 @@ fn narrative_stage(directory: &Path, context: Option<&StrategyContext>) -> Value
     stage
 }
 
-fn bundle_stage(directory: &Path) -> Value {
+fn check_bundle_status(directory: &Path) -> Value {
     if [
         "strategy-context.json",
         "policies.json",
@@ -136,7 +145,7 @@ fn bundle_stage(directory: &Path) -> Value {
     .iter()
     .any(|name| !directory.join(name).is_file())
     {
-        return stage(
+        return build_stage_status(
             "artifact_bundle",
             "missing",
             "One or more required artifact files are missing",
@@ -148,32 +157,34 @@ fn bundle_stage(directory: &Path) -> Value {
         &directory.join("narratives.json"),
         &directory.join("build-evidence.json"),
     ) {
-        Ok(bundle) => stage(
+        Ok(bundle) => build_stage_status(
             "artifact_bundle",
             "current",
             &format!("Validated {} reviewed guides", bundle.guides.len()),
         ),
-        Err(error) => stage("artifact_bundle", "malformed", &error.to_string()),
+        Err(error) => build_stage_status("artifact_bundle", "malformed", &error.to_string()),
     }
 }
 
-fn installed_stage(location: Result<CacheLocation>, directory: &Path) -> Value {
+fn check_installation_status(location: Result<CacheLocation>, directory: &Path) -> Value {
     let location = match location {
         Ok(location) => location,
-        Err(error) => return stage("installed_cache", "unavailable", &error.to_string()),
+        Err(error) => {
+            return build_stage_status("installed_cache", "unavailable", &error.to_string());
+        }
     };
-    match compare_installed(&location, directory) {
-        Ok(true) => stage("installed_cache", "current", "Validated"),
-        Ok(false) => stage(
+    match compare_installed_guides(&location, directory) {
+        Ok(true) => build_stage_status("installed_cache", "current", "Validated"),
+        Ok(false) => build_stage_status(
             "installed_cache",
             "stale",
             "Managed builds differ from the expected coverage or guide contents",
         ),
-        Err(error) => stage("installed_cache", "malformed", &error.to_string()),
+        Err(error) => build_stage_status("installed_cache", "malformed", &error.to_string()),
     }
 }
 
-fn compare_installed(location: &CacheLocation, directory: &Path) -> Result<bool> {
+fn compare_installed_guides(location: &CacheLocation, directory: &Path) -> Result<bool> {
     let bundle = load_artifact_guide_bundle(
         &directory.join("strategy-context.json"),
         &directory.join("policies.json"),

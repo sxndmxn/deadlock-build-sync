@@ -6,11 +6,11 @@ use deadlock_input::ItemGraph;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::config::RunPaths;
 use crate::database::AnalysisDatabase;
 use crate::discovery_data::prepare_partitions;
-use crate::mining::Candidate;
+use crate::itemset_mining::ItemsetCandidate;
 use crate::purchase_pool::FrozenGuide;
+use crate::refresh_configuration::RunPaths;
 
 #[derive(Debug)]
 pub struct ExportContext {
@@ -44,7 +44,7 @@ impl ExportContext {
                 .map(|item| Ok((integer(item, "id")?, item.clone())))
                 .collect::<Result<_>>()?,
             normal_assets,
-            ranks: crate::config::cohort_ranks(&manifest["cohort"])?,
+            ranks: crate::refresh_configuration::cohort_ranks(&manifest["cohort"])?,
             expansion: serde_json::from_value(manifest["rank_expansion"].clone())?,
         })
     }
@@ -62,7 +62,7 @@ impl ExportContext {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Nomination {
     #[serde(flatten)]
-    pub candidate: Candidate,
+    pub candidate: ItemsetCandidate,
     pub hero_id: u64,
     pub selection_rank: usize,
     pub path: Value,
@@ -77,7 +77,7 @@ pub struct FrozenHero {
     pub rows: Vec<Nomination>,
     pub candidate_count: usize,
     pub grouping: Value,
-    pub candidates: Vec<Candidate>,
+    pub candidates: Vec<ItemsetCandidate>,
 }
 
 pub fn item_ids(value: &Value) -> Result<Vec<u64>> {

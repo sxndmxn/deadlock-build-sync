@@ -35,10 +35,10 @@ pub fn validate_frozen_pool(document: &Value, discovery: &Value) -> Result<()> {
         }
         for value in items {
             let id = integer(value, "pool item", 1)?;
-            let stats = statistics
+            let item_statistics = statistics
                 .get(&id.to_string())
                 .ok_or_else(|| Error::new("Frozen pool item has no statistics"))?;
-            validate_pool_item(stats, population)?;
+            validate_pool_item(item_statistics, population)?;
             if !seen.insert(id) || path.contains(value) {
                 return Err(Error::new(
                     "Frozen item pool repeats an item or contains a default path item",
@@ -54,10 +54,10 @@ pub fn validate_frozen_pool(document: &Value, discovery: &Value) -> Result<()> {
     Ok(())
 }
 
-fn validate_pool_item(stats: &Value, population: u64) -> Result<()> {
-    object(stats)?;
-    let buyers = integer(&stats["buyers"], "discovery item buyers", 20)?;
-    let adoption = finite(&stats["adoption"], "discovery item adoption")?;
+fn validate_pool_item(item_statistics: &Value, population: u64) -> Result<()> {
+    object(item_statistics)?;
+    let buyers = integer(&item_statistics["buyers"], "discovery item buyers", 20)?;
+    let adoption = finite(&item_statistics["adoption"], "discovery item adoption")?;
     if buyers > population || !close(adoption, count_ratio(buyers, population)?, 0.0) {
         return Err(Error::new("Frozen item pool has invalid ownership support"));
     }

@@ -5,7 +5,7 @@ use deadlock_guides::{PurchaseState, plan_purchases};
 use deadlock_input::ItemGraph;
 use serde_json::Value;
 
-use crate::branch_candidates::conditions;
+use crate::branch_candidates::collect_branch_conditions;
 use crate::discovery_models::item_ids;
 
 #[derive(Debug)]
@@ -17,7 +17,7 @@ impl ChoiceCohort {
     pub fn new(rows: &[Value], indices: &[usize]) -> Self {
         let mut index = BTreeMap::<_, Vec<_>>::new();
         for position in indices {
-            for (condition, value) in conditions(&rows[*position]) {
+            for (condition, value) in collect_branch_conditions(&rows[*position]) {
                 index
                     .entry((condition, value.to_string()))
                     .or_default()
@@ -42,7 +42,7 @@ impl ChoiceCohort {
         let mut selected = Vec::new();
         for position in self.conditions.get(&key).into_iter().flatten() {
             let row = &rows[*position];
-            if !legal_substitution(row, candidate, graph, &mut legal)? {
+            if !can_plan_substitution(row, candidate, graph, &mut legal)? {
                 continue;
             }
             if seen.insert((integer(row, "match_id")?, integer(row, "player_slot")?)) {
@@ -53,7 +53,7 @@ impl ChoiceCohort {
     }
 }
 
-fn legal_substitution(
+fn can_plan_substitution(
     row: &Value,
     candidate: &Value,
     graph: &ItemGraph,

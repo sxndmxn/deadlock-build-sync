@@ -37,23 +37,23 @@ pub fn run_cli(cli: &Cli) -> Result<u8> {
 fn dispatch(cli: &Cli) -> Result<u8> {
     let base_url = &cli.api_base_url;
     match &cli.command {
-        Command::Build(args) => run_build(args, base_url),
-        Command::Sync(args) => run_sync(args, base_url),
-        Command::Preview(args) => run_preview(args, base_url),
-        Command::Install(args) => run_install(args, base_url),
-        Command::ExportContext(args) => run_export(args, base_url),
-        Command::InstallArtifacts(args) => run_install_artifacts(args, base_url),
-        Command::GenerateNarratives(args) => run_narratives(args),
-        Command::Restore(args) => run_restore(args),
-        Command::QualityReport(args) => run_quality(args),
-        Command::Status(args) => run_status(args, base_url),
-        Command::TraceSummary(args) => {
+        Command::Build(arguments) => run_build(arguments, base_url),
+        Command::Sync(arguments) => run_sync(arguments, base_url),
+        Command::Preview(arguments) => run_preview(arguments, base_url),
+        Command::Install(arguments) => run_install(arguments, base_url),
+        Command::ExportContext(arguments) => run_export(arguments, base_url),
+        Command::InstallArtifacts(arguments) => run_install_artifacts(arguments, base_url),
+        Command::GenerateNarratives(arguments) => run_narratives(arguments),
+        Command::Restore(arguments) => run_restore(arguments),
+        Command::QualityReport(arguments) => run_quality(arguments),
+        Command::Status(arguments) => run_status(arguments, base_url),
+        Command::TraceSummary(arguments) => {
             print_text(&render_trace_summary(
-                &absolute_path(&args.path)?,
-                args.max_nodes,
+                &absolute_path(&arguments.path)?,
+                arguments.max_nodes,
             )?)?;
             Ok(0)
         }
-        Command::RefreshEvidence(args) => run_refresh(args, base_url),
+        Command::RefreshEvidence(arguments) => run_refresh(arguments, base_url),
     }
 }

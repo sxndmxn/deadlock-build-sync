@@ -38,7 +38,7 @@ pub fn discover_cache(search: &CacheSearch, home: &Path) -> Result<CacheLocation
         return Err(Error::new("Steam account ID must be positive"));
     }
     if let Some(path) = &search.cache_path {
-        return explicit_location(path, search.account_id);
+        return resolve_explicit_location(path, search.account_id);
     }
     let roots = match &search.steam_root {
         Some(root) => vec![root.clone()],
@@ -47,7 +47,9 @@ pub fn discover_cache(search: &CacheSearch, home: &Path) -> Result<CacheLocation
     let mut candidates = Vec::new();
     let mut seen = BTreeSet::new();
     for root in roots {
-        for (account_id, account) in accounts(&root.join("userdata"), search.account_id)? {
+        for (account_id, account) in
+            find_account_directories(&root.join("userdata"), search.account_id)?
+        {
             let app_directory = account.join(APPLICATION_ID);
             let cache_path = app_directory.join(CACHE_RELATIVE_PATH);
             if cache_path.is_file() {
@@ -65,7 +67,7 @@ pub fn discover_cache(search: &CacheSearch, home: &Path) -> Result<CacheLocation
     select_location(candidates)
 }
 
-fn accounts(userdata: &Path, selected: Option<u32>) -> Result<Vec<(u32, PathBuf)>> {
+fn find_account_directories(userdata: &Path, selected: Option<u32>) -> Result<Vec<(u32, PathBuf)>> {
     if let Some(account) = selected {
         return Ok(vec![(account, userdata.join(account.to_string()))]);
     }
@@ -89,7 +91,7 @@ fn accounts(userdata: &Path, selected: Option<u32>) -> Result<Vec<(u32, PathBuf)
     Ok(accounts)
 }
 
-fn explicit_location(path: &Path, selected: Option<u32>) -> Result<CacheLocation> {
+fn resolve_explicit_location(path: &Path, selected: Option<u32>) -> Result<CacheLocation> {
     let cache_path = path
         .canonicalize()
         .map_err(|error| Error::new(format!("Cannot resolve cache {}: {error}", path.display())))?;
@@ -101,7 +103,7 @@ fn explicit_location(path: &Path, selected: Option<u32>) -> Result<CacheLocation
         .nth(3)
         .ok_or_else(|| Error::new("Steam cache path has no application directory"))?
         .to_path_buf();
-    let inferred = infer_account(&app_directory);
+    let inferred = parse_account_directory(&app_directory);
     let account_id = selected
         .or(inferred)
         .filter(|account| *account != 0)
@@ -118,7 +120,7 @@ fn explicit_location(path: &Path, selected: Option<u32>) -> Result<CacheLocation
     })
 }
 
-fn infer_account(app_directory: &Path) -> Option<u32> {
+fn parse_account_directory(app_directory: &Path) -> Option<u32> {
     if app_directory.file_name()? != APPLICATION_ID {
         return None;
     }

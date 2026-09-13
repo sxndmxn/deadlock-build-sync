@@ -30,7 +30,7 @@ pub fn select_build_tags(
     if core.is_empty() || core.iter().any(|item| !assets.contains_key(&item.item_id)) {
         return Err(Error::new("Core items are missing from pinned assets"));
     }
-    let ability_id = first_maxed_ability(ability_path)?;
+    let ability_id = first_fully_upgraded_ability(ability_path)?;
     let ability = assets
         .get(&ability_id)
         .ok_or_else(|| Error::new("First completed ability is missing from pinned assets"))?;
@@ -77,7 +77,7 @@ fn asset_identity(asset: &Value) -> Result<(String, String)> {
     Ok((class_name.into(), label.into()))
 }
 
-fn first_maxed_ability(path: &[u64]) -> Result<u64> {
+fn first_fully_upgraded_ability(path: &[u64]) -> Result<u64> {
     let mut counts = BTreeMap::<u64, usize>::new();
     for id in path {
         *counts.entry(*id).or_default() += 1;

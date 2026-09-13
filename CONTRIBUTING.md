@@ -26,9 +26,13 @@ Verify changes with the documented checks and isolated reference fixtures.
 
 ## Names and language
 
+Use ASD-STE100 Simplified Technical English for all repository names, including existing names and new names.
+Apply the complete naming requirements in [AGENTS.md](AGENTS.md).
 Use ASD-STE100 Simplified Technical English for documentation, comments, error messages, commits, and pull request descriptions.
 Name each function for its action and the data it processes.
 For example, use `select_core_owners` and `build_purchase_guidance`.
+Use `read_` and `write_` for functions that consume or produce binary data.
+Use predicate names such as `is_active_hero` and `can_plan_substitution`.
 Use precise module names, such as `inventory_history.rs`.
 
 Update imports, callers, test references, and configuration when you change a name.

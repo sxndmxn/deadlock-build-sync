@@ -47,7 +47,8 @@ pub fn select_ability_path(rows: &[Value], filter_item_ids: &[u64]) -> Result<Op
             .filter(|observation| observation.path.len() == 16),
     )?;
     let decisions = aggregate_decisions(&observations)?;
-    let Some(selected) = compose(&decisions, &DecisionState::default(), &mut BTreeMap::new())
+    let Some(selected) =
+        resolve_ability_continuation(&decisions, &DecisionState::default(), &mut BTreeMap::new())
     else {
         return Ok(None);
     };
@@ -122,7 +123,7 @@ fn aggregate_decisions(observations: &[Observation]) -> Result<Decisions> {
     Ok(decisions)
 }
 
-fn compose(
+fn resolve_ability_continuation(
     decisions: &Decisions,
     state: &DecisionState,
     cache: &mut Continuations,
@@ -154,7 +155,7 @@ fn select_continuation(
         let mut next = state.clone();
         next.position += 1;
         *next.ranks.entry(*ability).or_default() += 1;
-        if let Some(mut continuation) = compose(decisions, &next, cache) {
+        if let Some(mut continuation) = resolve_ability_continuation(decisions, &next, cache) {
             if continuation.path.is_empty() {
                 continuation.tail = *counts;
             }

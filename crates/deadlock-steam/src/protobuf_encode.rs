@@ -7,7 +7,7 @@ use deadlock_guides::{
 };
 use prost::Message;
 
-use crate::binary::checked_total;
+use crate::binary_reader::checked_total;
 use crate::build_metadata::extract_build;
 use crate::protobuf_schema::{
     AbilityOrder, AbilityPurchase, Category, Details, Envelope, HeroBuild, ItemModification,
@@ -37,7 +37,7 @@ pub fn encode_hero_build(
         update_timestamp: 0,
         version: 0,
         source_build_id: 0,
-        details: presentation_details(content)?,
+        details: build_presentation_details(content)?,
         tag_ids: content.tag_ids.to_vec(),
         published: false,
     };
@@ -76,17 +76,21 @@ pub fn matches_presentation(bytes: &[u8], presentation: &BuildPresentation) -> R
     Ok(installed.hero_id == expected.hero_id
         && installed.description == expected.description
         && installed.tag_ids == expected.tag_ids
-        && installed.details == presentation_details(expected)?)
+        && installed.details == build_presentation_details(expected)?)
 }
 
-fn presentation_details(content: &PresentationContent) -> Result<Details> {
+fn build_presentation_details(content: &PresentationContent) -> Result<Details> {
     Ok(Details {
-        categories: content.categories.iter().map(category).collect(),
-        abilities: content.abilities.as_ref().map(ability_order).transpose()?,
+        categories: content.categories.iter().map(build_category).collect(),
+        abilities: content
+            .abilities
+            .as_ref()
+            .map(build_ability_order)
+            .transpose()?,
     })
 }
 
-fn item(value: &PresentationItem) -> ItemModification {
+fn build_item_modification(value: &PresentationItem) -> ItemModification {
     ItemModification {
         item_id: value.item_id,
         annotation: value.annotation.clone(),
@@ -96,9 +100,9 @@ fn item(value: &PresentationItem) -> ItemModification {
     }
 }
 
-fn category(value: &PresentationCategory) -> Category {
+fn build_category(value: &PresentationCategory) -> Category {
     Category {
-        items: value.items.iter().map(item).collect(),
+        items: value.items.iter().map(build_item_modification).collect(),
         name: value.name.clone(),
         description: value.description.clone(),
         width: value.width,
@@ -107,7 +111,7 @@ fn category(value: &PresentationCategory) -> Category {
     }
 }
 
-fn ability_order(value: &PresentationAbilities) -> Result<AbilityOrder> {
+fn build_ability_order(value: &PresentationAbilities) -> Result<AbilityOrder> {
     let mut counts = BTreeMap::<u64, usize>::new();
     let mut purchases = Vec::with_capacity(value.ability_ids.len());
     for (index, ability_id) in value.ability_ids.iter().enumerate() {

@@ -10,7 +10,7 @@ use crate::artifact_transaction::ArtifactTransaction;
 use crate::build_output::write_build_guides;
 use crate::generation_types::GeneratedGuides;
 
-pub fn strategy_context(generated: &GeneratedGuides) -> Result<StrategyContext> {
+pub fn build_strategy_context(generated: &GeneratedGuides) -> Result<StrategyContext> {
     build_strategy_context_document(
         &generated.patch,
         generated.contexts.clone(),
@@ -20,7 +20,7 @@ pub fn strategy_context(generated: &GeneratedGuides) -> Result<StrategyContext> 
     )
 }
 
-pub fn policy_artifact(generated: &GeneratedGuides) -> Result<PolicyArtifact> {
+pub fn build_policy_artifact(generated: &GeneratedGuides) -> Result<PolicyArtifact> {
     PolicyArtifact::new(
         generated.policies.clone(),
         generated.manifest.clone(),
@@ -38,8 +38,8 @@ pub fn write_build_artifacts(
     generated.require_complete()?;
     let transaction = ArtifactTransaction::new(directory)?;
     let staged = transaction.staged();
-    let context = strategy_context(generated)?;
-    let policies = policy_artifact(generated)?;
+    let context = build_strategy_context(generated)?;
+    let policies = build_policy_artifact(generated)?;
     let existing = transaction
         .existing_file("narratives.json")?
         .map(|path| NarrativeCatalog::load(&path))

@@ -5,12 +5,12 @@ pub const MAX_VALUE_COUNT: usize = 1_000_000;
 pub const MAX_VALUE_DEPTH: usize = 64;
 
 #[derive(Clone, Debug)]
-pub struct Cursor<'data> {
+pub struct BinaryCursor<'data> {
     bytes: &'data [u8],
     offset: usize,
 }
 
-impl<'data> Cursor<'data> {
+impl<'data> BinaryCursor<'data> {
     pub(super) const fn new(bytes: &'data [u8]) -> Self {
         Self { bytes, offset: 0 }
     }
@@ -32,46 +32,46 @@ impl<'data> Cursor<'data> {
         Ok(value)
     }
 
-    pub(super) fn fixed<const LENGTH: usize>(&mut self) -> Result<[u8; LENGTH]> {
+    pub(super) fn read_fixed_bytes<const LENGTH: usize>(&mut self) -> Result<[u8; LENGTH]> {
         self.read(LENGTH)?
             .try_into()
             .map_err(|_| Error::new("Binary field has an incorrect length"))
     }
 
-    pub(super) fn byte(&mut self) -> Result<u8> {
-        Ok(self.fixed::<1>()?[0])
+    pub(super) fn read_byte(&mut self) -> Result<u8> {
+        Ok(self.read_fixed_bytes::<1>()?[0])
     }
 
-    pub(super) fn u16(&mut self) -> Result<u16> {
-        Ok(u16::from_le_bytes(self.fixed()?))
+    pub(super) fn read_u16(&mut self) -> Result<u16> {
+        Ok(u16::from_le_bytes(self.read_fixed_bytes()?))
     }
 
-    pub(super) fn u32(&mut self) -> Result<u32> {
-        Ok(u32::from_le_bytes(self.fixed()?))
+    pub(super) fn read_u32(&mut self) -> Result<u32> {
+        Ok(u32::from_le_bytes(self.read_fixed_bytes()?))
     }
 
-    pub(super) fn i32(&mut self) -> Result<i32> {
-        Ok(i32::from_le_bytes(self.fixed()?))
+    pub(super) fn read_i32(&mut self) -> Result<i32> {
+        Ok(i32::from_le_bytes(self.read_fixed_bytes()?))
     }
 
-    pub(super) fn u64(&mut self) -> Result<u64> {
-        Ok(u64::from_le_bytes(self.fixed()?))
+    pub(super) fn read_u64(&mut self) -> Result<u64> {
+        Ok(u64::from_le_bytes(self.read_fixed_bytes()?))
     }
 
-    pub(super) fn i64(&mut self) -> Result<i64> {
-        Ok(i64::from_le_bytes(self.fixed()?))
+    pub(super) fn read_i64(&mut self) -> Result<i64> {
+        Ok(i64::from_le_bytes(self.read_fixed_bytes()?))
     }
 
-    pub(super) fn length(&mut self) -> Result<usize> {
-        let length = usize::try_from(self.u32()?)?;
+    pub(super) fn read_length(&mut self) -> Result<usize> {
+        let length = usize::try_from(self.read_u32()?)?;
         if length > MAX_BINARY_BYTES {
             return Err(Error::new("Binary length exceeds 128 MiB"));
         }
         Ok(length)
     }
 
-    pub(super) fn count(&mut self) -> Result<usize> {
-        let count = self.length()?;
+    pub(super) fn read_count(&mut self) -> Result<usize> {
+        let count = self.read_length()?;
         check_count(count)?;
         Ok(count)
     }
@@ -82,14 +82,14 @@ impl<'data> Cursor<'data> {
         Ok(())
     }
 
-    pub(super) fn string(&mut self) -> Result<String> {
+    pub(super) fn read_string(&mut self) -> Result<String> {
         let tail = &self.bytes[self.offset..];
         let length = tail
             .iter()
             .position(|byte| *byte == 0)
             .ok_or_else(|| Error::new("KV3 string has no terminator"))?;
         let text = std::str::from_utf8(self.read(length)?)?.to_owned();
-        self.byte()?;
+        self.read_byte()?;
         Ok(text)
     }
 

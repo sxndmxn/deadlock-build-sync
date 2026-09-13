@@ -10,9 +10,9 @@ pub fn active_heroes(session: &mut ApiSession) -> Result<Vec<Value>> {
     let mut heroes = Vec::new();
     for hero in rows {
         if hero["id"].as_u64().is_some_and(|id| id > 0)
-            && !boolean(&hero, "disabled")?
-            && !boolean(&hero, "in_development")?
-            && normal_game_mode(&hero)?
+            && !read_boolean_field(&hero, "disabled")?
+            && !read_boolean_field(&hero, "in_development")?
+            && is_normal_game_mode(&hero)?
         {
             heroes.push(hero);
         }
@@ -26,7 +26,7 @@ pub fn items(session: &mut ApiSession) -> Result<Vec<Value>> {
     let rows = object_rows(session.get("/v1/assets/items", parameters)?, "Item assets")?;
     let mut items = Vec::new();
     for item in rows {
-        if normal_game_mode(&item)? {
+        if is_normal_game_mode(&item)? {
             items.push(item);
         }
     }
@@ -61,7 +61,7 @@ pub fn steam_persona(session: &mut ApiSession, account_id: u32) -> Result<String
         .ok_or_else(|| Error::new(format!("Steam profile {account_id} has no persona name")))
 }
 
-fn boolean(value: &Value, name: &str) -> Result<bool> {
+fn read_boolean_field(value: &Value, name: &str) -> Result<bool> {
     match value.get(name) {
         None => Ok(false),
         Some(Value::Bool(value)) => Ok(*value),
@@ -69,7 +69,7 @@ fn boolean(value: &Value, name: &str) -> Result<bool> {
     }
 }
 
-fn normal_game_mode(value: &Value) -> Result<bool> {
+fn is_normal_game_mode(value: &Value) -> Result<bool> {
     match value.get("game_mode") {
         None | Some(Value::Null) => Ok(true),
         Some(Value::String(mode)) => Ok(mode.is_empty() || mode.eq_ignore_ascii_case("normal")),

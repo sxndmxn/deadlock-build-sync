@@ -4,13 +4,13 @@ use deadlock_data::{Error, Result, count_ratio, integer, real};
 use serde_json::{Value, json};
 
 use crate::database::{AnalysisDatabase, Parameters};
-use crate::inventory_history::Actor;
+use crate::inventory_history::MatchPlayer;
 use crate::purchase_pool::replace_members;
 use crate::sql_resources::load_sql;
 
 pub fn load_item_metrics(
     database: &AnalysisDatabase,
-    members: &BTreeSet<Actor>,
+    members: &BTreeSet<MatchPlayer>,
     hero: u64,
     assets: &BTreeMap<u64, Value>,
     folds: &Value,
@@ -30,7 +30,7 @@ pub fn load_item_metrics(
             &parameters,
         )?
         .iter()
-        .map(|row| item_payload(row, assets, folds))
+        .map(|row| build_item_evidence(row, assets, folds))
         .collect::<Result<Vec<_>>>()?;
     let summary = database
         .query(
@@ -43,7 +43,7 @@ pub fn load_item_metrics(
     Ok((items, summary))
 }
 
-fn item_payload(row: &Value, assets: &BTreeMap<u64, Value>, folds: &Value) -> Result<Value> {
+fn build_item_evidence(row: &Value, assets: &BTreeMap<u64, Value>, folds: &Value) -> Result<Value> {
     let mut result = serde_json::Map::new();
     for (target, source) in [
         ("item", "item_name"),
@@ -115,14 +115,14 @@ fn item_payload(row: &Value, assets: &BTreeMap<u64, Value>, folds: &Value) -> Re
         .into(),
     );
     let mut result = Value::Object(result);
-    let imbue = imbue_fields(row, assets)?;
+    let imbue = build_imbue_evidence(row, assets)?;
     for (key, value) in deadlock_data::object(&imbue)? {
         result[key] = value.clone();
     }
     Ok(result)
 }
 
-fn imbue_fields(row: &Value, assets: &BTreeMap<u64, Value>) -> Result<Value> {
+fn build_imbue_evidence(row: &Value, assets: &BTreeMap<u64, Value>) -> Result<Value> {
     let target = row["imbued_ability_id"].as_u64();
     let name = target
         .and_then(|item| assets.get(&item))

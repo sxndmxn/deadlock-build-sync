@@ -31,7 +31,7 @@ pub struct JsonHttpClient {
 }
 
 #[derive(Debug)]
-enum Attempt {
+enum RequestOutcome {
     Complete(JsonHttpResponse),
     Retry {
         error: Error,
@@ -105,13 +105,13 @@ impl JsonHttpClient {
         parameters: &BTreeMap<String, Value>,
     ) -> Result<JsonHttpResponse> {
         let url = format!("{}/{}", self.base_url, path.trim_start_matches('/'));
-        let parameters = query_parameters(parameters)?;
+        let parameters = encode_query_parameters(parameters)?;
         for attempt in 0..self.maximum_attempts {
             self.wait_for_request_slot()?;
-            match self.attempt(&url, &parameters, attempt) {
-                Attempt::Complete(response) => return Ok(response),
-                Attempt::Failed(error) => return Err(error.context("JSON GET failed")),
-                Attempt::Retry {
+            match self.send_request(&url, &parameters, attempt) {
+                RequestOutcome::Complete(response) => return Ok(response),
+                RequestOutcome::Failed(error) => return Err(error.context("JSON GET failed")),
+                RequestOutcome::Retry {
                     error,
                     delay,
                     rate_limited,
@@ -160,7 +160,12 @@ impl JsonHttpClient {
         Ok(())
     }
 
-    fn attempt(&self, url: &str, parameters: &[(String, String)], attempt: u32) -> Attempt {
+    fn send_request(
+        &self,
+        url: &str,
+        parameters: &[(String, String)],
+        attempt: u32,
+    ) -> RequestOutcome {
         let response = self
             .agent
             .get(url)
@@ -174,7 +179,7 @@ impl JsonHttpClient {
             .call();
         let mut response = match response {
             Ok(response) => response,
-            Err(error) => return retry(Error::new(error.to_string()), attempt),
+            Err(error) => return build_retry_outcome(Error::new(error.to_string()), attempt),
         };
         let status = response.status();
         if !status.is_success() {
@@ -187,17 +192,17 @@ impl JsonHttpClient {
                     .and_then(|value| value.parse::<f64>().ok())
                     .filter(|value| value.is_finite())
                     .and_then(|value| Duration::try_from_secs_f64(value.clamp(0.0, 30.0)).ok())
-                    .unwrap_or_else(|| retry_delay(attempt));
-                return Attempt::Retry {
+                    .unwrap_or_else(|| calculate_retry_delay(attempt));
+                return RequestOutcome::Retry {
                     error,
                     delay,
                     rate_limited: true,
                 };
             }
             return if status.is_server_error() {
-                retry(error, attempt)
+                build_retry_outcome(error, attempt)
             } else {
-                Attempt::Failed(error)
+                RequestOutcome::Failed(error)
             };
         }
         let final_url = response.get_uri().to_string();
@@ -208,34 +213,34 @@ impl JsonHttpClient {
             .read_to_vec()
         {
             Ok(content) => content,
-            Err(error) => return retry(Error::new(error.to_string()), attempt),
+            Err(error) => return build_retry_outcome(Error::new(error.to_string()), attempt),
         };
         match serde_json::from_slice(&content) {
-            Ok(data) => Attempt::Complete(JsonHttpResponse {
+            Ok(data) => RequestOutcome::Complete(JsonHttpResponse {
                 data,
                 content,
                 url: final_url,
             }),
-            Err(error) => retry(Error::from(error), attempt),
+            Err(error) => build_retry_outcome(Error::from(error), attempt),
         }
     }
 }
 
-fn query_parameters(parameters: &BTreeMap<String, Value>) -> Result<Vec<(String, String)>> {
+fn encode_query_parameters(parameters: &BTreeMap<String, Value>) -> Result<Vec<(String, String)>> {
     let mut pairs = Vec::new();
     for (key, value) in parameters {
         if let Value::Array(values) = value {
             for value in values {
-                pairs.push((key.clone(), query_scalar(key, value)?));
+                pairs.push((key.clone(), encode_query_scalar(key, value)?));
             }
         } else {
-            pairs.push((key.clone(), query_scalar(key, value)?));
+            pairs.push((key.clone(), encode_query_scalar(key, value)?));
         }
     }
     Ok(pairs)
 }
 
-fn query_scalar(key: &str, value: &Value) -> Result<String> {
+fn encode_query_scalar(key: &str, value: &Value) -> Result<String> {
     match value {
         Value::Null => Ok(String::new()),
         Value::String(value) => Ok(value.clone()),
@@ -247,14 +252,14 @@ fn query_scalar(key: &str, value: &Value) -> Result<String> {
     }
 }
 
-fn retry(error: Error, attempt: u32) -> Attempt {
-    Attempt::Retry {
+fn build_retry_outcome(error: Error, attempt: u32) -> RequestOutcome {
+    RequestOutcome::Retry {
         error,
-        delay: retry_delay(attempt),
+        delay: calculate_retry_delay(attempt),
         rate_limited: false,
     }
 }
 
-fn retry_delay(attempt: u32) -> Duration {
+fn calculate_retry_delay(attempt: u32) -> Duration {
     Duration::from_secs(1_u64.checked_shl(attempt).unwrap_or(u64::MAX).min(30))
 }

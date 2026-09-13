@@ -4,7 +4,7 @@ use deadlock_data::Result;
 use deadlock_guides::{PurchaseGuide, render_presentation_markdown, render_purchase_markdown};
 use serde_json::{Value, json};
 
-use crate::build_output::{describe_guide, presentation};
+use crate::build_output::{build_guide_presentation, describe_guide};
 use crate::cli_arguments::OutputFormat;
 use crate::generation_types::GeneratedGuides;
 
@@ -30,7 +30,7 @@ pub fn print_guides(
 ) -> Result<()> {
     if format == OutputFormat::Markdown {
         for guide in guides {
-            print_text(&render_presentation_markdown(&presentation(
+            print_text(&render_presentation_markdown(&build_guide_presentation(
                 guide, generated,
             )?)?)?;
             if details {

@@ -1,6 +1,6 @@
 use deadlock_data::{Error, Result};
 
-use crate::binary::{Cursor, checked_total};
+use crate::binary_reader::{BinaryCursor, checked_total};
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Counts {
@@ -35,33 +35,33 @@ pub struct Version5 {
 }
 
 impl Header {
-    pub(super) fn read(input: &mut Cursor<'_>) -> Result<Self> {
-        let magic = input.fixed::<4>()?;
+    pub(super) fn read(input: &mut BinaryCursor<'_>) -> Result<Self> {
+        let magic = input.read_fixed_bytes::<4>()?;
         if magic[1..] != [0x33, 0x56, 0x4b] || !(2..=5).contains(&magic[0]) {
             return Err(Error::new("Expected binary KV3 version 2, 3, 4, or 5"));
         }
         let version = magic[0];
-        let format = input.fixed()?;
-        let compression = input.u32()?;
-        let dictionary = input.u16()?;
-        let frame_size = usize::from(input.u16()?);
+        let format = input.read_fixed_bytes()?;
+        let compression = input.read_u32()?;
+        let dictionary = input.read_u16()?;
+        let frame_size = usize::from(input.read_u16()?);
         validate_compression(compression, dictionary, frame_size)?;
         let mut counts = Counts {
-            bytes: input.length()?,
-            integers: input.count()?,
-            doubles: input.count()?,
+            bytes: input.read_length()?,
+            integers: input.read_count()?,
+            doubles: input.read_count()?,
             shorts: 0,
         };
-        let type_size = input.length()?;
+        let type_size = input.read_length()?;
         input.read(4)?;
-        let decoded_size = input.length()?;
-        let encoded_size = input.length()?;
-        let blob_count = input.count()?;
-        let blob_size = input.length()?;
+        let decoded_size = input.read_length()?;
+        let encoded_size = input.read_length()?;
+        let blob_count = input.read_count()?;
+        let blob_size = input.read_length()?;
         checked_total([decoded_size, blob_size])?;
         let blob_frame_count = if version >= 4 {
-            counts.shorts = input.count()?;
-            let frame_bytes = input.length()?;
+            counts.shorts = input.read_count()?;
+            let frame_bytes = input.read_length()?;
             if frame_bytes % 2 != 0 {
                 return Err(Error::new(
                     "KV3 compressed blob size table has an odd length",
@@ -90,20 +90,20 @@ impl Header {
 }
 
 impl Version5 {
-    fn read(input: &mut Cursor<'_>) -> Result<Self> {
-        let decoded0 = input.length()?;
-        let encoded0 = input.length()?;
-        let decoded1 = input.length()?;
-        let encoded1 = input.length()?;
+    fn read(input: &mut BinaryCursor<'_>) -> Result<Self> {
+        let decoded0 = input.read_length()?;
+        let encoded0 = input.read_length()?;
+        let decoded1 = input.read_length()?;
+        let encoded1 = input.read_length()?;
         checked_total([decoded0, decoded1])?;
         let counts = Counts {
-            bytes: input.length()?,
-            shorts: input.count()?,
-            integers: input.count()?,
-            doubles: input.count()?,
+            bytes: input.read_length()?,
+            shorts: input.read_count()?,
+            integers: input.read_count()?,
+            doubles: input.read_count()?,
         };
         input.read(4)?;
-        let object_count = input.count()?;
+        let object_count = input.read_count()?;
         input.read(8)?;
         Ok(Self {
             decoded: [decoded0, decoded1],

@@ -67,7 +67,7 @@ pub fn purchase_item(
     }
     let mut owned = state.owned.clone();
     for component in graph.components(item_id)? {
-        remove_one(&mut owned, *component);
+        remove_owned_item(&mut owned, *component);
     }
     owned.push(item_id);
     let active_count = owned.iter().try_fold(0, |count, id| {
@@ -88,7 +88,7 @@ pub fn sell_item(
 ) -> Result<InventoryState> {
     graph.require(item_id)?;
     let mut owned = state.owned.clone();
-    if !remove_one(&mut owned, item_id) {
+    if !remove_owned_item(&mut owned, item_id) {
         return Err(Error::new(format!(
             "Cannot sell an item outside the inventory: {item_id}"
         )));
@@ -96,7 +96,7 @@ pub fn sell_item(
     InventoryState::new(owned, state.unlocked_flex_slots)
 }
 
-fn remove_one(owned: &mut Vec<u64>, id: u64) -> bool {
+fn remove_owned_item(owned: &mut Vec<u64>, id: u64) -> bool {
     owned
         .iter()
         .position(|owned_id| *owned_id == id)

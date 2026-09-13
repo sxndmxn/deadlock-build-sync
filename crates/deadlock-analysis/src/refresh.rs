@@ -6,12 +6,12 @@ use deadlock_guides::CURRENT_METHOD_VERSION;
 use deadlock_input::parse_patch_feed;
 use serde_json::json;
 
-use crate::config::{
+use crate::extraction::extract_cohort;
+use crate::production_evidence::export_evidence;
+use crate::refresh_configuration::{
     Cohort, RANK_RESET_AT, RefreshRequest, RunPaths, cohort_ranks, implementation_record,
     parse_timestamp,
 };
-use crate::extraction::extract_cohort;
-use crate::production_evidence::export_evidence;
 use crate::sources::capture_sources;
 
 #[derive(Clone, Debug)]

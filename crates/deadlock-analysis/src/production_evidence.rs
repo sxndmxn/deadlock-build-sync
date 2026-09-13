@@ -9,9 +9,9 @@ use deadlock_input::parse_patch_feed;
 use serde_json::{Value, json};
 
 use crate::ability_prefetch::AbilityPrefetch;
-use crate::config::{RunPaths, parse_timestamp};
 use crate::discovery_models::ExportContext;
 use crate::discovery_roster::discover_roster;
+use crate::refresh_configuration::{RunPaths, parse_timestamp};
 
 pub fn export_evidence(
     paths: &RunPaths,
