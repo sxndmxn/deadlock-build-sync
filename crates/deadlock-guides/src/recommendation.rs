@@ -6,7 +6,6 @@ use crate::decision_state::DecisionState;
 use crate::evidence_catalog::BuildEvidenceCatalog;
 use crate::policy_model::BuildPolicy;
 use crate::recommendation_guide::recommend_guide;
-use crate::recommendation_policy::recommend_policy;
 use crate::recommendation_types::Recommendation;
 use crate::recommendation_validation::{
     observed_threats, validate_evidence_identity, validate_inventory,
@@ -29,7 +28,7 @@ pub fn recommend(
         ));
     }
     let graph = ItemGraph::from_assets(assets)?;
-    let inventory = validate_inventory(state, &graph)?;
+    validate_inventory(state, &graph)?;
     let unknown = state
         .threats
         .iter()
@@ -43,21 +42,15 @@ pub fn recommend(
             format!("Unknown threat classes: {}", unknown.join(", ")),
         ));
     }
-    let threats = observed_threats(state, &graph, assets)?;
+    observed_threats(state, &graph, assets)?;
     let hero = catalog
         .heroes()
         .get(&state.hero_id)
         .ok_or_else(|| Error::new("Decision state hero is absent from build evidence"))?;
-    if let Some(evidence) = hero
+    let evidence = hero
         .builds
         .iter()
         .find(|build| build.path_id == policy.content().path_id)
-        && matches!(
-            evidence.discovery.get("method").and_then(Value::as_str),
-            Some("eclat_leiden_pairwise" | "eclat_leiden_beam")
-        )
-    {
-        return recommend_guide(evidence, policy, state, assets);
-    }
-    recommend_policy(policy, state, &graph, inventory, &threats)
+        .ok_or_else(|| Error::new("Build policy path is absent from admitted evidence"))?;
+    recommend_guide(evidence, policy, state, assets)
 }

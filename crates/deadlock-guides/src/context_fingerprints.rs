@@ -1,7 +1,7 @@
 use deadlock_data::{Result, fingerprint, object};
 use serde_json::{Map, Value, json};
 
-pub const CONTEXT_SCHEMA_VERSION: u8 = 16;
+pub const CONTEXT_SCHEMA_VERSION: u8 = 17;
 pub const KIT_BASIS_SCHEMA_VERSION: u8 = 3;
 pub const NARRATIVE_BASIS_SCHEMA_VERSION: u8 = 10;
 

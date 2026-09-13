@@ -8,11 +8,10 @@ use crate::core_evidence::{CorePolicyEvidence, parse_distinct_ids};
 use crate::discovery_evidence::{exclusion_reason, validate_discovery};
 use crate::evidence_values::{add_counts, integer, nonempty_text};
 use crate::frozen_pool::validate_frozen_pool;
-use crate::generator_evidence::GeneratorEvidence;
 use crate::hero_cohort::HeroCohort;
 use crate::item_evidence::ItemEvidence;
 use crate::purchase_timing::{PurchaseTiming, parse_purchase_timing};
-use crate::sequence_evidence::{SequencePolicy, SequenceProduction};
+use crate::sequence_evidence::SequencePolicy;
 use crate::situational_evidence::SituationalPolicy;
 use crate::tier_evidence::TierPolicyEvidence;
 
@@ -37,7 +36,6 @@ pub struct HeroBuildEvidence {
     pub automatic_branches: Vec<AutomaticBranch>,
     pub cohort: HeroCohort,
     pub guide_group_id: String,
-    pub generator: Option<GeneratorEvidence>,
 }
 
 #[derive(Clone, Debug)]
@@ -113,27 +111,12 @@ fn parse_build_path(
         &core_policy.content().default_item_ids,
         &sequence_policy.content().default_path,
     )?;
-    if (sequence_policy.content().production_model == SequenceProduction::Beam16)
-        != (discovery["method"].as_str() == Some("eclat_leiden_beam"))
-    {
-        return Err(Error::new(
-            "Sequence generator differs from its discovery method",
-        ));
-    }
     validate_frozen_pool(value, discovery)?;
     let guide_group_id =
         nonempty_text(&value["guide_group_id"], "guide group identifier")?.to_owned();
-    let generator = value
-        .get("generator")
-        .map(|value| {
-            GeneratorEvidence::from_document(
-                value,
-                &guide_group_id,
-                &core_policy.content().default_item_ids,
-                hero_id,
-            )
-        })
-        .transpose()?;
+    if value.get("generator").is_some() {
+        return Err(Error::new("Build path cannot contain generator evidence"));
+    }
     let median_final_net_worth = value
         .get("median_final_net_worth")
         .filter(|value| !value.is_null())
@@ -176,7 +159,6 @@ fn parse_build_path(
         automatic_branches,
         cohort: cohort.clone(),
         guide_group_id,
-        generator,
     })
 }
 

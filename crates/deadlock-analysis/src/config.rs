@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use deadlock_data::{Error, RankRange, Result};
-use deadlock_guides::{BuildGenerator, RankExpansion};
+use deadlock_guides::RankExpansion;
 use serde_json::{Value, json};
 
 pub const DUCKLAKE_URL: &str = "https://s3-cache.deadlock-api.com/fast/db_snapshot.ducklake";
@@ -19,7 +19,6 @@ pub struct RefreshRequest {
     pub workers: u16,
     pub extraction_resources: ExtractionResources,
     pub resume: bool,
-    pub generator: BuildGenerator,
     pub api_base_url: String,
 }
 

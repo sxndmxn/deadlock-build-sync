@@ -6,11 +6,9 @@ use serde_json::Value;
 
 use crate::automatic_branch::AutomaticBranch;
 use crate::item_evidence::ItemEvidence;
-use crate::purchase_decisions::build_checkpoint_decisions;
 use crate::purchase_guidance_types::{PurchaseChoice, PurchaseGuidance};
 use crate::purchase_plan_types::{PurchasePlan, PurchaseState};
 use crate::purchase_planner::plan_purchases;
-use crate::purchase_purposes::classify_item_purpose;
 use crate::purchase_timing::PurchaseTiming;
 use crate::selected_build::SelectedHeroBuild;
 
@@ -18,7 +16,6 @@ use crate::selected_build::SelectedHeroBuild;
 struct GuidanceContext<'build> {
     build: &'build SelectedHeroBuild,
     graph: ItemGraph,
-    assets: BTreeMap<u64, &'build Value>,
     path: Vec<u64>,
     core: Vec<u64>,
 }
@@ -32,10 +29,6 @@ pub fn build_purchase_guidance(
     let context = GuidanceContext {
         build,
         graph: ItemGraph::from_assets(assets)?,
-        assets: assets
-            .iter()
-            .filter_map(|asset| asset["id"].as_u64().map(|id| (id, asset)))
-            .collect(),
         path: build
             .core_purchase_path
             .iter()
@@ -66,14 +59,6 @@ pub fn build_purchase_guidance(
         .flatten()
         .map(|item| context.build_choice(item, timing.get(&item.content().item_id).copied()))
         .collect::<Result<Vec<_>>>()?;
-    let mut decisions = Vec::new();
-    for position in 0..=context.path.len() {
-        decisions.extend(build_checkpoint_decisions(
-            position,
-            &choices,
-            &context.graph,
-        )?);
-    }
     let automatic_branches = build
         .automatic_branches
         .iter()
@@ -83,7 +68,6 @@ pub fn build_purchase_guidance(
         core_ids: context.core,
         default_path: default,
         choices,
-        decisions,
         names: context
             .graph
             .nodes()
@@ -93,7 +77,7 @@ pub fn build_purchase_guidance(
         evidence_basis:
             "Admitted production core; optional effects and timing do not prove an outcome benefit"
                 .into(),
-        schema_version: 3,
+        schema_version: 4,
         cohort: build.cohort.to_document()?,
         evidence: build.evidence_summary.clone(),
         automatic_branches,
@@ -154,16 +138,11 @@ impl GuidanceContext<'_> {
         let extra_path_cost = plan
             .as_ref()
             .map(|plan| i128::from(plan.remaining_cost) - i128::from(self.build.core_target_cost));
-        let asset = self
-            .assets
-            .get(&item.item_id)
-            .ok_or_else(|| Error::new("Purchase choice has no item asset"))?;
         Ok(PurchaseChoice {
             item_id: item.item_id,
             name: item.item.clone(),
             tier: u8::try_from(item.tier)?,
             catalog_cost: self.graph.require(item.item_id)?.cost,
-            purpose: classify_item_purpose(asset)?,
             after_step: position,
             timing: timing.cloned(),
             timing_basis,

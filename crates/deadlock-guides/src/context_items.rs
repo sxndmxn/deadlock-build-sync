@@ -53,11 +53,7 @@ fn tier_item(item: &GuideItem, rank: usize, asset: &Value) -> Value {
 }
 
 pub fn core_context(guide: &PurchaseGuide) -> Result<Value> {
-    let selection = if guide.evidence_summary["generator"]["effective"] == "beam" {
-        "frozen group and supported state-aware beam component path"
-    } else {
-        "frozen Eclat identity, Leiden group, and supported pairwise component path"
-    };
+    let selection = "frozen Eclat identity, Leiden group, and supported pairwise component path";
     Ok(
         json!({"selection":selection,"backbone_item_ids":guide.backbone_items.iter().map(|item| item.item_id).collect::<Vec<_>>(),
             "backbone_player_matches":guide.backbone_matches,"backbone_share":guide.backbone_share,

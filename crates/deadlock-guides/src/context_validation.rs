@@ -28,7 +28,9 @@ impl StrategyContext {
     /// Returns an error when context schema, identities, mechanics, coverage, or fingerprints fail validation.
     pub fn from_document(document: Value) -> Result<Self> {
         if document["schema_version"].as_u64() != Some(u64::from(CONTEXT_SCHEMA_VERSION)) {
-            return Err(Error::new("Unsupported strategy context schema"));
+            return Err(Error::new(
+                "Unsupported strategy context schema; generate the build again",
+            ));
         }
         let manifest = SnapshotManifest::from_document(&document["snapshot_manifest"])?;
         let coverage = ArtifactCoverage::from_document(&document)?;

@@ -85,8 +85,7 @@ landmarks AS (
         team_difference,
         team_wealth,
         CASE WHEN wealth > 0 THEN wealth END AS observed_wealth,
-        team_difference / team_wealth AS team_lead,
-        CASE WHEN wealth > 0 THEN wealth * 12 / team_wealth END AS relative_wealth
+        team_difference / team_wealth AS team_lead
     FROM states
 )
 
@@ -98,7 +97,6 @@ SELECT
     observed_wealth,
     team_lead,
     average_badge,
-    relative_wealth,
     hero_ids
 FROM landmarks
 ORDER BY start_time, match_id, player_slot;

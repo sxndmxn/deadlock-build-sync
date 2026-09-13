@@ -6,21 +6,12 @@ use serde_json::Value;
 use crate::ability_path::AbilityPath;
 use crate::automatic_branch::AutomaticBranch;
 use crate::core_alternative::CoreAlternativeEvidence;
-use crate::guide_category::{
-    CORE_CATEGORY_DESCRIPTION, GuideCategory, OPTIONAL_CORE_CATEGORY_DESCRIPTION,
-};
+use crate::guide_category::GuideCategory;
 use crate::guide_item::GuideItem;
 use crate::hero_cohort::HeroCohort;
 use crate::purchase_guidance_types::PurchaseGuidance;
 use crate::purchase_timing::PurchaseTiming;
 use crate::selected_build::SelectedHeroBuild;
-
-#[derive(Clone, Debug)]
-pub struct TacticalProfile {
-    pub primary_role: String,
-    pub fight_role: String,
-    pub economy_plan: String,
-}
 
 #[derive(Clone, Debug)]
 pub struct PurchaseGuide {
@@ -35,8 +26,6 @@ pub struct PurchaseGuide {
     pub signature_item_ids: Vec<u64>,
     pub ability_path: Option<AbilityPath>,
     pub summary: String,
-    pub tactical_profile: Option<TacticalProfile>,
-    pub tier_summaries: BTreeMap<u8, String>,
     pub categories: Vec<GuideCategory>,
     pub snapshot_id: String,
     pub policy_id: String,
@@ -83,8 +72,6 @@ impl Default for PurchaseGuide {
             signature_item_ids: Vec::new(),
             ability_path: None,
             summary: String::new(),
-            tactical_profile: None,
-            tier_summaries: BTreeMap::new(),
             categories: Vec::new(),
             snapshot_id: String::new(),
             policy_id: String::new(),
@@ -208,65 +195,13 @@ impl PurchaseGuide {
     }
 
     /// # Errors
-    /// Returns an error when category dimensions exceed their limits.
+    /// Returns an error when the guide has no canonical categories.
     pub fn rendered_categories(&self) -> Result<Vec<GuideCategory>> {
-        if !self.categories.is_empty() {
-            return Ok(self.categories.clone());
+        if self.categories.is_empty() {
+            return Err(Error::new(
+                "Guide has no canonical categories; generate the build again",
+            ));
         }
-        if self.core_items.is_empty() {
-            return self.aggregate_categories();
-        }
-        let mut result = vec![GuideCategory::new(
-            "CORE ITEMS".into(),
-            self.core_path_items().into(),
-            CORE_CATEGORY_DESCRIPTION.into(),
-            false,
-            false,
-        )?];
-        if !self.optional_core_items.is_empty() {
-            result.push(GuideCategory::new(
-                "OPTIONAL CORE".into(),
-                self.optional_core_items.clone(),
-                OPTIONAL_CORE_CATEGORY_DESCRIPTION.into(),
-                true,
-                false,
-            )?);
-        }
-        for tier in 1..=4 {
-            result.push(GuideCategory::new(
-                format!("TIER {tier}"),
-                self.tiers.get(&tier).cloned().unwrap_or_default(),
-                String::new(),
-                true,
-                false,
-            )?);
-        }
-        Ok(result)
-    }
-
-    fn aggregate_categories(&self) -> Result<Vec<GuideCategory>> {
-        let mut result = Vec::new();
-        for (tier, items) in &self.tiers {
-            let Some((first, rest)) = items.split_first() else {
-                continue;
-            };
-            result.push(GuideCategory::new(
-                format!("CORE {tier}"),
-                vec![first.clone()],
-                self.tier_summaries.get(tier).cloned().unwrap_or_default(),
-                false,
-                false,
-            )?);
-            if !rest.is_empty() {
-                result.push(GuideCategory::new(
-                    format!("OPTIONS {tier}"),
-                    rest.into(),
-                    "Situational alternatives; choose only when their trigger applies.".into(),
-                    true,
-                    false,
-                )?);
-            }
-        }
-        Ok(result)
+        Ok(self.categories.clone())
     }
 }

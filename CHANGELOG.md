@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- Calculate purchase-pool statistics and checkpoint counts in DuckDB.
+  Reuse extracted first purchases and preserve purchase-order rules.
+- Calculate checkpoint wealth and select checkpoint fields in SQL.
+  Remove unused purchase-time quartiles from item metrics.
+
+- Remove generic build prose and repeated variant descriptions from Steam builds.
+  Show core costs and observed sample counts for each path.
+  Preserve purchase instructions, item statistics, and managed build identities.
+
+- Remove Beam search, scoring, metadata, and the `--generator` option.
+  Retain Eclat / Leiden builds and reject unsupported Beam artifacts.
+
+- Remove generic item-purpose advice and its classification rules.
+  Preserve purchase routes, costs, checkpoints, and supported conditions.
+- Use compact categories for context generation and canonical reconstruction.
+  Remove the discarded detailed panel builder and unused projection branches.
+- Remove the `recommend` command and the unused policy evaluator.
+  Retain guide recommendations for quality replay.
+- Require context schema 17, projection guide version 5, and purchase guidance schema 4.
+  Regenerate older bundles before installation.
 - Reject null reward eligibility, extra source players, and incomplete team wealth.
   Exclude purchases after match completion from extraction and beam counts.
 - Preserve concurrent cache changes when installation stops before replacement.
@@ -23,8 +43,8 @@
   installation checks. Keep only the validated component path in automatic Queue.
 - Add selected optional items, placement overrides, actual inventory planning,
   wealth and enemy conditions, and separately admitted core substitutions.
-- Require evidence schema 12, purchase-guide schema 3, state schema 3, and context
-  schema 16. Guide indexes use schema 2 and group records use schema 1.
+- Require evidence schema 12, purchase guidance schema 4, state schema 3, and context
+  schema 17. Guide indexes and group records use schema 2.
   Old evidence must be refreshed and rebuilt.
 - Archive comparison code and its tests in Git history. Keep tests for shared
   production code in the current suite. Remove unused reconstruction and producer

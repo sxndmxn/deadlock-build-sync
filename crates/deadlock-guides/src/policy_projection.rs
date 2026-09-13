@@ -1,14 +1,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use deadlock_data::{Error, Result, fingerprint};
-use serde_json::{Value, json};
+use serde_json::json;
 
 use crate::guide_category::GuideCategory;
 use crate::policy_model::BuildPolicy;
 use crate::policy_node::{NodeKind, PolicyNode};
 use crate::policy_state::ValidationContext;
 use crate::policy_validation::validate_policy;
-use crate::projection_items::{apply_sell_priorities, build_guide_item, format_branch_label};
 use crate::projection_layout::project_evidence_layout;
 use crate::purchase_guide::PurchaseGuide;
 
@@ -26,9 +25,8 @@ pub struct ProjectionIdentity {
 pub fn project_policy_to_guide(
     policy: &BuildPolicy,
     context: &ValidationContext,
-    assets: &[Value],
     identity: &ProjectionIdentity,
-    layout: Option<&PurchaseGuide>,
+    layout: &PurchaseGuide,
 ) -> Result<PurchaseGuide> {
     validate_policy(policy, context)?;
     let document = policy.content();
@@ -38,15 +36,7 @@ pub fn project_policy_to_guide(
         .map(|node| (node.node_id.as_str(), node))
         .collect::<BTreeMap<_, _>>();
     let path = project_default_path(&nodes, &document.entry)?;
-    let mut guide = if let Some(layout) = layout {
-        project_evidence_layout(policy, layout, &path)?
-    } else {
-        let assets = assets
-            .iter()
-            .filter_map(|asset| asset["id"].as_u64().map(|id| (id, asset)))
-            .collect();
-        project_without_layout(policy, &path, &nodes, &assets)?
-    };
+    let mut guide = project_evidence_layout(policy, layout, &path)?;
     guide.hero_id = document.hero_id;
     guide.hero_name.clone_from(&identity.hero_name);
     guide.hero_class_name.clone_from(&identity.hero_class_name);
@@ -92,95 +82,6 @@ pub fn project_default_path<'policy>(
         };
     }
     Err(Error::new("Default path contains a cycle"))
-}
-
-fn project_without_layout(
-    policy: &BuildPolicy,
-    path: &[&PolicyNode],
-    nodes: &BTreeMap<&str, &PolicyNode>,
-    assets: &BTreeMap<u64, &Value>,
-) -> Result<PurchaseGuide> {
-    let mut core = path
-        .iter()
-        .filter(|node| node.kind == NodeKind::Purchase)
-        .map(|node| build_guide_item(node, assets, policy, false))
-        .collect::<Result<Vec<_>>>()?;
-    if core.is_empty() {
-        return Err(Error::new("Default policy path contains no purchase"));
-    }
-    apply_sell_priorities(&mut core, &policy.content().nodes)?;
-    let ids = core.iter().map(|item| item.item_id).collect();
-    let mut categories = vec![GuideCategory::new(
-        "CORE — DEFAULT QUEUE".into(),
-        core,
-        "Minimal coherent default path. Recalculate when a conditional trigger applies.".into(),
-        false,
-        false,
-    )?];
-    categories.extend(conditional_categories(policy, nodes, assets, &ids)?);
-    let tiers = (1..=4)
-        .map(|tier| {
-            (
-                tier,
-                categories
-                    .iter()
-                    .flat_map(|category| &category.items)
-                    .filter(|item| item.tier == u64::from(tier))
-                    .cloned()
-                    .collect(),
-            )
-        })
-        .collect();
-    Ok(PurchaseGuide {
-        tiers,
-        categories,
-        summary: format!(
-            "{}; variant {}. Rich policy guards and uncertainty remain in the sidecar; Steam receives the declared projection.",
-            policy.content().strategic_role,
-            policy.content().variant
-        ),
-        build_archetype: "Evidence Default".into(),
-        ..PurchaseGuide::default()
-    })
-}
-
-fn conditional_categories(
-    policy: &BuildPolicy,
-    nodes: &BTreeMap<&str, &PolicyNode>,
-    assets: &BTreeMap<u64, &Value>,
-    default_ids: &BTreeSet<u64>,
-) -> Result<Vec<GuideCategory>> {
-    let mut categories = Vec::new();
-    let mut seen = BTreeSet::new();
-    for branch in policy
-        .content()
-        .nodes
-        .iter()
-        .flat_map(|node| &node.branches)
-        .filter(|branch| !branch.is_default())
-    {
-        let path = project_default_path(nodes, &branch.next_id)?;
-        let mut items = path
-            .iter()
-            .filter(|node| {
-                node.kind == NodeKind::Purchase
-                    && node.item_id.is_some_and(|id| !default_ids.contains(&id))
-            })
-            .map(|node| build_guide_item(node, assets, policy, true))
-            .collect::<Result<Vec<_>>>()?;
-        apply_sell_priorities(&mut items, &policy.content().nodes)?;
-        let ids = items.iter().map(|item| item.item_id).collect::<Vec<_>>();
-        if !ids.is_empty() && seen.insert(ids) {
-            categories.push(GuideCategory::new(
-                format_branch_label(branch),
-                items,
-                "Conditional branch; excluded from the default Queue.".into(),
-                true,
-                false,
-            )?);
-        }
-    }
-    Ok(categories)
 }
 
 /// # Errors

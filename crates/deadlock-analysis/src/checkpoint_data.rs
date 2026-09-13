@@ -18,6 +18,13 @@ struct TeamPurchase {
     purchase: Purchase,
 }
 
+#[derive(Debug, Deserialize)]
+struct DecisionRow {
+    team_id: u64,
+    enemy_observed: Option<u64>,
+    decision: Value,
+}
+
 pub fn load_checkpoints(
     database: &AnalysisDatabase,
     hero: u64,
@@ -52,9 +59,10 @@ pub fn load_checkpoints(
     database.visit_rows(
         load_sql("discovery/select_decision_rows.sql")?,
         &parameters,
-        |mut row: Value| {
+        |input: DecisionRow| {
+            let mut row = input.decision;
             let actor: Actor = (integer(&row, "match_id")?, integer(&row, "player_slot")?);
-            let team = integer(&row, "team_id")?;
+            let team = input.team_id;
             let clock = integer(&row, "buy_time")?;
             if previous_match != Some(actor.0) {
                 enemy_cache.clear();
@@ -65,9 +73,7 @@ pub fn load_checkpoints(
                 .and_then(|players| players.get(&actor.1))
                 .map_or(&[][..], |(_, purchases)| purchases.as_slice());
             row["owned_before"] = json!(inventory_before(inventory, graph, i64::try_from(clock)?)?);
-            let enemy_observed = row["enemy_observed"]
-                .as_u64()
-                .filter(|observed| fresh(clock, *observed));
+            let enemy_observed = input.enemy_observed;
             row["enemy_items"] = json!(
                 enemy_observed
                     .map(|observed| {
@@ -87,17 +93,6 @@ pub fn load_checkpoints(
                     .transpose()?
                     .unwrap_or_default()
             );
-            if enemy_observed.is_none() {
-                row["enemy_heroes"] = json!([]);
-            }
-            row["relative_wealth"] = relative_wealth(&row, clock).into();
-            row["fold"] = if row["partition"] == "discovery" {
-                "train"
-            } else {
-                "validation"
-            }
-            .into();
-            retain_contrast_fields(&mut row)?;
             decisions.push(row);
             Ok(())
         },
@@ -125,63 +120,4 @@ fn enemy_inventory(
         )?);
     }
     Ok(result.into_iter().collect())
-}
-
-fn fresh(clock: u64, observed: u64) -> bool {
-    clock
-        .checked_sub(observed)
-        .is_some_and(|age| (1..=300).contains(&age))
-}
-
-fn relative_wealth(row: &Value, clock: u64) -> Option<f64> {
-    let complete = row["own_team_observed_players"] == 6
-        && row["enemy_team_observed_players"] == 6
-        && row["own_observed"]
-            .as_u64()
-            .is_some_and(|observed| fresh(clock, observed))
-        && row["enemy_observed"]
-            .as_u64()
-            .is_some_and(|observed| fresh(clock, observed));
-    let total = row["own_team_net_worth"].as_f64().unwrap_or(0.0)
-        + row["enemy_team_net_worth"].as_f64().unwrap_or(0.0);
-    if complete && total > 0.0 {
-        row["own_net_worth_at_buy"]
-            .as_f64()
-            .map(|wealth| wealth * 12.0 / total)
-    } else {
-        None
-    }
-}
-
-fn retain_contrast_fields(row: &mut Value) -> Result<()> {
-    let fields = row
-        .as_object_mut()
-        .ok_or_else(|| deadlock_data::Error::new("Decision row must be an object"))?;
-    fields.retain(|key, _| {
-        key.starts_with("context_")
-            || [
-                "average_badge",
-                "phase",
-                "buy_time",
-                "own_net_worth_at_buy",
-                "state_observed_at_s",
-                "own_team_net_worth",
-                "enemy_team_net_worth",
-                "team_net_worth_lead",
-                "state_age_s",
-                "prior_catalog_spend",
-                "prior_purchase_count",
-                "match_id",
-                "player_slot",
-                "item_id",
-                "won",
-                "fold",
-                "enemy_heroes",
-                "enemy_items",
-                "owned_before",
-                "relative_wealth",
-            ]
-            .contains(&key.as_str())
-    });
-    Ok(())
 }

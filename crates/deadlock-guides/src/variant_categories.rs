@@ -1,6 +1,5 @@
 use deadlock_data::{Error, Result};
 
-use crate::beam_display::variant_statistics;
 use crate::guide_category::GuideCategory;
 use crate::purchase_guide::PurchaseGuide;
 use crate::purchase_prefix::{purchase_items, shared_prefix_length};
@@ -35,12 +34,14 @@ fn build_variant_categories(guide: &PurchaseGuide) -> Result<Vec<GuideCategory>>
     Ok(result)
 }
 
+/// # Errors
+/// Returns an error when purchase paths, variant prefixes, item statistics, or category dimensions are invalid.
 pub fn build_compact_categories(guide: &PurchaseGuide) -> Result<Vec<GuideCategory>> {
     let core = purchase_items(guide, "")?;
     let mut result = vec![GuideCategory::new(
         "MAIN CORE".into(),
         core,
-        variant_statistics(guide, false)?.join("; "),
+        String::new(),
         false,
         true,
     )?];

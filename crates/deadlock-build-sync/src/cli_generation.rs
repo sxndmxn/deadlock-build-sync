@@ -1,11 +1,11 @@
 use std::path::Path;
 
 use deadlock_data::{EpochSet, Error, RankRange, Result};
-use deadlock_guides::{BuildEvidenceCatalog, BuildGenerator, NarrativeCatalog};
+use deadlock_guides::{BuildEvidenceCatalog, NarrativeCatalog};
 use deadlock_input::{ApiOptions, ApiResponseCache, DeadlockApi};
 
 use crate::cli_arguments::{
-    GenerationArguments, Generator, NarrativeSelection, RankExpansion, SnapshotArguments,
+    GenerationArguments, NarrativeSelection, RankExpansion, SnapshotArguments,
 };
 use crate::cli_paths::absolute_path;
 use crate::generation::{GenerationRequest, generate_guides};
@@ -27,19 +27,6 @@ pub fn require_current_evidence(source: &Path, base_url: &str) -> Result<BuildEv
         ));
     }
     Ok(evidence)
-}
-
-pub fn require_generator(evidence: &BuildEvidenceCatalog, generator: Generator) -> Result<()> {
-    let expected = match generator {
-        Generator::Current => BuildGenerator::Current,
-        Generator::Beam => BuildGenerator::Beam,
-    };
-    if evidence.metadata().generator != expected {
-        return Err(Error::new(
-            "Build evidence uses a different generator. Run refresh-evidence with the selected generator",
-        ));
-    }
-    Ok(())
 }
 
 pub fn generate_requested(

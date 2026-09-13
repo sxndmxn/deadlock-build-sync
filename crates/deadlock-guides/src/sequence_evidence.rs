@@ -18,7 +18,6 @@ pub enum SequenceLevel {
 pub enum SequenceProduction {
     DeterministicBackoff,
     Pairwise,
-    Beam16,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

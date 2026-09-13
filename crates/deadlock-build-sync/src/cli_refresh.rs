@@ -15,9 +15,9 @@ pub fn run_refresh(args: &RefreshArguments, base_url: &str) -> Result<u8> {
         ExtractionResources, RefreshRequest, parse_timestamp, refresh_evidence,
     };
     use deadlock_data::{Rank, RankRange, state_directory};
-    use deadlock_guides::{BuildGenerator, RankExpansion};
+    use deadlock_guides::RankExpansion;
 
-    use crate::cli_arguments::{Generator, RankExpansion as ExpansionArgument};
+    use crate::cli_arguments::RankExpansion as ExpansionArgument;
     use crate::cli_output::print_text;
     use crate::cli_paths::artifact_directory;
 
@@ -49,10 +49,6 @@ pub fn run_refresh(args: &RefreshArguments, base_url: &str) -> Result<u8> {
             threads: args.extraction_threads,
         },
         resume: args.resume,
-        generator: match args.generator {
-            Generator::Current => BuildGenerator::Current,
-            Generator::Beam => BuildGenerator::Beam,
-        },
         api_base_url: base_url.into(),
     };
     let result = refresh_evidence(&request)?;

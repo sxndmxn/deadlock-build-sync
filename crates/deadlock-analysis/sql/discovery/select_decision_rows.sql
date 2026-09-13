@@ -9,7 +9,6 @@ WITH eligible_decisions AS NOT MATERIALIZED (
         p.buy_time,
         p.own_net_worth_at_buy,
         p.state_observed_at_s,
-        p.fold,
         p.phase,
         p.state_age_s,
         p.prior_catalog_spend,
@@ -52,8 +51,18 @@ states AS (
         enemy_state.team_net_worth AS enemy_team_net_worth,
         own_state.observed_players AS own_team_observed_players,
         enemy_state.observed_players AS enemy_team_observed_players,
-        own_state.stat_time AS own_observed,
-        enemy_state.stat_time AS enemy_observed,
+        CASE
+            WHEN
+                own_state.stat_time >= 0
+                AND p.buy_time - own_state.stat_time BETWEEN 1 AND 300
+                THEN own_state.stat_time
+        END AS own_observed,
+        CASE
+            WHEN
+                enemy_state.stat_time >= 0
+                AND p.buy_time - enemy_state.stat_time BETWEEN 1 AND 300
+                THEN enemy_state.stat_time
+        END AS enemy_observed,
         own_state.team_net_worth - enemy_state.team_net_worth AS team_net_worth_lead
     FROM checkpoints AS p
     ASOF LEFT JOIN team_states AS own_state
@@ -67,29 +76,42 @@ states AS (
 )
 
 SELECT
-    p.match_id,
-    p.player_slot,
     p.team_id,
-    p.average_badge,
-    p.won,
-    p.item_id,
-    p.buy_time,
-    p.own_net_worth_at_buy,
-    p.state_observed_at_s,
-    p.fold,
-    p.phase,
-    p.state_age_s,
-    p.prior_catalog_spend,
-    p.prior_purchase_count,
-    p."partition",
-    c.hero_ids AS enemy_heroes,
-    s.own_team_net_worth,
-    s.enemy_team_net_worth,
-    s.own_team_observed_players,
-    s.enemy_team_observed_players,
-    s.team_net_worth_lead,
-    s.own_observed,
-    s.enemy_observed
+    s.enemy_observed,
+    struct_pack(
+        match_id := p.match_id,
+        player_slot := p.player_slot,
+        average_badge := p.average_badge,
+        won := p.won,
+        item_id := p.item_id,
+        buy_time := p.buy_time,
+        own_net_worth_at_buy := p.own_net_worth_at_buy,
+        state_observed_at_s := p.state_observed_at_s,
+        fold
+        := CASE WHEN p."partition" = 'discovery' THEN 'train' ELSE 'validation' END,
+        phase := p.phase,
+        state_age_s := p.state_age_s,
+        prior_catalog_spend := p.prior_catalog_spend,
+        prior_purchase_count := p.prior_purchase_count,
+        enemy_heroes
+        := CASE WHEN s.enemy_observed IS NOT NULL THEN c.hero_ids ELSE [] END,
+        own_team_net_worth := s.own_team_net_worth,
+        enemy_team_net_worth := s.enemy_team_net_worth,
+        team_net_worth_lead := s.team_net_worth_lead,
+        relative_wealth := CASE
+            WHEN
+                s.own_team_observed_players = 6 AND s.enemy_team_observed_players = 6
+                AND s.own_observed IS NOT NULL AND s.enemy_observed IS NOT NULL
+                AND coalesce(s.own_team_net_worth::DOUBLE, 0.0)
+                + coalesce(s.enemy_team_net_worth::DOUBLE, 0.0) > 0.0
+                THEN
+                    p.own_net_worth_at_buy::DOUBLE * 12.0
+                    / (
+                        coalesce(s.own_team_net_worth::DOUBLE, 0.0)
+                        + coalesce(s.enemy_team_net_worth::DOUBLE, 0.0)
+                    )
+        END
+    ) AS decision
 FROM eligible_decisions AS p
 INNER JOIN states AS s
     ON

@@ -7,8 +7,7 @@ use crate::cli_arguments::{
     BuildArguments, ExportArguments, InstallArguments, PreviewArguments, SyncArguments,
 };
 use crate::cli_generation::{
-    generate_requested, load_narratives, require_current_evidence, require_generator,
-    require_selection,
+    generate_requested, load_narratives, require_current_evidence, require_selection,
 };
 use crate::cli_installation::{InstallationParameters, install_guides, print_installation};
 use crate::cli_output::print_guides;
@@ -21,7 +20,6 @@ pub fn run_build(args: &BuildArguments, base_url: &str) -> Result<u8> {
         Some(&directory),
     )?;
     let evidence = require_current_evidence(&path, base_url)?;
-    require_generator(&evidence, args.generator)?;
     let generated = generate_requested(base_url, &args.generation, &evidence, &path, 0, None)?;
     let guides = write_build_artifacts(&directory, &generated)?;
     print_guides(&guides, &generated, args.format, args.details, 0)?;
@@ -38,7 +36,6 @@ pub fn run_sync(args: &SyncArguments, base_url: &str) -> Result<u8> {
         Some(&directory),
     )?;
     let evidence = require_current_evidence(&path, base_url)?;
-    require_generator(&evidence, args.generator)?;
     let generated = generate_requested(
         base_url,
         &args.generation,
