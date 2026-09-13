@@ -39,7 +39,7 @@ impl Encoder {
         }
     }
 
-    fn string_id(&mut self, value: &str) -> Result<i32> {
+    fn register_string(&mut self, value: &str) -> Result<i32> {
         self.value_bytes = checked_total([self.value_bytes, value.len()])?;
         if value.is_empty() {
             return Ok(-1);
@@ -58,7 +58,7 @@ impl Encoder {
         Ok(identifier)
     }
 
-    fn tag(&mut self, tag: u8, flag: Kv3Flag) -> Result<()> {
+    fn write_type_tag(&mut self, tag: u8, flag: Kv3Flag) -> Result<()> {
         let encoded_flag = if self.version5 {
             flag.encode_v5()
         } else {
@@ -72,7 +72,7 @@ impl Encoder {
         Ok(())
     }
 
-    fn value(&mut self, value: &Kv3Value, depth: usize) -> Result<()> {
+    fn write_value(&mut self, value: &Kv3Value, depth: usize) -> Result<()> {
         check_depth(depth)?;
         self.remaining_values = self
             .remaining_values
@@ -80,71 +80,71 @@ impl Encoder {
             .ok_or_else(|| Error::new("KV3 value count exceeds 1,000,000"))?;
         let flag = value.flag;
         match &value.kind {
-            Kv3Kind::Null => self.tag(1, flag),
-            Kv3Kind::Boolean(value) => self.tag(if *value { 13 } else { 14 }, flag),
-            Kv3Kind::Signed(value) => self.signed(*value, flag),
-            Kv3Kind::Unsigned(value) => self.scalar64(4, value.to_le_bytes(), flag),
+            Kv3Kind::Null => self.write_type_tag(1, flag),
+            Kv3Kind::Boolean(value) => self.write_type_tag(if *value { 13 } else { 14 }, flag),
+            Kv3Kind::Signed(value) => self.write_signed_integer(*value, flag),
+            Kv3Kind::Unsigned(value) => self.write_scalar64(4, value.to_le_bytes(), flag),
             Kv3Kind::Float32(bits) => {
-                self.tag(19, flag)?;
+                self.write_type_tag(19, flag)?;
                 self.integers.extend_from_slice(&bits.to_le_bytes());
                 Ok(())
             }
-            Kv3Kind::Float64(bits) => self.scalar64(5, bits.to_le_bytes(), flag),
-            Kv3Kind::String(value) => self.string(value, flag),
-            Kv3Kind::Blob(bytes) => self.blob(bytes, flag),
-            Kv3Kind::Array(values) => self.array(values, flag, depth),
-            Kv3Kind::Object(members) => self.object(members, flag, depth),
+            Kv3Kind::Float64(bits) => self.write_scalar64(5, bits.to_le_bytes(), flag),
+            Kv3Kind::String(value) => self.write_string(value, flag),
+            Kv3Kind::Blob(bytes) => self.write_blob(bytes, flag),
+            Kv3Kind::Array(values) => self.write_array(values, flag, depth),
+            Kv3Kind::Object(members) => self.write_object(members, flag, depth),
         }
     }
 
-    fn signed(&mut self, value: i64, flag: Kv3Flag) -> Result<()> {
+    fn write_signed_integer(&mut self, value: i64, flag: Kv3Flag) -> Result<()> {
         match value {
-            0 => self.tag(15, flag),
-            1 => self.tag(16, flag),
-            _ => self.scalar64(3, value.to_le_bytes(), flag),
+            0 => self.write_type_tag(15, flag),
+            1 => self.write_type_tag(16, flag),
+            _ => self.write_scalar64(3, value.to_le_bytes(), flag),
         }
     }
 
-    fn scalar64(&mut self, tag: u8, bytes: [u8; 8], flag: Kv3Flag) -> Result<()> {
-        self.tag(tag, flag)?;
+    fn write_scalar64(&mut self, tag: u8, bytes: [u8; 8], flag: Kv3Flag) -> Result<()> {
+        self.write_type_tag(tag, flag)?;
         self.doubles.extend_from_slice(&bytes);
         Ok(())
     }
 
-    fn string(&mut self, value: &str, flag: Kv3Flag) -> Result<()> {
-        self.tag(6, flag)?;
-        let identifier = self.string_id(value)?;
+    fn write_string(&mut self, value: &str, flag: Kv3Flag) -> Result<()> {
+        self.write_type_tag(6, flag)?;
+        let identifier = self.register_string(value)?;
         self.integers.extend_from_slice(&identifier.to_le_bytes());
         Ok(())
     }
 
-    fn blob(&mut self, bytes: &[u8], flag: Kv3Flag) -> Result<()> {
-        self.tag(7, flag)?;
+    fn write_blob(&mut self, bytes: &[u8], flag: Kv3Flag) -> Result<()> {
+        self.write_type_tag(7, flag)?;
         self.value_bytes = checked_total([self.value_bytes, bytes.len()])?;
         self.blob_lengths.push(u32::try_from(bytes.len())?);
         self.blobs.extend_from_slice(bytes);
         Ok(())
     }
 
-    fn array(&mut self, values: &[Kv3Value], flag: Kv3Flag, depth: usize) -> Result<()> {
+    fn write_array(&mut self, values: &[Kv3Value], flag: Kv3Flag, depth: usize) -> Result<()> {
         check_count(values.len())?;
-        self.tag(8, flag)?;
+        self.write_type_tag(8, flag)?;
         self.integers
             .extend_from_slice(&u32::try_from(values.len())?.to_le_bytes());
         for value in values {
-            self.value(value, depth + 1)?;
+            self.write_value(value, depth + 1)?;
         }
         Ok(())
     }
 
-    fn object(
+    fn write_object(
         &mut self,
         members: &[(String, Kv3Value)],
         flag: Kv3Flag,
         depth: usize,
     ) -> Result<()> {
         check_count(members.len())?;
-        self.tag(9, flag)?;
+        self.write_type_tag(9, flag)?;
         let counts = if self.version5 {
             &mut self.objects
         } else {
@@ -158,16 +158,16 @@ impl Encoder {
                     "KV3 object has an empty or duplicate field name",
                 ));
             }
-            let identifier = self.string_id(name)?;
+            let identifier = self.register_string(name)?;
             self.integers.extend_from_slice(&identifier.to_le_bytes());
-            self.value(value, depth + 1)?;
+            self.write_value(value, depth + 1)?;
         }
         Ok(())
     }
 
-    fn payload(&mut self) -> Result<Vec<u8>> {
+    fn build_payload(&mut self) -> Result<Vec<u8>> {
         if self.version5 {
-            return self.payload_v5();
+            return self.build_v5_payload();
         }
         self.integers[..4].copy_from_slice(&u32::try_from(self.strings.len())?.to_le_bytes());
         let padding = (8 - self.integers.len() % 8) % 8;
@@ -196,9 +196,9 @@ impl Encoder {
         Ok(output)
     }
 
-    fn header(&self, format: &[u8; 16], payload_size: usize) -> Result<Vec<u8>> {
+    fn build_header(&self, format: &[u8; 16], payload_size: usize) -> Result<Vec<u8>> {
         if self.version5 {
-            return self.header_v5(format, payload_size);
+            return self.build_v5_header(format, payload_size);
         }
         let mut output = Vec::with_capacity(72);
         output.extend_from_slice(&0x4b56_3304_u32.to_le_bytes());
@@ -224,11 +224,11 @@ impl Encoder {
         Ok(output)
     }
 
-    fn first_buffer_size(&self) -> Result<usize> {
+    fn calculate_first_buffer_size(&self) -> Result<usize> {
         checked_total([self.string_bytes.next_multiple_of(4), 4])
     }
 
-    fn payload_v5(&self) -> Result<Vec<u8>> {
+    fn build_v5_payload(&self) -> Result<Vec<u8>> {
         let mut output = Vec::new();
         for value in &self.strings {
             output.extend_from_slice(value.as_bytes());
@@ -253,8 +253,8 @@ impl Encoder {
         Ok(output)
     }
 
-    fn header_v5(&self, format: &[u8; 16], payload_size: usize) -> Result<Vec<u8>> {
-        let first_size = self.first_buffer_size()?;
+    fn build_v5_header(&self, format: &[u8; 16], payload_size: usize) -> Result<Vec<u8>> {
+        let first_size = self.calculate_first_buffer_size()?;
         let second_size = payload_size
             .checked_sub(first_size)
             .ok_or_else(|| Error::new("KV3 second buffer size is invalid"))?;
@@ -305,9 +305,9 @@ pub fn encode_kv3(document: &Kv3Document) -> Result<Vec<u8>> {
         return Err(Error::new("KV3 trailing padding exceeds 15 bytes"));
     }
     let mut encoder = Encoder::new(requires_v5(&document.root, 0)?);
-    encoder.value(&document.root, 0)?;
-    let payload = encoder.payload()?;
-    let mut output = encoder.header(&document.format, payload.len())?;
+    encoder.write_value(&document.root, 0)?;
+    let payload = encoder.build_payload()?;
+    let mut output = encoder.build_header(&document.format, payload.len())?;
     checked_total([
         output.len(),
         payload.len(),

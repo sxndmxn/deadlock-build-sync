@@ -15,7 +15,11 @@ pub struct Purchase {
     pub sold_time: Option<i64>,
 }
 
-pub fn inventory_before(purchases: &[Purchase], graph: &ItemGraph, clock: i64) -> Result<Vec<u64>> {
+pub fn reconstruct_inventory_before(
+    purchases: &[Purchase],
+    graph: &ItemGraph,
+    clock: i64,
+) -> Result<Vec<u64>> {
     let mut buckets = BTreeMap::<i64, (Vec<u64>, Vec<u64>)>::new();
     for purchase in purchases
         .iter()
@@ -35,27 +39,27 @@ pub fn inventory_before(purchases: &[Purchase], graph: &ItemGraph, clock: i64) -
     for (buys, mut removals) in buckets.into_values() {
         let mut ranked = buys
             .into_iter()
-            .map(|item| Ok((component_depth(graph, item, &mut depths)?, item)))
+            .map(|item| Ok((calculate_component_depth(graph, item, &mut depths)?, item)))
             .collect::<Result<Vec<_>>>()?;
         ranked.sort_unstable();
         for (_, item) in ranked {
             if graph.nodes().contains_key(&item) {
                 for component in graph.components(item)? {
-                    remove_one(&mut owned, *component);
+                    remove_owned_item(&mut owned, *component);
                 }
             }
             owned.push(item);
         }
         removals.sort_unstable();
         for item in removals {
-            remove_one(&mut owned, item);
+            remove_owned_item(&mut owned, item);
         }
     }
     owned.sort_unstable();
     Ok(owned)
 }
 
-fn component_depth(
+fn calculate_component_depth(
     graph: &ItemGraph,
     item: u64,
     depths: &mut BTreeMap<u64, usize>,
@@ -66,14 +70,14 @@ fn component_depth(
     let mut depth = 0;
     if graph.nodes().contains_key(&item) {
         for child in graph.components(item)? {
-            depth = depth.max(component_depth(graph, *child, depths)? + 1);
+            depth = depth.max(calculate_component_depth(graph, *child, depths)? + 1);
         }
     }
     depths.insert(item, depth);
     Ok(depth)
 }
 
-fn remove_one(owned: &mut Vec<u64>, item: u64) {
+fn remove_owned_item(owned: &mut Vec<u64>, item: u64) {
     if let Some(position) = owned.iter().position(|current| *current == item) {
         owned.remove(position);
     }

@@ -98,7 +98,7 @@ pub fn load_purchase_evidence(
     Ok(PurchaseEvidence { population, items })
 }
 
-pub fn freeze_guide(
+pub fn build_guide_snapshot(
     database: &AnalysisDatabase,
     data: &DiscoveryData,
     core: &[u64],

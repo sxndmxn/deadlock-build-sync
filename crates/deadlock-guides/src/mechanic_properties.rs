@@ -45,9 +45,9 @@ pub fn response_properties(asset: &Value) -> BTreeMap<&str, Value> {
         .flatten()
         .filter_map(|(name, property)| {
             let value = property.get("value")?;
-            if !active_property(property, value)
+            if !is_active_property(property, value)
                 || property["tooltip_is_important"] != true
-                || resistance_reduction(name, property)
+                || is_resistance_reduction(name, property)
             {
                 return None;
             }
@@ -64,28 +64,29 @@ pub fn response_properties(asset: &Value) -> BTreeMap<&str, Value> {
         .collect()
 }
 
-fn active_property(property: &Value, value: &Value) -> bool {
-    if value.is_null() || ["", "0", "0.0"].contains(&property_text(value).as_str()) {
+fn is_active_property(property: &Value, value: &Value) -> bool {
+    if value.is_null() || ["", "0", "0.0"].contains(&format_property_value(value).as_str()) {
         return false;
     }
     property
         .get("disable_value")
         .filter(|value| !value.is_null())
-        .is_none_or(|disabled| property_text(value) != property_text(disabled))
+        .is_none_or(|disabled| format_property_value(value) != format_property_value(disabled))
 }
 
-fn resistance_reduction(name: &str, property: &Value) -> bool {
+fn is_resistance_reduction(name: &str, property: &Value) -> bool {
     let identity = format!(
         "{name} {} {}",
-        property_text(&property["label"]),
-        property_text(&property["provided_property_type"])
+        format_property_value(&property["label"]),
+        format_property_value(&property["provided_property_type"])
     )
     .to_lowercase();
     identity.contains("resist")
-        && (identity.contains("reduction") || property_text(&property["value"]).starts_with('-'))
+        && (identity.contains("reduction")
+            || format_property_value(&property["value"]).starts_with('-'))
 }
 
-fn property_text(value: &Value) -> String {
+fn format_property_value(value: &Value) -> String {
     match value {
         Value::Null => String::new(),
         Value::String(value) => value.clone(),
@@ -97,7 +98,7 @@ fn property_text(value: &Value) -> String {
 pub fn observed_mechanics(asset: &Value) -> Result<Value> {
     let mechanics = extract_asset_mechanics(asset)?;
     let mut observed = Map::new();
-    let description = base_description(&asset["description"]);
+    let description = select_base_description(&asset["description"]);
     if is_populated(&description) {
         observed.insert(
             "description".into(),
@@ -119,7 +120,7 @@ pub fn observed_mechanics(asset: &Value) -> Result<Value> {
     Ok(observed.into())
 }
 
-fn base_description(description: &Value) -> Value {
+fn select_base_description(description: &Value) -> Value {
     if description.is_object() {
         ["desc", "passive", "active"]
             .into_iter()

@@ -85,7 +85,7 @@ impl<'data> Iterator for Fields<'data> {
 pub fn varint(input: &mut BinaryCursor<'_>) -> Result<u64> {
     let mut value = 0_u64;
     for shift in (0..70).step_by(7) {
-        let byte = input.byte()?;
+        let byte = input.read_byte()?;
         if shift == 63 && byte > 1 {
             return Err(Error::new("Protobuf varint exceeds 64 bits"));
         }

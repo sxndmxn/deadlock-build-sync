@@ -50,5 +50,5 @@ fn read_aligned<'data>(
 }
 
 pub fn read_strings(input: &mut BinaryCursor<'_>, count: usize) -> Result<Vec<String>> {
-    (0..count).map(|_| input.string()).collect()
+    (0..count).map(|_| input.read_string()).collect()
 }

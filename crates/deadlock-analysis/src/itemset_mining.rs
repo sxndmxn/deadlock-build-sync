@@ -43,7 +43,7 @@ pub fn mine_candidates(data: &DiscoveryData, graph: &ItemGraph) -> Result<Itemse
     if rows.is_empty() {
         return Ok(result);
     }
-    let columns = vertical_columns(data, &rows);
+    let columns = build_ownership_bitsets(data, &rows);
     let marginal = (0..data.items.len())
         .map(|column| {
             count_ratio(
@@ -91,7 +91,7 @@ pub fn mine_candidates(data: &DiscoveryData, graph: &ItemGraph) -> Result<Itemse
     Ok(result)
 }
 
-fn vertical_columns(data: &DiscoveryData, rows: &[usize]) -> VerticalColumns {
+fn build_ownership_bitsets(data: &DiscoveryData, rows: &[usize]) -> VerticalColumns {
     (0..data.items.len())
         .filter_map(|column| {
             let mut bits = vec![0_u64; rows.len().div_ceil(64)];
@@ -170,7 +170,7 @@ fn qualify_candidate(
             return Ok(None);
         }
     }
-    let Some(parent) = supported_parent(columns, count, previous) else {
+    let Some(parent) = select_supported_parent(columns, count, previous) else {
         return Ok(None);
     };
     let expected = columns
@@ -200,7 +200,11 @@ fn qualify_candidate(
     }))
 }
 
-fn supported_parent(columns: &[usize], count: u64, previous: &SupportCounts) -> Option<Vec<usize>> {
+fn select_supported_parent(
+    columns: &[usize],
+    count: u64,
+    previous: &SupportCounts,
+) -> Option<Vec<usize>> {
     if columns.len() == 3 {
         return Some(Vec::new());
     }

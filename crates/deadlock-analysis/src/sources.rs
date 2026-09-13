@@ -26,8 +26,8 @@ pub fn capture_sources(paths: &RunPaths, base_url: &str) -> Result<Value> {
     let ranks = client.get_json("/v1/assets/ranks", &parameters)?.data;
     let patches = client.get_json("/v2/patches", &BTreeMap::new())?.data;
     let openapi = client.get_json("/openapi.json", &BTreeMap::new())?.data;
-    let heroes = selected_rows(&heroes, active_hero)?;
-    let shop_items = selected_rows(&items, shop_item)?;
+    let heroes = select_asset_rows(&heroes, is_active_hero)?;
+    let shop_items = select_asset_rows(&items, is_shop_item)?;
     let result = json!({"client_version":version,"active_heroes":heroes.len(),"shop_items":shop_items.len()});
     let payloads = BTreeMap::from([
         ("client_versions.json", versions),
@@ -48,7 +48,7 @@ pub fn capture_sources(paths: &RunPaths, base_url: &str) -> Result<Value> {
     Ok(result)
 }
 
-fn selected_rows(document: &Value, predicate: fn(&Value) -> bool) -> Result<Vec<Value>> {
+fn select_asset_rows(document: &Value, predicate: fn(&Value) -> bool) -> Result<Vec<Value>> {
     let rows = array(document)?;
     if rows.iter().any(|row| !row.is_object()) {
         return Err(Error::new("Asset response must contain only objects"));
@@ -65,7 +65,7 @@ fn selected_rows(document: &Value, predicate: fn(&Value) -> bool) -> Result<Vec<
     Ok(rows)
 }
 
-fn active_hero(row: &Value) -> bool {
+fn is_active_hero(row: &Value) -> bool {
     row["id"].is_u64()
         && !row["disabled"].as_bool().unwrap_or(false)
         && !row["in_development"].as_bool().unwrap_or(false)
@@ -75,7 +75,7 @@ fn active_hero(row: &Value) -> bool {
             .eq_ignore_ascii_case("normal")
 }
 
-fn shop_item(row: &Value) -> bool {
+fn is_shop_item(row: &Value) -> bool {
     row["id"].is_u64()
         && row["type"] == "upgrade"
         && row["shopable"] == true

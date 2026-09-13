@@ -30,6 +30,10 @@ This includes responses, documentation, comments, error messages, commit message
 - Apply these rules to files, directories, scripts, modules, functions, variables, parameters, fields, types, constants, tests, commits, and branches.
 - Apply these rules to SQL tables, columns, aliases, configuration keys, workflow names, and display labels.
 - Name the actual action, purpose, or content. Use the terms an engineer would use in a technical specification.
+- Start action function names with a verb that identifies the operation.
+- Include the data or result when the function name would otherwise be unclear.
+- Use `is_`, `has_`, or `can_` for predicates when these prefixes describe the condition.
+- Keep standard trait methods, constructors, accessors, and established mathematical function names.
 - Do not use jokes, fashionable terms, casual abbreviations, or clever wordplay.
 - Use established project terms, standard abbreviations, and the required identifier format.
 - Keep exact commands, API names, and external identifiers. Do not change their technical meaning to simplify the language.

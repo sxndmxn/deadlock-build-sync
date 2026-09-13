@@ -6,7 +6,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::database::{AnalysisDatabase, Parameters};
-use crate::inventory_history::{MatchPlayer, Purchase, inventory_before};
+use crate::inventory_history::{MatchPlayer, Purchase, reconstruct_inventory_before};
 use crate::sql_resources::load_sql;
 
 type MatchPurchaseHistories = BTreeMap<u64, BTreeMap<u64, (u64, Vec<Purchase>)>>;
@@ -73,7 +73,11 @@ pub fn load_checkpoints(
                 .get(&match_player.0)
                 .and_then(|players| players.get(&match_player.1))
                 .map_or(&[][..], |(_, purchases)| purchases.as_slice());
-            row["owned_before"] = json!(inventory_before(inventory, graph, i64::try_from(clock)?)?);
+            row["owned_before"] = json!(reconstruct_inventory_before(
+                inventory,
+                graph,
+                i64::try_from(clock)?
+            )?);
             let enemy_observed = input.enemy_observed;
             row["enemy_items"] = json!(
                 enemy_observed
@@ -114,7 +118,7 @@ fn enemy_inventory(
         .filter(|(owner, _)| *owner != team)
     {
         let _ = owner;
-        result.extend(inventory_before(
+        result.extend(reconstruct_inventory_before(
             purchases,
             graph,
             i64::try_from(observed)?.saturating_add(1),

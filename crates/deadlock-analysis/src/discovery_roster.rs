@@ -5,7 +5,7 @@ use crate::ability_prefetch::AbilityPrefetch;
 use crate::branch_evaluation::BranchEvaluator;
 use crate::build_payload::build_payload;
 use crate::checkpoint_data::load_checkpoints;
-use crate::core_discovery::{assign_group_ids, freeze_hero};
+use crate::core_discovery::{assign_group_ids, discover_hero_builds};
 use crate::discovery_admission::admit_nomination;
 use crate::discovery_data::load_discovery_data;
 use crate::discovery_models::{ExportContext, FrozenHero};
@@ -27,7 +27,7 @@ pub fn discover_roster(
         load_snapshot(&context.paths, heroes)?
     } else {
         let reports = trace_operation("analysis.freeze_roster", Some("freeze_roster"), || {
-            map_jobs(heroes, workers, |hero| freeze_hero(hero, context))
+            map_jobs(heroes, workers, |hero| discover_hero_builds(hero, context))
         })?;
         let frozen = heroes
             .iter()

@@ -5,7 +5,7 @@ use deadlock_input::ItemGraph;
 use serde::Deserialize;
 
 use crate::database::{AnalysisDatabase, Parameters};
-use crate::inventory_history::{MatchPlayer, Purchase, inventory_before};
+use crate::inventory_history::{MatchPlayer, Purchase, reconstruct_inventory_before};
 use crate::sql_resources::load_sql;
 
 #[derive(Clone, Debug, Deserialize)]
@@ -137,7 +137,7 @@ fn build_discovery_data(
     let inventories = rows
         .iter()
         .map(|row| {
-            inventory_before(
+            reconstruct_inventory_before(
                 histories
                     .get(&(row.match_id, row.player_slot))
                     .map_or(&[], Vec::as_slice),

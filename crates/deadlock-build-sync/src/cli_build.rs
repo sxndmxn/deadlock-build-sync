@@ -4,7 +4,9 @@ use deadlock_data::{Error, Result, atomic_write_json};
 use deadlock_guides::{BuildEvidenceCatalog, group_guides};
 use deadlock_steam::require_deadlock_stopped;
 
-use crate::artifact_generation::{policy_artifact, strategy_context, write_build_artifacts};
+use crate::artifact_generation::{
+    build_policy_artifact, build_strategy_context, write_build_artifacts,
+};
 use crate::cli_arguments::{
     BuildArguments, ExportArguments, InstallArguments, PreviewArguments, SyncArguments,
 };
@@ -166,8 +168,8 @@ pub fn run_export(arguments: &ExportArguments, base_url: &str) -> Result<u8> {
         location.account_id,
         None,
     )?;
-    let context = strategy_context(&generated)?;
-    let policies = policy_artifact(&generated)?;
+    let context = build_strategy_context(&generated)?;
+    let policies = build_policy_artifact(&generated)?;
     let output = absolute_path(&arguments.output)?;
     let policy_output = arguments
         .policy_output

@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 
 use crate::generation_types::GeneratedGuides;
 
-pub fn presentation(
+pub fn build_guide_presentation(
     guide: &PurchaseGuide,
     generated: &GeneratedGuides,
 ) -> Result<BuildPresentation> {
@@ -28,7 +28,7 @@ pub fn describe_guide(guide: &PurchaseGuide, generated: &GeneratedGuides) -> Res
     Ok(
         json!({"hero_id":guide.hero_id,"hero":guide.hero_name,"path_id":guide.path_id,
         "path_label":guide.path_label,"policy_id":guide.policy_id,"snapshot_id":guide.snapshot_id,
-        "summary":guide.summary,"steam_build":serialize_presentation(&presentation(guide, generated)?),
+        "summary":guide.summary,"steam_build":serialize_presentation(&build_guide_presentation(guide, generated)?),
         "purchase_guidance":guide.purchase_guidance,"guide_group":build_group_record(guide)?}),
     )
 }
@@ -49,7 +49,7 @@ pub fn write_build_guides(
             guide.hero_id,
             &sha256(guide.path_id.as_bytes())[..16]
         );
-        let presentation = presentation(guide, generated)?;
+        let presentation = build_guide_presentation(guide, generated)?;
         let content = serialize_presentation(&presentation);
         atomic_write(
             &output.join(format!("{stem}.md")),

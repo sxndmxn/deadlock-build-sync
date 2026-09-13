@@ -38,25 +38,25 @@ pub fn extract_cohort(
         }
         let database = connect_database(paths, resources)?;
         load_item_assets(&database, paths)?;
-        execute(&database, "drop_eligible_matches", &Parameters::new())?;
+        execute_sql_resource(&database, "drop_eligible_matches", &Parameters::new())?;
         database.execute_remote(
             load_sql("extract/create_eligible_matches.sql")?,
-            &cohort_parameters(&extraction),
+            &build_cohort_parameters(&extraction),
         )?;
         for table in ["player_matches", "hero_account_counts"] {
             extract_remote_table(&database, table)?;
         }
-        freeze_splits(&database, cohort)?;
-        execute(&database, "create_compositions", &Parameters::new())?;
+        create_match_folds(&database, cohort)?;
+        execute_sql_resource(&database, "create_compositions", &Parameters::new())?;
         for table in ["player_snapshots", "team_snapshots", "purchases"] {
             extract_remote_table(&database, table)?;
         }
         for table in ["first_purchases", "decision_opportunities"] {
-            execute(&database, &format!("drop_{table}"), &Parameters::new())?;
-            execute(&database, &format!("create_{table}"), &Parameters::new())?;
+            execute_sql_resource(&database, &format!("drop_{table}"), &Parameters::new())?;
+            execute_sql_resource(&database, &format!("create_{table}"), &Parameters::new())?;
         }
         export_tables(&database, paths)?;
-        let counts = extraction_counts(&database, &extraction)?;
+        let counts = collect_extraction_counts(&database, &extraction)?;
         drop(database);
         let temporary = paths.raw.join("duckdb-tmp");
         if temporary.is_dir() {
@@ -68,7 +68,7 @@ pub fn extract_cohort(
 
 fn connect_database(paths: &RunPaths, resources: ExtractionResources) -> Result<AnalysisDatabase> {
     let database = AnalysisDatabase::open(&paths.raw.join("analysis.duckdb"), resources)?;
-    execute(
+    execute_sql_resource(
         &database,
         "set_temp_directory",
         &Parameters::from([(
@@ -82,39 +82,43 @@ fn connect_database(paths: &RunPaths, resources: ExtractionResources) -> Result<
         )]),
     )?;
     for command in ["load_extensions", "create_s3_secret"] {
-        execute(&database, command, &Parameters::new())?;
+        execute_sql_resource(&database, command, &Parameters::new())?;
     }
-    execute(
+    execute_sql_resource(
         &database,
         "create_ducklake_secret",
         &Parameters::from([("metadata_path".into(), SqlValue::Text(DUCKLAKE_URL.into()))]),
     )?;
-    execute(&database, "attach_remote", &Parameters::new())?;
+    execute_sql_resource(&database, "attach_remote", &Parameters::new())?;
     let version = database.count(
         load_sql("extract/select_current_snapshot.sql")?,
         &Parameters::new(),
     )?;
-    execute(&database, "detach_remote", &Parameters::new())?;
+    execute_sql_resource(&database, "detach_remote", &Parameters::new())?;
     let version = Parameters::from([("version".into(), SqlValue::UBigInt(version))]);
-    execute(&database, "attach_remote_snapshot", &version)?;
-    execute(&database, "create_source_snapshot", &version)?;
+    execute_sql_resource(&database, "attach_remote_snapshot", &version)?;
+    execute_sql_resource(&database, "create_source_snapshot", &version)?;
     Ok(database)
 }
 
-fn execute(database: &AnalysisDatabase, name: &str, parameters: &Parameters) -> Result<()> {
+fn execute_sql_resource(
+    database: &AnalysisDatabase,
+    name: &str,
+    parameters: &Parameters,
+) -> Result<()> {
     database.execute(load_sql(&format!("extract/{name}.sql"))?, parameters)
 }
 
 fn extract_remote_table(database: &AnalysisDatabase, table: &str) -> Result<()> {
     eprintln!("Extracting {table}");
-    execute(database, &format!("drop_{table}"), &Parameters::new())?;
+    execute_sql_resource(database, &format!("drop_{table}"), &Parameters::new())?;
     database.execute_remote(
         load_sql(&format!("extract/create_{table}.sql"))?,
         &Parameters::new(),
     )
 }
 
-fn cohort_parameters(cohort: &Cohort) -> Parameters {
+fn build_cohort_parameters(cohort: &Cohort) -> Parameters {
     Parameters::from([
         ("match_mode".into(), SqlValue::Text("Ranked".into())),
         ("game_mode".into(), SqlValue::Text("Normal".into())),
@@ -141,15 +145,15 @@ fn load_item_assets(database: &AnalysisDatabase, paths: &RunPaths) -> Result<()>
     let document = read_json(&paths.raw.join("items.json"))?;
     let rows = array(&document)?
         .iter()
-        .map(item_row)
+        .map(build_item_asset_row)
         .collect::<Result<Vec<_>>>()?;
     for name in ["drop_item_assets", "create_item_assets"] {
-        execute(database, name, &Parameters::new())?;
+        execute_sql_resource(database, name, &Parameters::new())?;
     }
     database.insert_rows(load_sql("extract/insert_item_assets.sql")?, &rows)
 }
 
-fn item_row(item: &Value) -> Result<Vec<SqlValue>> {
+fn build_item_asset_row(item: &Value) -> Result<Vec<SqlValue>> {
     let identifier = integer(item, "id")?;
     Ok(vec![
         SqlValue::UBigInt(identifier),
@@ -176,8 +180,8 @@ fn item_row(item: &Value) -> Result<Vec<SqlValue>> {
     ])
 }
 
-fn freeze_splits(database: &AnalysisDatabase, cohort: &Cohort) -> Result<()> {
-    execute(
+fn create_match_folds(database: &AnalysisDatabase, cohort: &Cohort) -> Result<()> {
+    execute_sql_resource(
         database,
         "create_split_boundaries",
         &Parameters::from([
@@ -206,13 +210,13 @@ fn freeze_splits(database: &AnalysisDatabase, cohort: &Cohort) -> Result<()> {
         )
     })
     .collect();
-    execute(database, "fill_split_boundaries", &parameters)?;
-    execute(database, "create_match_folds", &Parameters::new())
+    execute_sql_resource(database, "fill_split_boundaries", &parameters)?;
+    execute_sql_resource(database, "create_match_folds", &Parameters::new())
 }
 
 fn export_tables(database: &AnalysisDatabase, paths: &RunPaths) -> Result<()> {
     for table in TABLES {
-        execute(
+        execute_sql_resource(
             database,
             &format!("export_{table}"),
             &Parameters::from([(
@@ -229,7 +233,7 @@ fn export_tables(database: &AnalysisDatabase, paths: &RunPaths) -> Result<()> {
     Ok(())
 }
 
-fn extraction_counts(database: &AnalysisDatabase, cohort: &Cohort) -> Result<Value> {
+fn collect_extraction_counts(database: &AnalysisDatabase, cohort: &Cohort) -> Result<Value> {
     let mut counts = serde_json::Map::new();
     for table in [
         "player_matches",

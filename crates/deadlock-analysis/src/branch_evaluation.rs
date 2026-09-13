@@ -35,7 +35,7 @@ impl<'a> BranchEvaluator<'a> {
         let mut audit = Vec::new();
         let mut choices = BTreeMap::new();
         let critical = normal_quantile(1.0 - 0.025 / count_as_f64(family.max(1))?)?;
-        for candidate in validated_candidates(nominee, reviewed)? {
+        for candidate in select_validated_candidates(nominee, reviewed)? {
             let item = integer(&candidate, "item_id")?;
             let comparator = integer(&candidate, "comparator_item_id")?;
             let checkpoint = usize::try_from(integer(&candidate, "after_step")?)?;
@@ -48,7 +48,7 @@ impl<'a> BranchEvaluator<'a> {
             let selected = choices[&key].select(self.rows, &candidate, graph)?;
             let rows = || selected.iter().map(|index| &self.rows[*index]);
             if !has_fold_support(rows(), item, comparator)? {
-                audit.push(rejected(
+                audit.push(build_rejection_record(
                     &candidate,
                     "Insufficient support in a temporal fold",
                 ));
@@ -66,11 +66,11 @@ impl<'a> BranchEvaluator<'a> {
                 });
             let mut branch = match result {
                 Err(error) => {
-                    audit.push(rejected(&candidate, error));
+                    audit.push(build_rejection_record(&candidate, error));
                     continue;
                 }
                 Ok(ContrastResult::Rejected(balance)) => {
-                    let mut record = rejected(
+                    let mut record = build_rejection_record(
                         &candidate,
                         "Balance check failed. Later outcome diagnostics were not calculated.",
                     );
@@ -112,7 +112,7 @@ impl<'a> BranchEvaluator<'a> {
     }
 }
 
-fn validated_candidates(nominee: &Nomination, reviewed: &[Value]) -> Result<Vec<Value>> {
+fn select_validated_candidates(nominee: &Nomination, reviewed: &[Value]) -> Result<Vec<Value>> {
     let mut selected = Vec::new();
     for candidate in &nominee.branch_candidates {
         let mut candidate = candidate.clone();
@@ -155,7 +155,7 @@ fn has_fold_support<'a>(
     Ok(counts.into_iter().flatten().all(|count| count >= 20))
 }
 
-fn rejected(candidate: &Value, reason: &str) -> Value {
+fn build_rejection_record(candidate: &Value, reason: &str) -> Value {
     let mut record = candidate.clone();
     record["admitted"] = false.into();
     record["reason"] = reason.into();

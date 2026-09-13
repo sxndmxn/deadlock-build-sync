@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 
 use crate::discovery_models::{Nomination, item_ids};
 
-pub fn conditions(row: &Value) -> Vec<(String, Value)> {
+pub fn collect_branch_conditions(row: &Value) -> Vec<(String, Value)> {
     let mut result = Vec::new();
     if let Some(relative) = row["relative_wealth"].as_f64() {
         result.push((
@@ -43,7 +43,7 @@ pub fn conditions(row: &Value) -> Vec<(String, Value)> {
     result
 }
 
-pub fn legal_choice(
+pub fn can_plan_branch_choice(
     row: &Value,
     nominee: &Nomination,
     item: u64,
@@ -114,7 +114,7 @@ pub fn select_choice_indices(
         let valid = if let Some(valid) = legal.get(&owned) {
             *valid
         } else {
-            let valid = legal_choice(row, nominee, item, checkpoint, graph)?;
+            let valid = can_plan_branch_choice(row, nominee, item, checkpoint, graph)?;
             legal.insert(owned, valid);
             valid
         };
@@ -125,7 +125,7 @@ pub fn select_choice_indices(
     Ok(selected)
 }
 
-pub fn freeze_candidates(
+pub fn build_branch_candidates(
     rows: &[Value],
     nominee: &Nomination,
     graph: &ItemGraph,
@@ -146,7 +146,7 @@ pub fn freeze_candidates(
         {
             continue;
         }
-        candidates.extend(freeze_conditions(
+        candidates.extend(build_condition_candidates(
             rows,
             nominee,
             integer(record, "item_id")?,
@@ -157,7 +157,7 @@ pub fn freeze_candidates(
     Ok(candidates)
 }
 
-pub fn freeze_conditions(
+pub fn build_condition_candidates(
     rows: &[Value],
     nominee: &Nomination,
     item: u64,
@@ -180,7 +180,7 @@ pub fn freeze_conditions(
     let mut counts = BTreeMap::<(String, String, u64), u64>::new();
     let mut triggers = BTreeMap::new();
     for row in selected.iter().filter(|row| row["fold"] == "train") {
-        for (condition, trigger) in conditions(row) {
+        for (condition, trigger) in collect_branch_conditions(row) {
             let key = (condition, serde_json::to_string(&trigger)?);
             *counts
                 .entry((key.0.clone(), key.1.clone(), integer(row, "item_id")?))
@@ -192,7 +192,7 @@ pub fn freeze_conditions(
         .map(|((condition,_),trigger)|json!({"item_id":item,"after_step":checkpoint,"comparator_item_id":comparator,"condition":condition,"value":trigger})).collect())
 }
 
-pub fn freeze_substitutions(
+pub fn add_substitution_candidates(
     rows: &[Value],
     nominees: &mut [Nomination],
     graph: &ItemGraph,
@@ -200,11 +200,11 @@ pub fn freeze_substitutions(
     let originals = nominees.to_vec();
     for base in nominees {
         for alternative in &originals {
-            let Some(checkpoint) = substitution_checkpoint(base, alternative) else {
+            let Some(checkpoint) = find_substitution_checkpoint(base, alternative) else {
                 continue;
             };
             let item = alternative.guide.path[checkpoint];
-            for mut candidate in freeze_conditions(rows, base, item, checkpoint, graph)? {
+            for mut candidate in build_condition_candidates(rows, base, item, checkpoint, graph)? {
                 candidate["substitution"] = json!({"source_identity_id":alternative.candidate.identity_id,"core":alternative.path["order"],"path":alternative.guide.path});
                 base.branch_candidates.push(candidate);
             }
@@ -213,7 +213,7 @@ pub fn freeze_substitutions(
     Ok(())
 }
 
-fn substitution_checkpoint(base: &Nomination, alternative: &Nomination) -> Option<usize> {
+fn find_substitution_checkpoint(base: &Nomination, alternative: &Nomination) -> Option<usize> {
     if base.candidate.identity_id == alternative.candidate.identity_id
         || base.guide.path.len() != alternative.guide.path.len()
     {
