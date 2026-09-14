@@ -6,8 +6,10 @@ use deadlock_data::{
     EpochSet, Error, JsonRecordDocument, MatchMode, RankCatalog, RankRange, Result, array,
     fingerprint, object, read_artifact_bytes,
 };
-use serde_json::Value;
+use serde_json::{Value, json};
 
+use crate::build_admission::filter_hero_builds;
+use crate::build_support::SUPPORT;
 use crate::evidence_catalog_groups::{primary_build, validate_hero_groups};
 use crate::evidence_catalog_header::{BuildEvidenceMetadata, parse_header};
 use crate::hero_evidence::{HeroBuildEvidence, HeroEvidence};
@@ -22,6 +24,7 @@ struct BuildEvidenceCatalogData {
     metadata: BuildEvidenceMetadata,
     heroes: BTreeMap<u64, HeroEvidence>,
     assets: Vec<Value>,
+    admission: Vec<Value>,
     raw_bytes: Vec<u8>,
 }
 
@@ -65,15 +68,10 @@ impl BuildEvidenceCatalog {
             Ok(())
         })?;
         let metadata = parse_header(document.header(), &content_sha256)?;
+        let mut admission = Vec::new();
         for hero in heroes.values_mut() {
             validate_hero_groups(hero, &metadata)?;
-            hero.builds
-                .retain(HeroBuildEvidence::has_validation_win_rate_above_hero);
-            if hero.builds.is_empty() && hero.exclusion.is_none() {
-                hero.exclusion = Some(
-                    "No build validation win rate exceeds the hero validation win rate".into(),
-                );
-            }
+            admission.extend(filter_hero_builds(hero)?);
         }
         if heroes.keys().copied().collect::<BTreeSet<_>>() != metadata.requested_hero_ids {
             return Err(Error::new(
@@ -96,6 +94,7 @@ impl BuildEvidenceCatalog {
                 metadata,
                 heroes,
                 assets: assets.to_vec(),
+                admission,
                 raw_bytes,
             }),
         })
@@ -119,6 +118,27 @@ impl BuildEvidenceCatalog {
     #[must_use]
     pub fn raw_bytes(&self) -> &[u8] {
         &self.data.raw_bytes
+    }
+
+    #[must_use]
+    pub fn build_admission_report(&self) -> Value {
+        let admitted = self
+            .data
+            .heroes
+            .values()
+            .map(|hero| hero.builds.len())
+            .sum::<usize>();
+        json!({
+            "schema_version":1,"source_artifact_id":self.data.metadata.artifact_id,
+            "method":"raw-and-adjusted-validation-v1",
+            "minimum_comparable_core_owners":SUPPORT.core_owners,
+            "minimum_comparable_core_share":SUPPORT.comparable_core_share,
+            "admitted_paths":admitted,"rejected_paths":self.data.admission.len() - admitted,
+            "paths":self.data.admission,
+            "excluded_heroes":self.data.heroes.values().filter_map(|hero| {
+                hero.exclusion.as_ref().map(|reason| json!({"hero_id":hero.hero_id,"hero":hero.hero,"reason":reason}))
+            }).collect::<Vec<_>>(),
+        })
     }
 
     /// # Errors

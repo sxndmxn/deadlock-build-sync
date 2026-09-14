@@ -66,10 +66,17 @@ Use `--artifacts DIR` to set the artifact directory.
 
 Each displayed main core and alternate path must have a validation win rate above the hero's rate in the same validation sample.
 Equal rates do not qualify.
+Each path must also have a positive adjusted difference between core owners and comparable nonowners.
+The comparison must include at least 100 core owners and at least 80% of all core owners in validation.
+It groups observations by hero, rank, player wealth, and team lead.
 The comparison uses the same rank range and matches that last at least 20 minutes.
 It measures core ownership at 20 minutes, not the effect of an exact purchase order.
 Missing or invalid rates prevent admission.
 If no path qualifies for a requested hero, generation stops and keeps the previous bundle.
+Successful artifact generation writes `build-admission.json` with path decisions, comparison values, and rejection reasons.
+Missing comparison data and nonpositive adjusted differences have separate rejection reasons.
+Admission does not establish statistical superiority or causation.
+See [Build admission methods](docs/build-admission.md) for the method, research, and limitations.
 
 - Eclat finds item cores. Leiden puts related cores into groups with default paths and manual variants.
 - Discovery, selection, validation, and reserved test partitions contain different matches. Test data does not control build admission.
