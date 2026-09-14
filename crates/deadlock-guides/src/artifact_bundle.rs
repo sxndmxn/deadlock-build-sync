@@ -61,7 +61,7 @@ pub fn reconstruct_artifact_bundle(
         .collect::<BTreeSet<_>>();
     if admitted != context_keys || context_keys != policies.policies().keys().cloned().collect() {
         return Err(Error::new(
-            "Artifact bundle does not contain every admitted build identity",
+            "Artifact bundle identities differ from admitted build identities",
         ));
     }
     let entries = context.heroes().collect::<Vec<_>>();

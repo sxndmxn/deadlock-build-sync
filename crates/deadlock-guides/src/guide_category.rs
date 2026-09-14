@@ -41,7 +41,7 @@ impl GuideCategory {
             _ => (760.0, 8),
         };
         let columns = if compact {
-            items.len().clamp(1, if items.len() <= 18 { 6 } else { 12 })
+            items.len().clamp(1, if items.len() <= 18 { 5 } else { 10 })
         } else {
             columns
         };
@@ -49,8 +49,9 @@ impl GuideCategory {
             if items.is_empty() {
                 256.0
             } else {
-                84.0_f32
-                    .mul_add(f32::from(u16::try_from(columns)?), 12.0)
+                // Allow for panel spacing and the game's width limit.
+                90.0_f32
+                    .mul_add(f32::from(u16::try_from(columns)?), 24.0)
                     .max(128.0)
             }
         } else {
@@ -60,9 +61,9 @@ impl GuideCategory {
         let extra_height =
             (if compact { 129.0 } else { 155.5 }) * f32::from(u16::try_from(rows - 1)?);
         let height = if compact && items.is_empty() {
-            48.0
+            56.0
         } else {
-            164.0 + extra_height
+            (if compact { 185.0 } else { 164.0 }) + extra_height
         };
         Ok(Self {
             name,

@@ -44,6 +44,7 @@ impl SupportPolicy {
 pub struct OutcomeEvidence {
     pub owners: u64,
     pub win_rate: Option<f64>,
+    pub hero_win_rate: Option<f64>,
     pub win_lower: f64,
     pub win_p: f64,
     pub lift: f64,
@@ -72,6 +73,7 @@ impl OutcomeEvidence {
         Ok(Self {
             owners,
             win_rate,
+            hero_win_rate: validate_hero_win_rate(row, owners)?,
             overlap,
             overlap_share,
             win_lower: probability(&row["win_lower_95"], "win lower bound")?,
@@ -134,6 +136,20 @@ fn validate_outcome_rate(row: &Value, owners: u64) -> Result<Option<f64>> {
         return Err(Error::new("Discovery has an inconsistent core win rate"));
     }
     Ok(Some(rate))
+}
+
+fn validate_hero_win_rate(row: &Value, owners: u64) -> Result<Option<f64>> {
+    let population = integer(&row["rows"], "hero matches", 0)?;
+    if owners > population {
+        return Err(Error::new("Core owners exceed the hero match count"));
+    }
+    if population == 0 {
+        if !row["hero_win_rate"].is_null() {
+            return Err(Error::new("Hero has a win rate without matches"));
+        }
+        return Ok(None);
+    }
+    probability(&row["hero_win_rate"], "hero win rate").map(Some)
 }
 
 fn validate_adjusted_outcome(adjusted: &Value) -> Result<Option<f64>> {

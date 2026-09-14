@@ -65,8 +65,15 @@ impl BuildEvidenceCatalog {
             Ok(())
         })?;
         let metadata = parse_header(document.header(), &content_sha256)?;
-        for hero in heroes.values() {
+        for hero in heroes.values_mut() {
             validate_hero_groups(hero, &metadata)?;
+            hero.builds
+                .retain(HeroBuildEvidence::has_validation_win_rate_above_hero);
+            if hero.builds.is_empty() && hero.exclusion.is_none() {
+                hero.exclusion = Some(
+                    "No build validation win rate exceeds the hero validation win rate".into(),
+                );
+            }
         }
         if heroes.keys().copied().collect::<BTreeSet<_>>() != metadata.requested_hero_ids {
             return Err(Error::new(

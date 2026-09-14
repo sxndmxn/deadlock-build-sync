@@ -14,13 +14,17 @@ pub fn render_purchase_markdown(guide: &PurchaseGuide, details: bool) -> Result<
         .purchase_guidance
         .as_ref()
         .ok_or_else(|| Error::new("Build has no purchase guidance"))?;
+    let ranks = guide.cohort.as_ref().map_or_else(
+        || Ok(guide.rank_identity.clone()),
+        |cohort| Ok::<_, Error>(cohort.rank_range()?.label()),
+    )?;
     let mut output = format!(
         "# {} — {}\n\nBuild: `{}`. Core: {} souls.\nRanks: {}. Evidence: {}.\n\n",
         guide.hero_name,
         guide.build_archetype,
         guide.path_id,
         guidance.default_path.remaining_cost,
-        guide.rank_identity,
+        ranks,
         guidance
             .evidence
             .get("status")
