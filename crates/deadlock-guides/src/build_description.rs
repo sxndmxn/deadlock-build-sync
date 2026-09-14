@@ -20,7 +20,9 @@ pub fn build_description(
     } else {
         format_title_case(&guide.match_mode)
     };
-    let ranks = if guide.rank_identity.is_empty() {
+    let ranks = if let Some(cohort) = &guide.cohort {
+        cohort.rank_range()?.label()
+    } else if guide.rank_identity.is_empty() {
         ranks.label()
     } else {
         guide.rank_identity.clone()

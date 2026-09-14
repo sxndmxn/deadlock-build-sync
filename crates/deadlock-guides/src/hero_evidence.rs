@@ -4,6 +4,7 @@ use deadlock_data::{Error, Result, array, object};
 use serde_json::Value;
 
 use crate::automatic_branch::{AutomaticBranch, parse_automatic_branches};
+use crate::build_support::OutcomeEvidence;
 use crate::core_evidence::{CorePolicyEvidence, parse_distinct_ids};
 use crate::discovery_evidence::{exclusion_reason, validate_discovery};
 use crate::evidence_values::{add_counts, integer, nonempty_text};
@@ -44,6 +45,19 @@ pub struct HeroEvidence {
     pub hero: String,
     pub builds: Vec<HeroBuildEvidence>,
     pub exclusion: Option<String>,
+}
+
+impl HeroBuildEvidence {
+    /// Returns false when validation rates are missing, invalid, equal, or below the hero rate.
+    #[must_use]
+    pub fn has_validation_win_rate_above_hero(&self) -> bool {
+        OutcomeEvidence::from_document(&self.discovery["validation"]).is_ok_and(|outcome| {
+            outcome
+                .win_rate
+                .zip(outcome.hero_win_rate)
+                .is_some_and(|(build_rate, hero_rate)| build_rate > hero_rate)
+        })
+    }
 }
 
 impl HeroEvidence {

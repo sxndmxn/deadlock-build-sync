@@ -46,10 +46,7 @@ pub fn project_policy_to_guide(
     guide.policy_id = policy.policy_id().into();
     guide.client_version = Some(identity.client_version);
     guide.match_mode.clone_from(&identity.match_mode);
-    guide.rank_identity = guide.cohort.as_ref().map_or_else(
-        || Ok(identity.rank_identity.clone()),
-        |cohort| Ok::<_, Error>(cohort.rank_range()?.label()),
-    )?;
+    guide.rank_identity.clone_from(&identity.rank_identity);
     Ok(guide)
 }
 

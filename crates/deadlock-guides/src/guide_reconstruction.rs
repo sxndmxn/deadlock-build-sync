@@ -77,13 +77,7 @@ fn hero_identity(
         hero_class_name: class.into(),
         client_version: manifest.content().client_version,
         match_mode: manifest.content().match_mode.as_str().into(),
-        rank_identity: manifest
-            .content()
-            .rank_range
-            .get("label")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .into(),
+        rank_identity: manifest.rank_identity()?,
     })
 }
 

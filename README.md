@@ -64,6 +64,13 @@ Use `--artifacts DIR` to set the artifact directory.
 
 ## Build rules
 
+Each displayed main core and alternate path must have a validation win rate above the hero's rate in the same validation sample.
+Equal rates do not qualify.
+The comparison uses the same rank range and matches that last at least 20 minutes.
+It measures core ownership at 20 minutes, not the effect of an exact purchase order.
+Missing or invalid rates prevent admission.
+If no path qualifies for a requested hero, generation stops and keeps the previous bundle.
+
 - Eclat finds item cores. Leiden puts related cores into groups with default paths and manual variants.
 - Discovery, selection, validation, and reserved test partitions contain different matches. Test data does not control build admission.
 - The automatic Queue contains only MAIN CORE. Other panels are optional. Each core substitution must have its own evidence.
