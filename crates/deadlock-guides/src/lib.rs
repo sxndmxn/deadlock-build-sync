@@ -10,6 +10,7 @@ mod ability_timeline;
 mod artifact_bundle;
 mod automatic_branch;
 mod branch_diagnostics;
+mod build_admission;
 mod build_description;
 mod build_selection;
 mod build_support;
