@@ -8,7 +8,7 @@ use serde_json::{Map, Value, json};
 
 use crate::discovery_evidence::REFRESH_INSTRUCTION;
 use crate::evidence_values::integer;
-pub const BUILD_EVIDENCE_SCHEMA_VERSION: u64 = 12;
+pub const BUILD_EVIDENCE_SCHEMA_VERSION: u64 = 13;
 pub const CURRENT_METHOD_VERSION: &str = "eclat-leiden-pairwise-v4";
 
 #[derive(Clone, Debug)]
@@ -97,7 +97,7 @@ fn validate_method(document: &Value) -> Result<()> {
 #[must_use]
 pub fn expected_selection_method() -> Value {
     let version = CURRENT_METHOD_VERSION;
-    json!({"version":version,"minimum_core_item_count":3,"maximum_core_item_count":9,"minimum_core_support":100,
+    json!({"version":version,"item_statistics_population":"all_hero_matches","minimum_core_item_count":3,"maximum_core_item_count":9,"minimum_core_support":100,
         "minimum_tier_support":20,"minimum_tier_adoption":0.05,"maximum_tier_adoption_drift":0.10,"tier_item_count":10,
         "minimum_purchase_window_coverage":0.50,"minimum_purchase_window_observations":20,"minimum_imbue_support":20,"minimum_imbue_share":0.5})
 }

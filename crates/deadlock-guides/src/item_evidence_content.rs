@@ -1,5 +1,14 @@
 use serde::{Deserialize, Serialize};
 
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct HeroItemStatistics {
+    pub eligible_player_matches: u64,
+    pub adopter_matches: u64,
+    pub wins: u64,
+    pub adoption: f64,
+    pub observed_outcome_rate: f64,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ItemEvidenceContent {
     pub item_id: u64,
@@ -14,6 +23,7 @@ pub struct ItemEvidenceContent {
     pub wins: u64,
     pub adoption: f64,
     pub observed_outcome_rate: f64,
+    pub hero_statistics: HeroItemStatistics,
     pub median_buy_time_s: f64,
     pub median_valid_buy_net_worth: Option<f64>,
     pub buy_net_worth_q25: Option<f64>,

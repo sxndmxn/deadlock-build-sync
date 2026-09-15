@@ -42,7 +42,7 @@ pub fn collect_tier_items(guide: &PurchaseGuide, tier: u8) -> Result<Vec<GuideIt
 
 fn annotate_scope(item: &GuideItem, scope: &str) -> GuideItem {
     let mut item = item.clone();
-    let annotation = format!("Stats: {scope}.\n{}", item.annotation());
+    let annotation = format!("Window: {scope}.\n{}", item.annotation());
     if annotation.len() <= MAX_ITEM_ANNOTATION_BYTES {
         item.annotation_text = annotation;
     }

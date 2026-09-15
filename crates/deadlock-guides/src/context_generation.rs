@@ -86,13 +86,14 @@ fn projection_context(guide: &PurchaseGuide) -> Result<Value> {
     Ok(
         json!({"build":{"path_id":guide.path_id,"path_label":guide.path_label,"archetype":guide.build_archetype,
         "tag_ids":guide.build_tag_ids,"tag_classes":guide.build_tag_classes,"tag_labels":guide.build_tag_labels,
-        "tag_catalog_sha256":guide.build_tag_catalog_sha256},"guide_version":5,
+        "tag_catalog_sha256":guide.build_tag_catalog_sha256},"guide_version":6,
         "categories":guide.rendered_categories()?.iter().map(crate::guide_category::GuideCategory::record).collect::<Vec<_>>(),
         "semantics":"MAIN CORE contains the validated component path in automatic Queue. All other panels are optional. Core substitutions require separate core and branch admission."}),
     )
 }
 
-const INTERPRETATION_CONSTRAINTS: [&str; 8] = [
+const INTERPRETATION_CONSTRAINTS: [&str; 9] = [
+    "Item card rates and buyer counts use all hero matches in the rank and date range. Purchase windows use the selected core owners.",
     "Tier membership uses first-ownership adoption. Display order uses observed net-worth timing, not outcome rate.",
     "Observed adopter outcomes and ending-duration profiles are descriptive associations. They do not establish item effects or live power curves.",
     "Ability actions use reached-state support and exact legal levels. Price tiers are not ability quarters.",

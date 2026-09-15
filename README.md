@@ -71,6 +71,13 @@ It measures core ownership at 20 minutes, not the effect of an exact purchase or
 Missing or invalid rates prevent admission.
 If no path qualifies for a requested hero, generation stops and keeps the previous bundle.
 
+Build names show complete core item names.
+The generator selects item pairs that distinguish each hero's builds.
+It keeps patch and match dates in the description.
+Build tags use core item costs, slot types, names, and effect descriptions.
+Function labels match complete words and exclude internal property fields.
+The Melee label requires a description of a melee attack or melee damage effect.
+
 - Eclat finds item cores. Leiden puts related cores into groups with default paths and manual variants.
 - Discovery, selection, validation, and reserved test partitions contain different matches. Test data does not control build admission.
 - The automatic Queue contains only MAIN CORE. Other panels are optional. Each core substitution must have its own evidence.
@@ -89,9 +96,16 @@ PR: 80.6% | WR: 49.0% | TOTAL GAMES: 12,611
 | Field | Meaning |
 | --- | --- |
 | `SOUL WINDOW` | Middle half of buyer net worth at purchase |
-| `PR` | Item adoption across the hero cohort |
-| `WR` | Buyer win rate |
-| `TOTAL GAMES` | Buyer match count |
+| `PR` | Item buyer matches divided by all eligible hero matches |
+| `WR` | Item buyer wins divided by item buyer matches |
+| `TOTAL GAMES` | Item buyer match count across all eligible hero matches |
+
+Item rates and buyer counts use all matches in the hero's rank range and evidence dates.
+They include short matches and every analysis partition.
+They do not require ownership of the selected core.
+Each item contributes at most one buyer observation per hero match.
+Purchase windows still use matches with the selected core.
+Build admission does not use these display statistics.
 
 ## Evidence refresh
 
@@ -133,8 +147,8 @@ For one hero, `build` and `sync` keep the full-roster bundle.
 For `--artifacts /path/artifacts`, they write to `/path/artifacts-subsets/HERO_ID` and show the output path.
 Install that bundle with `install-artifacts --artifacts DIR`.
 
-The CLI accepts context schema 17, projection guide version 5, and purchase guidance schema 4.
-Use `build` to replace a bundle with previous schema versions.
+The CLI accepts evidence schema 13, context schema 18, projection guide version 6, and purchase guidance schema 4.
+Run `refresh-evidence` before `build` to replace artifacts from previous schema versions.
 
 ## Commands
 

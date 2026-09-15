@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::guide_item::GuideItem;
+use crate::mechanic_properties::extract_description_text;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BuildTagSelection {
@@ -49,13 +50,9 @@ pub fn select_build_tags(
     let (ability_class, ability_label) = asset_identity(ability)?;
     let (item_class, item_label) = asset_identity(assets[&icon.item_id])?;
     let (axis, function) = classify_core(core, &assets)?;
-    let axis = catalog.require(axis)?;
+    catalog.require(axis)?;
     let function = catalog.require(function)?;
-    let archetype = if function.class_name == "citadel_build_tag_damage" {
-        format!("{} Damage", axis.label)
-    } else {
-        format!("{} / {}", function.label, axis.label)
-    };
+    let archetype = crate::build_title::select_core_item_name(core)?;
     let tag_ids = [ability_id, icon.item_id, function.tag_id];
     if tag_ids.into_iter().collect::<BTreeSet<_>>().len() != 3 {
         return Err(Error::new("Selected build icons are not distinct"));
@@ -102,47 +99,95 @@ fn first_fully_upgraded_ability(path: &[u64]) -> Result<u64> {
     Err(Error::new("Ability path does not complete an ability"))
 }
 
-fn asset_text(value: &Value) -> String {
-    match value {
-        Value::Object(fields) => fields
-            .iter()
-            .map(|(key, value)| format!("{key} {}", asset_text(value)))
-            .collect::<Vec<_>>()
-            .join(" "),
-        Value::Array(values) => values.iter().map(asset_text).collect::<Vec<_>>().join(" "),
-        Value::String(value) => value.clone(),
-        Value::Null | Value::Bool(_) | Value::Number(_) => String::new(),
-    }
-}
-
 fn classify_function(asset: &Value) -> usize {
-    let text = asset_text(asset).to_lowercase();
+    let text = format!(
+        "{} {}",
+        extract_description_text(&asset["name"]),
+        extract_description_text(&asset["description"])
+    )
+    .to_lowercase();
     let rules: &[(usize, &[&str])] = &[
         (
             7,
             &["healing reduction", "heal amp receive penalty", "anti-heal"],
         ),
         (6, &["headshot", "head shot"]),
-        (5, &["melee", "heavy punch"]),
+        (
+            5,
+            &[
+                "melee attack",
+                "melee damage",
+                "heavy melee",
+                "light melee",
+                "heavy punch",
+            ],
+        ),
         (
             3,
             &[
                 "stun",
-                "immobil",
+                "stuns",
+                "stunned",
+                "immobilize",
+                "immobilizes",
+                "immobilized",
                 "silence",
+                "silences",
                 "disarm",
+                "disarms",
                 "knockdown",
-                "slowpercent",
+                "slow",
+                "slows",
+                "slowing",
             ],
         ),
-        (4, &["move speed", "dash", "teleport", "leap", "sprint"]),
-        (2, &["healing", "heal", "lifesteal", "health regen"]),
-        (1, &["ally", "shield", "barrier", "cooldown", "active"]),
+        (
+            4,
+            &[
+                "move speed",
+                "movement speed",
+                "dash",
+                "dashes",
+                "teleport",
+                "teleports",
+                "leap",
+                "leaps",
+                "sprint",
+            ],
+        ),
+        (
+            2,
+            &[
+                "healing",
+                "heal",
+                "heals",
+                "lifesteal",
+                "life steal",
+                "regen",
+            ],
+        ),
+        (
+            1,
+            &["ally", "allies", "shield", "barrier", "cooldown", "active"],
+        ),
     ];
     rules
         .iter()
-        .find(|(_, terms)| terms.iter().any(|term| text.contains(term)))
+        .find(|(_, terms)| terms.iter().any(|term| contains_effect_phrase(&text, term)))
         .map_or(0, |(index, _)| *index)
+}
+
+fn contains_effect_phrase(text: &str, phrase: &str) -> bool {
+    text.match_indices(phrase).any(|(start, matched)| {
+        text[..start]
+            .chars()
+            .next_back()
+            .is_none_or(|character| !character.is_alphanumeric())
+            && text[start + matched.len()..]
+                .chars()
+                .next()
+                .is_none_or(|character| !character.is_alphanumeric())
+    })
 }
 
 fn classify_core(

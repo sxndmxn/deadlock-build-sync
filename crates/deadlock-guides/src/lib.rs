@@ -176,7 +176,7 @@ pub use inventory::{
     sell_item,
 };
 pub use item_evidence::{ItemEvidence, nondecreasing_window_schedule};
-pub use item_evidence_content::ItemEvidenceContent;
+pub use item_evidence_content::{HeroItemStatistics, ItemEvidenceContent};
 pub use mechanic_affinity::{MECHANIC_TAGS, asset_mechanics_refs, hero_item_affinity_scores};
 pub use mechanic_decisions::{ConditionalItemDecision, conditional_item_decision};
 pub use mechanic_properties::extract_description_text;
