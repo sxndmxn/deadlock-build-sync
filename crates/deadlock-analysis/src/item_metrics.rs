@@ -1,12 +1,33 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use deadlock_data::{Error, Result, count_ratio, integer, real};
+use deadlock_data::{Error, RankRange, Result, count_ratio, integer, real};
 use serde_json::{Value, json};
 
 use crate::database::{AnalysisDatabase, Parameters};
 use crate::inventory_history::MatchPlayer;
 use crate::purchase_pool::replace_members;
 use crate::sql_resources::load_sql;
+
+pub fn prepare_hero_item_statistics(
+    database: &AnalysisDatabase,
+    hero: u64,
+    ranks: RankRange,
+) -> Result<()> {
+    database.execute(
+        load_sql("production/create_hero_item_statistics.sql")?,
+        &Parameters::from([
+            ("hero".into(), duckdb::types::Value::UBigInt(hero)),
+            (
+                "minimum_badge".into(),
+                i64::from(ranks.minimum.badge()).into(),
+            ),
+            (
+                "maximum_badge".into(),
+                i64::from(ranks.maximum.badge()).into(),
+            ),
+        ]),
+    )
+}
 
 pub fn load_item_metrics(
     database: &AnalysisDatabase,
@@ -87,6 +108,7 @@ fn build_item_evidence(row: &Value, assets: &BTreeMap<u64, Value>, folds: &Value
         "median_valid_buy_net_worth",
         "selection_median_buy_time_s",
         "selection_median_valid_buy_net_worth",
+        "hero_statistics",
     ] {
         result.insert(field.into(), row[field].clone());
     }

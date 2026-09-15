@@ -17,7 +17,7 @@ fn build_variant_categories(guide: &PurchaseGuide) -> Result<Vec<GuideCategory>>
     }
     let mut result = vec![GuideCategory::new(
         "ALT CORE".into(),
-        purchase_items(first, "Stats: VARIANT 1.\n")?[..length].to_vec(),
+        purchase_items(first, "Window: VARIANT 1.\n")?[..length].to_vec(),
         String::new(),
         true,
         true,

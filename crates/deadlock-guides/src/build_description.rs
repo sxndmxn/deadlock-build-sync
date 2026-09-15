@@ -33,16 +33,19 @@ pub fn build_description(
         .map_or_else(|| "UNRESOLVED".into(), |version| version.to_string());
     let mut lines = vec![
         format!(
-            "{queue} • {ranks} • data through {} • client {version}.",
+            "{queue} • {ranks} • data {} through {} • client {version}.",
+            format_date(guide.analysis_start_timestamp, false)?,
             format_date(guide.as_of_timestamp, false)?
         ),
         describe_queue_rules(guide, categories).into(),
         "Buy the selected path in the listed order. Keep its optional items with that path.".into(),
+        "Item PR, WR, and TOTAL GAMES use all hero matches in this rank and date range.".into(),
+        "Purchase windows use matches with the selected core.".into(),
     ];
     if !guide.variant_guides.is_empty() {
         lines.extend([
             "Buy ALT CORE first. Then buy one complete VARIANT in its listed order. This path replaces MAIN CORE.".into(),
-            "ALT CORE tooltips show VARIANT 1 statistics.".into(),
+            "ALT CORE tooltips show VARIANT 1 purchase windows.".into(),
         ]);
     }
     if categories.iter().any(|category| category.compact) {

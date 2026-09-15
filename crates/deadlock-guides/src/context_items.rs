@@ -34,7 +34,7 @@ fn tier_item(item: &GuideItem, rank: usize, asset: &Value) -> Value {
         "slot":asset["item_slot_type"].as_str().filter(|slot| !slot.is_empty()).unwrap_or("unknown").to_uppercase(),
         "is_active_item":asset["is_active_item"]==true,"claim_class":"descriptive"});
     let fields = if item.eligible_player_matches > 0 {
-        json!({"rank_by_first_ownership_net_worth":rank,"purchase_adoption":item.purchase_adoption,
+        json!({"rank_by_first_ownership_net_worth":rank,"purchase_adoption":item.purchase_adoption,"hero_statistics":item.hero_statistics,
             "adopter_matches":item.adopter_matches,"eligible_player_matches":item.eligible_player_matches,"purchase_events":item.purchase_events,
             "observed_outcome_rate_among_adopters":item.observed_outcome_rate,"median_first_ownership_time_s":item.median_buy_time_s,
             "median_valid_first_ownership_net_worth":item.median_valid_buy_net_worth,"first_ownership_net_worth_q25":item.buy_net_worth_q25,
@@ -69,7 +69,7 @@ pub fn core_context(guide: &PurchaseGuide) -> Result<Value> {
 }
 
 fn core_item(item: &GuideItem) -> Value {
-    json!({"item_id":item.item_id,"item":item.name,"purchase_adoption":item.purchase_adoption,"adopter_matches":item.adopter_matches,
+    json!({"item_id":item.item_id,"item":item.name,"purchase_adoption":item.purchase_adoption,"adopter_matches":item.adopter_matches,"hero_statistics":item.hero_statistics,
         "eligible_player_matches":item.eligible_player_matches,"observed_outcome_rate_among_adopters":item.observed_outcome_rate,
         "median_first_ownership_time_s":item.median_buy_time_s,"median_valid_first_ownership_net_worth":item.median_valid_buy_net_worth})
 }

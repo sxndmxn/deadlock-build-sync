@@ -246,6 +246,10 @@ const SQL: &[(&str, &str)] = &[
         include_str!("../sql/extract/set_temp_directory.sql"),
     ),
     (
+        "production/create_hero_item_statistics.sql",
+        include_str!("../sql/production/create_hero_item_statistics.sql"),
+    ),
+    (
         "production/select_path_cohort_summary.sql",
         include_str!("../sql/production/select_path_cohort_summary.sql"),
     ),
