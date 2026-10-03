@@ -48,15 +48,15 @@ pub struct HeroEvidence {
 }
 
 impl HeroBuildEvidence {
-    /// Returns false when validation rates are missing, invalid, equal, or below the hero rate.
-    #[must_use]
-    pub fn has_validation_win_rate_above_hero(&self) -> bool {
-        OutcomeEvidence::from_document(&self.discovery["validation"]).is_ok_and(|outcome| {
-            outcome
-                .win_rate
-                .zip(outcome.hero_win_rate)
-                .is_some_and(|(build_rate, hero_rate)| build_rate > hero_rate)
-        })
+    /// # Errors
+    /// Returns an error when validation data is malformed or fails the build admission requirements.
+    pub fn validate_admission(&self) -> Result<()> {
+        let reasons = OutcomeEvidence::from_document(&self.discovery["validation"])?
+            .build_admission_rejections();
+        if !reasons.is_empty() {
+            return Err(Error::new(reasons.join(". ")));
+        }
+        Ok(())
     }
 }
 

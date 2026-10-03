@@ -18,11 +18,7 @@ pub fn select_hero_build(
     evidence: &HeroBuildEvidence,
     assets: &[Value],
 ) -> Result<SelectedHeroBuild> {
-    if !evidence.has_validation_win_rate_above_hero() {
-        return Err(Error::new(
-            "Build validation win rate must exceed the hero validation win rate",
-        ));
-    }
+    evidence.validate_admission()?;
     let graph = ItemGraph::from_assets(assets)?;
     let items = evidence
         .items

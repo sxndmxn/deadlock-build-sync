@@ -61,6 +61,10 @@ pub fn write_build_artifacts(
         reconstruct_artifact_bundle(&context, &policies, &narratives.catalog, evidence)
     })?;
     atomic_write(&staged.join("build-evidence.json"), evidence.raw_bytes())?;
+    atomic_write_json(
+        &staged.join("build-admission.json"),
+        &evidence.build_admission_report(),
+    )?;
     atomic_write_json(&staged.join("strategy-context.json"), context.document())?;
     atomic_write_json(&staged.join("policies.json"), &policies.to_document()?)?;
     atomic_write_json(
