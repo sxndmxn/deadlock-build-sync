@@ -65,6 +65,7 @@ pub fn group_guides(
             .ok_or_else(|| Error::new("Guide group has no members"))?;
         result.extend(combine_guides(members)?);
     }
+    crate::build_title::assign_core_item_names(&mut result)?;
     Ok(result)
 }
 

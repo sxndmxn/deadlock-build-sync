@@ -6,10 +6,36 @@ use crate::item_evidence_content::ItemEvidenceContent;
 pub fn validate_item(item: &ItemEvidenceContent) -> Result<()> {
     validate_identity(item)?;
     validate_totals(item)?;
+    validate_hero_statistics(item)?;
     validate_folds(item)?;
     validate_selection(item)?;
     validate_windows(item)?;
     validate_imbue(item)
+}
+
+fn validate_hero_statistics(item: &ItemEvidenceContent) -> Result<()> {
+    let statistics = &item.hero_statistics;
+    if statistics.eligible_player_matches < item.eligible_player_matches
+        || statistics.adopter_matches < item.adopter_matches
+        || statistics.adopter_matches > statistics.eligible_player_matches
+        || statistics.wins < item.wins
+        || statistics.wins > statistics.adopter_matches
+        || statistics.adopter_matches - statistics.wins < item.adopter_matches - item.wins
+    {
+        return Err(Error::new(
+            "Hero item statistics have inconsistent observation counts",
+        ));
+    }
+    validate_rate(
+        statistics.adoption,
+        statistics.adopter_matches,
+        statistics.eligible_player_matches,
+    )?;
+    validate_rate(
+        statistics.observed_outcome_rate,
+        statistics.wins,
+        statistics.adopter_matches,
+    )
 }
 
 fn validate_identity(item: &ItemEvidenceContent) -> Result<()> {

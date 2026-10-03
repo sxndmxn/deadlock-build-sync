@@ -4,7 +4,10 @@ use deadlock_data::{
     Error, RankCatalog, Result, array, atomic_write_json, fingerprint, integer, object, read_json,
     text, trace_operation,
 };
-use deadlock_guides::{BuildEvidenceCatalog, expected_selection_method, select_hero_build};
+use deadlock_guides::{
+    BUILD_EVIDENCE_SCHEMA_VERSION, BuildEvidenceCatalog, expected_selection_method,
+    select_hero_build,
+};
 use deadlock_input::parse_patch_feed;
 use serde_json::{Value, json};
 
@@ -53,7 +56,7 @@ pub fn export_evidence(
             )
         })
         .collect::<std::collections::BTreeMap<_, _>>();
-    let mut payload = json!({"schema_version":12,"producer":"deadlock-build-sync.offline","method":production_method(),"cohort":manifest["cohort"],
+    let mut payload = json!({"schema_version":BUILD_EVIDENCE_SCHEMA_VERSION,"producer":"deadlock-build-sync.offline","method":production_method(),"cohort":manifest["cohort"],
         "patch":patch.to_document()?,"epochs":epochs,"client_version":integer(&manifest["sources"],"client_version")?,"rank_labels_sha256":RankCatalog::from_assets(array(&ranks)?)?.fingerprint(),
         "heroes_sha256":fingerprint(&heroes)?,"items_sha256":fingerprint(&serde_json::to_value(&context.normal_assets)?)?,"mechanics_assets":context.normal_assets,
         "source_sha256":manifest["sources"]["source_sha256"],"frozen_data_sha256":manifest.get("frozen_data_sha256").cloned().unwrap_or_else(||json!({})),"extraction":manifest["extraction"],

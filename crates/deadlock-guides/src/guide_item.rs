@@ -2,6 +2,7 @@ use deadlock_data::{Error, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::item_evidence::ItemEvidence;
+use crate::item_evidence_content::HeroItemStatistics;
 use crate::purchase_windows::PurchaseWindow;
 
 pub const MAX_ITEM_ANNOTATION_BYTES: usize = 240;
@@ -31,6 +32,7 @@ pub struct GuideItem {
     pub eligible_player_matches: u64,
     pub adopter_matches: u64,
     pub purchase_adoption: f64,
+    pub hero_statistics: HeroItemStatistics,
     pub purchase_events: u64,
     pub median_buy_time_s: Option<f64>,
     pub median_valid_buy_net_worth: Option<f64>,
@@ -59,6 +61,7 @@ impl GuideItem {
             eligible_player_matches: item.selection_eligible_player_matches,
             adopter_matches: item.selection_adopter_matches,
             purchase_adoption: item.selection_adoption,
+            hero_statistics: item.hero_statistics.clone(),
             purchase_events: item.purchase_events,
             median_buy_time_s: item.selection_median_buy_time_s,
             median_valid_buy_net_worth: item.selection_median_valid_buy_net_worth,
@@ -121,9 +124,9 @@ impl GuideItem {
             );
         format!(
             "SOUL WINDOW: {window}\nPR: {:.1}% | WR: {:.1}% | TOTAL GAMES: {}",
-            self.purchase_adoption * 100.0,
-            self.observed_outcome_rate * 100.0,
-            format_integer(i128::from(self.adopter_matches))
+            self.hero_statistics.adoption * 100.0,
+            self.hero_statistics.observed_outcome_rate * 100.0,
+            format_integer(i128::from(self.hero_statistics.adopter_matches))
         )
     }
 }

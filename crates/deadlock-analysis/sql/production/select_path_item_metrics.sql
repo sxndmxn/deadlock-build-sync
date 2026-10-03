@@ -172,6 +172,14 @@ SELECT
     d.imbue_observations,
     d.target_share,
     $member_count::BIGINT AS hero_player_matches,
-    i.adopter_matches / $member_count::DOUBLE AS adoption_rate
+    i.adopter_matches / $member_count::DOUBLE AS adoption_rate,
+    struct_pack(
+        eligible_player_matches := h.eligible_player_matches,
+        adopter_matches := h.adopter_matches,
+        wins := h.wins,
+        adoption := h.adoption,
+        observed_outcome_rate := h.observed_outcome_rate
+    ) AS hero_statistics
 FROM items AS i INNER JOIN events AS e ON i.item_id = e.item_id
+INNER JOIN _hero_item_statistics AS h ON i.item_id = h.item_id
 LEFT JOIN dominant_imbues AS d ON i.item_id = d.item_id;

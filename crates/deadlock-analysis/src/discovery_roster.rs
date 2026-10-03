@@ -13,6 +13,7 @@ use crate::discovery_snapshot::{
     FrozenRoster, GuideGroups, load_snapshot, require_source_identity, roster_fingerprint,
     save_snapshot, source_identity,
 };
+use crate::item_metrics::prepare_hero_item_statistics;
 use deadlock_data::{map_jobs, map_jobs_by_cost};
 
 pub fn discover_roster(
@@ -143,6 +144,7 @@ fn validate_hero(
         Vec::new()
     };
     let mut evaluator = BranchEvaluator::new(&decisions);
+    prepare_hero_item_statistics(&database, identifier, ranks)?;
     let mut builds = Vec::new();
     let mut rejections = Vec::new();
     for (nominee, admitted) in report.rows.iter().zip(&reviewed) {

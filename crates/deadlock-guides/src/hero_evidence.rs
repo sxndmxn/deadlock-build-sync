@@ -87,6 +87,7 @@ impl HeroEvidence {
             .map(|value| parse_build_path(value, hero_id, &hero, &cohort))
             .collect::<Result<Vec<_>>>()?;
         validate_build_identities(&builds)?;
+        validate_hero_item_statistics(&builds)?;
         Ok(Self {
             hero_id,
             hero,
@@ -94,6 +95,27 @@ impl HeroEvidence {
             exclusion: None,
         })
     }
+}
+
+fn validate_hero_item_statistics(builds: &[HeroBuildEvidence]) -> Result<()> {
+    let mut statistics = BTreeMap::new();
+    let mut population = None;
+    for item in builds.iter().flat_map(|build| &build.items) {
+        let item = item.content();
+        let current = &item.hero_statistics;
+        if population
+            .replace(current.eligible_player_matches)
+            .is_some_and(|previous| previous != current.eligible_player_matches)
+            || statistics
+                .insert(item.item_id, current)
+                .is_some_and(|previous| previous != current)
+        {
+            return Err(Error::new(
+                "Hero item statistics differ between items or build paths",
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn parse_build_path(

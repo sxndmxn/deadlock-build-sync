@@ -1,6 +1,10 @@
+use std::collections::BTreeSet;
+
 use chrono::DateTime;
 use deadlock_data::{Error, Result};
-use regex_lite::Regex;
+
+use crate::guide_item::GuideItem;
+use crate::purchase_guide::PurchaseGuide;
 
 pub const MAX_BUILD_NAME_CHARACTERS: usize = 50;
 
@@ -16,84 +20,94 @@ pub fn format_date(timestamp: u64, compact: bool) -> Result<String> {
 }
 
 /// # Errors
-/// Returns an error when the persona is empty, the statistics window is too long, or the patch pattern cannot compile.
+/// Returns an error when the persona or core item name is empty, or the core item name exceeds the title limit.
 pub fn format_build_name(
     persona: &str,
     build_name: &str,
-    patch_title: &str,
-    statistics_window: &str,
+    _patch_title: &str,
+    _statistics_window: &str,
 ) -> Result<String> {
     let persona = persona.split_whitespace().collect::<Vec<_>>().join(" ");
     if persona.is_empty() {
         return Err(Error::new("Persona must contain visible text"));
     }
-    let suffix = format!(" / {statistics_window}");
-    let fixed = 6 + suffix.chars().count();
-    let persona_budget = MAX_BUILD_NAME_CHARACTERS
-        .checked_sub(fixed + 8 + 4)
-        .ok_or_else(|| Error::new("Build statistics window exceeds the title limit"))?;
-    let prefix = format!("{} | ", truncate(&persona, persona_budget));
-    let available = MAX_BUILD_NAME_CHARACTERS - prefix.chars().count() - 3 - suffix.chars().count();
-    let build = if build_name.trim().is_empty() {
-        "Evidence Default"
+    let build = build_name.trim();
+    if build.is_empty() || build.chars().count() > MAX_BUILD_NAME_CHARACTERS {
+        return Err(Error::new(
+            "Core item name is empty or exceeds the title limit",
+        ));
+    }
+    let named = format!("{persona} | {build}");
+    Ok(if named.chars().count() <= MAX_BUILD_NAME_CHARACTERS {
+        named
     } else {
-        build_name.trim()
-    };
-    let patch = compact_patch_label(if patch_title.trim().is_empty() {
-        "Unknown Patch"
-    } else {
-        patch_title.trim()
-    })?;
-    let build_budget = build.chars().count().min(
-        available
-            .saturating_sub(patch.chars().count().min(4))
-            .max(8),
-    );
-    let patch_budget = available
-        .checked_sub(build_budget)
-        .ok_or_else(|| Error::new("Build title exceeds its character limit"))?;
-    Ok(format!(
-        "{prefix}{} | {}{suffix}",
-        truncate(build, build_budget),
-        truncate(&patch, patch_budget)
-    ))
+        build.into()
+    })
 }
 
-fn truncate(text: &str, limit: usize) -> String {
-    text.chars()
-        .take(limit)
-        .collect::<String>()
-        .trim_end()
-        .into()
+pub fn select_core_item_name(core: &[GuideItem]) -> Result<String> {
+    select_available_core_name(core, &[], &BTreeSet::new())
 }
 
-fn compact_patch_label(title: &str) -> Result<String> {
-    let pattern = Regex::new(r"([0-9]{1,2})-([0-9]{1,2})-[0-9]{4}")
-        .map_err(|error| Error::new(format!("Invalid patch date pattern: {error}")))?;
-    for captures in pattern.captures_iter(title) {
-        let Some(found) = captures.get(0) else {
-            continue;
-        };
-        if title[..found.start()]
-            .chars()
-            .next_back()
-            .is_some_and(char::is_numeric)
-            || title[found.end()..]
-                .chars()
-                .next()
-                .is_some_and(char::is_numeric)
-        {
-            continue;
-        }
-        let month = captures
-            .get(1)
-            .and_then(|value| value.as_str().parse::<u8>().ok());
-        let day = captures
-            .get(2)
-            .and_then(|value| value.as_str().parse::<u8>().ok());
-        if let Some((month, day)) = month.zip(day) {
-            return Ok(format!("{month:02}{day:02}"));
+pub fn assign_core_item_names(guides: &mut [PurchaseGuide]) -> Result<()> {
+    let mut used = BTreeSet::new();
+    let mut names = Vec::new();
+    for guide in guides.iter() {
+        let peers = guides
+            .iter()
+            .filter(|peer| peer.hero_id == guide.hero_id)
+            .map(|peer| peer.core_items.as_slice())
+            .collect::<Vec<_>>();
+        let existing = used
+            .iter()
+            .filter(|(hero, _)| *hero == guide.hero_id)
+            .map(|(_, name): &(u64, String)| name.clone())
+            .collect();
+        let name = select_available_core_name(&guide.core_items, &peers, &existing)?;
+        used.insert((guide.hero_id, name.clone()));
+        names.push(name);
+    }
+    for (guide, name) in guides.iter_mut().zip(names) {
+        guide.build_archetype = name;
+    }
+    Ok(())
+}
+
+fn select_available_core_name(
+    core: &[GuideItem],
+    peers: &[&[GuideItem]],
+    used: &BTreeSet<String>,
+) -> Result<String> {
+    let mut ordered = core.iter().collect::<Vec<_>>();
+    ordered.sort_by_key(|item| std::cmp::Reverse(item.tier));
+    let first = ordered
+        .first()
+        .ok_or_else(|| Error::new("Build name requires core items"))?;
+    let mut candidates = Vec::new();
+    for (first_order, first) in ordered.iter().enumerate() {
+        for (second_order, second) in ordered.iter().enumerate().skip(first_order + 1) {
+            let count = peers
+                .iter()
+                .filter(|peer| {
+                    peer.iter().any(|item| item.item_id == first.item_id)
+                        && peer.iter().any(|item| item.item_id == second.item_id)
+                })
+                .count();
+            candidates.push((
+                first_order,
+                count,
+                second_order,
+                format!("{} / {}", first.name, second.name),
+            ));
         }
     }
-    Ok(title.into())
+    if ordered.len() == 1 {
+        candidates.push((0, 0, 0, first.name.clone()));
+    }
+    candidates.sort();
+    candidates
+        .into_iter()
+        .map(|(_, _, _, name)| name)
+        .find(|name| name.chars().count() <= MAX_BUILD_NAME_CHARACTERS && !used.contains(name))
+        .ok_or_else(|| Error::new("Core items cannot form a distinct name within the title limit"))
 }
