@@ -52,6 +52,15 @@ Before you finish, remove unnecessary words and replace unclear names.
 
 Language reference: ASD-STE100.
 
+## Project vision
+
+`VISION.md` is the permanent, high-level anchor for the project. It states the original problem and goal.
+This file, `AGENTS.md`, describes the current repository. It changes when the code changes.
+Read `VISION.md` before you plan or change the project.
+The owner writes `VISION.md`. Do not create, change, move, or delete it.
+When a request, a change, or this file conflicts with `VISION.md`, follow `VISION.md` and report the conflict.
+`scripts/check_vision.sh` fails when any commit after the first one changes `VISION.md`.
+
 ## Repository purpose
 
 `deadlock-build-sync` is a CLI that primarily supports Linux.
