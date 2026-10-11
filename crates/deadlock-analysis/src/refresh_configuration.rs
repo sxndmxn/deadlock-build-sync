@@ -4,7 +4,7 @@ use deadlock_data::{Error, RankRange, Result};
 use deadlock_guides::RankExpansion;
 use serde_json::{Value, json};
 
-pub const DUCKLAKE_URL: &str = "https://s3-cache.deadlock-api.com/fast/db_snapshot.ducklake";
+pub const DUCKLAKE_URL: &str = "https://data.deadlock-api.com/v1/catalog.ducklake";
 pub const RANK_RESET_AT: &str = "2026-07-30T19:14:37Z";
 
 #[derive(Clone, Debug)]

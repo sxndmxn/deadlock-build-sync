@@ -1,0 +1,32 @@
+CREATE TABLE source_players AS
+SELECT
+    match_id,
+    account_id,
+    player_slot,
+    team,
+    hero_id,
+    assigned_lane,
+    average_badge,
+    won,
+    start_time,
+    duration_s,
+    net_worth,
+    match_mode,
+    game_mode,
+    rewards_eligible,
+    player_match_outcome,
+    player_rank_initial_calibration_games,
+    "items.item_id",
+    "items.game_time_s",
+    "items.sold_time_s",
+    "items.imbued_ability_id",
+    "stats.time_stamp_s",
+    "stats.net_worth"
+FROM remote."main".match_player
+WHERE
+    start_time >= $since::TIMESTAMPTZ
+    AND start_time <= $as_of::TIMESTAMPTZ
+QUALIFY row_number() OVER (
+    PARTITION BY match_id, account_id, start_time
+    ORDER BY created_at DESC
+) = 1;

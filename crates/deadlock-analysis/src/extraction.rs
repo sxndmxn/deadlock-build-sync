@@ -38,18 +38,20 @@ pub fn extract_cohort(
         }
         let database = connect_database(paths, resources)?;
         load_item_assets(&database, paths)?;
+        extract_source_players(&database, &extraction)?;
         execute_sql_resource(&database, "drop_eligible_matches", &Parameters::new())?;
-        database.execute_remote(
-            load_sql("extract/create_eligible_matches.sql")?,
+        execute_sql_resource(
+            &database,
+            "create_eligible_matches",
             &build_cohort_parameters(&extraction),
         )?;
         for table in ["player_matches", "hero_account_counts"] {
-            extract_remote_table(&database, table)?;
+            extract_table(&database, table)?;
         }
         create_match_folds(&database, cohort)?;
         execute_sql_resource(&database, "create_compositions", &Parameters::new())?;
         for table in ["player_snapshots", "team_snapshots", "purchases"] {
-            extract_remote_table(&database, table)?;
+            extract_table(&database, table)?;
         }
         for table in ["first_purchases", "decision_opportunities"] {
             execute_sql_resource(&database, &format!("drop_{table}"), &Parameters::new())?;
@@ -109,13 +111,30 @@ fn execute_sql_resource(
     database.execute(load_sql(&format!("extract/{name}.sql"))?, parameters)
 }
 
-fn extract_remote_table(database: &AnalysisDatabase, table: &str) -> Result<()> {
+/// Copies the cohort window from the remote lake once, keeping the newest
+/// version of each player row. Later extraction steps read only this table.
+fn extract_source_players(database: &AnalysisDatabase, cohort: &Cohort) -> Result<()> {
+    eprintln!("Extracting source_players");
+    execute_sql_resource(database, "drop_source_players", &Parameters::new())?;
+    database.execute_remote(
+        load_sql("extract/create_source_players.sql")?,
+        &Parameters::from([
+            (
+                "since".into(),
+                SqlValue::Timestamp(TimeUnit::Second, cohort.since),
+            ),
+            (
+                "as_of".into(),
+                SqlValue::Timestamp(TimeUnit::Second, cohort.as_of),
+            ),
+        ]),
+    )
+}
+
+fn extract_table(database: &AnalysisDatabase, table: &str) -> Result<()> {
     eprintln!("Extracting {table}");
     execute_sql_resource(database, &format!("drop_{table}"), &Parameters::new())?;
-    database.execute_remote(
-        load_sql(&format!("extract/create_{table}.sql"))?,
-        &Parameters::new(),
-    )
+    execute_sql_resource(database, &format!("create_{table}"), &Parameters::new())
 }
 
 fn build_cohort_parameters(cohort: &Cohort) -> Parameters {
