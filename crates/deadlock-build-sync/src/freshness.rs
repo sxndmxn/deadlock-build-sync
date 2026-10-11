@@ -7,7 +7,9 @@ use deadlock_guides::{
     load_artifact_guide_bundle,
 };
 use deadlock_input::DeadlockApi;
-use deadlock_steam::{BuildKey, CacheLocation, managed_builds_match, read_cache};
+use deadlock_steam::{
+    BuildKey, CacheLocation, ManagedBuildComparison, compare_managed_builds, read_cache,
+};
 use serde_json::{Value, json};
 
 pub fn build_freshness_report(
@@ -174,8 +176,20 @@ fn check_installation_status(location: Result<CacheLocation>, directory: &Path) 
         }
     };
     match compare_installed_guides(&location, directory) {
-        Ok(true) => build_stage_status("installed_cache", "current", "Validated"),
-        Ok(false) => build_stage_status(
+        Ok(ManagedBuildComparison {
+            is_current: true,
+            retained_heroes,
+        }) => {
+            let detail = if retained_heroes == 0 {
+                "Validated".into()
+            } else {
+                format!(
+                    "Validated. {retained_heroes} other heroes keep managed builds from an earlier install"
+                )
+            };
+            build_stage_status("installed_cache", "current", &detail)
+        }
+        Ok(_) => build_stage_status(
             "installed_cache",
             "stale",
             "Managed builds differ from the expected coverage or guide contents",
@@ -184,7 +198,10 @@ fn check_installation_status(location: Result<CacheLocation>, directory: &Path) 
     }
 }
 
-fn compare_installed_guides(location: &CacheLocation, directory: &Path) -> Result<bool> {
+fn compare_installed_guides(
+    location: &CacheLocation,
+    directory: &Path,
+) -> Result<ManagedBuildComparison> {
     let bundle = load_artifact_guide_bundle(
         &directory.join("strategy-context.json"),
         &directory.join("policies.json"),
@@ -211,7 +228,7 @@ fn compare_installed_guides(location: &CacheLocation, directory: &Path) -> Resul
             ))
         })
         .collect::<Result<BTreeMap<_, _>>>()?;
-    managed_builds_match(
+    compare_managed_builds(
         &read_cache(&location.cache_path)?,
         location.account_id,
         &expected,
