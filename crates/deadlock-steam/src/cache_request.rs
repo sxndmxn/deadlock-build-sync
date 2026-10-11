@@ -1,7 +1,8 @@
 use std::collections::BTreeSet;
 
-use deadlock_data::{Error, Result, SnapshotManifest};
-use deadlock_guides::{BuildPresentation, GuideIdentity};
+use deadlock_data::{Error, Result};
+use deadlock_guides::BuildPresentation;
+use serde_json::Value;
 
 use crate::build_metadata::HeroBuildMetadata;
 
@@ -11,17 +12,48 @@ pub struct BuildKey {
     pub path_id: String,
 }
 
+/// The source artifact of one installation.
+#[derive(Clone, Debug)]
+pub struct BuildSnapshot {
+    pub snapshot_id: String,
+    pub document: Value,
+}
+
+/// The source of one managed build: its snapshot and the fingerprint of its content.
+#[derive(Clone, Debug)]
+pub struct BuildIdentity {
+    pub snapshot_id: String,
+    pub build_fingerprint: String,
+}
+
+impl BuildIdentity {
+    fn validate(&self) -> Result<()> {
+        for value in [&self.snapshot_id, &self.build_fingerprint] {
+            if value.len() != 64
+                || !value
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+            {
+                return Err(Error::new(
+                    "Build identity requires lowercase SHA-256 values",
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct ManagedBuild {
     pub(super) key: BuildKey,
     pub(super) presentation: BuildPresentation,
-    pub(super) identity: GuideIdentity,
+    pub(super) identity: BuildIdentity,
 }
 
 impl ManagedBuild {
     /// # Errors
-    /// Returns an error when the description and validated guide identities do not match.
-    pub fn new(presentation: BuildPresentation, identity: GuideIdentity) -> Result<Self> {
+    /// Returns an error when the description does not name the build snapshot.
+    pub fn new(presentation: BuildPresentation, identity: BuildIdentity) -> Result<Self> {
         identity.validate()?;
         let content = presentation.content();
         let metadata = HeroBuildMetadata {
@@ -32,19 +64,15 @@ impl ManagedBuild {
             .managed_path()
             .ok_or_else(|| Error::new("Build description has no valid managed build path"))?
             .to_owned();
-        for line in [
-            format!("Snapshot: {}.", identity.snapshot_id),
-            format!("Policy: {}.", identity.policy_id),
-        ] {
-            if !content
-                .description
-                .split('\n')
-                .any(|candidate| candidate == line)
-            {
-                return Err(Error::new(
-                    "Build description does not match the guide snapshot or policy identity",
-                ));
-            }
+        let line = format!("Snapshot: {}.", identity.snapshot_id);
+        if !content
+            .description
+            .split('\n')
+            .any(|candidate| candidate == line)
+        {
+            return Err(Error::new(
+                "Build description does not match the build snapshot",
+            ));
         }
         let key = BuildKey {
             hero_id: content.hero_id,
@@ -68,7 +96,7 @@ pub struct CacheUpdateRequest<'request> {
     pub builds: &'request [ManagedBuild],
     pub account_id: u32,
     pub timestamp: u64,
-    pub snapshot: &'request SnapshotManifest,
+    pub snapshot: &'request BuildSnapshot,
     pub expected_hero_ids: &'request BTreeSet<u64>,
     pub allow_subset: bool,
 }
@@ -101,19 +129,14 @@ pub fn validate_request(request: &CacheUpdateRequest<'_>) -> Result<BTreeSet<Bui
             "Generated guides do not match the required hero coverage",
         ));
     }
-    let snapshot = request.snapshot.content();
-    let rank_identity = request.snapshot.rank_identity()?;
-    for build in request.builds {
-        let identity = &build.identity;
-        if identity.snapshot_id != request.snapshot.identifier()
-            || identity.client_version != snapshot.client_version
-            || identity.match_mode != snapshot.match_mode
-            || identity.rank_identity != rank_identity
-        {
-            return Err(Error::new(
-                "Guide identity does not match the installation snapshot",
-            ));
-        }
+    if request
+        .builds
+        .iter()
+        .any(|build| build.identity.snapshot_id != request.snapshot.snapshot_id)
+    {
+        return Err(Error::new(
+            "Build identity does not match the installation snapshot",
+        ));
     }
     Ok(desired)
 }

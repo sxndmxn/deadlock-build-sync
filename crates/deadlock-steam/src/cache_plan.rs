@@ -152,8 +152,8 @@ fn backup_manifest(
         .map(|build| {
             json!({
                 "hero_id":build.key.hero_id, "path_id":build.key.path_id,
-                "build_id":identifiers.get(&build.key), "policy_id":build.identity.policy_id,
-                "projection_fingerprint":build.identity.projection_fingerprint,
+                "build_id":identifiers.get(&build.key),
+                "build_fingerprint":build.identity.build_fingerprint,
             })
         })
         .collect::<Vec<_>>();
@@ -164,7 +164,7 @@ fn backup_manifest(
         .collect();
     let out_of_scope = unmanaged_fingerprint(original.document(), request.account_id, &heroes)?;
     Ok(
-        json!({"builds":builds, "snapshot":request.snapshot.to_document()?, "snapshot_id":request.snapshot.identifier(), "rank_range":request.snapshot.content().rank_range, "out_of_scope_sha256":out_of_scope}),
+        json!({"builds":builds, "snapshot":request.snapshot.document, "snapshot_id":request.snapshot.snapshot_id, "out_of_scope_sha256":out_of_scope}),
     )
 }
 

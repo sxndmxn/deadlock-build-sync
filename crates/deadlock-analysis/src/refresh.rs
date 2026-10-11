@@ -1,33 +1,31 @@
-use std::fs::OpenOptions;
-use std::path::PathBuf;
+use std::fs::{File, OpenOptions};
 
 use deadlock_data::{Error, Result, atomic_write_json, read_json, text, trace_operation};
-use deadlock_guides::CURRENT_METHOD_VERSION;
+use deadlock_guides::HERO_BUILD_METHOD;
 use deadlock_input::parse_patch_feed;
 use serde_json::json;
 
 use crate::extraction::extract_cohort;
-use crate::production_evidence::export_evidence;
 use crate::refresh_configuration::{
     Cohort, RANK_RESET_AT, RefreshRequest, RunPaths, cohort_ranks, implementation_record,
     parse_timestamp,
 };
 use crate::sources::capture_sources;
 
-#[derive(Clone, Debug)]
-pub struct RefreshResult {
-    pub artifact_id: String,
-    pub output: PathBuf,
-    pub run_directory: PathBuf,
+/// An extracted run and the lock that keeps other processes from changing it.
+#[derive(Debug)]
+pub struct ExtractedRun {
+    pub paths: RunPaths,
+    _lock: File,
 }
 
+/// Captures sources and extracts the cohort, or reuses a completed extraction with `resume`.
+///
 /// # Errors
-/// Returns an error when source capture, snapshot identity, analysis, or complete artifact validation fails.
-pub fn refresh_evidence(request: &RefreshRequest) -> Result<RefreshResult> {
-    if request.workers == 0 || (request.resume && request.run_id.is_none()) {
-        return Err(Error::new(
-            "Refresh requires positive workers. Resume requires --run-id.",
-        ));
+/// Returns an error when source capture, snapshot identity, or extraction fails.
+pub fn extract_run(request: &RefreshRequest) -> Result<ExtractedRun> {
+    if request.resume && request.run_id.is_none() {
+        return Err(Error::new("Resume requires --run-id."));
     }
     request.extraction_resources.validate()?;
     request.ranks.validate()?;
@@ -45,25 +43,12 @@ pub fn refresh_evidence(request: &RefreshRequest) -> Result<RefreshResult> {
     } else {
         capture_run(&paths, request)?;
     }
-    let document = export_evidence(
-        &paths,
-        &request.output,
-        request.workers,
-        request.resume,
-        &request.api_base_url,
-    )?;
-    Ok(RefreshResult {
-        artifact_id: text(&document, "artifact_id")?.into(),
-        output: request.output.clone(),
-        run_directory: paths.run,
-    })
+    Ok(ExtractedRun { paths, _lock: lock })
 }
 
 fn validate_resume(paths: &RunPaths, request: &RefreshRequest) -> Result<()> {
     let manifest = read_json(&paths.run.join("manifest.json"))?;
-    let generator = manifest.get("generator");
     if manifest["schema_version"] != 2
-        || manifest["production_method"] != "eclat_leiden_pairwise"
         || manifest["test_usage"] != "reserved"
         || manifest["extraction"]
             .as_object()
@@ -74,21 +59,8 @@ fn validate_resume(paths: &RunPaths, request: &RefreshRequest) -> Result<()> {
             "Resume requires a completed production source extraction",
         ));
     }
-    if manifest["method_version"] != CURRENT_METHOD_VERSION
-        || manifest["implementation"] != implementation_record()
-    {
-        return Err(Error::new(
-            "Source extraction implementation differs. Start a new --run-id.",
-        ));
-    }
-    if generator.is_some_and(|value| value != "current")
-        || manifest.get("beam_resume").is_some()
-        || manifest["rank_expansion"] != serde_json::to_value(request.rank_expansion)?
-        || cohort_ranks(&manifest["cohort"])? != request.ranks
-    {
-        return Err(Error::new(
-            "Resume requires Eclat evidence and matching source ranks",
-        ));
+    if cohort_ranks(&manifest["cohort"])? != request.ranks {
+        return Err(Error::new("Resume requires matching source ranks"));
     }
     for (name, requested) in [("since", request.since), ("as_of", request.as_of)] {
         if let Some(requested) = requested
@@ -128,14 +100,9 @@ fn capture_run(paths: &RunPaths, request: &RefreshRequest) -> Result<()> {
         as_of,
     };
     cohort.validate()?;
-    let mut manifest = json!({"schema_version":2,"rank_expansion":request.rank_expansion,"cohort":cohort.to_document()?,"sources":sources,
-        "production_method":"eclat_leiden_pairwise","method_version":CURRENT_METHOD_VERSION,"implementation":implementation_record(),"test_usage":"reserved"});
+    let mut manifest = json!({"schema_version":2,"cohort":cohort.to_document()?,"sources":sources,
+        "production_method":HERO_BUILD_METHOD,"implementation":implementation_record(),"test_usage":"reserved"});
     atomic_write_json(&manifest_path, &manifest)?;
-    manifest["extraction"] = extract_cohort(
-        paths,
-        &cohort,
-        request.rank_expansion,
-        request.extraction_resources,
-    )?;
+    manifest["extraction"] = extract_cohort(paths, &cohort, request.extraction_resources)?;
     atomic_write_json(&manifest_path, &manifest)
 }

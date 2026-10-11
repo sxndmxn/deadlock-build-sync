@@ -1,5 +1,4 @@
 use deadlock_data::{Result, array, integer, read_json, trace_operation};
-use deadlock_guides::{RankExpansion, calculate_rank_cutoffs};
 use duckdb::types::{TimeUnit, Value as SqlValue};
 use serde_json::{Value, json};
 
@@ -7,35 +6,14 @@ use crate::database::{AnalysisDatabase, Parameters};
 use crate::refresh_configuration::{Cohort, DUCKLAKE_URL, ExtractionResources, RunPaths};
 use crate::sql_resources::load_sql;
 
-const TABLES: [&str; 12] = [
-    "item_assets",
-    "eligible_matches",
-    "player_matches",
-    "hero_account_counts",
-    "match_folds",
-    "split_boundaries",
-    "compositions",
-    "team_snapshots",
-    "player_snapshots",
-    "purchases",
-    "first_purchases",
-    "decision_opportunities",
-];
-
 pub fn extract_cohort(
     paths: &RunPaths,
     cohort: &Cohort,
-    expansion: RankExpansion,
     resources: ExtractionResources,
 ) -> Result<Value> {
     trace_operation("analysis.extract_cohort", Some("extract_cohort"), || {
         cohort.validate()?;
-        let cutoffs =
-            calculate_rank_cutoffs(cohort.ranks.minimum, cohort.ranks.maximum, expansion)?;
-        let mut extraction = cohort.clone();
-        if let Some(minimum) = cutoffs.last() {
-            extraction.ranks.minimum = *minimum;
-        }
+        let extraction = cohort.clone();
         let database = connect_database(paths, resources)?;
         load_item_assets(&database, paths)?;
         extract_source_players(&database, &extraction)?;
@@ -45,19 +23,11 @@ pub fn extract_cohort(
             "create_eligible_matches",
             &build_cohort_parameters(&extraction),
         )?;
-        for table in ["player_matches", "hero_account_counts"] {
-            extract_table(&database, table)?;
-        }
+        extract_table(&database, "player_matches")?;
         create_match_folds(&database, cohort)?;
-        execute_sql_resource(&database, "create_compositions", &Parameters::new())?;
         for table in ["player_snapshots", "team_snapshots", "purchases"] {
             extract_table(&database, table)?;
         }
-        for table in ["first_purchases", "decision_opportunities"] {
-            execute_sql_resource(&database, &format!("drop_{table}"), &Parameters::new())?;
-            execute_sql_resource(&database, &format!("create_{table}"), &Parameters::new())?;
-        }
-        export_tables(&database, paths)?;
         let counts = collect_extraction_counts(&database, &extraction)?;
         drop(database);
         let temporary = paths.raw.join("duckdb-tmp");
@@ -233,34 +203,9 @@ fn create_match_folds(database: &AnalysisDatabase, cohort: &Cohort) -> Result<()
     execute_sql_resource(database, "create_match_folds", &Parameters::new())
 }
 
-fn export_tables(database: &AnalysisDatabase, paths: &RunPaths) -> Result<()> {
-    for table in TABLES {
-        execute_sql_resource(
-            database,
-            &format!("export_{table}"),
-            &Parameters::from([(
-                "path".into(),
-                paths
-                    .data
-                    .join(format!("{table}.parquet"))
-                    .to_string_lossy()
-                    .into_owned()
-                    .into(),
-            )]),
-        )?;
-    }
-    Ok(())
-}
-
 fn collect_extraction_counts(database: &AnalysisDatabase, cohort: &Cohort) -> Result<Value> {
     let mut counts = serde_json::Map::new();
-    for table in [
-        "player_matches",
-        "match_folds",
-        "purchases",
-        "first_purchases",
-        "decision_opportunities",
-    ] {
+    for table in ["player_matches", "match_folds", "purchases"] {
         let count = database.count(
             load_sql("extract/count_table_rows.sql")?,
             &Parameters::from([("table".into(), SqlValue::Text(table.into()))]),
@@ -270,9 +215,6 @@ fn collect_extraction_counts(database: &AnalysisDatabase, cohort: &Cohort) -> Re
     for (name, query) in [
         ("source_snapshot_version", "select_source_snapshot"),
         ("heroes", "count_heroes"),
-        ("hero_account_rows", "count_hero_accounts"),
-        ("valid_purchase_net_worth", "count_purchase_net_worth"),
-        ("valid_team_lead", "count_team_lead"),
     ] {
         counts.insert(
             name.into(),

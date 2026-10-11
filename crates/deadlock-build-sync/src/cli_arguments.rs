@@ -1,20 +1,8 @@
 use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use deadlock_data::{EpochBoundary, Error, MatchMode, Rank, Result};
+use deadlock_data::Rank;
 use deadlock_input::DEFAULT_API_BASE_URL;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
-pub enum OutputFormat {
-    Json,
-    Markdown,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
-pub enum RankExpansion {
-    Auto,
-    Off,
-}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 pub enum TraceMode {
@@ -39,26 +27,14 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Generate deterministic builds and install every eligible hero.
-    Sync(Box<SyncArguments>),
-    /// Create complete Markdown and JSON builds without Steam.
-    Build(Box<BuildArguments>),
-    /// Check artifacts and installed builds without changes.
+    /// Generate a build for every hero and install the builds in Steam.
+    Sync(SyncArguments),
+    /// Generate a build for every hero without Steam changes.
+    Build(BuildArguments),
+    /// Install the generated builds without new analysis.
+    Install(InstallArguments),
+    /// Check the generated and installed builds without changes.
     Status(StatusArguments),
-    /// Rebuild current evidence without Steam.
-    RefreshEvidence(Box<RefreshArguments>),
-    /// Audit build quality and optional later replay without network access.
-    QualityReport(QualityArguments),
-    /// Generate and display guides without Steam changes.
-    Preview(Box<PreviewArguments>),
-    /// Install private guides under My Builds.
-    Install(Box<InstallArguments>),
-    /// Install reviewed artifacts without new analytics requests.
-    InstallArtifacts(InstallArtifactArguments),
-    /// Export evidence context and typed policies.
-    ExportContext(Box<ExportArguments>),
-    /// Generate descriptions from validated evidence context.
-    GenerateNarratives(NarrativeArguments),
     /// Restore the latest complete cache backup.
     Restore(RestoreArguments),
     /// Display an execution trace summary.
@@ -71,14 +47,8 @@ impl Command {
         match self {
             Self::Sync(_) => "sync",
             Self::Build(_) => "build",
-            Self::Status(_) => "status",
-            Self::RefreshEvidence(_) => "refresh-evidence",
-            Self::QualityReport(_) => "quality-report",
-            Self::Preview(_) => "preview",
             Self::Install(_) => "install",
-            Self::InstallArtifacts(_) => "install-artifacts",
-            Self::ExportContext(_) => "export-context",
-            Self::GenerateNarratives(_) => "generate-narratives",
+            Self::Status(_) => "status",
             Self::Restore(_) => "restore",
             Self::TraceSummary(_) => "trace-summary",
         }
@@ -94,101 +64,50 @@ pub struct LocationArguments {
 }
 
 #[derive(Debug, Args)]
-pub struct SelectionArguments {
-    #[arg(long, conflicts_with = "all")]
-    pub hero: Option<String>,
+pub struct BuildArguments {
+    /// Directory for hero-builds.json and the Markdown builds.
     #[arg(long)]
-    pub all: bool,
-}
-
-#[derive(Debug, Args)]
-pub struct RankArguments {
-    #[arg(long, value_enum, default_value = "auto")]
-    pub rank_expansion: RankExpansion,
+    pub artifacts: Option<PathBuf>,
     #[arg(long, default_value = "ritualist-i")]
     pub min_rank: Rank,
     #[arg(long, default_value = "eternus-v")]
     pub max_rank: Rank,
-}
-
-#[derive(Debug, Args)]
-pub struct SnapshotArguments {
+    /// Name of the analysis run. Use with --resume to reuse its extracted matches.
     #[arg(long)]
-    pub build_evidence: Option<PathBuf>,
-    #[arg(long, default_value = "ranked")]
-    pub match_mode: MatchMode,
-    #[arg(long, value_parser = clap::value_parser!(u64).range(1..))]
-    pub client_version: Option<u64>,
-    #[arg(long, value_parser = clap::value_parser!(i64).range(1..))]
-    pub as_of_timestamp: Option<i64>,
-    #[arg(long, value_parser = parse_epoch)]
-    pub mechanics_epoch: Option<EpochBoundary>,
-    #[arg(long, value_parser = parse_epoch)]
-    pub matchmaking_epoch: Option<EpochBoundary>,
-    #[arg(long, value_parser = parse_epoch)]
-    pub map_objectives_epoch: Option<EpochBoundary>,
-    #[arg(long, value_parser = parse_epoch)]
-    pub telemetry_epoch: Option<EpochBoundary>,
-}
-
-#[derive(Debug, Args)]
-pub struct GenerationArguments {
-    #[command(flatten)]
-    pub selection: SelectionArguments,
-    #[command(flatten)]
-    pub ranks: RankArguments,
-    #[command(flatten)]
-    pub snapshot: SnapshotArguments,
-}
-
-#[derive(Debug, Args)]
-pub struct BuildArguments {
-    #[command(flatten)]
-    pub generation: GenerationArguments,
+    pub run_id: Option<String>,
+    #[arg(long, requires = "run_id")]
+    pub resume: bool,
+    /// First match start time (ISO 8601). The default is the current patch.
     #[arg(long)]
-    pub artifacts: Option<PathBuf>,
-    #[arg(long, value_enum, default_value = "markdown")]
-    pub format: OutputFormat,
+    pub since: Option<String>,
+    /// Last match end time (ISO 8601). The default is now.
     #[arg(long)]
-    pub details: bool,
+    pub as_of: Option<String>,
+    /// Extraction memory limit in decimal megabytes.
+    #[arg(long, default_value = "12000", value_parser = clap::value_parser!(u32).range(1..))]
+    pub extraction_memory_mb: u32,
+    #[arg(long, default_value = "8", value_parser = clap::value_parser!(u16).range(1..))]
+    pub extraction_threads: u16,
 }
 
 #[derive(Debug, Args)]
 pub struct SyncArguments {
     #[command(flatten)]
-    pub generation: GenerationArguments,
+    pub build: BuildArguments,
     #[command(flatten)]
     pub location: LocationArguments,
     #[arg(long)]
-    pub artifacts: Option<PathBuf>,
-}
-
-#[derive(Debug, Args)]
-pub struct NarrativeSelection {
-    #[arg(long, conflicts_with = "without_narratives")]
-    pub narratives: Option<PathBuf>,
-    #[arg(long)]
-    pub without_narratives: bool,
+    pub persona: Option<String>,
 }
 
 #[derive(Debug, Args)]
 pub struct InstallArguments {
     #[command(flatten)]
-    pub generation: GenerationArguments,
-    #[command(flatten)]
     pub location: LocationArguments,
-    #[command(flatten)]
-    pub narrative: NarrativeSelection,
-}
-
-#[derive(Debug, Args)]
-pub struct PreviewArguments {
-    #[command(flatten)]
-    pub install: InstallArguments,
-    #[arg(long, value_enum, default_value = "json")]
-    pub format: OutputFormat,
     #[arg(long)]
-    pub details: bool,
+    pub artifacts: Option<PathBuf>,
+    #[arg(long)]
+    pub persona: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -199,78 +118,6 @@ pub struct StatusArguments {
     pub artifacts: Option<PathBuf>,
     #[arg(long)]
     pub json: bool,
-}
-
-#[derive(Debug, Args)]
-pub struct InstallArtifactArguments {
-    #[command(flatten)]
-    pub location: LocationArguments,
-    #[arg(long)]
-    pub artifacts: Option<PathBuf>,
-    #[arg(long)]
-    pub persona: Option<String>,
-}
-
-#[derive(Debug, Args)]
-pub struct ExportArguments {
-    #[command(flatten)]
-    pub generation: GenerationArguments,
-    #[command(flatten)]
-    pub location: LocationArguments,
-    #[arg(long)]
-    pub output: PathBuf,
-    #[arg(long)]
-    pub policy_output: Option<PathBuf>,
-}
-
-#[derive(Debug, Args)]
-pub struct NarrativeArguments {
-    #[arg(long)]
-    pub context: PathBuf,
-    #[arg(long)]
-    pub output: PathBuf,
-    #[arg(long)]
-    pub hero: Vec<String>,
-    #[arg(long)]
-    pub force: bool,
-}
-
-#[derive(Debug, Args)]
-pub struct QualityArguments {
-    #[arg(long)]
-    pub artifacts: Option<PathBuf>,
-    #[arg(long, requires = "assets")]
-    pub replay: Option<PathBuf>,
-    #[arg(long)]
-    pub assets: Option<PathBuf>,
-}
-
-#[derive(Debug, Args)]
-pub struct RefreshArguments {
-    #[arg(long)]
-    pub artifacts: Option<PathBuf>,
-    #[arg(long)]
-    pub run_id: Option<String>,
-    #[arg(long)]
-    pub resume: bool,
-    #[arg(long, default_value = "8", value_parser = clap::value_parser!(u16).range(1..))]
-    pub workers: u16,
-    /// Extraction memory limit in decimal megabytes.
-    #[arg(long, default_value = "12000", value_parser = clap::value_parser!(u32).range(1..))]
-    pub extraction_memory_mb: u32,
-    /// Database threads during extraction. Hero workers use separate limits.
-    #[arg(long, default_value = "8", value_parser = clap::value_parser!(u16).range(1..))]
-    pub extraction_threads: u16,
-    #[command(flatten)]
-    pub ranks: RankArguments,
-    #[arg(long, value_parser = clap::value_parser!(u16).range(1..))]
-    pub min_badge: Option<u16>,
-    #[arg(long, value_parser = clap::value_parser!(u16).range(1..))]
-    pub max_badge: Option<u16>,
-    #[arg(long)]
-    pub since: Option<String>,
-    #[arg(long)]
-    pub as_of: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -286,18 +133,4 @@ pub struct TraceSummaryArguments {
     pub path: PathBuf,
     #[arg(long, default_value = "200", value_parser = clap::value_parser!(u32).range(1..))]
     pub max_nodes: u32,
-}
-
-fn parse_epoch(value: &str) -> Result<EpochBoundary> {
-    let (identity, timestamp) = value
-        .rsplit_once('@')
-        .ok_or_else(|| Error::new("Epoch must use IDENTITY@UNIX_TIMESTAMP"))?;
-    let boundary = EpochBoundary {
-        identity: identity.trim().into(),
-        start_timestamp: timestamp
-            .parse()
-            .map_err(|error| Error::new(format!("Invalid epoch timestamp: {error}")))?,
-    };
-    boundary.validate()?;
-    Ok(boundary)
 }

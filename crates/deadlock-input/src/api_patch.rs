@@ -58,7 +58,7 @@ impl Patch {
     }
 }
 
-pub fn current_patch(session: &mut ApiSession) -> Result<Patch> {
+pub fn current_patch(session: &ApiSession) -> Result<Patch> {
     let response = session.get("/v2/patches", Map::new())?;
     parse_patch_feed(&response, None)
 }

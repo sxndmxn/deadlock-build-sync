@@ -33,7 +33,7 @@ pub use cache_discovery::{discover_cache, steam_roots};
 pub use cache_location::{CacheLocation, CacheSearch};
 pub use cache_plan::{CacheUpdate, prepare_cache_update};
 pub use cache_read::{SteamCache, read_cache};
-pub use cache_request::{BuildKey, CacheUpdateRequest, ManagedBuild};
+pub use cache_request::{BuildIdentity, BuildKey, BuildSnapshot, CacheUpdateRequest, ManagedBuild};
 pub use cache_restore::{RestoreResult, restore_latest};
 pub use cache_status::{ManagedBuildComparison, compare_managed_builds};
 pub use cache_transaction::{InstallResult, install_cache_update};

@@ -2,62 +2,57 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use deadlock_data::Result;
-use deadlock_guides::{
-    BuildEvidenceCatalog, NarrativeCatalog, PolicyArtifact, StrategyContext,
-    load_artifact_guide_bundle,
-};
-use deadlock_input::DeadlockApi;
+use deadlock_guides::{HeroBuildCatalog, build_hero_presentation};
 use deadlock_steam::{
     BuildKey, CacheLocation, ManagedBuildComparison, compare_managed_builds, read_cache,
 };
 use serde_json::{Value, json};
 
+use crate::build_workflow::{CATALOG_FILE, catalog_snapshot, describe_staleness};
+
+/// Reports whether the generated builds match the current game and whether Steam has them.
+///
+/// The exit code is 0 when both stages are current, 1 when a stage is malformed or
+/// unavailable, and 2 when a stage needs a new sync.
+///
+/// # Errors
+/// Returns an error when the API is unavailable.
 pub fn build_freshness_report(
     directory: &Path,
-    api: &mut DeadlockApi,
+    base_url: &str,
     location: Result<CacheLocation>,
 ) -> Result<(u8, Value)> {
-    let client = api.resolve_client_version()?;
-    let patch = api.current_patch()?;
-    let (mut evidence_stage, evidence) = load_artifact_status(
-        &directory.join("build-evidence.json"),
-        "build_evidence",
-        BuildEvidenceCatalog::read,
-    );
-    if let Some(evidence) = &evidence
-        && (evidence.metadata().client_version != client
-            || evidence.metadata().patch.get("identity") != Some(&patch.identity()?.into()))
-    {
-        mark_stale(
-            &mut evidence_stage,
-            "Build evidence uses another patch or client version",
-        );
-    }
-    let (mut context_stage, context) = load_artifact_status(
-        &directory.join("strategy-context.json"),
-        "strategy_context",
-        StrategyContext::load,
-    );
-    if let Some(context) = &context
-        && let Some(evidence) = &evidence
-    {
-        let manifest = context.manifest().content();
-        let metadata = evidence.metadata();
-        if manifest.client_version != metadata.client_version
-            || manifest.as_of_timestamp != metadata.as_of_timestamp
-            || manifest.patch.get("identity") != metadata.patch.get("identity")
-        {
-            mark_stale(&mut context_stage, "Snapshot differs from build evidence");
+    let path = directory.join(CATALOG_FILE);
+    let (builds, catalog) = if path.is_file() {
+        match HeroBuildCatalog::read(&path) {
+            Ok(catalog) => match describe_staleness(&catalog, base_url)? {
+                Some(reason) => (build_stage("hero_builds", "stale", &reason), Some(catalog)),
+                None => (
+                    build_stage(
+                        "hero_builds",
+                        "current",
+                        &format!("Validated {} hero builds", catalog.heroes.len()),
+                    ),
+                    Some(catalog),
+                ),
+            },
+            Err(error) => (
+                build_stage("hero_builds", "malformed", &error.to_string()),
+                None,
+            ),
         }
-    }
-    let stages = vec![
-        evidence_stage,
-        context_stage,
-        check_policy_status(directory, context.as_ref())?,
-        check_narrative_status(directory, context.as_ref()),
-        check_bundle_status(directory),
-        check_installation_status(location, directory),
-    ];
+    } else {
+        (
+            build_stage("hero_builds", "missing", &path.display().to_string()),
+            None,
+        )
+    };
+    let installed = match (location, &catalog) {
+        (Err(error), _) => build_stage("installed_cache", "unavailable", &error.to_string()),
+        (Ok(_), None) => build_stage("installed_cache", "missing", "No hero builds to compare"),
+        (Ok(location), Some(catalog)) => check_installation(&location, catalog),
+    };
+    let stages = [builds, installed];
     let code = if stages.iter().all(|stage| stage["state"] == "current") {
         0
     } else if stages
@@ -68,114 +63,15 @@ pub fn build_freshness_report(
     } else {
         2
     };
-    Ok((
-        code,
-        json!({"status":match code {0 => "current", 1 => "invalid_or_unavailable", _ => "regeneration_required"},
-        "latest_client_version":client,"latest_patch":patch.to_document()?,"stages":stages}),
-    ))
+    Ok((code, json!({"stages":stages})))
 }
 
-fn load_artifact_status<T>(
-    path: &Path,
-    name: &str,
-    load: impl FnOnce(&Path) -> Result<T>,
-) -> (Value, Option<T>) {
-    if !path.is_file() {
-        return (
-            build_stage_status(name, "missing", &path.display().to_string()),
-            None,
-        );
-    }
-    match load(path) {
-        Ok(value) => (
-            build_stage_status(name, "current", "Validated"),
-            Some(value),
-        ),
-        Err(error) => (
-            build_stage_status(name, "malformed", &error.to_string()),
-            None,
-        ),
-    }
-}
-
-fn build_stage_status(name: &str, state: &str, detail: &str) -> Value {
+fn build_stage(name: &str, state: &str, detail: &str) -> Value {
     json!({"stage":name,"state":state,"detail":detail})
 }
 
-fn mark_stale(stage: &mut Value, detail: &str) {
-    stage["state"] = "stale".into();
-    stage["detail"] = detail.into();
-}
-
-fn check_policy_status(directory: &Path, context: Option<&StrategyContext>) -> Result<Value> {
-    let (mut stage, policies) = load_artifact_status(
-        &directory.join("policies.json"),
-        "policies",
-        PolicyArtifact::load,
-    );
-    if let Some(policies) = policies
-        && let Some(context) = context
-        && policies.manifest().to_document()? != context.manifest().to_document()?
-    {
-        mark_stale(&mut stage, "Snapshot differs from strategy context");
-    }
-    Ok(stage)
-}
-
-fn check_narrative_status(directory: &Path, context: Option<&StrategyContext>) -> Value {
-    let (mut stage, narratives) = load_artifact_status(
-        &directory.join("narratives.json"),
-        "narratives",
-        NarrativeCatalog::load,
-    );
-    if let Some(narratives) = narratives
-        && let Some(context) = context
-        && narratives.snapshot_id() != context.manifest().identifier()
-    {
-        mark_stale(&mut stage, "Snapshot differs from strategy context");
-    }
-    stage
-}
-
-fn check_bundle_status(directory: &Path) -> Value {
-    if [
-        "strategy-context.json",
-        "policies.json",
-        "narratives.json",
-        "build-evidence.json",
-    ]
-    .iter()
-    .any(|name| !directory.join(name).is_file())
-    {
-        return build_stage_status(
-            "artifact_bundle",
-            "missing",
-            "One or more required artifact files are missing",
-        );
-    }
-    match load_artifact_guide_bundle(
-        &directory.join("strategy-context.json"),
-        &directory.join("policies.json"),
-        &directory.join("narratives.json"),
-        &directory.join("build-evidence.json"),
-    ) {
-        Ok(bundle) => build_stage_status(
-            "artifact_bundle",
-            "current",
-            &format!("Validated {} reviewed guides", bundle.guides.len()),
-        ),
-        Err(error) => build_stage_status("artifact_bundle", "malformed", &error.to_string()),
-    }
-}
-
-fn check_installation_status(location: Result<CacheLocation>, directory: &Path) -> Value {
-    let location = match location {
-        Ok(location) => location,
-        Err(error) => {
-            return build_stage_status("installed_cache", "unavailable", &error.to_string());
-        }
-    };
-    match compare_installed_guides(&location, directory) {
+fn check_installation(location: &CacheLocation, catalog: &HeroBuildCatalog) -> Value {
+    match compare_installation(location, catalog) {
         Ok(ManagedBuildComparison {
             is_current: true,
             retained_heroes,
@@ -187,44 +83,32 @@ fn check_installation_status(location: Result<CacheLocation>, directory: &Path) 
                     "Validated. {retained_heroes} other heroes keep managed builds from an earlier install"
                 )
             };
-            build_stage_status("installed_cache", "current", &detail)
+            build_stage("installed_cache", "current", &detail)
         }
-        Ok(_) => build_stage_status(
+        Ok(_) => build_stage(
             "installed_cache",
             "stale",
-            "Managed builds differ from the expected coverage or guide contents",
+            "Managed builds differ from the generated hero builds",
         ),
-        Err(error) => build_stage_status("installed_cache", "malformed", &error.to_string()),
+        Err(error) => build_stage("installed_cache", "malformed", &error.to_string()),
     }
 }
 
-fn compare_installed_guides(
+fn compare_installation(
     location: &CacheLocation,
-    directory: &Path,
+    catalog: &HeroBuildCatalog,
 ) -> Result<ManagedBuildComparison> {
-    let bundle = load_artifact_guide_bundle(
-        &directory.join("strategy-context.json"),
-        &directory.join("policies.json"),
-        &directory.join("narratives.json"),
-        &directory.join("build-evidence.json"),
-    )?;
-    let expected = bundle
-        .guides
+    let snapshot = catalog_snapshot(catalog)?;
+    let expected = catalog
+        .heroes
         .iter()
-        .map(|guide| {
-            let presentation = deadlock_guides::build_presentation(
-                guide,
-                "Build Preview",
-                &bundle.patch.title,
-                &bundle.patch.published_at,
-                bundle.rank_range,
-            )?;
+        .map(|build| {
             Ok((
                 BuildKey {
-                    hero_id: guide.hero_id,
-                    path_id: guide.path_id.clone(),
+                    hero_id: build.hero_id,
+                    path_id: build.path_id(),
                 },
-                presentation,
+                build_hero_presentation(build, catalog, &snapshot.snapshot_id, "Build Preview")?,
             ))
         })
         .collect::<Result<BTreeMap<_, _>>>()?;

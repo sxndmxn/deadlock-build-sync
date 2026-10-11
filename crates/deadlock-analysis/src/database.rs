@@ -5,7 +5,6 @@ use std::time::Duration;
 use deadlock_data::{Error, Result, trace_operation};
 use duckdb::{Connection, ToSql, types::Value as SqlValue};
 use serde::de::DeserializeOwned;
-use serde_json::Value;
 
 use crate::refresh_configuration::ExtractionResources;
 
@@ -30,14 +29,19 @@ impl AnalysisDatabase {
         })
     }
 
-    pub fn open_read_only(path: &Path, temporary: &Path) -> Result<Self> {
+    pub fn open_read_only(
+        path: &Path,
+        temporary: &Path,
+        resources: ExtractionResources,
+    ) -> Result<Self> {
+        resources.validate()?;
         std::fs::create_dir_all(temporary)?;
         let configuration = duckdb::Config::default()
             .access_mode(duckdb::AccessMode::ReadOnly)
             .map_err(|error| convert_database_error(&error))?
-            .threads(1)
+            .threads(i64::from(resources.threads))
             .map_err(|error| convert_database_error(&error))?
-            .max_memory("512MiB")
+            .max_memory(&format!("{}MB", resources.memory_limit_mb))
             .map_err(|error| convert_database_error(&error))?
             .with("temp_directory", temporary.to_string_lossy())
             .map_err(|error| convert_database_error(&error))?;
@@ -85,10 +89,6 @@ impl AnalysisDatabase {
                 |row| row.get(0),
             )
             .map_err(|error| convert_database_error(&error))
-    }
-
-    pub fn query(&self, sql: &str, parameters: &Parameters) -> Result<Vec<Value>> {
-        self.query_rows(sql, parameters)
     }
 
     pub fn query_rows<T: DeserializeOwned>(

@@ -2,84 +2,32 @@ use deadlock_data::{Error, Result};
 
 const SQL: &[(&str, &str)] = &[
     (
-        "discovery/count_hero_appearances.sql",
-        include_str!("../sql/discovery/count_hero_appearances.sql"),
+        "builds/select_item_assets.sql",
+        include_str!("../sql/builds/select_item_assets.sql"),
     ),
     (
-        "discovery/count_split_boundaries.sql",
-        include_str!("../sql/discovery/count_split_boundaries.sql"),
+        "builds/select_item_purchase_medians.sql",
+        include_str!("../sql/builds/select_item_purchase_medians.sql"),
     ),
     (
-        "discovery/create_fixed_partitions.sql",
-        include_str!("../sql/discovery/create_fixed_partitions.sql"),
-    ),
-    (
-        "discovery/create_ranked_partitions.sql",
-        include_str!("../sql/discovery/create_ranked_partitions.sql"),
-    ),
-    (
-        "discovery/select_decision_rows.sql",
-        include_str!("../sql/discovery/select_decision_rows.sql"),
-    ),
-    (
-        "discovery/create_item_pool_purchases.sql",
-        include_str!("../sql/discovery/create_item_pool_purchases.sql"),
-    ),
-    (
-        "discovery/select_item_pool_statistics.sql",
-        include_str!("../sql/discovery/select_item_pool_statistics.sql"),
-    ),
-    (
-        "discovery/select_purchase_checkpoint_counts.sql",
-        include_str!("../sql/discovery/select_purchase_checkpoint_counts.sql"),
-    ),
-    (
-        "discovery/select_landmark_rows.sql",
-        include_str!("../sql/discovery/select_landmark_rows.sql"),
-    ),
-    (
-        "discovery/select_purchase_event_histories.sql",
-        include_str!("../sql/discovery/select_purchase_event_histories.sql"),
-    ),
-    (
-        "discovery/select_purchase_histories.sql",
-        include_str!("../sql/discovery/select_purchase_histories.sql"),
-    ),
-    (
-        "extract/attach_remote.sql",
-        include_str!("../sql/extract/attach_remote.sql"),
+        "builds/select_landmark_states.sql",
+        include_str!("../sql/builds/select_landmark_states.sql"),
     ),
     (
         "extract/attach_remote_snapshot.sql",
         include_str!("../sql/extract/attach_remote_snapshot.sql"),
     ),
     (
-        "extract/count_hero_accounts.sql",
-        include_str!("../sql/extract/count_hero_accounts.sql"),
+        "extract/attach_remote.sql",
+        include_str!("../sql/extract/attach_remote.sql"),
     ),
     (
         "extract/count_heroes.sql",
         include_str!("../sql/extract/count_heroes.sql"),
     ),
     (
-        "extract/count_purchase_net_worth.sql",
-        include_str!("../sql/extract/count_purchase_net_worth.sql"),
-    ),
-    (
         "extract/count_table_rows.sql",
         include_str!("../sql/extract/count_table_rows.sql"),
-    ),
-    (
-        "extract/count_team_lead.sql",
-        include_str!("../sql/extract/count_team_lead.sql"),
-    ),
-    (
-        "extract/create_compositions.sql",
-        include_str!("../sql/extract/create_compositions.sql"),
-    ),
-    (
-        "extract/create_decision_opportunities.sql",
-        include_str!("../sql/extract/create_decision_opportunities.sql"),
     ),
     (
         "extract/create_ducklake_secret.sql",
@@ -88,14 +36,6 @@ const SQL: &[(&str, &str)] = &[
     (
         "extract/create_eligible_matches.sql",
         include_str!("../sql/extract/create_eligible_matches.sql"),
-    ),
-    (
-        "extract/create_first_purchases.sql",
-        include_str!("../sql/extract/create_first_purchases.sql"),
-    ),
-    (
-        "extract/create_hero_account_counts.sql",
-        include_str!("../sql/extract/create_hero_account_counts.sql"),
     ),
     (
         "extract/create_item_assets.sql",
@@ -122,12 +62,12 @@ const SQL: &[(&str, &str)] = &[
         include_str!("../sql/extract/create_s3_secret.sql"),
     ),
     (
-        "extract/create_source_snapshot.sql",
-        include_str!("../sql/extract/create_source_snapshot.sql"),
-    ),
-    (
         "extract/create_source_players.sql",
         include_str!("../sql/extract/create_source_players.sql"),
+    ),
+    (
+        "extract/create_source_snapshot.sql",
+        include_str!("../sql/extract/create_source_snapshot.sql"),
     ),
     (
         "extract/create_split_boundaries.sql",
@@ -142,20 +82,8 @@ const SQL: &[(&str, &str)] = &[
         include_str!("../sql/extract/detach_remote.sql"),
     ),
     (
-        "extract/drop_decision_opportunities.sql",
-        include_str!("../sql/extract/drop_decision_opportunities.sql"),
-    ),
-    (
         "extract/drop_eligible_matches.sql",
         include_str!("../sql/extract/drop_eligible_matches.sql"),
-    ),
-    (
-        "extract/drop_first_purchases.sql",
-        include_str!("../sql/extract/drop_first_purchases.sql"),
-    ),
-    (
-        "extract/drop_hero_account_counts.sql",
-        include_str!("../sql/extract/drop_hero_account_counts.sql"),
     ),
     (
         "extract/drop_item_assets.sql",
@@ -182,54 +110,6 @@ const SQL: &[(&str, &str)] = &[
         include_str!("../sql/extract/drop_team_snapshots.sql"),
     ),
     (
-        "extract/export_item_assets.sql",
-        include_str!("../sql/extract/export_item_assets.sql"),
-    ),
-    (
-        "extract/export_eligible_matches.sql",
-        include_str!("../sql/extract/export_eligible_matches.sql"),
-    ),
-    (
-        "extract/export_player_matches.sql",
-        include_str!("../sql/extract/export_player_matches.sql"),
-    ),
-    (
-        "extract/export_hero_account_counts.sql",
-        include_str!("../sql/extract/export_hero_account_counts.sql"),
-    ),
-    (
-        "extract/export_match_folds.sql",
-        include_str!("../sql/extract/export_match_folds.sql"),
-    ),
-    (
-        "extract/export_split_boundaries.sql",
-        include_str!("../sql/extract/export_split_boundaries.sql"),
-    ),
-    (
-        "extract/export_compositions.sql",
-        include_str!("../sql/extract/export_compositions.sql"),
-    ),
-    (
-        "extract/export_team_snapshots.sql",
-        include_str!("../sql/extract/export_team_snapshots.sql"),
-    ),
-    (
-        "extract/export_player_snapshots.sql",
-        include_str!("../sql/extract/export_player_snapshots.sql"),
-    ),
-    (
-        "extract/export_purchases.sql",
-        include_str!("../sql/extract/export_purchases.sql"),
-    ),
-    (
-        "extract/export_first_purchases.sql",
-        include_str!("../sql/extract/export_first_purchases.sql"),
-    ),
-    (
-        "extract/export_decision_opportunities.sql",
-        include_str!("../sql/extract/export_decision_opportunities.sql"),
-    ),
-    (
         "extract/fill_split_boundaries.sql",
         include_str!("../sql/extract/fill_split_boundaries.sql"),
     ),
@@ -252,18 +132,6 @@ const SQL: &[(&str, &str)] = &[
     (
         "extract/set_temp_directory.sql",
         include_str!("../sql/extract/set_temp_directory.sql"),
-    ),
-    (
-        "production/create_hero_item_statistics.sql",
-        include_str!("../sql/production/create_hero_item_statistics.sql"),
-    ),
-    (
-        "production/select_path_cohort_summary.sql",
-        include_str!("../sql/production/select_path_cohort_summary.sql"),
-    ),
-    (
-        "production/select_path_item_metrics.sql",
-        include_str!("../sql/production/select_path_item_metrics.sql"),
     ),
 ];
 

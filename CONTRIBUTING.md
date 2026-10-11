@@ -8,7 +8,7 @@ Use Linux and the pinned Rust toolchain.
 Install a C++ compiler for bundled DuckDB.
 
 ```bash
-cargo build --package deadlock-build-sync --features analysis --locked
+cargo build --package deadlock-build-sync --locked
 ```
 
 Run the shared local and CI checks before opening a pull request:
@@ -38,7 +38,7 @@ For release validation, run:
 bash scripts/check_repository.sh --release
 ```
 
-This option also builds the analysis release and checks its archive outside the checkout.
+This option also builds the release and checks its archive outside the checkout.
 CI installs the verification tools and runs this same command.
 
 Unit tests remain deferred at the user's request.
