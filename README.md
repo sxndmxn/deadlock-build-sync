@@ -132,7 +132,8 @@ Timestamp parameters and match cutoffs use UTC.
 
 Memory use also includes source records and numerical matrices.
 
-The default rank range is `emissary-i` through `eternus-v`.
+The default rank range is `ritualist-i` through `eternus-v`.
+In the first days of a patch, this range gives more heroes a validated build than `emissary-i` or `mystic-i`.
 `--rank-expansion auto` lets the rank range increase if the evidence for a hero is not sufficient.
 Use `--rank-expansion off` to prevent this increase.
 Use the same rank options for refresh and generation.

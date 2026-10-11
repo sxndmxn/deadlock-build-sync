@@ -105,7 +105,7 @@ pub struct SelectionArguments {
 pub struct RankArguments {
     #[arg(long, value_enum, default_value = "auto")]
     pub rank_expansion: RankExpansion,
-    #[arg(long, default_value = "emissary-i")]
+    #[arg(long, default_value = "ritualist-i")]
     pub min_rank: Rank,
     #[arg(long, default_value = "eternus-v")]
     pub max_rank: Rank,

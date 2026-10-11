@@ -55,6 +55,9 @@ Reject branches that fail admission checks.
 
 ### Changed
 
+Lower the default minimum rank from `emissary-i` to `ritualist-i`.
+On 2026-10-11, two days after a patch, validated builds increased from 2 heroes to 8 heroes.
+
 Start each Steam build description with what the build plays around: the first maxed ability, the key core item, and the CORE completion cost as the power spike.
 Show one cost and observed core owner line per path in the Steam description.
 Keep the complete purchase routes in the detailed Markdown file only.
