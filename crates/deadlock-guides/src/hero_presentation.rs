@@ -104,14 +104,22 @@ fn build_category(
     })
 }
 
-/// Shows the game phase, the win rate of owners, and the pick rate, one per line.
+/// Shows the game phase, the win rate of owners, the pick rate, and the soul window, one per line.
 fn describe_item(item: &BuildItem) -> String {
     format!(
-        "{}\nWIN RATE: {}\nPICK RATE: {}",
+        "{}\nWIN RATE: {}\nPICK RATE: {}\nSOUL WINDOW: {}",
         phase_label(item.phase_s),
         format_share(item.win_rate),
-        format_share(item.adoption)
+        format_share(item.adoption),
+        format_soul_window(item.soul_window)
     )
+}
+
+/// Rounds the soul window to whole thousands. The window always spans at least 1k.
+fn format_soul_window([lower, upper]: [u32; 2]) -> String {
+    let lower = (lower + 500) / 1000;
+    let upper = ((upper + 500) / 1000).max(lower + 1);
+    format!("{lower}k-{upper}k")
 }
 
 fn describe_build(

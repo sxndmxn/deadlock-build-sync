@@ -72,11 +72,13 @@ Each item shows three lines:
 MID GAME
 WIN RATE: 52.3%
 PICK RATE: 48.1%
+SOUL WINDOW: 8k-16k
 ```
 
 The phase is the time when the build adds the item: early game (9 minutes), mid game (20 minutes), or late game (30 minutes).
 The win rate is the share of hero players who own the item at that time and win the match.
 The pick rate is the share of hero players who own the item at that time.
+The soul window is the net worth range in which most players buy the item: the middle half of the first purchases.
 
 The method estimates how much each item adds to the win probability in similar game states.
 It then assembles a build from items that players at this rank use, tilted toward items that win more.

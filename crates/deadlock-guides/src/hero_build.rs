@@ -5,7 +5,7 @@ use deadlock_data::{Error, Result, atomic_write_json, read_json};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-pub const HERO_BUILD_SCHEMA_VERSION: u32 = 2;
+pub const HERO_BUILD_SCHEMA_VERSION: u32 = 3;
 pub const HERO_BUILD_METHOD: &str = "item-effect-ridge-v1";
 
 /// All hero builds from one source snapshot.
@@ -63,6 +63,8 @@ pub struct BuildItem {
     pub win_rate: f64,
     pub effect: f64,
     pub median_net_worth: u32,
+    /// The lower and upper quartile of net worth at the first purchase.
+    pub soul_window: [u32; 2],
 }
 
 /// Held-out test of the build: the win association of following it in similar game states.
