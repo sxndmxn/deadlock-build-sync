@@ -8,6 +8,9 @@ The project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+Report the installed cache as current after a partial sync when the synced heroes match.
+Report how many other heroes keep managed builds from an earlier install.
+
 Require a valid SHA-256 fingerprint before restoring a Steam backup.
 Reject missing, malformed, and mismatched fingerprints before any backup or cache write.
 
