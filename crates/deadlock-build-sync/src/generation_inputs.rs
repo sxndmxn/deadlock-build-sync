@@ -18,9 +18,10 @@ pub fn collect_roster_analytics(
 ) -> Result<BTreeMap<(Rank, Rank), CohortAnalytics>> {
     let ranges = evidence
         .heroes()
-        .keys()
-        .map(|id| {
-            let builds = require_hero_builds(evidence, *id)?;
+        .values()
+        .filter(|hero| hero.exclusion.is_none())
+        .map(|hero| {
+            let builds = require_hero_builds(evidence, hero.hero_id)?;
             let ranks = builds[0].cohort.rank_range()?;
             Ok((ranks.minimum, ranks.maximum))
         })

@@ -45,6 +45,7 @@ pub fn generate_guides(
             .collect::<Result<BTreeSet<_>>>()?,
     )?;
     record_build_evidence(api, &evidence)?;
+    let (selected, exclusions) = remove_excluded_heroes(selected, &evidence);
     let analytics = trace_operation(
         "guides.collect_cohort_analytics",
         Some("collect_roster_analytics"),
@@ -80,14 +81,19 @@ pub fn generate_guides(
     let requested = if request.all_heroes {
         eligible_hero_ids.clone()
     } else {
-        projected.guides.iter().map(|guide| guide.hero_id).collect()
+        projected
+            .guides
+            .iter()
+            .map(|guide| guide.hero_id)
+            .chain(exclusions.keys().copied())
+            .collect()
     };
     let result = GeneratedGuides {
         guides: projected.guides,
         policies: projected.policies,
         contexts: projected.contexts,
         item_mechanics: projected.item_mechanics,
-        coverage: ArtifactCoverage::new(requested, BTreeMap::new())?,
+        coverage: ArtifactCoverage::new(requested, exclusions)?,
         eligible_hero_ids,
         subset_selected: !request.all_heroes,
         rank_range: options.rank_range,
@@ -110,6 +116,32 @@ pub fn generate_guides(
     };
     result.require_complete()?;
     Ok(result)
+}
+
+/// Removes heroes that the evidence excludes, so one hero without a supported
+/// build does not stop generation for the rest of the roster.
+fn remove_excluded_heroes(
+    selected: Vec<Value>,
+    evidence: &BuildEvidenceCatalog,
+) -> (Vec<Value>, BTreeMap<u64, String>) {
+    let exclusions = evidence
+        .heroes()
+        .values()
+        .filter_map(|hero| {
+            let reason = hero.exclusion.clone()?;
+            eprintln!("Warning: Skipping {}: {reason}", hero.hero);
+            Some((hero.hero_id, reason))
+        })
+        .collect::<BTreeMap<_, _>>();
+    let selected = selected
+        .into_iter()
+        .filter(|hero| {
+            hero["id"]
+                .as_u64()
+                .is_none_or(|id| !exclusions.contains_key(&id))
+        })
+        .collect();
+    (selected, exclusions)
 }
 
 #[derive(Debug)]

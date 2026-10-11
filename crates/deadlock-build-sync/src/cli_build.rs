@@ -7,6 +7,7 @@ use deadlock_steam::require_deadlock_stopped;
 use crate::artifact_generation::{
     build_policy_artifact, build_strategy_context, write_build_artifacts,
 };
+use crate::artifact_transaction::ArtifactTransaction;
 use crate::cli_arguments::{
     BuildArguments, ExportArguments, InstallArguments, PreviewArguments, SyncArguments,
 };
@@ -22,6 +23,7 @@ use crate::generation_types::GeneratedGuides;
 
 pub fn run_build(arguments: &BuildArguments, base_url: &str) -> Result<u8> {
     let directory = artifact_directory(arguments.artifacts.as_deref())?;
+    ArtifactTransaction::recover(&directory)?;
     let path = evidence_path(
         arguments.generation.snapshot.build_evidence.as_deref(),
         Some(&directory),
@@ -39,6 +41,7 @@ pub fn run_sync(arguments: &SyncArguments, base_url: &str) -> Result<u8> {
     let location = cache_location(&arguments.location)?;
     require_deadlock_stopped()?;
     let directory = artifact_directory(arguments.artifacts.as_deref())?;
+    ArtifactTransaction::recover(&directory)?;
     let path = evidence_path(
         arguments.generation.snapshot.build_evidence.as_deref(),
         Some(&directory),
@@ -62,7 +65,7 @@ pub fn run_sync(arguments: &SyncArguments, base_url: &str) -> Result<u8> {
             patch: &generated.patch,
             ranks: generated.rank_range,
             manifest: &generated.manifest,
-            expected_heroes: &generated.eligible_hero_ids,
+            expected_heroes: &generated.installable_hero_ids(),
             allow_subset: generated.subset_selected,
         },
     )?;
@@ -144,7 +147,7 @@ pub fn run_install(arguments: &InstallArguments, base_url: &str) -> Result<u8> {
             patch: &generated.patch,
             ranks: generated.rank_range,
             manifest: &generated.manifest,
-            expected_heroes: &generated.eligible_hero_ids,
+            expected_heroes: &generated.installable_hero_ids(),
             allow_subset: generated.subset_selected,
         },
     )?;
