@@ -27,6 +27,8 @@ struct PurchaseMedianRow {
     item_id: u64,
     median_buy_time_s: f64,
     median_net_worth: u32,
+    lower_quartile_net_worth: u32,
+    upper_quartile_net_worth: u32,
 }
 
 /// Produces one build for each active hero from an extracted run.
@@ -82,6 +84,7 @@ pub fn produce_hero_builds(
                 PurchaseMedian {
                     buy_time_s: row.median_buy_time_s,
                     net_worth: row.median_net_worth,
+                    soul_window: [row.lower_quartile_net_worth, row.upper_quartile_net_worth],
                 },
             )
         })

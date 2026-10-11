@@ -15,10 +15,13 @@ const SITUATIONAL_MINIMUM_EFFECT: f64 = 0.02;
 const SITUATIONAL_ITEMS_PER_TIER: usize = 6;
 
 /// Median first purchase time and net worth for one hero and item.
+///
+/// The soul window is the middle half of the net worth values at the first purchase.
 #[derive(Clone, Copy, Debug)]
 pub struct PurchaseMedian {
     pub buy_time_s: f64,
     pub net_worth: u32,
+    pub soul_window: [u32; 2],
 }
 
 pub type PurchaseMedians = BTreeMap<(u64, u64), PurchaseMedian>;
@@ -152,6 +155,7 @@ fn describe_item(
         win_rate: effects.owner_win_rates[column],
         effect: effects.effects[column],
         median_net_worth: median.map_or(0, |median| median.net_worth),
+        soul_window: median.map_or([0, 0], |median| median.soul_window),
     })
 }
 

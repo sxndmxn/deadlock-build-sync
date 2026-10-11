@@ -42,18 +42,22 @@ pub fn render_build_markdown(build: &HeroBuild, catalog: &HeroBuildCatalog) -> S
 }
 
 fn write_items(text: &mut String, items: &[BuildItem]) {
-    text.push_str("| Item | Tier | Cost | Phase | Win rate | Pick rate | Effect | Net worth |\n");
-    text.push_str("| --- | --- | --- | --- | --- | --- | --- | --- |\n");
+    text.push_str(
+        "| Item | Tier | Cost | Phase | Win rate | Pick rate | Soul window | Effect | Net worth |\n",
+    );
+    text.push_str("| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n");
     for item in items {
         let _ = writeln!(
             text,
-            "| {} | {} | {} | {} min | {:.1}% | {:.1}% | {:+.3} | {} |",
+            "| {} | {} | {} | {} min | {:.1}% | {:.1}% | {}–{} | {:+.3} | {} |",
             item.name,
             item.tier,
             item.cost,
             item.phase_s / 60,
             item.win_rate * 100.0,
             item.adoption * 100.0,
+            item.soul_window[0],
+            item.soul_window[1],
             item.effect,
             item.median_net_worth
         );
