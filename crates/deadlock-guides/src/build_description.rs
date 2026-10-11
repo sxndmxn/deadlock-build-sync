@@ -2,10 +2,9 @@ use deadlock_data::{RankRange, Result};
 
 use crate::build_title::format_date;
 use crate::guide_category::GuideCategory;
-use crate::guide_item::format_integer;
+use crate::guide_item::{GuideItem, format_integer};
 use crate::presentation::MANAGED_MARKER;
 use crate::purchase_guide::PurchaseGuide;
-use crate::purchase_instructions::format_choice_instruction;
 use crate::variant_items::group_members;
 
 pub fn build_description(
@@ -32,6 +31,7 @@ pub fn build_description(
         .filter(|version| *version > 0)
         .map_or_else(|| "UNRESOLVED".into(), |version| version.to_string());
     let mut lines = vec![
+        describe_play_focus(guide),
         format!(
             "{queue} • {ranks} • data {} through {} • client {version}.",
             format_date(guide.analysis_start_timestamp, false)?,
@@ -49,7 +49,7 @@ pub fn build_description(
         ]);
     }
     if categories.iter().any(|category| category.compact) {
-        lines.extend(describe_group_purchases(guide)?);
+        lines.extend(describe_group_purchases(guide));
     }
     if let Some(path) = &guide.ability_path {
         let scope = if !path.filter_item_ids.is_empty() {
@@ -75,7 +75,33 @@ pub fn build_description(
         ),
         format!("Policy: {}.", identifier_or_placeholder(&guide.policy_id)),
     ]);
+    if lines[0].is_empty() {
+        lines.remove(0);
+    }
     Ok(lines.join("\n"))
+}
+
+/// States what the build plays around: the first maxed ability, the key core
+/// item from the build icons, and the core completion cost as the power spike.
+fn describe_play_focus(guide: &PurchaseGuide) -> String {
+    let mut sentences = Vec::new();
+    if let [ability, item, ..] = guide.build_tag_labels.as_slice() {
+        sentences.push(format!(
+            "Play around: max {ability} first. Key item: {item}."
+        ));
+    }
+    if guide.core_target_cost > 0 {
+        let window = guide
+            .core_purchase_items
+            .last()
+            .and_then(GuideItem::soul_window)
+            .map_or_else(String::new, |window| format!(", about {window} net worth"));
+        sentences.push(format!(
+            "Power spike: CORE complete at {} souls{window}.",
+            format_integer(i128::from(guide.core_target_cost))
+        ));
+    }
+    sentences.join(" ")
 }
 
 const fn identifier_or_placeholder(value: &str) -> &str {
@@ -98,18 +124,17 @@ fn describe_queue_rules(guide: &PurchaseGuide, categories: &[GuideCategory]) -> 
     }
 }
 
-fn describe_group_purchases(guide: &PurchaseGuide) -> Result<Vec<String>> {
+/// One line per path with its core cost and observed core owner counts.
+/// The detailed Markdown file keeps the complete purchase routes.
+fn describe_group_purchases(guide: &PurchaseGuide) -> Vec<String> {
     let mut lines = Vec::new();
     for (index, member) in group_members(guide).enumerate() {
-        lines.push(if index == 0 {
-            "MAIN CORE purchases:".into()
+        let label = if index == 0 {
+            "MAIN CORE".into()
         } else {
-            format!("VARIANT {index} complete purchases:")
-        });
-        lines.push(format!(
-            "Core cost: {} souls.",
-            format_integer(i128::from(member.core_target_cost))
-        ));
+            format!("VARIANT {index}")
+        };
+        let cost = format_integer(i128::from(member.core_target_cost));
         let counts = [
             ("discovery", "discovery_owners"),
             ("selection", "selection_owners"),
@@ -122,40 +147,16 @@ fn describe_group_purchases(guide: &PurchaseGuide) -> Result<Vec<String>> {
                 .map(|count| format!("{label} n={}", format_integer(i128::from(count))))
         })
         .collect::<Vec<_>>();
-        if !counts.is_empty() {
-            lines.push(format!("Observed core owners: {}.", counts.join("; ")));
-        }
-        lines.extend(describe_purchase_details(member)?);
+        lines.push(if counts.is_empty() {
+            format!("{label}: {cost} souls.")
+        } else {
+            format!(
+                "{label}: {cost} souls. Observed core owners: {}.",
+                counts.join("; ")
+            )
+        });
     }
-    Ok(lines)
-}
-
-fn describe_purchase_details(guide: &PurchaseGuide) -> Result<Vec<String>> {
-    let Some(guidance) = &guide.purchase_guidance else {
-        return Ok(Vec::new());
-    };
-    let mut lines = Vec::new();
-    lines.extend(guidance.default_path.actions.iter().map(|step| {
-        format!(
-            "{}: +{} souls; total {}. Consumed components: {:?}.",
-            step.name,
-            format_integer(i128::from(step.incremental_cost)),
-            format_integer(i128::from(step.cumulative_cost)),
-            step.consumed_items
-        )
-    }));
-    for card in &guidance.choices {
-        lines.push(format!(
-            "{}: {}",
-            card.name,
-            format_choice_instruction(guidance, card)?
-        ));
-    }
-    lines.extend(guide.core_alternatives.iter().map(|row| {
-        let row = row.content();
-        format!("{} {}. {} {}", row.when, row.swap, row.why, row.skip)
-    }));
-    Ok(lines)
+    lines
 }
 
 fn format_title_case(value: &str) -> String {

@@ -55,7 +55,7 @@ Language reference: ASD-STE100.
 ## Repository purpose
 
 `deadlock-build-sync` is a CLI that primarily supports Linux.
-It uses current Deadlock analytics to generate private hero builds with tactical instructions that supplied evidence supports.
+It uses current Deadlock analytics to generate private hero builds. The player buys CORE items from left to right. Each build states a short, evidence-supported idea of what to play around.
 It installs the builds under Steam's **My Builds**.
 The main command is:
 

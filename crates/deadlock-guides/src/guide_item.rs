@@ -105,23 +105,25 @@ impl GuideItem {
         )
     }
 
+    /// Interquartile net worth of observed purchases, rounded to thousands.
+    #[must_use]
+    pub fn soul_window(&self) -> Option<String> {
+        self.buy_net_worth_q25
+            .zip(self.buy_net_worth_q75)
+            .map(|(lower, upper)| {
+                let lower = (lower / 1000.0 + 0.5).floor();
+                let upper = (upper / 1000.0 + 0.5).floor();
+                if lower.total_cmp(&upper).is_eq() {
+                    format!("about {lower:.0}k")
+                } else {
+                    format!("{lower:.0}k - {upper:.0}k")
+                }
+            })
+    }
+
     #[must_use]
     pub fn stat_context(&self) -> String {
-        let window = self
-            .buy_net_worth_q25
-            .zip(self.buy_net_worth_q75)
-            .map_or_else(
-                || "unavailable".into(),
-                |(lower, upper)| {
-                    let lower = (lower / 1000.0 + 0.5).floor();
-                    let upper = (upper / 1000.0 + 0.5).floor();
-                    if lower.total_cmp(&upper).is_eq() {
-                        format!("about {lower:.0}k")
-                    } else {
-                        format!("{lower:.0}k - {upper:.0}k")
-                    }
-                },
-            );
+        let window = self.soul_window().unwrap_or_else(|| "unavailable".into());
         format!(
             "SOUL WINDOW: {window}\nPR: {:.1}% | WR: {:.1}% | TOTAL GAMES: {}",
             self.hero_statistics.adoption * 100.0,
