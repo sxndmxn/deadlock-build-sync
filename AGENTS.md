@@ -64,15 +64,18 @@ When a request, a change, or this file conflicts with `VISION.md`, follow `VISIO
 ## Repository purpose
 
 `deadlock-build-sync` is a CLI that primarily supports Linux.
-It uses current Deadlock analytics to generate private hero builds. The player buys CORE items from left to right. Each build states a short, evidence-supported idea of what to play around.
+It makes one private build for every active hero from public ranked match data.
+The player buys MAIN CORE items from left to right. TIER 1 to TIER 4 hold situational items.
+Each build states a short idea of what to play around and the confidence of its evidence.
 It installs the builds under Steam's **My Builds**.
+[docs/build-method.md](docs/build-method.md) describes the build method.
 The main command is:
 
 ```bash
 deadlock-build-sync sync
 ```
 
-The command must generate, validate, back up, and install every eligible guide.
+The command must generate, validate, back up, and install a build for every active hero.
 It must not damage or discard user-owned Steam data.
 
 ## Required safety rules
@@ -85,11 +88,11 @@ It must not damage or discard user-owned Steam data.
 - Keep description generation separate from Steam data writes.
   Use deterministic code for data collection, fingerprints, validation, serialization, installation, and description generation.
   Do not use models for these operations.
-- Support tactical prose with supplied evidence.
-  Use hero abilities, ability order, item mechanics, purchase windows, rank cohort, patch, match counts, and match duration.
+- Support description text with the build data.
+  Use the key ability, key item, purchase net worth, rank cohort, patch, and evaluation.
   Do not invent mechanics. Do not state that analytics prove causation.
-- Reject incomplete heroes. Reject stale or malformed artifacts.
-  Do not weaken validators to accept a generated response.
+- Make a build for every active hero. Show weak evidence as `limited` confidence. Do not skip a hero to hide weak evidence.
+- Reject stale or malformed artifacts. Do not weaken validators to accept a generated response.
 - Keep `sync` safe to repeat. Reuse artifacts with compatible fingerprints.
   Make managed build updates idempotent.
 
@@ -97,16 +100,15 @@ It must not damage or discard user-owned Steam data.
 
 - Follow the crate ownership rules below and the import boundaries in [arch-lint.toml](arch-lint.toml).
   Review ownership and dependency direction before changing a boundary.
-- `deadlock-data` owns shared validation, fingerprints, snapshots, and artifact writes.
-- `deadlock-input` owns synchronous API access and item mechanics.
-- `deadlock-guides` owns deterministic analytics, policies, descriptions, and artifact admission.
-- `deadlock-analysis` owns optional DuckDB extraction and numerical production.
+- `deadlock-data` owns shared validation, fingerprints, ranks, traces, and artifact writes.
+- `deadlock-input` owns synchronous API access.
+- `deadlock-guides` owns the hero build artifact, descriptions, ability order selection, build tags, and the Steam presentation.
+- `deadlock-analysis` owns DuckDB extraction, item effect estimation, build assembly, and held-out evaluation.
   It cannot import Steam storage.
 - `deadlock-steam` owns KV3, protobuf, cache installation, and recovery.
   Errors in this crate can damage user data.
 - `deadlock-build-sync` controls workflows through the library interfaces.
   Keep `sync` simple to use without arguments.
-  Retain the review and debugging commands.
 - Reject cyclic crate and module dependencies.
 - Enforce the import boundaries in `arch-lint.toml` through the complete local gate.
   Keep Arch-lint warnings at zero.

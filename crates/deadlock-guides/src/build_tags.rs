@@ -1,26 +1,29 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use deadlock_data::{Error, Result};
-use deadlock_input::{AXIS_CLASSES, BuildTagCatalog, FUNCTION_CLASSES};
+use deadlock_input::{AXIS_CLASSES, BuildTagCatalog, FUNCTION_CLASSES, clean_mechanical_text};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::guide_item::GuideItem;
-use crate::mechanic_properties::extract_description_text;
+/// One CORE item for tag selection: the item ID and its shop tier.
+#[derive(Clone, Copy, Debug)]
+pub struct TagItem {
+    pub item_id: u64,
+    pub tier: u8,
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BuildTagSelection {
     pub tag_ids: [u64; 3],
     pub class_names: [String; 3],
     pub labels: [String; 3],
-    pub archetype: String,
 }
 
 /// # Errors
 /// Returns an error when the ability order, core icon, or pinned tag catalog has an invalid identity.
 pub fn select_build_tags(
     ability_path: &[u64],
-    core: &[GuideItem],
+    core: &[TagItem],
     assets: &[Value],
     catalog: &BuildTagCatalog,
 ) -> Result<BuildTagSelection> {
@@ -52,7 +55,6 @@ pub fn select_build_tags(
     let (axis, function) = classify_core(core, &assets)?;
     catalog.require(axis)?;
     let function = catalog.require(function)?;
-    let archetype = crate::build_title::select_core_item_name(core)?;
     let tag_ids = [ability_id, icon.item_id, function.tag_id];
     if tag_ids.into_iter().collect::<BTreeSet<_>>().len() != 3 {
         return Err(Error::new("Selected build icons are not distinct"));
@@ -61,7 +63,6 @@ pub fn select_build_tags(
         tag_ids,
         class_names: [ability_class, item_class, function.class_name.clone()],
         labels: [ability_label, item_label, function.label.clone()],
-        archetype,
     })
 }
 
@@ -191,7 +192,7 @@ fn contains_effect_phrase(text: &str, phrase: &str) -> bool {
 }
 
 fn classify_core(
-    core: &[GuideItem],
+    core: &[TagItem],
     assets: &BTreeMap<u64, &Value>,
 ) -> Result<(&'static str, &'static str)> {
     let mut axes = [0_u64; 3];
@@ -237,4 +238,23 @@ fn first_maximum(values: &[u64]) -> usize {
         .enumerate()
         .min_by_key(|(index, value)| (std::cmp::Reverse(*value), *index))
         .map_or(0, |(index, _)| index)
+}
+
+fn extract_description_text(value: &Value) -> String {
+    match value {
+        Value::Null => String::new(),
+        Value::Object(fields) => fields
+            .values()
+            .map(extract_description_text)
+            .collect::<Vec<_>>()
+            .join(" "),
+        Value::Array(values) => values
+            .iter()
+            .map(extract_description_text)
+            .collect::<Vec<_>>()
+            .join(" "),
+        Value::String(_) => clean_mechanical_text(value),
+        Value::Bool(value) => if *value { "True" } else { "False" }.into(),
+        Value::Number(value) => value.to_string(),
+    }
 }

@@ -38,15 +38,6 @@ impl ArtifactTransaction {
         &self.staged
     }
 
-    pub fn existing_file(&self, name: &str) -> Result<Option<PathBuf>> {
-        let path = self.destination.join(name);
-        match file_type(&path)? {
-            Some(kind) if kind.is_file() => Ok(Some(path)),
-            Some(_) => Err(Error::new("The existing artifact must be a regular file")),
-            None => Ok(None),
-        }
-    }
-
     /// # Errors
     /// Returns an error when recovery files are invalid or the artifact lock is unavailable.
     pub fn recover(destination: &Path) -> Result<()> {
@@ -61,9 +52,6 @@ impl ArtifactTransaction {
     pub fn commit(self) -> Result<()> {
         let previous = self.temporary.path().join("previous");
         let had_previous = file_type(&self.destination)?.is_some();
-        if had_previous {
-            copy_retained_files(&self.destination, &self.staged)?;
-        }
         let (parent, name) = artifact_location(&self.destination)?;
         File::open(self.temporary.path())?.sync_all()?;
         let directory = self
@@ -195,46 +183,6 @@ fn recover_pending_artifacts(destination: &Path) -> Result<()> {
 fn require_directory_or_missing(path: &Path) -> Result<()> {
     if file_type(path)?.is_some_and(|kind| !kind.is_dir()) {
         return Err(Error::new("Artifact recovery path must be a directory"));
-    }
-    Ok(())
-}
-
-fn copy_retained_files(source: &Path, destination: &Path) -> Result<()> {
-    if !fs::symlink_metadata(source)?.is_dir() {
-        return Err(Error::new("The artifact source must be a directory"));
-    }
-    let mut pending = vec![(source.to_path_buf(), destination.to_path_buf())];
-    while let Some((source, destination)) = pending.pop() {
-        for entry in fs::read_dir(source)? {
-            let entry = entry?;
-            let path = entry.path();
-            let target = destination.join(entry.file_name());
-            let kind = entry.file_type()?;
-            if !kind.is_dir() && !kind.is_file() {
-                return Err(Error::new(
-                    "Artifact directory contains a symbolic link or special file",
-                ));
-            }
-            copy_retained_entry(&path, &target, kind)?;
-            if kind.is_dir() {
-                pending.push((path, target));
-            }
-        }
-        File::open(destination)?.sync_all()?;
-    }
-    Ok(())
-}
-
-fn copy_retained_entry(source: &Path, destination: &Path, kind: FileType) -> Result<()> {
-    if let Some(existing) = file_type(destination)? {
-        if existing.is_dir() != kind.is_dir() || existing.is_file() != kind.is_file() {
-            return Err(Error::new("Artifact replacement has a file type conflict"));
-        }
-    } else if kind.is_dir() {
-        fs::create_dir(destination)?;
-    } else {
-        fs::copy(source, destination)?;
-        File::open(destination)?.sync_all()?;
     }
     Ok(())
 }

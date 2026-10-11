@@ -60,7 +60,7 @@ fn check_reference_fixture() -> Result<()> {
 }
 
 fn create_location(root: &std::path::Path) -> Result<CacheLocation> {
-    let snapshot = create_snapshot()?;
+    let snapshot = create_snapshot();
     let cache_path = root.join("cache.kv3");
     fs::write(&cache_path, encode_kv3(&create_cache(&snapshot)?)?)?;
     Ok(CacheLocation {
@@ -74,7 +74,7 @@ fn check_installation() -> Result<()> {
     let root = tempfile::tempdir()?;
     let location = create_location(root.path())?;
     let original = read_cache(&location.cache_path)?;
-    let snapshot = create_snapshot()?;
+    let snapshot = create_snapshot();
     let builds = [create_managed_build(&snapshot)?];
     let expected = BTreeSet::from([1]);
     let request = CacheUpdateRequest {
@@ -134,7 +134,7 @@ fn check_write_guards() -> Result<()> {
         let root = tempfile::tempdir()?;
         let location = create_location(root.path())?;
         let original = read_cache(&location.cache_path)?;
-        let snapshot = create_snapshot()?;
+        let snapshot = create_snapshot();
         let builds = [create_managed_build(&snapshot)?];
         let expected = BTreeSet::from([1]);
         let update = prepare_cache_update(
@@ -209,7 +209,7 @@ fn check_valid_restore() -> Result<()> {
     let root = tempfile::tempdir()?;
     let location = create_location(root.path())?;
     let original = fs::read(&location.cache_path)?;
-    let snapshot = create_snapshot()?;
+    let snapshot = create_snapshot();
     let builds = [create_managed_build(&snapshot)?];
     let expected = BTreeSet::from([1]);
     let update = prepare_cache_update(

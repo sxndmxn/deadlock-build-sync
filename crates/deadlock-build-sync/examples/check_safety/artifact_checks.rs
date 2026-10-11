@@ -180,17 +180,16 @@ fn check_complete_installation() -> Result<()> {
     let destination = root.path().join("artifacts");
     fs::create_dir(&destination)?;
     fs::write(destination.join("marker"), b"previous")?;
-    fs::write(destination.join("retained"), b"retained")?;
+    fs::write(destination.join("obsolete"), b"obsolete")?;
     let transaction = ArtifactTransaction::new(&destination)?;
-    if transaction.existing_file("marker")?.is_none() {
-        return Err(Error::new("Artifact transaction lost the existing file"));
-    }
     fs::write(transaction.staged().join("marker"), b"replacement")?;
     transaction.commit()?;
     if fs::read(destination.join("marker"))? != b"replacement"
-        || fs::read(destination.join("retained"))? != b"retained"
+        || destination.join("obsolete").try_exists()?
     {
-        return Err(Error::new("Artifact installation changed retained files"));
+        return Err(Error::new(
+            "Artifact installation did not replace the complete directory",
+        ));
     }
     Ok(())
 }

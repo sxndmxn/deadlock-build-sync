@@ -1,7 +1,6 @@
 use std::path::{Path, PathBuf};
 
 use deadlock_data::{Error, RankRange, Result};
-use deadlock_guides::RankExpansion;
 use serde_json::{Value, json};
 
 pub const DUCKLAKE_URL: &str = "https://data.deadlock-api.com/v1/catalog.ducklake";
@@ -9,14 +8,11 @@ pub const RANK_RESET_AT: &str = "2026-07-30T19:14:37Z";
 
 #[derive(Clone, Debug)]
 pub struct RefreshRequest {
-    pub output: PathBuf,
     pub root: PathBuf,
     pub run_id: Option<String>,
     pub since: Option<i64>,
     pub as_of: Option<i64>,
     pub ranks: RankRange,
-    pub rank_expansion: RankExpansion,
-    pub workers: u16,
     pub extraction_resources: ExtractionResources,
     pub resume: bool,
     pub api_base_url: String,
@@ -77,6 +73,10 @@ pub struct RunPaths {
 }
 
 impl RunPaths {
+    /// Creates the directories of one analysis run.
+    ///
+    /// # Errors
+    /// Returns an error for an invalid run identifier or a failed directory creation.
     pub fn create(root: &Path, run_id: Option<&str>) -> Result<Self> {
         let identifier = run_id.map_or_else(
             || chrono::Utc::now().format("%Y%m%dT%H%M%SZ").to_string(),

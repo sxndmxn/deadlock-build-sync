@@ -1,15 +1,4 @@
-use serde_json::{Map, Value};
-
-#[must_use]
-pub fn is_populated(value: &Value) -> bool {
-    match value {
-        Value::Null => false,
-        Value::String(value) => !value.is_empty(),
-        Value::Array(value) => !value.is_empty(),
-        Value::Object(value) => !value.is_empty(),
-        Value::Bool(_) | Value::Number(_) => true,
-    }
-}
+use serde_json::Value;
 
 #[must_use]
 pub fn clean_mechanical_text(value: &Value) -> String {
@@ -98,46 +87,4 @@ fn replace_delimited(text: &str, start: char, end: char, matches: impl Fn(&str) 
     }
     output.push_str(remaining);
     output
-}
-
-#[must_use]
-pub fn normalize_mechanical_value(value: &Value) -> Value {
-    match value {
-        Value::Object(values) => values
-            .iter()
-            .filter(|(_, value)| is_populated(value))
-            .map(|(key, value)| (key.clone(), normalize_mechanical_value(value)))
-            .collect(),
-        Value::Array(values) => values.iter().map(normalize_mechanical_value).collect(),
-        Value::String(text) => {
-            let cleaned = clean_text(text);
-            if cleaned.is_empty() {
-                text.trim_matches(is_text_space).into()
-            } else {
-                cleaned.into()
-            }
-        }
-        value => value.clone(),
-    }
-}
-
-#[must_use]
-pub fn normalize_hero_description(value: &Value) -> Map<String, Value> {
-    if let Some(text) = value.as_str() {
-        let cleaned = clean_text(text);
-        return if cleaned.is_empty() {
-            Map::new()
-        } else {
-            Map::from_iter([("summary".into(), cleaned.into())])
-        };
-    }
-    value.as_object().map_or_else(Map::new, |values| {
-        values
-            .iter()
-            .filter_map(|(key, value)| {
-                let cleaned = clean_mechanical_text(value);
-                (!cleaned.is_empty()).then(|| (key.clone(), cleaned.into()))
-            })
-            .collect()
-    })
 }

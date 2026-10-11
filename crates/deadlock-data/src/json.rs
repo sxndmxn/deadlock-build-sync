@@ -47,15 +47,6 @@ pub fn integer(value: &Value, name: &str) -> Result<u64> {
 }
 
 /// # Errors
-/// Returns an error if the field is not a finite number.
-pub fn real(value: &Value, name: &str) -> Result<f64> {
-    field(value, name)?
-        .as_f64()
-        .filter(|number| number.is_finite())
-        .ok_or_else(|| Error::new(format!("Invalid numeric field: {name}")))
-}
-
-/// # Errors
 /// Returns an error if JSON serialization fails.
 pub fn canonical_json(value: &Value) -> Result<Vec<u8>> {
     let mut output = String::new();
@@ -67,18 +58,6 @@ pub fn canonical_json(value: &Value) -> Result<Vec<u8>> {
 /// Returns an error if JSON serialization fails.
 pub fn fingerprint(value: &Value) -> Result<String> {
     Ok(sha256(&canonical_json(value)?))
-}
-
-/// # Errors
-/// Returns an error if the value is not an object or JSON serialization fails.
-pub fn fingerprint_without_field(value: &Value, field: &str) -> Result<String> {
-    let entries = object(value)?
-        .iter()
-        .filter(|(key, _)| key.as_str() != field)
-        .collect();
-    let mut output = String::new();
-    write_json_object(entries, &mut output)?;
-    Ok(sha256(output.as_bytes()))
 }
 
 #[must_use]
@@ -198,4 +177,19 @@ fn format_python_float(encoded: &str) -> Result<String> {
         }
     }
     Ok(result)
+}
+
+/// # Errors
+/// Returns an error when the value is not 64 lowercase hexadecimal digits.
+pub fn validate_sha256(value: &str, label: &str) -> Result<()> {
+    if value.len() != 64
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err(Error::new(format!(
+            "{label} fingerprint must contain 64 lowercase hexadecimal digits"
+        )));
+    }
+    Ok(())
 }

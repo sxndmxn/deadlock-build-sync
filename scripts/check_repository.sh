@@ -77,15 +77,13 @@ cargo run --package deadlock-build-sync --example check_safety --locked
 
 cli_path="${CARGO_TARGET_DIR:-target}/debug/deadlock-build-sync"
 "$cli_path" --help >/dev/null
-if "$cli_path" refresh-evidence 2>"$output_directory/analysis-feature-error"; then
-    printf 'The default CLI accepted a command that requires analysis.\n' >&2
-    exit 1
-fi
-rg --quiet --fixed-strings 'requires the analysis feature' "$output_directory/analysis-feature-error"
+for command in sync build install status restore; do
+    "$cli_path" "$command" --help >/dev/null
+done
 cargo deny --locked check --deny warnings
 
 if "$check_release"; then
-    cargo build --package deadlock-build-sync --features analysis --release --locked
+    cargo build --package deadlock-build-sync --release --locked
     release_binary=$(realpath "${CARGO_TARGET_DIR:-target}/release/deadlock-build-sync")
     sh scripts/package_release.sh "$release_binary" x86_64-unknown-linux-gnu
 fi

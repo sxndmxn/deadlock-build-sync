@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-use crate::{Error, Result, canonical_json, object, sha256, validate_sha256};
+use crate::{Error, Result, canonical_json};
 
 const MAXIMUM_JSON_BYTES: u64 = 512 * 1024 * 1024;
 
@@ -30,21 +30,6 @@ pub fn state_directory() -> Result<PathBuf> {
 /// Returns an error if the file cannot be read or contains invalid JSON.
 pub fn read_json(path: &Path) -> Result<Value> {
     read_json_bytes(path).map(|(_, value)| value)
-}
-
-/// # Errors
-/// Returns an error when the file bytes differ from the expected fingerprint or the JSON root is not an object.
-pub fn read_fingerprinted_json(path: &Path, expected_sha256: &str) -> Result<Value> {
-    validate_sha256(expected_sha256, "Artifact")?;
-    let (bytes, value) = read_json_bytes(path)?;
-    if sha256(&bytes) != expected_sha256 {
-        return Err(Error::new(format!(
-            "Artifact byte fingerprint differs: {}",
-            path.display()
-        )));
-    }
-    object(&value)?;
-    Ok(value)
 }
 
 /// # Errors

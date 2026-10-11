@@ -1,30 +1,17 @@
-use deadlock_data::{
-    Error, EvidenceRecorder, EvidenceSemantics, EvidenceUnit, Result, fingerprint,
-};
-use serde_json::{Map, Value, json};
+use deadlock_data::{Error, Result};
+use serde_json::{Map, Value};
 
-use crate::api_cache::CachedResponse;
 use crate::api_options::ApiOptions;
 use crate::http_client::JsonHttpClient;
 
 #[derive(Debug)]
 pub struct ApiSession {
     pub(super) options: ApiOptions,
-    pub(super) recorder: EvidenceRecorder,
     http: JsonHttpClient,
     client_version: Option<u64>,
 }
 
 impl ApiSession {
-    pub(super) fn fork(&self) -> Self {
-        Self {
-            options: self.options.clone(),
-            recorder: self.recorder.fork(),
-            http: self.http.clone(),
-            client_version: self.client_version,
-        }
-    }
-
     pub(super) fn new(options: ApiOptions) -> Result<Self> {
         options.rank_range.validate()?;
         if options.client_version == Some(0) || options.as_of_timestamp < 0 {
@@ -32,76 +19,16 @@ impl ApiSession {
                 "API client version must be positive and the cutoff must be nonnegative",
             ));
         }
-        if let Some(epochs) = &options.epochs {
-            epochs.validate()?;
-        }
         let http = JsonHttpClient::new(&options.base_url, options.timeout, 3)?;
         http.set_request_interval(options.request_interval)?;
-        let mut session = Self {
+        Ok(Self {
             options,
             http,
-            recorder: EvidenceRecorder::default(),
             client_version: None,
-        };
-        session.declare_routes()?;
-        Ok(session)
+        })
     }
 
-    fn declare_routes(&mut self) -> Result<()> {
-        for (path, grain, unit) in [
-            (
-                "/v1/assets/client-versions",
-                "available-client-version",
-                EvidenceUnit::Asset,
-            ),
-            ("/v1/assets/heroes", "hero-asset", EvidenceUnit::Asset),
-            (
-                "/v1/assets/items",
-                "item-or-ability-asset",
-                EvidenceUnit::Asset,
-            ),
-            (
-                "/v1/assets/build-tags",
-                "build-tag-asset",
-                EvidenceUnit::Asset,
-            ),
-            ("/v1/assets/ranks", "rank-tier-asset", EvidenceUnit::Asset),
-            ("/v2/patches", "patch-feed-entry", EvidenceUnit::Asset),
-            (
-                "/v1/players/steam",
-                "steam-account-profile",
-                EvidenceUnit::Asset,
-            ),
-            (
-                "/v1/analytics/ability-order-stats",
-                "observed-ability-prefix",
-                EvidenceUnit::AbilityPath,
-            ),
-            (
-                "/v1/analytics/hero-stats",
-                "ending-duration-hero-appearance",
-                EvidenceUnit::HeroAppearance,
-            ),
-            (
-                "/v1/analytics/hero-counter-stats",
-                "hero-enemy-pair",
-                EvidenceUnit::HeroEnemyPair,
-            ),
-        ] {
-            self.recorder.declare(
-                path,
-                EvidenceSemantics {
-                    unit,
-                    backend_grain: grain.into(),
-                    fallback_behavior: "reject; never change population or grain".into(),
-                    warnings: Vec::new(),
-                },
-            )?;
-        }
-        Ok(())
-    }
-
-    pub(super) fn get(&mut self, path: &str, parameters: Map<String, Value>) -> Result<Value> {
+    pub(super) fn get(&self, path: &str, parameters: Map<String, Value>) -> Result<Value> {
         let normalized = parameters
             .into_iter()
             .filter_map(|(name, value)| match value {
@@ -109,41 +36,8 @@ impl ApiSession {
                 Value::Bool(value) => Some((name, value.to_string().into())),
                 value => Some((name, value)),
             })
-            .collect::<Map<_, _>>();
-        let response = self.get_response(path, &normalized)?;
-        self.recorder
-            .record(path, normalized, &response.content, response.fetched_at)?;
-        Ok(response.data)
-    }
-
-    fn get_response(&self, path: &str, parameters: &Map<String, Value>) -> Result<CachedResponse> {
-        let cache = self.options.response_cache.as_ref().filter(|_| {
-            path == "/v1/analytics/ability-order-stats" && self.options.client_version.is_some()
-        });
-        let identity = if cache.is_some() {
-            fingerprint(&json!({"base_url":self.options.base_url,"path":path,
-                "parameters":parameters,"client_version":self.options.client_version,
-                "epochs":self.options.epochs}))?
-        } else {
-            String::new()
-        };
-        if let Some(cache) = cache
-            && let Some(response) = cache.read(&identity)?
-        {
-            return Ok(response);
-        }
-        let response = self
-            .http
-            .get_json(path, &parameters.clone().into_iter().collect())?;
-        let response = CachedResponse {
-            content: response.content,
-            data: response.data,
-            fetched_at: chrono::Utc::now(),
-        };
-        if let Some(cache) = cache {
-            cache.write(&identity, &response)?;
-        }
-        Ok(response)
+            .collect();
+        Ok(self.http.get_json(path, &normalized)?.data)
     }
 
     pub(super) fn resolve_client_version(&mut self) -> Result<u64> {
@@ -191,7 +85,7 @@ impl ApiSession {
         let mut parameters = self.options.rank_range.api_parameters();
         parameters.extend([
             ("game_mode".into(), "normal".into()),
-            ("match_mode".into(), self.options.match_mode.as_str().into()),
+            ("match_mode".into(), "ranked".into()),
             ("min_unix_timestamp".into(), minimum_timestamp.into()),
             (
                 "max_unix_timestamp".into(),

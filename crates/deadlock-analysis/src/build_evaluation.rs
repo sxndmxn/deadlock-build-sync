@@ -1,0 +1,83 @@
+use std::collections::{BTreeMap, BTreeSet};
+
+use deadlock_data::Result;
+use deadlock_guides::{BuildEvaluation, Confidence};
+
+use crate::item_effects::{ItemCatalog, LandmarkState, relative_net_worth};
+use crate::ridge_logistic::{FeatureRow, fit_ridge_logistic};
+
+/// Test landmarks. Each one compares owned items with the latest phase set at or before it.
+const EVALUATION_LANDMARKS: [u32; 5] = [540, 900, 1200, 1500, 1800];
+const AGREEMENT_COLUMN: usize = 4;
+const WIDTH: usize = 5 + EVALUATION_LANDMARKS.len() - 1;
+const MINIMUM_OBSERVATIONS: usize = 200;
+const PENALTY: f64 = 1.0;
+
+/// Tests a build on held-out states of one hero.
+///
+/// Agreement is the cost share of the phase set that the player owns.
+/// The model adjusts for relative net worth, team lead, rank, and landmark.
+/// The agreement coefficient is the log-odds change from no agreement to full agreement.
+///
+/// # Errors
+/// Returns an error when the model cannot be fitted.
+pub fn evaluate_build(
+    states: &[&LandmarkState],
+    phase_sets: &BTreeMap<u32, BTreeSet<u64>>,
+    catalog: &ItemCatalog,
+) -> Result<BuildEvaluation> {
+    let rows = states
+        .iter()
+        .filter_map(|state| build_evaluation_row(state, phase_sets, catalog))
+        .collect::<Vec<_>>();
+    if rows.len() < MINIMUM_OBSERVATIONS {
+        return Ok(BuildEvaluation {
+            agreement_coefficient: 0.0,
+            standard_error: 0.0,
+            observations: u64::try_from(rows.len())?,
+            confidence: Confidence::Limited,
+        });
+    }
+    let references = rows.iter().collect::<Vec<_>>();
+    let fit = fit_ridge_logistic(&references, &[0.0; WIDTH], &[PENALTY; WIDTH])?;
+    let coefficient = fit.coefficients[AGREEMENT_COLUMN];
+    let standard_error = fit.standard_error(AGREEMENT_COLUMN)?;
+    Ok(BuildEvaluation {
+        agreement_coefficient: coefficient,
+        standard_error,
+        observations: u64::try_from(rows.len())?,
+        confidence: Confidence::classify(coefficient, standard_error),
+    })
+}
+
+fn build_evaluation_row(
+    state: &LandmarkState,
+    phase_sets: &BTreeMap<u32, BTreeSet<u64>>,
+    catalog: &ItemCatalog,
+) -> Option<FeatureRow> {
+    let position = EVALUATION_LANDMARKS
+        .iter()
+        .position(|landmark| *landmark == state.landmark_s)?;
+    let (_, target) = phase_sets.range(..=state.landmark_s).next_back()?;
+    let target_cost = catalog.cost(target);
+    if target_cost == 0 {
+        return None;
+    }
+    let owned = state.item_ids.iter().copied().collect::<BTreeSet<_>>();
+    let agreement = f64::from(catalog.cost(&target.intersection(&owned).copied().collect()))
+        / f64::from(target_cost);
+    let mut features = vec![
+        (0, 1.0),
+        (1, relative_net_worth(state.net_worth, state.landmark_s)),
+        (2, state.team_lead),
+        (3, (f64::from(state.average_badge) - 80.0) / 20.0),
+        (AGREEMENT_COLUMN, agreement),
+    ];
+    if position > 0 {
+        features.push((AGREEMENT_COLUMN + position, 1.0));
+    }
+    Some(FeatureRow {
+        features,
+        label: if state.won { 1.0 } else { 0.0 },
+    })
+}

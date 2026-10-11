@@ -1,57 +1,21 @@
-use deadlock_data::{
-    EpochBoundary, EpochSet, EvidenceRecord, EvidenceUnit, MatchMode, Result, SnapshotContent,
-    SnapshotManifest, default_outcome_policy, object, sha256,
-};
+use deadlock_data::{Result, sha256};
 use deadlock_guides::{
-    BuildPresentation, GuideIdentity, MANAGED_MARKER, PresentationCategory, PresentationContent,
-    PresentationItem,
+    BuildPresentation, MANAGED_MARKER, PresentationCategory, PresentationContent, PresentationItem,
 };
 use deadlock_steam::{
-    Kv3Document, Kv3Kind, Kv3Value, ManagedBuild, encode_hero_build, wrap_hero_build,
+    BuildIdentity, BuildSnapshot, Kv3Document, Kv3Kind, Kv3Value, ManagedBuild, encode_hero_build,
+    wrap_hero_build,
 };
 use serde_json::json;
 
-pub fn create_snapshot() -> Result<SnapshotManifest> {
-    let boundary = EpochBoundary {
-        identity: "reference".into(),
-        start_timestamp: 0,
-    };
-    SnapshotManifest::new(SnapshotContent {
-        schema_version: 1,
-        client_version: 1,
-        as_of_timestamp: 1,
-        created_at: "2026-01-01T00:00:00Z".into(),
-        match_mode: MatchMode::Ranked,
-        game_mode: "normal".into(),
-        rank_range: object(&json!({"minimum":{"badge_id":71,"label":"Emissary I"},
-            "maximum":{"badge_id":115,"label":"Eternus V"}}))?
-        .clone(),
-        rank_labels_sha256: sha256(b"ranks"),
-        build_tags_sha256: sha256(b"tags"),
-        patch: object(&json!({"identity":"reference"}))?.clone(),
-        epochs: EpochSet {
-            mechanics: boundary.clone(),
-            matchmaking: boundary.clone(),
-            map_objectives: boundary.clone(),
-            telemetry: boundary,
-        },
-        outcome_policy: default_outcome_policy(true),
-        records: vec![EvidenceRecord {
-            path: "reference".into(),
-            parameters: object(&json!({}))?.clone(),
-            fetched_at: "2026-01-01T00:00:00Z".into(),
-            sha256: sha256(b"reference"),
-            byte_count: 9,
-            unit: EvidenceUnit::Asset,
-            backend_grain: "reference".into(),
-            fallback_behavior: "reject".into(),
-            warnings: Vec::new(),
-        }],
-        warnings: Vec::new(),
-    })
+pub fn create_snapshot() -> BuildSnapshot {
+    BuildSnapshot {
+        snapshot_id: sha256(b"reference snapshot"),
+        document: json!({"method":"reference"}),
+    }
 }
 
-pub fn create_presentation(hero: u64, snapshot: &SnapshotManifest) -> Result<BuildPresentation> {
+pub fn create_presentation(hero: u64, snapshot: &BuildSnapshot) -> Result<BuildPresentation> {
     let categories = ["MAIN CORE", "TIER 1", "TIER 2", "TIER 3", "TIER 4"]
         .into_iter()
         .enumerate()
@@ -81,29 +45,24 @@ pub fn create_presentation(hero: u64, snapshot: &SnapshotManifest) -> Result<Bui
         tag_ids: [1, 2, 3],
         categories,
         description: format!(
-            "{MANAGED_MARKER}\nBuild path: reference.\nSnapshot: {}.\nPolicy: {}.",
-            snapshot.identifier(),
-            sha256(b"policy")
+            "{MANAGED_MARKER}\nBuild path: reference.\nSnapshot: {}.",
+            snapshot.snapshot_id
         ),
         abilities: None,
     })
 }
 
-pub fn create_managed_build(snapshot: &SnapshotManifest) -> Result<ManagedBuild> {
+pub fn create_managed_build(snapshot: &BuildSnapshot) -> Result<ManagedBuild> {
     ManagedBuild::new(
         create_presentation(1, snapshot)?,
-        GuideIdentity {
-            snapshot_id: snapshot.identifier().into(),
-            policy_id: sha256(b"policy"),
-            client_version: 1,
-            match_mode: MatchMode::Ranked,
-            rank_identity: snapshot.rank_identity()?,
-            projection_fingerprint: sha256(b"projection"),
+        BuildIdentity {
+            snapshot_id: snapshot.snapshot_id.clone(),
+            build_fingerprint: sha256(b"reference build"),
         },
     )
 }
 
-pub fn create_cache(snapshot: &SnapshotManifest) -> Result<Kv3Document> {
+pub fn create_cache(snapshot: &BuildSnapshot) -> Result<Kv3Document> {
     let mut user_build = wrap_hero_build(encode_hero_build(
         &create_presentation(1, snapshot)?,
         17,
