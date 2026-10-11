@@ -72,7 +72,9 @@ It groups observations by hero, rank, player wealth, and team lead.
 The comparison uses the same rank range and matches that last at least 20 minutes.
 It measures core ownership at 20 minutes, not the effect of an exact purchase order.
 Missing or invalid rates prevent admission.
-If no path qualifies for a requested hero, generation stops and keeps the previous bundle.
+If no path qualifies for a hero, generation skips that hero, prints a warning, and records the reason in coverage.
+If no requested hero qualifies, generation stops and keeps the previous bundle.
+Installation keeps the managed builds of skipped heroes unchanged.
 Successful artifact generation writes `build-admission.json` with path decisions, comparison values, and rejection reasons.
 Missing comparison data and nonpositive adjusted differences have separate rejection reasons.
 Admission does not establish statistical superiority or causation.
@@ -80,6 +82,8 @@ See [Build admission methods](docs/build-admission.md) for the method, research,
 
 Build names show complete core item names.
 The generator selects item pairs that distinguish each hero's builds.
+The description starts with what the build plays around: the first maxed ability, the key core item, and the CORE completion cost as the power spike.
+The detailed Markdown file keeps the complete purchase routes.
 It keeps patch and match dates in the description.
 Build tags use core item costs, slot types, names, and effect descriptions.
 Function labels match complete words and exclude internal property fields.

@@ -17,7 +17,8 @@ Direct selection and artifact reconstruction use the same requirements as the ev
 The numerical thresholds already apply to outcome support in this repository.
 They are operational requirements, not universal statistical guarantees.
 This change does not select thresholds to retain a specified number of heroes.
-If a requested hero has no admitted path, generation stops before artifact replacement.
+If a requested hero has no admitted path, generation skips that hero and records the reason in coverage.
+If no requested hero has an admitted path, generation stops before artifact replacement.
 
 ## Comparison
 
