@@ -30,14 +30,6 @@ jobs:
       - name: Install the pinned Rust toolchain
         run: rustup show active-toolchain
 
-      - name: Reject Python source and package files
-        run: |
-          python_paths=$(git ls-files '*.py' '*.pyi' '*.pyc' '*.pyo' '*.whl' pyproject.toml uv.lock .python-version)
-          if [ -n "$python_paths" ]; then
-            printf 'Python files are prohibited:\n%s\n' "$python_paths" >&2
-            exit 1
-          fi
-
       - name: Restore Rust build and tool caches
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -47,95 +39,39 @@ jobs:
             ~/.cargo/bin/cargo-deny
             ~/.cargo/bin/arch-lint
             ~/.cargo/bin/rust-code-analysis-cli
+            ~/.cargo/bin/fd
+            ~/.cargo/bin/jaq
+            ~/.cargo/bin/rg
             ~/.cargo/.crates.toml
             ~/.cargo/.crates2.json
             target
-          key: rust-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/config.toml', '.github/workflows/ci.yml') }}
+          key: rust-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml', '.cargo/config.toml', '.github/workflows/ci.yml', 'scripts/check_repository.sh') }}
 
-      - name: Check formatting
-        run: cargo fmt --all --check
-
-      - name: Install Rust code analysis
-        run: cargo install rust-code-analysis-cli --version 0.0.25 --locked
-
-      - name: Check Rust code metrics
-        id: rust_code_analysis
-        shell: bash
+      - name: Install verification tools
         run: |
-          output_directory="$RUNNER_TEMP/rust-code-analysis"
-          mkdir -p "$output_directory/metrics"
-          rust-code-analysis-cli -p crates -I '*.rs' -f error -j 2 |
-            tee "$output_directory/parser-errors.txt"
-          test ! -s "$output_directory/parser-errors.txt"
-          rust-code-analysis-cli -p crates -I '*.rs' -m -O json --pr \
-            -o "$output_directory/metrics" -w -j 2
-          source_count=$(find crates -type f -name '*.rs' | wc -l)
-          report_count=$(find "$output_directory/metrics" -type f -name '*.json' | wc -l)
-          test "$source_count" -gt 0
-          test "$source_count" -eq "$report_count"
-          find "$output_directory/metrics" -type f -name '*.json' -exec jq -s -e '
-            [.[] | . as $file | .. | objects
-              | select(.kind? == "function" and .metrics.cognitive.sum > 21)
-              | {file: $file.name, function: .name, line: .start_line,
-                 cognitive: .metrics.cognitive.sum}]
-            | if length == 0 then true else ., false end
-          ' {} +
-
-      - name: Retain Rust code metrics
-        if: ${{ !cancelled() && steps.rust_code_analysis.outcome != 'skipped' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: rust-code-analysis
-          path: ${{ runner.temp }}/rust-code-analysis
-          if-no-files-found: error
-          retention-days: 7
-
-      - name: Run strict Clippy
-        run: cargo lint
-
-      - name: Install the architecture linter
-        run: cargo install arch-lint-cli --version 0.6.0 --locked
-
-      - name: Check architecture
-        run: arch-lint --config arch-lint.toml check --engine syn .
+          cargo install rust-code-analysis-cli --version 0.0.25 --locked
+          cargo install arch-lint-cli --version 0.6.0 --locked
+          cargo install cargo-deny --version 0.20.2 --locked
+          cargo install fd-find --version 10.5.0 --locked
+          cargo install jaq --version 3.1.1 --locked
+          cargo install ripgrep --version 15.1.0 --locked
 
       - name: Install the SQL tool runner
         uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
 
-      - name: Check DuckDB SQL
-        run: uvx --from sqlfluff==4.3.0 sqlfluff lint crates/deadlock-analysis/sql
-
-      - name: Reject SQL wildcard projections
+      - name: Check the repository and release archive
+        id: verify
         shell: bash
-        run: |
-          uvx --from sqlfluff==4.3.0 sqlfluff parse crates/deadlock-analysis/sql --format json --code-only |
-            jq -e 'all(.. | objects; has("wildcard_expression") | not)'
+        run: bash scripts/check_repository.sh --release
 
-      - name: Check documentation
-        run: cargo doc --workspace --all-features --no-deps --locked
-
-      - name: Build the default CLI
-        run: cargo build --package deadlock-build-sync --locked
-
-      - name: Check the default CLI
-        run: |
-          target/debug/deadlock-build-sync --help
-          if target/debug/deadlock-build-sync refresh-evidence 2> /tmp/analysis-feature-error; then
-            exit 1
-          fi
-          grep -q 'requires the analysis feature' /tmp/analysis-feature-error
-
-      - name: Build the release CLI with analysis
-        run: cargo build --package deadlock-build-sync --features analysis --release --locked
-
-      - name: Inspect and check the release archive outside the checkout
-        run: sh scripts/package_release.sh "$PWD/target/release/deadlock-build-sync" x86_64-unknown-linux-gnu
-
-      - name: Install the dependency checker
-        run: cargo install cargo-deny --version 0.20.2 --locked
-
-      - name: Check dependencies
-        run: cargo deny --locked check --deny warnings
+      - name: Retain Rust code metrics
+        if: ${{ !cancelled() && steps.verify.outputs.metrics_directory != '' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: rust-code-analysis
+          path: ${{ steps.verify.outputs.metrics_directory }}
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Retain the verified Linux release archive
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

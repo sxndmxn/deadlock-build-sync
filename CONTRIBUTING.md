@@ -11,7 +11,35 @@ Install a C++ compiler for bundled DuckDB.
 cargo build --package deadlock-build-sync --features analysis --locked
 ```
 
-Before opening a pull request, run the verification checks in [AGENTS.md](AGENTS.md).
+Run the shared local and CI checks before opening a pull request:
+
+```bash
+bash scripts/check_repository.sh
+```
+
+Install `fd`, `jaq`, `rg`, and `uv` before running the checks.
+Install the pinned Rust verification tools:
+
+```bash
+cargo install rust-code-analysis-cli --version 0.0.25 --locked
+cargo install arch-lint-cli --version 0.6.0 --locked
+cargo install cargo-deny --version 0.20.2 --locked
+```
+
+SQLFluff runs through `uvx` at version 4.3.0.
+The shared checks validate formatting, code metrics, Clippy, architecture, SQL, documentation, dependencies, and the default CLI.
+The safety executable checks temporary caches, backup validation, preservation, repeated installation, process guards, and artifact recovery.
+The checks do not read or write live Steam files.
+Fixture checks do not certify live builds.
+
+For release validation, run:
+
+```bash
+bash scripts/check_repository.sh --release
+```
+
+This option also builds the analysis release and checks its archive outside the checkout.
+CI installs the verification tools and runs this same command.
 
 Unit tests remain deferred at the user's request.
 Verify changes with the documented checks and isolated reference fixtures.

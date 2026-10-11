@@ -201,5 +201,6 @@ Traces contain timing and status events, without arguments, return values, or en
 Each trace has a maximum size of 100 MiB. The CLI keeps three completed trace runs.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions.
+Run `bash scripts/check_repository.sh` for the shared local and CI checks.
 See [AGENTS.md](AGENTS.md) for repository requirements.
 See the [CI workflow](.github/workflows/ci.yml) for verification commands.
