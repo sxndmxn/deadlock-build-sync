@@ -133,7 +133,8 @@ It must not damage or discard user-owned Steam data.
 - Do not add unit tests until the user requests them.
   Verify correctness and safety changes with isolated executable checks and existing reference fixtures.
 - Run formatting, strict Clippy, Arch-lint, Rust code analysis, SQLFluff, documentation, dependency, and default-build checks before delivery.
-  Use the commands and tool versions in [.github/workflows/ci.yml](.github/workflows/ci.yml).
+  Run `bash scripts/check_repository.sh` with the tools documented in [CONTRIBUTING.md](CONTRIBUTING.md).
+  CI runs the same script with `--release`.
 - For packaging changes, inspect the release archive outside the source checkout.
   Run a smoke check on its executable outside the source checkout.
 - Do not run a live Steam sync without explicit user authorization.

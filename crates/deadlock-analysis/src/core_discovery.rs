@@ -153,14 +153,11 @@ fn select_nominations(
         if used.contains(&memberships[&index]) {
             continue;
         }
-        match build_nomination(database, hero, data, &candidates[index], rank, context) {
-            Ok(nomination) => {
-                used.insert(memberships[&index]);
-                rows.push(nomination);
-            }
-            Err(error) => candidates[index]
-                .selection_rejections
-                .push(error.to_string()),
+        if let Some(nomination) =
+            build_nomination(database, hero, data, &mut candidates[index], rank, context)?
+        {
+            used.insert(memberships[&index]);
+            rows.push(nomination);
         }
     }
     Ok((rows, grouping))
@@ -170,15 +167,16 @@ fn build_nomination(
     database: &AnalysisDatabase,
     hero: &Value,
     data: &DiscoveryData,
-    candidate: &ItemsetCandidate,
+    candidate: &mut ItemsetCandidate,
     rank: usize,
     context: &ExportContext,
-) -> Result<Nomination> {
+) -> Result<Option<Nomination>> {
     let path = select_order(data, &candidate.items, &context.graph)?;
     if path["admitted_before_validation"] != true {
-        return Err(deadlock_data::Error::new(
-            path["reason"].as_str().unwrap_or("No supported legal path"),
-        ));
+        candidate
+            .selection_rejections
+            .push(deadlock_data::text(&path, "reason")?.to_owned());
+        return Ok(None);
     }
     let guide = build_guide_snapshot(
         database,
@@ -187,7 +185,15 @@ fn build_nomination(
         &item_ids(&path["order"])?,
         &context.graph,
     )?;
-    Ok(Nomination {
+    if !guide.ready {
+        candidate.selection_rejections.push(
+            guide.reason.ok_or_else(|| {
+                deadlock_data::Error::new("Rejected guide has no rejection reason")
+            })?,
+        );
+        return Ok(None);
+    }
+    Ok(Some(Nomination {
         candidate: candidate.clone(),
         hero_id: data.hero,
         selection_rank: rank,
@@ -195,7 +201,7 @@ fn build_nomination(
         guide,
         tactics: describe_overlap(hero, &candidate.items, &context.normal_assets)?,
         branch_candidates: Vec::new(),
-    })
+    }))
 }
 
 pub fn assign_group_ids(nominations: &[Nomination]) -> Result<BTreeMap<String, String>> {

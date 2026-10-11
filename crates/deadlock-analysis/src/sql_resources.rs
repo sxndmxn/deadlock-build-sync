@@ -126,6 +126,10 @@ const SQL: &[(&str, &str)] = &[
         include_str!("../sql/extract/create_source_snapshot.sql"),
     ),
     (
+        "extract/create_source_players.sql",
+        include_str!("../sql/extract/create_source_players.sql"),
+    ),
+    (
         "extract/create_split_boundaries.sql",
         include_str!("../sql/extract/create_split_boundaries.sql"),
     ),
@@ -168,6 +172,10 @@ const SQL: &[(&str, &str)] = &[
     (
         "extract/drop_purchases.sql",
         include_str!("../sql/extract/drop_purchases.sql"),
+    ),
+    (
+        "extract/drop_source_players.sql",
+        include_str!("../sql/extract/drop_source_players.sql"),
     ),
     (
         "extract/drop_team_snapshots.sql",

@@ -2,7 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
-use deadlock_data::{Error, Result, sha256};
+use deadlock_data::{Error, Result, sha256, text, validate_sha256};
 use serde_json::{Value, json};
 
 use crate::binary_reader::MAX_BINARY_BYTES;
@@ -37,9 +37,9 @@ pub fn restore_latest(
         return Err(Error::new("Backup identity differs from the destination"));
     }
     let source = read_cache(&source_directory.join(CACHE_FILENAME))?;
-    if let Some(expected) = manifest.get("cache_sha256").and_then(Value::as_str)
-        && source.fingerprint() != expected
-    {
+    let expected = text(&manifest, "cache_sha256")?;
+    validate_sha256(expected, "Backup cache")?;
+    if source.fingerprint() != expected {
         return Err(Error::new(
             "Backup cache fingerprint does not match its manifest",
         ));

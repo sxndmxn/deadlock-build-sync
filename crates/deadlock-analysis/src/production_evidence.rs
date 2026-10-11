@@ -35,16 +35,29 @@ pub fn export_evidence(
     let ranks = read_json(&paths.raw.join("ranks.json"))?;
     let prefetch = AbilityPrefetch::new(output, &manifest, &patch, base_url)?;
     let roster = discover_roster(array(&heroes)?, &context, workers, resume, &prefetch)?;
-    if roster
+    let excluded = roster
         .iter()
-        .any(|hero| hero["builds"].as_array().is_none_or(Vec::is_empty))
-    {
+        .filter(|hero| hero["builds"].as_array().is_none_or(Vec::is_empty))
+        .cloned()
+        .collect::<Vec<_>>();
+    if !excluded.is_empty() {
         let report = paths.run.join("discovery-exclusions.json");
-        atomic_write_json(&report, &roster.into())?;
-        return Err(Error::new(format!(
-            "Requested heroes lack supported builds. Existing artifacts are unchanged. Report: {}",
+        atomic_write_json(&report, &excluded.clone().into())?;
+        if excluded.len() == roster.len() {
+            return Err(Error::new(format!(
+                "No hero has a supported build. Existing artifacts are unchanged. Report: {}",
+                report.display()
+            )));
+        }
+        let names = excluded
+            .iter()
+            .filter_map(|hero| hero["hero"].as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        eprintln!(
+            "Warning: No supported build for {names}. The evidence marks these heroes as excluded. Report: {}",
             report.display()
-        )));
+        );
     }
     let patch_identity = patch.identity()?;
     let epochs = ["mechanics", "matchmaking", "map_objectives", "telemetry"]

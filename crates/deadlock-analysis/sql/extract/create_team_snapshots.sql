@@ -8,7 +8,7 @@ WITH snapshots AS (
         unnest(p."stats.net_worth") AS player_net_worth,
         len(p."stats.time_stamp_s") = len(p."stats.net_worth")
             AS snapshot_arrays_aligned
-    FROM remote."main".match_player AS p
+    FROM source_players AS p
     INNER JOIN eligible_matches AS e ON p.match_id = e.match_id
 )
 

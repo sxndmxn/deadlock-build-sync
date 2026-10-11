@@ -1,121 +1,130 @@
 # Changelog
 
-## Unreleased
-
-- Preserve full-roster artifacts when `build` or `sync` selects one hero.
-  Write subset bundles to an adjacent directory and report their location.
-- Check the current patch and client version before installing reviewed artifacts.
-- Compare complete managed guide contents when reporting installed-build freshness.
-- Select restore backups by account and canonical cache path before comparing creation times.
-
-- Calculate purchase-pool statistics and checkpoint counts in DuckDB.
-  Reuse extracted first purchases and preserve purchase-order rules.
-- Calculate checkpoint wealth and select checkpoint fields in SQL.
-  Remove unused purchase-time quartiles from item metrics.
-
-- Remove generic build prose and repeated variant descriptions from Steam builds.
-  Show core costs and observed sample counts for each path.
-  Preserve purchase instructions, item statistics, and managed build identities.
-
-- Remove Beam search, scoring, metadata, and the `--generator` option.
-  Retain Eclat / Leiden builds and reject unsupported Beam artifacts.
-
-- Remove generic item-purpose advice and its classification rules.
-  Preserve purchase routes, costs, checkpoints, and supported conditions.
-- Use compact categories for context generation and canonical reconstruction.
-  Remove the discarded detailed panel builder and unused projection branches.
-- Remove the `recommend` command and the unused policy evaluator.
-  Retain guide recommendations for quality replay.
-- Require context schema 17, projection guide version 5, and purchase guidance schema 4.
-  Regenerate older bundles before installation.
-- Reject null reward eligibility, extra source players, and incomplete team wealth.
-  Exclude purchases after match completion from extraction and beam counts.
-- Preserve concurrent cache changes when installation stops before replacement.
-  Refuse backup restoration while Deadlock is running.
-- Check all research SQL files with SQLFluff and include them in data fingerprints.
-  Restrict split-boundary detection to the current database and schema.
-- Require pairwise method v4 and beam method v2 after the SQL validation corrections.
-  Generate fresh evidence instead of resuming an older source extraction.
-- Make Eclat, Leiden, and pairwise purchase ordering the normal build producer.
-  Use exact-core discovery buyers for all item pools. Keep every supported,
-  legal discovered identity, with no build-count limit per hero.
-- Group related exact cores into one published guide with a default Queue and
-  optional variants. Preserve every variant's path, evidence, costs, and pool.
-  The v3 method groups frozen core items before validation.
-- Use CORE, CORE OPTIONAL, and TIER 1–4 for the visible guide. Combine variant
-  items without duplicate cards. Size sections for their item counts and keep
-  full purchase instructions in the build description and detailed files.
-- Use one purchase guide for Steam rows, Markdown, JSON, recommendations, and
-  installation checks. Keep only the validated component path in automatic Queue.
-- Add selected optional items, placement overrides, actual inventory planning,
-  wealth and enemy conditions, and separately admitted core substitutions.
-- Require evidence schema 12, purchase guidance schema 4, state schema 3, and context
-  schema 17. Guide indexes and group records use schema 2.
-  Old evidence must be refreshed and rebuilt.
-- Archive comparison code and its tests in Git history. Keep tests for shared
-  production code in the current suite. Remove unused reconstruction and producer
-  paths, and reuse the durable byte writer with unchanged JSON serialization.
-- Verify exact backup filename casing and JSON-stable guide fingerprints.
-
-All notable changes to this project are documented in this file.
-
-The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+This file records notable project changes.
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+The project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
 ### Fixed
 
-- Use the selected or resolved Steam persona as the installed build-title prefix.
-- Size each Steam category from its item count so extra item rows are not cut off.
+Require a valid SHA-256 fingerprint before restoring a Steam backup.
+Reject missing, malformed, and mismatched fingerprints before any backup or cache write.
+
+Record artifact recovery information before moving the previous directory.
+Recover interrupted installation under the artifact lock before building, syncing, or installing artifacts.
+Preserve the previous directory when installation stops before replacement.
+
+Propagate analysis execution errors instead of recording them as unsupported candidates.
+Record unsupported purchase orders and incomplete component observations as candidate rejections.
+
+Preserve full-roster artifacts when `build` or `sync` selects one hero.
+Write subset bundles to an adjacent directory and report their location.
+Check the current patch and client version before installing reviewed artifacts.
+Compare complete managed guide contents when reporting installed-build freshness.
+Select restore backups by account and canonical cache path before comparing creation times.
+
+Preserve concurrent cache changes when installation stops before replacement.
+Refuse backup restoration while Deadlock is running.
+Verify exact backup filename casing and JSON-stable guide fingerprints.
+
+Use the selected or resolved Steam persona as the installed build-title prefix.
+Size each Steam category from its item count so Steam shows all item rows.
+
+Reject null reward eligibility, extra source players, and incomplete team wealth.
+Exclude purchases after match completion from extraction.
+Restrict split-boundary detection to the current database and schema.
 
 ### Added
 
-- Repository quality gates for complexity, coverage, CRAP score, dead code,
-  repeated code, and Steam-boundary mutation testing.
-- Read-only artifact freshness, evidence refresh, and state-aware recommendation
-  commands.
-- Pinned build tags, archetype titles, tactical hover projection, and typed
-  situational counter cards.
-- An optional offline analysis extra with component-aware sequence evidence,
-  same-opportunity comparator gates, and fail-closed branch admission.
+Use `bash scripts/check_repository.sh` for the shared local and CI verification command.
+Check formatting, Clippy, architecture, parsing, complexity, SQL, documentation, dependencies, and the default build.
+Use `--release` to include release archive validation outside the source checkout.
+
+Run isolated executable checks with temporary Steam caches and the existing KV3 reference fixture.
+Check data preservation, repeated installation, process guards, concurrent changes, backup validation, restoration, and interrupted artifact installation.
+These checks do not certify live builds.
+
+Retain read-only artifact freshness and evidence refresh commands.
+Use pinned build tags, archetype titles, tactical hover descriptions, and typed situational counter cards.
+Provide optional offline analysis with component-aware sequence evidence and comparator requirements for the same purchase opportunity.
+Reject branches that fail admission checks.
 
 ### Changed
 
-- Show one two-line statistics card on every item hover: `SOUL WINDOW`, then
-  `PR`, `WR`, and `TOTAL GAMES`. This replaces the four-line `USE` / `WHY` /
-  `SKIP` / `DATA` tier card, the five-line `VS` / `WHY` / `SWAP` / `WHEN` /
-  `SKIP` swap card, and the five-line `CORE ITEMS` block. The `IMBUE` line is
-  gone because Steam shows its own imbue icon. The card is derived from evidence,
-  so a stored artifact whose card no longer matches is rejected. Conditional
-  decision copy stays in the policy sidecar.
-- Leave the `TIER 1` through `TIER 4` category notes empty. Only `CORE ITEMS`
-  and `OPTIONAL CORE` keep a Queue note.
-- Require a concrete threat response and normal-item purpose before an item can move
-  into `OPTIONAL CORE`; keep unsupported choices in their tier reference row.
-- Keep CORE as the only automatic path while making all four tier menus sparse,
-  disjoint, mechanics-labeled optional references.
-- Generate build descriptions from pinned role, playstyle, archetype, and ability
-  order without a model or network request.
-- Encode a supported majority imbue target when it is a current hero ability.
-- Derive visible build titles from CORE item composition so an ability-path label
-  cannot misname a weapon-, spirit-, or vitality-heavy build.
-- Show the first-maxed ability, highest-win-rate Tier 3 CORE item (Tier 4 fallback),
-  and dominant build function as the three ordered build icons.
-- Version the deterministic description artifact and generator as 9 / 1.
+Calculate purchase-pool statistics, checkpoint counts, and checkpoint wealth in DuckDB.
+Select checkpoint fields in SQL.
+Reuse extracted first purchases and preserve purchase-order rules.
+Remove unused purchase-time quartiles from item metrics.
+Check all research SQL files with SQLFluff and include those files in data fingerprints.
+
+Remove Beam search, scoring, metadata, and the `--generator` option.
+Use Eclat, Leiden, and pairwise purchase ordering for normal build production.
+Require `eclat-leiden-pairwise-v4` after the SQL validation corrections.
+Generate fresh evidence instead of resuming an older source extraction.
+Reject unsupported Beam artifacts.
+Use exact-core discovery buyers for all item pools.
+Retain every supported legal identity without a build-count limit per hero.
+Group related exact cores into one guide with a default purchase order and optional variants.
+Preserve each variant's path, evidence, costs, and pool.
+Group frozen core items before validation.
+
+Use one purchase guide for Steam rows, Markdown, JSON, recommendations, and installation checks.
+Keep only the validated component path in the automatic purchase order.
+Support selected optional items, placement overrides, inventory planning, wealth conditions, enemy conditions, and separately admitted core substitutions.
+
+Use CORE, CORE OPTIONAL, and TIER 1–4 for the visible guide.
+Combine variant items without duplicate cards.
+Keep full purchase instructions in descriptions and detailed files.
+Keep CORE as the only automatic path.
+Use sparse, disjoint tier menus as optional references with item mechanics labels.
+Require a supported threat response and normal-item purpose before optional core placement.
+Keep unsupported choices in their tier reference row.
+
+Show one two-line statistics card per item: `SOUL WINDOW`, then `PR`, `WR`, and `TOTAL GAMES`.
+Replace the four-line `USE` / `WHY` / `SKIP` / `DATA` card.
+Replace the five-line `VS` / `WHY` / `SWAP` / `WHEN` / `SKIP` card and the five-line `CORE ITEMS` block.
+Remove the `IMBUE` line because Steam shows the imbue icon.
+Reject stored artifacts whose cards differ from the evidence.
+Keep conditional decisions in the policy sidecar.
+Leave TIER 1–4 category notes empty.
+Keep purchase order notes for core categories.
+
+Remove generic build prose, repeated variant descriptions, and generic item-purpose advice.
+Show core costs and observed sample counts per path.
+Preserve purchase instructions, item statistics, and managed build identities.
+Generate descriptions from pinned roles, playstyles, archetypes, and ability orders without a model or network request.
+Encode a supported majority imbue target only when the target is a current hero ability.
+Derive visible titles from CORE item composition.
+Show three ordered build icons: the first-maxed ability, the highest-win-rate Tier 3 CORE item, and the dominant build function.
+Use a Tier 4 CORE item when no Tier 3 CORE item is available.
+Use description artifact version 9 and generator version 1.
+
+Use compact categories for context generation and canonical reconstruction.
+Remove the discarded detailed panel builder and unused projection branches.
+Remove the `recommend` command and unused policy evaluator.
+Retain guide recommendations for quality replay.
+
+Require evidence schema 13, context schema 18, projection guide version 6, and purchase guidance schema 4.
+Keep state schema 3 and guide index and group schema 2.
+Refresh and rebuild older artifacts before installation.
+
+Archive comparison code and its tests in Git history.
+Remove unused reconstruction and producer paths.
+Reuse the durable byte writer without changing JSON serialization.
+Use reference fixtures and isolated executable checks for current safety verification.
+Unit tests remain deferred until the user requests them.
 
 ## [0.1.0] - 2026-08-01
 
 ### Added
 
-- Linux-first `deadlock-build-sync sync` workflow for generating and safely
-  installing private Deadlock hero builds.
-- Analytics-backed item tiers, ability paths, purchase windows, and duration
-  curves.
-- Staged Codex narrative generation with schema and semantic validation.
-- Fingerprint-aware artifact reuse and explicit regeneration controls.
-- Steam account discovery, backups, atomic cache replacement, and restoration.
-- Local linting, type checking, tests, packaging checks, and GitHub Actions CI.
+Add `deadlock-build-sync sync` to generate and safely install private Deadlock hero builds, with Linux as the primary platform.
+Use analytics for item tiers, ability paths, purchase windows, and duration curves.
+Add staged Codex narrative generation with schema and semantic validation.
+Reuse compatible artifacts through fingerprints and provide explicit regeneration controls.
+Add Steam account discovery, backups, atomic cache replacement, and restoration.
+Add local linting, type checking, tests, packaging checks, and GitHub Actions CI.
 
 [Unreleased]: https://github.com/sxndmxn/deadlock-build-sync/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/sxndmxn/deadlock-build-sync/releases/tag/v0.1.0

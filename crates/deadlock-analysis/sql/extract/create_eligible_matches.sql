@@ -1,7 +1,7 @@
 CREATE TABLE eligible_matches AS
 WITH candidate_matches AS (
     SELECT match_id
-    FROM remote."main".match_player
+    FROM source_players
     WHERE
         match_mode = $match_mode
         AND game_mode = $game_mode
@@ -22,7 +22,7 @@ WITH candidate_matches AS (
 )
 
 SELECT p.match_id
-FROM remote."main".match_player AS p
+FROM source_players AS p
 SEMI JOIN candidate_matches AS c ON p.match_id = c.match_id
 GROUP BY p.match_id
 HAVING count(*) = 12;

@@ -135,26 +135,27 @@ pub fn build_guide_snapshot(
                 .is_none_or(|item_statistics| item_statistics.buyers < SUPPORT.pool_buyers)
         })
         .collect::<Vec<_>>();
-    if !missing.is_empty() {
-        return Err(Error::new(format!(
-            "Component purchase records are incomplete: {missing:?}"
-        )));
-    }
+    let reason = (!missing.is_empty())
+        .then(|| format!("Component purchase records are incomplete: {missing:?}"));
     let pool = select_pool(graph, &evidence, &path);
     let optional_items = pool.values().flatten().copied().collect::<BTreeSet<_>>();
-    let timing = database.query(
-        load_sql("discovery/select_purchase_checkpoint_counts.sql")?,
-        &Parameters::from([
-            ("path".into(), serde_json::to_string(&path)?.into()),
-            (
-                "items".into(),
-                serde_json::to_string(&optional_items)?.into(),
-            ),
-        ]),
-    )?;
+    let timing = if reason.is_none() {
+        database.query(
+            load_sql("discovery/select_purchase_checkpoint_counts.sql")?,
+            &Parameters::from([
+                ("path".into(), serde_json::to_string(&path)?.into()),
+                (
+                    "items".into(),
+                    serde_json::to_string(&optional_items)?.into(),
+                ),
+            ]),
+        )?
+    } else {
+        Vec::new()
+    };
     Ok(FrozenGuide {
-        ready: true,
-        reason: None,
+        ready: reason.is_none(),
+        reason,
         timing_status: if nondecreasing_window_schedule(&path, &bounds).is_some() {
             "observed"
         } else {

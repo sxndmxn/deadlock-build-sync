@@ -7,6 +7,7 @@ use deadlock_steam::{
 };
 use serde_json::json;
 
+use crate::artifact_transaction::ArtifactTransaction;
 use crate::cli_arguments::{InstallArtifactArguments, NarrativeArguments, RestoreArguments};
 use crate::cli_generation::require_current_build_identity;
 use crate::cli_installation::{InstallationParameters, install_guides, print_installation};
@@ -17,6 +18,7 @@ pub fn run_install_artifacts(arguments: &InstallArtifactArguments, base_url: &st
     let location = cache_location(&arguments.location)?;
     require_deadlock_stopped()?;
     let directory = artifact_directory(arguments.artifacts.as_deref())?;
+    ArtifactTransaction::recover(&directory)?;
     let bundle = load_artifact_guide_bundle(
         &directory.join("strategy-context.json"),
         &directory.join("policies.json"),

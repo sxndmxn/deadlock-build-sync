@@ -116,10 +116,12 @@ fn capture_run(paths: &RunPaths, request: &RefreshRequest) -> Result<()> {
         capture_sources(paths, &request.api_base_url)
     })?;
     let patch = parse_patch_feed(&read_json(&paths.raw.join("patches.json"))?, Some(as_of))?;
+    // An explicit --since can start before the latest feed post, because the
+    // feed also lists posts without balance changes, such as hero releases.
     let since = request
         .since
-        .unwrap_or(parse_timestamp(RANK_RESET_AT)?)
-        .max(patch.start_timestamp);
+        .unwrap_or(patch.start_timestamp)
+        .max(parse_timestamp(RANK_RESET_AT)?);
     let cohort = Cohort {
         ranks: request.ranks,
         since,

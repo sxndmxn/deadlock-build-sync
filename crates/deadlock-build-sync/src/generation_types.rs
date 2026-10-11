@@ -27,10 +27,20 @@ pub struct GeneratedGuides {
 }
 
 impl GeneratedGuides {
+    /// Eligible heroes without an evidence exclusion.
+    #[must_use]
+    pub fn installable_hero_ids(&self) -> BTreeSet<u64> {
+        self.eligible_hero_ids
+            .iter()
+            .filter(|id| !self.coverage.exclusions().contains_key(id))
+            .copied()
+            .collect()
+    }
+
     /// # Errors
     /// Returns an error when no guides exist or the requested roster has incomplete coverage.
     pub fn require_complete(&self) -> Result<()> {
-        if self.guides.is_empty() || !self.coverage.exclusions().is_empty() {
+        if self.guides.is_empty() {
             return Err(Error::new(
                 "Requested heroes have no complete supported builds",
             ));
