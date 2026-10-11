@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "deny": [
+      "Edit(/VISION.md)",
+      "Write(/VISION.md)"
+    ]
+  }
+}
