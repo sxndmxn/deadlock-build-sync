@@ -66,6 +66,18 @@ Buy MAIN CORE from left to right. TIER items are situational choices.
 Evidence: moderate (held-out test, n=2075). Ranked • Ritualist I–Eternus V • 2026-10-09 to 2026-10-11.
 ```
 
+Each item shows three lines:
+
+```text
+MID GAME
+WIN RATE: 52.3%
+PICK RATE: 48.1%
+```
+
+The phase is the time when the build adds the item: early game (9 minutes), mid game (20 minutes), or late game (30 minutes).
+The win rate is the share of hero players who own the item at that time and win the match.
+The pick rate is the share of hero players who own the item at that time.
+
 The method estimates how much each item adds to the win probability in similar game states.
 It then assembles a build from items that players at this rank use, tilted toward items that win more.
 A test on held-out matches gives each build a confidence label: `strong`, `moderate`, or `limited`.

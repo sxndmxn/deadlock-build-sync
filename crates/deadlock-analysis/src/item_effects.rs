@@ -100,6 +100,7 @@ impl ItemCatalog {
 pub struct HeroLandmarkEffects {
     pub effects: Vec<f64>,
     pub adoption: Vec<f64>,
+    pub owner_win_rates: Vec<f64>,
     pub median_spend: u32,
     pub observations: usize,
 }
@@ -212,6 +213,7 @@ fn summarize_hero(
 ) -> Result<HeroLandmarkEffects> {
     let count = catalog.items.len();
     let mut owners = vec![0_usize; count];
+    let mut winners = vec![0_usize; count];
     let mut spends = Vec::with_capacity(rows.len());
     for row in rows {
         let mut spend = 0_u32;
@@ -221,6 +223,9 @@ fn summarize_hero(
             .filter(|(index, _)| *index >= COVARIATES)
         {
             owners[index - COVARIATES] += 1;
+            if row.label > 0.5 {
+                winners[index - COVARIATES] += 1;
+            }
             spend += catalog.items[index - COVARIATES].cost;
         }
         spends.push(spend);
@@ -235,6 +240,19 @@ fn summarize_hero(
         adoption: owners
             .iter()
             .map(|owners| Ok(count_as_f64(u64::try_from(*owners)?)? / total))
+            .collect::<Result<_>>()?,
+        owner_win_rates: owners
+            .iter()
+            .zip(&winners)
+            .map(|(owners, winners)| {
+                if *owners == 0 {
+                    return Ok(0.0);
+                }
+                Ok(
+                    count_as_f64(u64::try_from(*winners)?)?
+                        / count_as_f64(u64::try_from(*owners)?)?,
+                )
+            })
             .collect::<Result<_>>()?,
         median_spend,
         observations: rows.len(),

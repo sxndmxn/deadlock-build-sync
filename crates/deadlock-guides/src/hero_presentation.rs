@@ -33,7 +33,7 @@ pub fn build_hero_presentation(
         &build.core,
         "Buy from left to right.",
         false,
-        describe_core_item,
+        describe_item,
     )?];
     for tier in 1..=4 {
         let items = build
@@ -47,7 +47,7 @@ pub fn build_hero_presentation(
             &items,
             "",
             true,
-            describe_situational_item,
+            describe_item,
         )?);
     }
     let abilities = (!build.ability_ids.is_empty()).then(|| PresentationAbilities {
@@ -104,19 +104,12 @@ fn build_category(
     })
 }
 
-fn describe_core_item(item: &BuildItem) -> String {
+/// Shows the game phase, the win rate of owners, and the pick rate, one per line.
+fn describe_item(item: &BuildItem) -> String {
     format!(
-        "{}. Usually bought at about {} net worth. {} of players own it.",
+        "{}\nWIN RATE: {}\nPICK RATE: {}",
         phase_label(item.phase_s),
-        format_souls(item.median_net_worth),
-        format_share(item.adoption)
-    )
-}
-
-fn describe_situational_item(item: &BuildItem) -> String {
-    format!(
-        "Situational. Wins more than other choices in similar {} states. {} of players own it.",
-        phase_label(item.phase_s).to_lowercase(),
+        format_share(item.win_rate),
         format_share(item.adoption)
     )
 }
@@ -173,9 +166,9 @@ fn text_field<'catalog>(catalog: &'catalog HeroBuildCatalog, name: &str) -> &'ca
 
 const fn phase_label(phase_s: u32) -> &'static str {
     match phase_s {
-        0..=600 => "Lane",
-        601..=1500 => "Mid game",
-        _ => "Late game",
+        0..=600 => "EARLY GAME",
+        601..=1500 => "MID GAME",
+        _ => "LATE GAME",
     }
 }
 
@@ -188,5 +181,5 @@ fn format_souls(value: u32) -> String {
 }
 
 fn format_share(share: f64) -> String {
-    format!("{:.0}%", share * 100.0)
+    format!("{:.1}%", share * 100.0)
 }

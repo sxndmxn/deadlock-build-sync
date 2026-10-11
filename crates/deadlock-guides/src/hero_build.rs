@@ -5,7 +5,7 @@ use deadlock_data::{Error, Result, atomic_write_json, read_json};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-pub const HERO_BUILD_SCHEMA_VERSION: u32 = 1;
+pub const HERO_BUILD_SCHEMA_VERSION: u32 = 2;
 pub const HERO_BUILD_METHOD: &str = "item-effect-ridge-v1";
 
 /// All hero builds from one source snapshot.
@@ -60,6 +60,7 @@ pub struct BuildItem {
     pub cost: u32,
     pub phase_s: u32,
     pub adoption: f64,
+    pub win_rate: f64,
     pub effect: f64,
     pub median_net_worth: u32,
 }
@@ -177,6 +178,7 @@ fn validate_hero(hero: &HeroBuild) -> Result<()> {
         if !items.insert(item.item_id)
             || !(1..=4).contains(&item.tier)
             || !(0.0..=1.0).contains(&item.adoption)
+            || !(0.0..=1.0).contains(&item.win_rate)
             || !item.effect.is_finite()
         {
             return Err(Error::new(format!(

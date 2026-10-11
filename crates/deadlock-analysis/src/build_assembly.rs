@@ -149,6 +149,7 @@ fn describe_item(
         cost: asset.cost,
         phase_s: phase,
         adoption: effects.adoption[column],
+        win_rate: effects.owner_win_rates[column],
         effect: effects.effects[column],
         median_net_worth: median.map_or(0, |median| median.net_worth),
     })

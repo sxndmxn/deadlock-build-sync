@@ -17,6 +17,7 @@ Show situational TIER 1 to TIER 4 items with a positive effect.
 Select the key item by effect and by how much more this hero uses it than other heroes.
 Test each build on the latest 20% of matches and show `strong`, `moderate`, or `limited` confidence.
 Start each description with the key ability, the key item, and its power spike.
+Show three lines for each item: the game phase, the win rate, and the pick rate.
 Lower the default minimum rank from `emissary-i` to `ritualist-i`.
 Write `hero-builds.json` and one Markdown file per hero. Replace the complete artifact directory on each run.
 Include the analysis code in every build. The `analysis` feature no longer exists.
