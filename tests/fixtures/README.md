@@ -8,3 +8,10 @@ decoder used for current Deadlock caches without including personal Steam data.
 Run `cargo run --package deadlock-build-sync --example check_safety` to check the fixture and temporary Steam caches.
 The executable checks cache preservation, repeated installation, write guards, backup validation, restoration, and interrupted artifact installation.
 These checks do not certify live builds.
+
+`imbue-catalog.json` contains synthetic hero and item identifiers.
+It includes MAIN CORE and situational imbue targets, plus an item without a target.
+The safety executable checks catalog validation, JSON serialization, and the native Steam fields.
+It also checks ability focus, conflicting targets, reload exclusion, upgrade order separation, and title character limits.
+Run `cargo run --package deadlock-analysis --example check_imbues` to check selection with an isolated database.
+This check verifies purchase filters, hero separation, evidence thresholds, and current asset restrictions.

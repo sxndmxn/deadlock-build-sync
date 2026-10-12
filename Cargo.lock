@@ -475,6 +475,7 @@ dependencies = [
  "deadlock-guides",
  "deadlock-input",
  "deadlock-steam",
+ "prost",
  "serde_json",
  "tempfile",
 ]

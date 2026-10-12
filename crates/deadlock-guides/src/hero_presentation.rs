@@ -98,7 +98,7 @@ fn build_category(
                 annotation: annotate(item),
                 required_flex_slots: None,
                 sell_priority: None,
-                imbue_target_ability_id: None,
+                imbue_target_ability_id: item.imbue_target.as_ref().map(|target| target.ability_id),
             })
             .collect(),
     })
@@ -130,22 +130,23 @@ fn describe_build(
     let key_item = build
         .key_item()
         .ok_or_else(|| Error::new("Build key item is not in CORE"))?;
-    let mut focus = Vec::new();
-    if let Some(ability) = &build.key_ability_name {
-        focus.push(format!("max {ability} first"));
-    }
-    focus.push(format!(
-        "get {} for the power spike at about {} net worth",
-        key_item.name,
-        format_souls(build.power_spike_net_worth)
-    ));
+    let focus = build.ability_focus.as_ref().map_or_else(
+        || key_item.name.clone(),
+        |focus| format!("{} with {}", focus.name, key_item.name),
+    );
     let ranks = RankRange {
         minimum: Rank::try_from(catalog.cohort.minimum_badge)?,
         maximum: Rank::try_from(catalog.cohort.maximum_badge)?,
     };
     let patch_title = text_field(catalog, "title");
-    let lines = [
-        format!("Play around: {}.", focus.join(", then ")),
+    let mut lines = vec![format!(
+        "Play around: {focus} at about {} net worth.",
+        format_souls(build.power_spike_net_worth)
+    )];
+    if let Some(ability) = &build.key_ability_name {
+        lines.push(format!("Ability order: max {ability} first."));
+    }
+    lines.extend([
         "Buy MAIN CORE from left to right. TIER items are situational choices.".into(),
         format!(
             "Evidence: {} (held-out test, n={}). Ranked • {} • {} to {}.",
@@ -160,7 +161,7 @@ fn describe_build(
         format!("Build path: {}.", build.path_id()),
         format!("Patch: {patch_title}."),
         format!("Snapshot: {snapshot_id}."),
-    ];
+    ]);
     Ok(lines.join("\n"))
 }
 

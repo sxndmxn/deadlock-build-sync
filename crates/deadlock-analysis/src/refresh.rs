@@ -10,7 +10,7 @@ use crate::refresh_configuration::{
     Cohort, RANK_RESET_AT, RefreshRequest, RunPaths, cohort_ranks, implementation_record,
     parse_timestamp,
 };
-use crate::sources::capture_sources;
+use crate::sources::{capture_sources, validate_source_fingerprints};
 
 /// An extracted run and the lock that keeps other processes from changing it.
 #[derive(Debug)]
@@ -71,7 +71,7 @@ fn validate_resume(paths: &RunPaths, request: &RefreshRequest) -> Result<()> {
             ));
         }
     }
-    Ok(())
+    validate_source_fingerprints(paths, &manifest["sources"])
 }
 
 fn capture_run(paths: &RunPaths, request: &RefreshRequest) -> Result<()> {

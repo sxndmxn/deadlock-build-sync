@@ -1,11 +1,45 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use deadlock_data::{Error, Result, array, atomic_write_json, fingerprint, integer};
+use deadlock_data::{
+    Error, Result, array, atomic_write_json, fingerprint, integer, object, read_json, text,
+    validate_sha256,
+};
 use deadlock_input::JsonHttpClient;
 use serde_json::{Value, json};
 
 use crate::refresh_configuration::RunPaths;
+
+const SOURCE_FILES: [&str; 7] = [
+    "client_versions.json",
+    "heroes.json",
+    "items-all.json",
+    "items.json",
+    "ranks.json",
+    "patches.json",
+    "openapi.json",
+];
+
+pub fn validate_source_fingerprints(paths: &RunPaths, sources: &Value) -> Result<()> {
+    let hashes = &sources["source_sha256"];
+    if object(hashes)?.len() != SOURCE_FILES.len() {
+        return Err(Error::new(
+            "Source snapshot requires all seven fingerprints",
+        ));
+    }
+    for name in SOURCE_FILES {
+        let expected = text(hashes, name)?;
+        validate_sha256(expected, name)?;
+        let document = read_json(&paths.raw.join(name))
+            .map_err(|error| error.context(format!("Cannot validate source {name}")))?;
+        if fingerprint(&document)? != expected {
+            return Err(Error::new(format!(
+                "Source fingerprint differs for {name}. Use a new --run-id"
+            )));
+        }
+    }
+    Ok(())
+}
 
 pub fn capture_sources(paths: &RunPaths, base_url: &str) -> Result<Value> {
     let client = JsonHttpClient::new(base_url, Duration::from_secs(120), 5)?;
@@ -29,17 +63,17 @@ pub fn capture_sources(paths: &RunPaths, base_url: &str) -> Result<Value> {
     let heroes = select_asset_rows(&heroes, is_active_hero)?;
     let shop_items = select_asset_rows(&items, is_shop_item)?;
     let result = json!({"client_version":version,"active_heroes":heroes.len(),"shop_items":shop_items.len()});
-    let payloads = BTreeMap::from([
-        ("client_versions.json", versions),
-        ("heroes.json", heroes.into()),
-        ("items-all.json", items),
-        ("items.json", shop_items.into()),
-        ("ranks.json", ranks),
-        ("patches.json", patches),
-        ("openapi.json", openapi),
-    ]);
+    let payloads = [
+        versions,
+        heroes.into(),
+        items,
+        shop_items.into(),
+        ranks,
+        patches,
+        openapi,
+    ];
     let mut hashes = BTreeMap::new();
-    for (name, payload) in payloads {
+    for (name, payload) in SOURCE_FILES.into_iter().zip(payloads) {
         atomic_write_json(&paths.raw.join(name), &payload)?;
         hashes.insert(name, fingerprint(&payload)?);
     }

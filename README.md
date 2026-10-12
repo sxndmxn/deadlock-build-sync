@@ -56,17 +56,24 @@ Each build has these parts:
 1. **MAIN CORE**: the items to buy from left to right.
 2. **TIER 1 to TIER 4**: situational items for the matching shop tier. Buy one instead of a CORE item when the match makes it a better choice.
 3. **Ability order**: the most common complete ability order at this rank.
-4. **Description**: what to play around (the key ability, the key item, and its power spike) and the confidence of the build.
+4. **Description**: the inferred ability focus, when supported, the key item, its power spike, and the build confidence.
+
+Build titles use `Steam name | ability + key item` when CORE items support a clear ability focus.
+Otherwise, titles name the first fully upgraded ability from the selected ability order.
+Titles use only the key item when no supported ability name is available.
+Titles omit hero names and stay within 50 characters.
+The description states the ability upgrade order separately from the inferred focus.
 
 Example description:
 
 ```text
-Play around: max Arctic Beam first, then get Escalating Exposure for the power spike at about 25k net worth.
+Play around: Essence Bomb with Mystic Reverb at about 18k net worth.
+Ability order: max Life Drain first.
 Buy MAIN CORE from left to right. TIER items are situational choices.
-Evidence: moderate (held-out test, n=2075). Ranked • Ritualist I–Eternus V • 2026-10-09 to 2026-10-11.
+Evidence: moderate (held-out test, n=2599). Ranked • Ritualist I–Eternus V • 2026-10-09 to 2026-10-12.
 ```
 
-Each item shows three lines:
+Each item shows four lines:
 
 ```text
 MID GAME
@@ -79,6 +86,10 @@ The phase is the time when the build adds the item: early game (9 minutes), mid 
 The win rate is the share of hero players who own the item at that time and win the match.
 The pick rate is the share of hero players who own the item at that time.
 The soul window is the net worth range in which most players buy the item: the middle half of the first purchases.
+
+Items with sufficient match evidence also select an ability in the native **IMBUE ABILITY** control.
+The target needs at least 20 first purchases and more than half of the recorded imbue selections for that hero and item.
+Items without sufficient evidence leave the selection empty.
 
 The method estimates how much each item adds to the win probability in similar game states.
 It then assembles a build from items that players at this rank use, tilted toward items that win more.
@@ -102,6 +113,9 @@ The data is observational. It does not prove that an item causes a win.
 
 DuckDB downloads ICU, DuckLake, and HTTPFS extensions if they are missing.
 The CLI keeps analysis runs in `$XDG_STATE_HOME/deadlock-build-sync/offline/results`.
+Before reuse, `--resume` verifies all seven source JSON files against the fingerprints in the run manifest.
+Missing files, changed contents, and incomplete or malformed fingerprints stop the run.
+JSON spacing and object key order do not affect these fingerprints.
 
 ## Artifacts
 
@@ -127,7 +141,7 @@ Use `COMMAND --help` for options.
 Exit code 2 means that a new sync is necessary. Exit code 1 means that an input is malformed or unavailable.
 It ignores build titles and Steam identity timestamps.
 
-`install` compares the builds with the current patch and client version from the API.
+`sync` and `install` compare the builds with the current patch and client version from the API before installation.
 The installation stops if these identities are different or the check is not possible.
 
 ## Tracing and development

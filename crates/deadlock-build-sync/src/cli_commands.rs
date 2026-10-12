@@ -1,10 +1,11 @@
 use deadlock_data::{Error, Result, state_directory};
+use deadlock_guides::HeroBuildCatalog;
 use deadlock_steam::{LinuxProcesses, require_deadlock_stopped, restore_latest};
 use serde_json::json;
 
 use crate::artifact_transaction::ArtifactTransaction;
 use crate::build_workflow::{
-    generate_builds, install_catalog, print_installation, read_current_catalog, resolve_persona,
+    CATALOG_FILE, generate_builds, install_catalog, print_installation, resolve_persona,
 };
 use crate::cli_arguments::{
     BuildArguments, InstallArguments, RestoreArguments, StatusArguments, SyncArguments,
@@ -19,7 +20,7 @@ pub fn run_sync(arguments: &SyncArguments, base_url: &str) -> Result<u8> {
     let persona = resolve_persona(&location, arguments.persona.as_deref())?;
     let (directory, catalog) = generate_builds(&arguments.build, base_url)?;
     require_deadlock_stopped()?;
-    let result = install_catalog(&location, &catalog, &persona)?;
+    let result = install_catalog(&location, &catalog, &persona, base_url)?;
     print_installation(&result, &directory, &catalog)?;
     Ok(0)
 }
@@ -41,9 +42,9 @@ pub fn run_install(arguments: &InstallArguments, base_url: &str) -> Result<u8> {
     require_deadlock_stopped()?;
     let directory = artifact_directory(arguments.artifacts.as_deref())?;
     ArtifactTransaction::recover(&directory)?;
-    let catalog = read_current_catalog(&directory, base_url)?;
+    let catalog = HeroBuildCatalog::read(&directory.join(CATALOG_FILE))?;
     let persona = resolve_persona(&location, arguments.persona.as_deref())?;
-    let result = install_catalog(&location, &catalog, &persona)?;
+    let result = install_catalog(&location, &catalog, &persona, base_url)?;
     print_installation(&result, &directory, &catalog)?;
     Ok(0)
 }

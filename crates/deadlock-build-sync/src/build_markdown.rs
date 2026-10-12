@@ -5,7 +5,7 @@ use deadlock_guides::{BuildItem, HeroBuild, HeroBuildCatalog};
 /// Renders one hero build as Markdown with the values behind each item.
 #[must_use]
 pub fn render_build_markdown(build: &HeroBuild, catalog: &HeroBuildCatalog) -> String {
-    let mut text = format!("# {}: {}\n\n", build.hero_name, build.title);
+    let mut text = format!("# {}\n\n", build.title);
     let evaluation = &build.evaluation;
     let _ = writeln!(
         text,
@@ -24,8 +24,11 @@ pub fn render_build_markdown(build: &HeroBuild, catalog: &HeroBuildCatalog) -> S
         catalog.cohort.maximum_badge,
         catalog.client_version
     );
+    if let Some(focus) = &build.ability_focus {
+        let _ = writeln!(text, "Ability focus: {}.", focus.name);
+    }
     if let Some(ability) = &build.key_ability_name {
-        let _ = writeln!(text, "Key ability: {ability}.");
+        let _ = writeln!(text, "Ability order: max {ability} first.");
     }
     if let Some(item) = build.key_item() {
         let _ = writeln!(

@@ -156,6 +156,7 @@ fn describe_item(
         effect: effects.effects[column],
         median_net_worth: median.map_or(0, |median| median.net_worth),
         soul_window: median.map_or([0, 0], |median| median.soul_window),
+        imbue_target: None,
     })
 }
 
