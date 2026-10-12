@@ -5,7 +5,7 @@ use deadlock_data::{Error, Result, atomic_write_json, read_json};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-pub const HERO_BUILD_SCHEMA_VERSION: u32 = 3;
+pub const HERO_BUILD_SCHEMA_VERSION: u32 = 5;
 pub const HERO_BUILD_METHOD: &str = "item-effect-ridge-v1";
 
 /// All hero builds from one source snapshot.
@@ -40,6 +40,7 @@ pub struct HeroBuild {
     pub title: String,
     pub tag_ids: [u64; 3],
     pub key_ability_name: Option<String>,
+    pub ability_focus: Option<AbilityFocus>,
     pub core: Vec<BuildItem>,
     pub situational: Vec<BuildItem>,
     pub key_item_id: u64,
@@ -65,6 +66,81 @@ pub struct BuildItem {
     pub median_net_worth: u32,
     /// The lower and upper quartile of net worth at the first purchase.
     pub soul_window: [u32; 2],
+    pub imbue_target: Option<ImbueTarget>,
+}
+
+/// The selected native imbue target and its first-purchase evidence.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ImbueTarget {
+    pub ability_id: u64,
+    pub matches: u64,
+    pub observations: u64,
+}
+
+/// An inferred ability focus supported by direct ability improvements in CORE.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AbilityFocus {
+    pub ability_id: u64,
+    pub name: String,
+    pub supporting_item_ids: Vec<u64>,
+}
+
+impl AbilityFocus {
+    pub(crate) fn validate(&self, build: &HeroBuild) -> Result<()> {
+        let items = self.supporting_item_ids.iter().collect::<BTreeSet<_>>();
+        if self.ability_id == 0
+            || self.name.trim().is_empty()
+            || !build.ability_ids.contains(&self.ability_id)
+            || items.is_empty()
+            || items.len() != self.supporting_item_ids.len()
+        {
+            return Err(Error::new(
+                "Ability focus has an invalid identity or item list",
+            ));
+        }
+        for item_id in &self.supporting_item_ids {
+            if !build.core.iter().any(|item| {
+                item.item_id == *item_id
+                    && item
+                        .imbue_target
+                        .as_ref()
+                        .is_some_and(|target| target.ability_id == self.ability_id)
+            }) {
+                return Err(Error::new(
+                    "Ability focus lacks a matching CORE imbue target",
+                ));
+            }
+        }
+        if !self.supporting_item_ids.contains(&build.key_item_id)
+            && items.len() < 2
+            && crate::build_tags::first_fully_upgraded_ability(&build.ability_ids).ok()
+                != Some(self.ability_id)
+        {
+            return Err(Error::new(
+                "Ability focus lacks key item, CORE item, or ability order support",
+            ));
+        }
+        Ok(())
+    }
+}
+
+impl ImbueTarget {
+    /// # Errors
+    /// Returns an error unless at least 20 observations support a positive target with a strict majority.
+    pub fn validate(&self) -> Result<()> {
+        if self.ability_id == 0
+            || self.matches < 20
+            || self.matches > self.observations
+            || self.matches <= self.observations / 2
+        {
+            return Err(Error::new(
+                "Item imbue target has insufficient or invalid evidence",
+            ));
+        }
+        Ok(())
+    }
 }
 
 /// Held-out test of the build: the win association of following it in similar game states.
@@ -162,6 +238,9 @@ impl HeroBuildCatalog {
 }
 
 fn validate_hero(hero: &HeroBuild) -> Result<()> {
+    if let Some(focus) = &hero.ability_focus {
+        focus.validate(hero)?;
+    }
     let context = || format!("Build for {}", hero.hero_name);
     if hero.hero_id == 0 || hero.hero_name.trim().is_empty() || hero.core.is_empty() {
         return Err(Error::new(format!(
@@ -177,6 +256,14 @@ fn validate_hero(hero: &HeroBuild) -> Result<()> {
     }
     let mut items = BTreeSet::new();
     for item in hero.core.iter().chain(&hero.situational) {
+        if let Some(target) = &item.imbue_target {
+            target.validate()?;
+            if !hero.ability_ids.contains(&target.ability_id) {
+                return Err(Error::new(
+                    "Item imbue target is absent from the hero ability order",
+                ));
+            }
+        }
         if !items.insert(item.item_id)
             || !(1..=4).contains(&item.tier)
             || !(0.0..=1.0).contains(&item.adoption)

@@ -1,0 +1,70 @@
+{
+  "schema_version": 5,
+  "method": "item-effect-ridge-v1",
+  "client_version": 1,
+  "patch": {"title": "Reference patch"},
+  "cohort": {
+    "minimum_badge": 61,
+    "maximum_badge": 115,
+    "since": "2026-10-10T00:00:00Z",
+    "as_of": "2026-10-11T00:00:00Z",
+    "player_matches": 100
+  },
+  "heroes": [{
+    "hero_id": 1,
+    "hero_name": "Reference hero",
+    "title": "Reference build",
+    "tag_ids": [101, 10, 999],
+    "key_ability_name": "Reference ability",
+    "ability_focus": null,
+    "core": [{
+      "item_id": 10,
+      "name": "Reference core item",
+      "tier": 3,
+      "cost": 3200,
+      "phase_s": 1200,
+      "adoption": 0.4,
+      "win_rate": 0.5,
+      "effect": 0.1,
+      "median_net_worth": 10000,
+      "soul_window": [8000, 12000],
+      "imbue_target": {"ability_id": 101, "matches": 30, "observations": 40}
+    }, {
+      "item_id": 16,
+      "name": "Reference ordinary item",
+      "tier": 1,
+      "cost": 800,
+      "phase_s": 540,
+      "adoption": 0.5,
+      "win_rate": 0.5,
+      "effect": 0.1,
+      "median_net_worth": 2000,
+      "soul_window": [1000, 3000],
+      "imbue_target": null
+    }],
+    "situational": [{
+      "item_id": 17,
+      "name": "Reference situational item",
+      "tier": 2,
+      "cost": 1600,
+      "phase_s": 1200,
+      "adoption": 0.1,
+      "win_rate": 0.5,
+      "effect": 0.1,
+      "median_net_worth": 7000,
+      "soul_window": [5000, 9000],
+      "imbue_target": {"ability_id": 102, "matches": 20, "observations": 30}
+    }],
+    "key_item_id": 10,
+    "power_spike_net_worth": 10000,
+    "ability_ids": [101, 102, 103, 104, 101, 101, 101, 102, 102, 102, 103, 103, 103, 104, 104, 104],
+    "ability_matches": 100,
+    "evaluation": {
+      "agreement_coefficient": 0.0,
+      "standard_error": 0.0,
+      "observations": 0,
+      "confidence": "limited"
+    },
+    "observations": 100
+  }]
+}

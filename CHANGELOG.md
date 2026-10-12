@@ -17,6 +17,10 @@ Show situational TIER 1 to TIER 4 items with a positive effect.
 Select the key item by effect and by how much more this hero uses it than other heroes.
 Test each build on the latest 20% of matches and show `strong`, `moderate`, or `limited` confidence.
 Start each description with the key ability, the key item, and its power spike.
+Infer ability focus from supported CORE imbue targets, current item properties, and ability upgrade order.
+Use `ability + key item` titles, with the first fully upgraded ability as the fallback when focus evidence is weak.
+Keep hero names out of titles.
+State the inferred focus and the first fully upgraded ability separately.
 Show four lines for each item: the game phase, the win rate, the pick rate, and the soul window.
 Lower the default minimum rank from `emissary-i` to `ritualist-i`.
 Write `hero-builds.json` and one Markdown file per hero. Replace the complete artifact directory on each run.
@@ -32,6 +36,10 @@ Remove rank expansion, subset bundles, and the API response cache.
 
 ### Fixed
 
+Verify all seven source JSON fingerprints before resuming an extracted run.
+Check the current patch and client version in the shared installation function for both `sync` and `install`.
+Restore native IMBUE ABILITY selection for MAIN CORE and situational items with sufficient evidence.
+Store imbue evidence and inferred ability focus in catalog schema 5. Earlier catalogs require regeneration.
 Report the installed cache as current after a partial sync when the synced heroes match.
 Require a valid SHA-256 fingerprint before restoring a Steam backup.
 Recover interrupted artifact installation under the artifact lock.

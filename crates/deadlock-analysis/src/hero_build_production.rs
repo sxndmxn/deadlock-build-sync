@@ -4,7 +4,7 @@ use std::path::Path;
 use deadlock_data::{Error, Result, integer, read_json, text};
 use deadlock_guides::{
     BuildCohort, HERO_BUILD_METHOD, HERO_BUILD_SCHEMA_VERSION, HeroBuild, HeroBuildCatalog,
-    TagItem, select_ability_path, select_build_tags,
+    TagItem, assign_build_focus, select_ability_path, select_build_tags,
 };
 use deadlock_input::{ApiOptions, BuildTagCatalog, DeadlockApi, parse_patch_feed};
 use duckdb::types::Value as SqlValue;
@@ -15,6 +15,7 @@ use crate::build_assembly::{PHASES, PurchaseMedian, PurchaseMedians, assemble_bu
 use crate::build_evaluation::evaluate_build;
 use crate::database::{AnalysisDatabase, Parameters};
 use crate::item_effects::{ItemCatalog, LandmarkState, estimate_item_effects};
+use crate::item_imbues::{attach_item_imbues, load_item_imbues};
 use crate::refresh_configuration::{ExtractionResources, RunPaths, cohort_ranks, parse_timestamp};
 use crate::sql_resources::load_sql;
 
@@ -89,6 +90,7 @@ pub fn produce_hero_builds(
             )
         })
         .collect::<PurchaseMedians>();
+    let imbues = load_item_imbues(&database, &parameters)?;
     drop(database);
     let builds = assemble_hero_builds(&states, &catalog, &medians, &heroes)?;
     let mut api = build_api(api_base_url, ranks, client_version, as_of)?;
@@ -99,7 +101,13 @@ pub fn produce_hero_builds(
     let tags = BuildTagCatalog::from_assets(&api.build_tags()?)?;
     let builds = builds
         .into_iter()
-        .map(|build| attach_ability_and_tags(build, &mut api, patch.start_timestamp, assets, &tags))
+        .map(|build| {
+            let mut build =
+                attach_ability_and_tags(build, &mut api, patch.start_timestamp, assets, &tags)?;
+            attach_item_imbues(&mut build, &imbues, assets);
+            assign_build_focus(&mut build, assets)?;
+            Ok(build)
+        })
         .collect::<Result<Vec<_>>>()?;
     let catalog = HeroBuildCatalog {
         schema_version: HERO_BUILD_SCHEMA_VERSION,
@@ -166,6 +174,7 @@ fn assemble_hero_builds(
             title: String::new(),
             tag_ids: [0; 3],
             key_ability_name: None,
+            ability_focus: None,
             core: build.core,
             situational: build.situational,
             key_item_id: build.key_item_id,
@@ -193,7 +202,7 @@ fn build_api(
     })
 }
 
-/// Adds the most supported complete ability order, the three build icons, and the title.
+/// Adds the most supported complete ability order and the three build icons.
 ///
 /// The icons are the first maxed ability, the key item, and the dominant build function.
 /// Without a complete ability order, the icons use CORE items instead of the ability.
@@ -230,10 +239,6 @@ fn attach_ability_and_tags(
         }
         Err(_) => build.tag_ids = select_fallback_tags(&build)?,
     }
-    build.title = build
-        .key_item()
-        .map(|item| item.name.clone())
-        .ok_or_else(|| Error::new("Build key item is not in CORE"))?;
     Ok(build)
 }
 

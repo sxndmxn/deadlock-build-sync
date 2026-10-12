@@ -95,20 +95,6 @@ fn markdown_name(hero_name: &str) -> String {
         .collect()
 }
 
-/// Reads the catalog and rejects it when the game has a newer patch or client.
-///
-/// # Errors
-/// Returns an error when the catalog is missing, malformed, or stale.
-pub fn read_current_catalog(directory: &Path, base_url: &str) -> Result<HeroBuildCatalog> {
-    let catalog = HeroBuildCatalog::read(&directory.join(CATALOG_FILE))?;
-    if let Some(reason) = describe_staleness(&catalog, base_url)? {
-        return Err(Error::new(format!(
-            "{reason}. Run deadlock-build-sync sync"
-        )));
-    }
-    Ok(catalog)
-}
-
 /// Returns why the catalog is stale, or `None` when it matches the current patch and client.
 ///
 /// # Errors
@@ -160,12 +146,19 @@ pub fn resolve_persona(location: &CacheLocation, configured: Option<&str>) -> Re
 /// Installs one managed build per hero. Builds for heroes in the catalog replace older managed builds.
 ///
 /// # Errors
-/// Returns an error when presentation, preparation, or the guarded installation fails.
+/// Returns an error when the catalog is malformed or stale, or the guarded installation fails.
 pub fn install_catalog(
     location: &CacheLocation,
     catalog: &HeroBuildCatalog,
     persona: &str,
+    base_url: &str,
 ) -> Result<InstallResult> {
+    catalog.validate()?;
+    if let Some(reason) = describe_staleness(catalog, base_url)? {
+        return Err(Error::new(format!(
+            "{reason}. Run deadlock-build-sync sync"
+        )));
+    }
     let snapshot = catalog_snapshot(catalog)?;
     let builds = catalog
         .heroes

@@ -75,7 +75,7 @@ fn asset_identity(asset: &Value) -> Result<(String, String)> {
     Ok((class_name.into(), label.into()))
 }
 
-fn first_fully_upgraded_ability(path: &[u64]) -> Result<u64> {
+pub fn first_fully_upgraded_ability(path: &[u64]) -> Result<u64> {
     let mut counts = BTreeMap::<u64, usize>::new();
     for id in path {
         *counts.entry(*id).or_default() += 1;

@@ -29,6 +29,10 @@ cargo install cargo-deny --version 0.20.2 --locked
 SQLFluff runs through `uvx` at version 4.3.0.
 The shared checks validate formatting, code metrics, Clippy, architecture, SQL, documentation, dependencies, and the default CLI.
 The safety executable checks temporary caches, backup validation, preservation, repeated installation, process guards, and artifact recovery.
+It checks source fingerprints through the resume workflow and rejects stale installations through a local reference API.
+It also checks native imbue targets through catalog serialization and Steam encoding.
+Focus checks cover supporting CORE items, conflicting targets, reload effects, descriptions, and title limits.
+The analysis executable checks imbue selection with an isolated purchase database and reference assets.
 The checks do not read or write live Steam files.
 Fixture checks do not certify live builds.
 

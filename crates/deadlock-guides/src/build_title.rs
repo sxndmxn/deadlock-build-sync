@@ -2,6 +2,13 @@ use deadlock_data::{Error, Result};
 
 pub const MAX_BUILD_NAME_CHARACTERS: usize = 50;
 
+pub fn format_build_title(ability: Option<&str>, item: &str) -> String {
+    ability
+        .map(|ability| format!("{ability} + {item}"))
+        .filter(|title| title.chars().count() <= MAX_BUILD_NAME_CHARACTERS)
+        .unwrap_or_else(|| item.to_owned())
+}
+
 /// Formats the visible Steam build name as `persona | build name`.
 ///
 /// When the combined name exceeds the Steam limit, the build name stands alone.

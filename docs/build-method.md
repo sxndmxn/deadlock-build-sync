@@ -72,7 +72,49 @@ Each tier shows at most six items.
 
 The key item is the MAIN CORE item in Tier 3 or Tier 4 with the largest effect.
 The power spike is the median net worth when players buy the key item.
-The key ability is the first ability that the most common complete ability order upgrades to the maximum.
+The ability order identifies the first ability upgraded to the maximum.
+The inferred ability focus can differ from that ability.
+
+## Item imbue selection
+
+MAIN CORE and situational items can include a native imbue target.
+The analysis counts recorded targets on each player's first purchase of an item.
+It uses the selected rank range and all source folds, and excludes calibration matches and empty targets.
+The target needs at least 20 observations and more than half of the recorded targets for that hero and item.
+Ties and weaker evidence leave the selection empty.
+
+The current item asset must declare a recognized imbue type.
+The target must belong to the hero and appear in the selected ability order.
+Items that exclude ultimate abilities cannot select an ultimate ability.
+These checks use current assets and observed selections. They do not model every ability compatibility rule.
+The catalog stores the target identifier, its observation count, and the total recorded target count.
+Steam receives the target through its native item field.
+The build confidence label does not evaluate the imbue choice.
+
+## Ability focus and titles
+
+The focus selector uses supported imbue targets from MAIN CORE.
+Current asset properties must identify a direct ability improvement, such as extra charges, spirit power, range, duration, damage, or reduced cooldown.
+Items with reload effects or weapon damage triggers do not count as focus evidence.
+Missing or unrecognized properties do not count. Situational items do not count.
+
+All qualifying CORE targets must name the same ability.
+That ability must belong to the hero and appear in the selected ability order.
+The key item must support it, at least two CORE items must support it, or the first fully upgraded ability must match it.
+Conflicting targets leave the focus unset. Ability upgrade order alone does not establish a focus.
+
+Catalog schema 5 stores the focus identifier, name, and supporting CORE item identifiers.
+The title uses `ability + key item` when a focus exists.
+Without a focus, the title names the first fully upgraded ability from the selected complete ability order.
+This title fallback does not establish an inferred focus or change the description.
+The title uses only the key item when no supported ability name is available.
+The first icon shows the focus when available. Otherwise, it shows the first fully upgraded ability when the ability order exists.
+The description states the focus and ability upgrade order separately.
+The focus is an inference from observed choices and item properties. The build confidence label does not evaluate this inference.
+
+Steam titles add the player name with `player name | title` and never add the hero name.
+The title uses only the key item if the ability and item exceed 50 characters.
+The formatter omits the player name if the complete title exceeds that limit.
 
 ## Evaluation
 

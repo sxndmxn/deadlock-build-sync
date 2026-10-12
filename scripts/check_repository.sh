@@ -73,6 +73,7 @@ uvx --from sqlfluff==4.3.0 sqlfluff parse crates/deadlock-analysis/sql --format 
     jaq -e 'all(.. | objects; has("wildcard_expression") | not)'
 cargo doc --workspace --all-features --no-deps --locked
 cargo build --package deadlock-build-sync --locked
+cargo run --package deadlock-analysis --example check_imbues --locked
 cargo run --package deadlock-build-sync --example check_safety --locked
 
 cli_path="${CARGO_TARGET_DIR:-target}/debug/deadlock-build-sync"

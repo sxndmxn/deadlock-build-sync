@@ -6,6 +6,10 @@ const SQL: &[(&str, &str)] = &[
         include_str!("../sql/builds/select_item_assets.sql"),
     ),
     (
+        "builds/select_item_imbue_targets.sql",
+        include_str!("../sql/builds/select_item_imbue_targets.sql"),
+    ),
+    (
         "builds/select_item_purchase_medians.sql",
         include_str!("../sql/builds/select_item_purchase_medians.sql"),
     ),
