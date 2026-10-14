@@ -16,6 +16,8 @@ const MINIMUM_HERO_ROWS: usize = 100;
 /// One player at one landmark time, with the items that the player owns.
 #[derive(Clone, Debug, Deserialize)]
 pub struct LandmarkState {
+    pub match_id: u64,
+    pub player_slot: u32,
     pub hero_id: u64,
     pub fold: String,
     pub landmark_s: u32,

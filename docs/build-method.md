@@ -2,7 +2,7 @@
 
 ## Decision
 
-Make one build for every active hero.
+Make a build for every active hero. Hero coverage does not limit each hero to one build.
 Choose each CORE item from two values: how many players at this rank own the item, and how much the item adds to the win probability in similar game states.
 Test each build on held-out matches and show the result as a confidence label.
 Do not skip a hero because its evidence is weak. Show weak evidence as `limited` confidence.
@@ -11,6 +11,21 @@ The method replaces the earlier admission method.
 The earlier method tested exact sets of 6 to 8 core items.
 Two days after a patch, it gave builds for 2 to 8 of 40 heroes.
 Exact sets divide the data into small groups, and one failed test removed the complete hero.
+
+## Build identity
+
+Catalog schema 7 permits multiple builds for the same hero and requires item purchase counts.
+Each additional build has a stable `variant_id` with lowercase letters, digits, or hyphens.
+The identifier has 1 to 80 characters. It does not depend on the title or catalog order.
+Steam uses the hero ID and variant identifier to update each build separately.
+Validation rejects duplicate hero and build path pairs.
+The hero's Markdown file contains all its catalog builds.
+
+A missing `variant_id` means `main`, which preserves existing Steam build identities.
+Schema 5 remains readable when builds omit `variant_id`. Schema 6 remains readable with its variant identifiers.
+Legacy catalogs without purchase counts show unavailable item rates.
+Schema 7 uses method `item-effect-variants-v2`.
+The main build keeps its existing identity. Additional builds use `item-ITEM_ID` as their variant identifier.
 
 ## Data
 
@@ -33,7 +48,7 @@ The last 20% of matches is the test fold.
 
 ## Item effects
 
-For each landmark, a logistic regression predicts the match result from the state.
+For each assembly phase, a logistic regression predicts the match result from the state.
 The covariates are relative net worth, team lead, and rank.
 Each item has one coefficient: its effect.
 
@@ -64,16 +79,63 @@ The first term keeps the build close to items that players at this rank use.
 An item needs an adoption of 3% before the first term becomes positive.
 The second term moves the choice toward items that win more in similar states.
 
-MAIN CORE lists the added items by phase, and then by the median first purchase time.
+MAIN CORE orders items by median net worth at first purchase, then median first purchase time.
 The player buys MAIN CORE from left to right.
 
 TIER 1 to TIER 4 list situational items: items outside MAIN CORE with an effect above 0.02 and an adoption of at least 1.5% at their most common phase.
 Each tier shows at most six items.
 
-The key item is the MAIN CORE item in Tier 3 or Tier 4 with the largest effect.
+The main build selects its key item from Tier 3 or Tier 4 CORE items.
+The selection combines effect with the hero's adoption divided by adoption across all heroes.
 The power spike is the median net worth when players buy the key item.
 The ability order identifies the first ability upgraded to the maximum.
 The inferred ability focus can differ from that ability.
+
+## Additional builds
+
+Each hero keeps its main build. The selector can add up to two builds from distinct observed item combinations.
+This limit controls the number of installed entries. It does not establish the number of viable strategies for a hero.
+The selector uses development matches and excludes the test fold.
+
+A candidate key item must be Tier 3 or Tier 4 and have a positive hero effect.
+Its hero adoption must be 5% to 70% at 20 or 30 minutes.
+The item must have at least 100 distinct player matches with ownership at either time.
+Repeated landmark snapshots do not increase this owner count.
+
+The candidate uses those players' earlier and later item states.
+At each phase, the selector recalculates item adoption, owner win rates, and median item spend for those players.
+It retains the hero effect estimates and the existing assembly score.
+Each phase needs at least 100 owner states. The candidate must include its key item in CORE.
+Purchase net worth windows and imbue selections still use the complete hero cohort for each item.
+
+The selector compares Tier 3 and Tier 4 CORE items to reject similar builds.
+Each build must have at least two items that the other build does not contain.
+Different items must account for at least 30% of the combined unique item cost.
+Selection maximizes that cost difference multiplied by the square root of the distinct owner count.
+The selector repeats this comparison against the main build and each selected additional build.
+
+Production rebuilds the selected item strategies with all source folds and checks separation again.
+Each additional build gets its own held-out evaluation from its development purchase sets.
+Ability order selection uses matches that include the variant's key item.
+Insufficient ability evidence leaves the order unset.
+
+## Displayed item rates
+
+Displayed item rates use all selected ranked player matches for that hero, including all source folds.
+The query excludes calibration matches and applies the selected rank range.
+Each player's first purchase of an item counts once per match. Later purchases of the same item do not count again.
+Item win rate is buyer wins divided by buyer matches.
+Pick rate is buyer matches divided by all eligible matches for that hero, including players who never bought the item.
+Both rates show their numerator and denominator.
+
+These counts include purchases at any time. They do not require ownership at a landmark or ownership of a variant's key item.
+The same hero and item have identical display rates across all variants and phases.
+Phase adoption and phase owner win rates remain assembly data. The presentation never substitutes them for missing purchase counts.
+Validation requires positive buyer counts, wins no greater than buyers, and buyers no greater than hero matches.
+It also rejects inconsistent counts across builds for the same hero and item.
+
+These are observed item purchase statistics, not the complete build's win rate.
+Purchase timing and the game state can affect which players buy an item. The rates do not prove that an item causes wins.
 
 ## Item imbue selection
 
@@ -103,7 +165,7 @@ That ability must belong to the hero and appear in the selected ability order.
 The key item must support it, at least two CORE items must support it, or the first fully upgraded ability must match it.
 Conflicting targets leave the focus unset. Ability upgrade order alone does not establish a focus.
 
-Catalog schema 5 stores the focus identifier, name, and supporting CORE item identifiers.
+The catalog stores the focus identifier, name, and supporting CORE item identifiers.
 The title uses `ability + key item` when a focus exists.
 Without a focus, the title names the first fully upgraded ability from the selected complete ability order.
 This title fallback does not establish an inferred focus or change the description.
@@ -118,7 +180,7 @@ The formatter omits the player name if the complete title exceeds that limit.
 
 ## Evaluation
 
-The analysis assembles a second build from the matches outside the test fold.
+The analysis assembles each evaluated build from matches outside the test fold.
 In the test fold, agreement is the cost share of the build's phase set that the player owns.
 A logistic regression predicts the match result from agreement, relative net worth, team lead, rank, and landmark.
 The agreement coefficient is the change in log-odds from no agreement to full agreement.
@@ -137,7 +199,7 @@ A prototype compared item choice by effect only, by adoption only, and by the sc
 The test used the patch of 2026-10-09 with data to 2026-10-11, Ritualist I to Eternus V, and 41 heroes.
 The pooled agreement coefficient was 0.168 ± 0.028 for adoption only and 0.191 ± 0.028 for the score above.
 The difference is small and within the uncertainty of two days of data.
-The score above gives every hero a build that is at least as good as the most popular items.
+This comparison does not establish that the score gives every hero a better build than item popularity alone.
 
 ## Limits
 
@@ -146,3 +208,6 @@ They do not prove that an item causes a win.
 Players buy some items because of the game state, for example defensive items against a strong enemy.
 The covariates do not capture all of the game state.
 Net worth at the landmark is also partly a result of earlier items.
+Variant owners must survive long enough and acquire enough souls to own the key item.
+Their item combinations can reflect match conditions as well as different strategies.
+The selection thresholds are engineering rules. They do not prove an optimal number of builds.

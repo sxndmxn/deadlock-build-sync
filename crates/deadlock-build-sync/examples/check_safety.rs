@@ -14,6 +14,8 @@ mod reference_data;
 mod resume_checks;
 #[path = "check_safety/steam_checks.rs"]
 mod steam_checks;
+#[path = "check_safety/variant_checks.rs"]
+mod variant_checks;
 
 fn main() -> deadlock_data::Result<()> {
     artifact_checks::check_artifact_recovery()?;
@@ -22,6 +24,7 @@ fn main() -> deadlock_data::Result<()> {
     imbue_checks::check_imbue_encoding()?;
     focus_checks::check_build_focus()?;
     steam_checks::check_steam_safety()?;
+    variant_checks::check_build_variants()?;
     println!("Isolated safety checks passed. The checks did not use live Steam files.");
     Ok(())
 }

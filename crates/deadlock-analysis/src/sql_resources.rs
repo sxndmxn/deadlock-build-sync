@@ -2,6 +2,10 @@ use deadlock_data::{Error, Result};
 
 const SQL: &[(&str, &str)] = &[
     (
+        "builds/select_item_statistics.sql",
+        include_str!("../sql/builds/select_item_statistics.sql"),
+    ),
+    (
         "builds/select_item_assets.sql",
         include_str!("../sql/builds/select_item_assets.sql"),
     ),

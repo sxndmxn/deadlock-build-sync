@@ -153,6 +153,7 @@ fn describe_item(
         phase_s: phase,
         adoption: effects.adoption[column],
         win_rate: effects.owner_win_rates[column],
+        statistics: None,
         effect: effects.effects[column],
         median_net_worth: median.map_or(0, |median| median.net_worth),
         soul_window: median.map_or([0, 0], |median| median.soul_window),

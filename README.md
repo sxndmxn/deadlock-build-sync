@@ -3,7 +3,7 @@
 [![CI](https://github.com/sxndmxn/deadlock-build-sync/actions/workflows/ci.yml/badge.svg)](https://github.com/sxndmxn/deadlock-build-sync/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-`deadlock-build-sync` makes one private Deadlock build for every hero from public match data.
+`deadlock-build-sync` makes private Deadlock builds for every hero from public match data.
 The CLI installs the builds in Steam's **My Builds** on Linux.
 
 ## Install
@@ -77,14 +77,17 @@ Each item shows four lines:
 
 ```text
 MID GAME
-WIN RATE: 52.3%
-PICK RATE: 48.1%
+ITEM WIN RATE: 52.3% (523/1000)
+PICK RATE: 50.0% (1000/2000)
 SOUL WINDOW: 8k-16k
 ```
 
 The phase is the time when the build adds the item: early game (9 minutes), mid game (20 minutes), or late game (30 minutes).
-The win rate is the share of hero players who own the item at that time and win the match.
-The pick rate is the share of hero players who own the item at that time.
+The item win rate is wins divided by buyer matches for this hero.
+The pick rate is buyer matches divided by all selected matches for this hero.
+Both rates show their numerator and denominator. Each player match counts once per item, regardless of purchase time or build variant.
+These are observed item purchase statistics. They do not measure the complete build or prove an item causes wins.
+Catalogs without purchase counts show `unavailable` until regeneration.
 The soul window is the net worth range in which most players buy the item: the middle half of the first purchases.
 
 Items with sufficient match evidence also select an ability in the native **IMBUE ABILITY** control.
@@ -122,6 +125,10 @@ JSON spacing and object key order do not affect these fingerprints.
 The default artifact directory is `$XDG_STATE_HOME/deadlock-build-sync/artifacts`.
 If `XDG_STATE_HOME` is not set, the CLI uses `~/.local/state/deadlock-build-sync/artifacts`.
 The directory contains `hero-builds.json` and one Markdown file per hero in `builds/`.
+Each Markdown file includes every catalog build for that hero.
+The catalog and installer support distinct variants for the same hero.
+The analysis selects a main build and up to two additional builds with distinct item combinations and sufficient match support.
+It evaluates each build separately. Similar candidates do not create additional entries.
 Each new run replaces the complete directory.
 
 ## Commands

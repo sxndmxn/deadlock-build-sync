@@ -52,10 +52,17 @@ pub fn build_hero_presentation(
     }
     let abilities = (!build.ability_ids.is_empty()).then(|| PresentationAbilities {
         ability_ids: build.ability_ids.clone(),
-        annotation: format!(
-            "Most common complete order at this rank. n={}.",
-            build.ability_matches
-        ),
+        annotation: if build.variant_id.is_some() {
+            format!(
+                "Most common complete order among key item owners. n={}.",
+                build.ability_matches
+            )
+        } else {
+            format!(
+                "Most common complete order at this rank. n={}.",
+                build.ability_matches
+            )
+        },
     });
     BuildPresentation::new(PresentationContent {
         hero_id: build.hero_id,
@@ -72,7 +79,7 @@ fn build_category(
     items: &[BuildItem],
     description: &str,
     optional: bool,
-    annotate: fn(&BuildItem) -> String,
+    annotate: fn(&BuildItem) -> Result<String>,
 ) -> Result<PresentationCategory> {
     let (width, height) = if items.is_empty() {
         (EMPTY_WIDTH, EMPTY_HEIGHT)
@@ -92,27 +99,31 @@ fn build_category(
         optional,
         items: items
             .iter()
-            .map(|item| PresentationItem {
-                item_id: item.item_id,
-                name: item.name.clone(),
-                annotation: annotate(item),
-                required_flex_slots: None,
-                sell_priority: None,
-                imbue_target_ability_id: item.imbue_target.as_ref().map(|target| target.ability_id),
+            .map(|item| {
+                Ok(PresentationItem {
+                    item_id: item.item_id,
+                    name: item.name.clone(),
+                    annotation: annotate(item)?,
+                    required_flex_slots: None,
+                    sell_priority: None,
+                    imbue_target_ability_id: item
+                        .imbue_target
+                        .as_ref()
+                        .map(|target| target.ability_id),
+                })
             })
-            .collect(),
+            .collect::<Result<_>>()?,
     })
 }
 
-/// Shows the game phase, the win rate of owners, the pick rate, and the soul window, one per line.
-fn describe_item(item: &BuildItem) -> String {
-    format!(
-        "{}\nWIN RATE: {}\nPICK RATE: {}\nSOUL WINDOW: {}",
+/// Shows the game phase, purchase rates with counts, and the soul window.
+fn describe_item(item: &BuildItem) -> Result<String> {
+    let [win_rate, pick_rate] = item.describe_rates()?;
+    Ok(format!(
+        "{}\nITEM WIN RATE: {win_rate}\nPICK RATE: {pick_rate}\nSOUL WINDOW: {}",
         phase_label(item.phase_s),
-        format_share(item.win_rate),
-        format_share(item.adoption),
         format_soul_window(item.soul_window)
-    )
+    ))
 }
 
 /// Rounds the soul window to whole thousands. The window always spans at least 1k.
@@ -146,8 +157,15 @@ fn describe_build(
     if let Some(ability) = &build.key_ability_name {
         lines.push(format!("Ability order: max {ability} first."));
     }
+    if build.variant_id.is_some() {
+        lines.push(format!(
+            "Item choices use {} player matches with {} at 20 or 30 minutes.",
+            build.observations, key_item.name
+        ));
+    }
     lines.extend([
         "Buy MAIN CORE from left to right. TIER items are situational choices.".into(),
+        "Item rates count each buyer once per match across this hero's ranked matches. They do not measure the complete build.".into(),
         format!(
             "Evidence: {} (held-out test, n={}). Ranked • {} • {} to {}.",
             build.evaluation.confidence.label(),
@@ -187,8 +205,4 @@ fn format_souls(value: u32) -> String {
     } else {
         value.to_string()
     }
-}
-
-fn format_share(share: f64) -> String {
-    format!("{:.1}%", share * 100.0)
 }

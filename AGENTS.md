@@ -64,7 +64,8 @@ When a request, a change, or this file conflicts with `VISION.md`, follow `VISIO
 ## Repository purpose
 
 `deadlock-build-sync` is a CLI that primarily supports Linux.
-It makes one private build for every active hero from public ranked match data.
+It makes private builds for every active hero from public ranked match data.
+Distinct build variants for the same hero are permitted. Reject duplicate hero and variant identities.
 The player buys MAIN CORE items from left to right. TIER 1 to TIER 4 hold situational items.
 Each build states a short idea of what to play around and the confidence of its evidence.
 It installs the builds under Steam's **My Builds**.

@@ -32,7 +32,11 @@ The safety executable checks temporary caches, backup validation, preservation, 
 It checks source fingerprints through the resume workflow and rejects stale installations through a local reference API.
 It also checks native imbue targets through catalog serialization and Steam encoding.
 Focus checks cover supporting CORE items, conflicting targets, reload effects, descriptions, and title limits.
+Variant checks cover shared heroes, duplicate identities, complete Markdown exports, and separate Steam build IDs.
+They also check repeated installation, variant removal, and compatibility with schema 5 catalogs.
 The analysis executable checks imbue selection with an isolated purchase database and reference assets.
+The strategy executable checks distinct item combinations, unique player counts, stable selection, and heroes with only one observed strategy.
+The item statistics executable checks purchase counts, rank filters, calibration exclusion, variant consistency, legacy display, and invalid counts.
 The checks do not read or write live Steam files.
 Fixture checks do not certify live builds.
 

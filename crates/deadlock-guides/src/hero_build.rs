@@ -1,12 +1,12 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use deadlock_data::{Error, Result, atomic_write_json, read_json};
+use deadlock_data::{Error, Result, atomic_write_json, count_as_f64, read_json};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-pub const HERO_BUILD_SCHEMA_VERSION: u32 = 5;
-pub const HERO_BUILD_METHOD: &str = "item-effect-ridge-v1";
+pub const HERO_BUILD_SCHEMA_VERSION: u32 = 7;
+pub const HERO_BUILD_METHOD: &str = "item-effect-variants-v2";
 
 /// All hero builds from one source snapshot.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -37,6 +37,9 @@ pub struct BuildCohort {
 pub struct HeroBuild {
     pub hero_id: u64,
     pub hero_name: String,
+    /// A stable variant identity. Older builds use the main variant.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variant_id: Option<String>,
     pub title: String,
     pub tag_ids: [u64; 3],
     pub key_ability_name: Option<String>,
@@ -60,13 +63,62 @@ pub struct BuildItem {
     pub tier: u8,
     pub cost: u32,
     pub phase_s: u32,
+    /// Phase ownership in the assembly cohort. This value controls item selection.
     pub adoption: f64,
+    /// Phase owner win rate in the assembly cohort. Display rates use purchase statistics.
     pub win_rate: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub statistics: Option<ItemStatistics>,
     pub effect: f64,
     pub median_net_worth: u32,
     /// The lower and upper quartile of net worth at the first purchase.
     pub soul_window: [u32; 2],
     pub imbue_target: Option<ImbueTarget>,
+}
+
+/// Full hero cohort counts. Each player match counts once for each purchased item.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ItemStatistics {
+    pub hero_matches: u64,
+    pub buyer_matches: u64,
+    pub buyer_wins: u64,
+}
+
+impl ItemStatistics {
+    /// # Errors
+    /// Returns an error for empty or inconsistent counts.
+    pub fn validate(&self) -> Result<()> {
+        if self.buyer_matches == 0
+            || self.buyer_wins > self.buyer_matches
+            || self.buyer_matches > self.hero_matches
+        {
+            return Err(Error::new("Item purchase statistics have invalid counts"));
+        }
+        Ok(())
+    }
+}
+
+impl BuildItem {
+    /// Formats buyer win rate and purchase rate with their counts.
+    /// Legacy items without purchase counts have no display rates.
+    ///
+    /// # Errors
+    /// Returns an error when purchase counts are invalid.
+    pub fn describe_rates(&self) -> Result<[String; 2]> {
+        let Some(statistics) = &self.statistics else {
+            return Ok(["unavailable".into(), "unavailable".into()]);
+        };
+        statistics.validate()?;
+        let format_rate = |count, total| -> Result<String> {
+            let rate = 100.0 * count_as_f64(count)? / count_as_f64(total)?;
+            Ok(format!("{rate:.1}% ({count}/{total})"))
+        };
+        Ok([
+            format_rate(statistics.buyer_wins, statistics.buyer_matches)?,
+            format_rate(statistics.buyer_matches, statistics.hero_matches)?,
+        ])
+    }
 }
 
 /// The selected native imbue target and its first-purchase evidence.
@@ -185,10 +237,14 @@ impl Confidence {
 }
 
 impl HeroBuild {
-    /// Returns the managed Steam build identity for this hero.
+    /// Returns the managed Steam build identity for this hero and variant.
     #[must_use]
     pub fn path_id(&self) -> String {
-        format!("{}-main", self.hero_id)
+        format!(
+            "{}-{}",
+            self.hero_id,
+            self.variant_id.as_deref().unwrap_or("main")
+        )
     }
 
     #[must_use]
@@ -216,9 +272,18 @@ impl HeroBuildCatalog {
     }
 
     /// # Errors
-    /// Returns an error for an unsupported schema or method, repeated heroes, or an invalid build.
+    /// Returns an error for an unsupported schema or method, repeated build paths, or an invalid build.
     pub fn validate(&self) -> Result<()> {
-        if self.schema_version != HERO_BUILD_SCHEMA_VERSION || self.method != HERO_BUILD_METHOD {
+        let current =
+            self.schema_version == HERO_BUILD_SCHEMA_VERSION && self.method == HERO_BUILD_METHOD;
+        let legacy = match (self.schema_version, self.method.as_str()) {
+            (5, "item-effect-ridge-v1") => {
+                self.heroes.iter().all(|build| build.variant_id.is_none())
+            }
+            (6, "item-effect-variants-v1") => true,
+            _ => false,
+        };
+        if !current && !legacy {
             return Err(Error::new(
                 "Hero builds use another schema or method. Run deadlock-build-sync sync",
             ));
@@ -226,18 +291,59 @@ impl HeroBuildCatalog {
         if self.cohort.minimum_badge > self.cohort.maximum_badge {
             return Err(Error::new("Hero build cohort has an invalid rank range"));
         }
-        let mut heroes = BTreeSet::new();
+        let mut paths = BTreeSet::new();
+        let mut names = BTreeMap::new();
         for hero in &self.heroes {
-            if !heroes.insert(hero.hero_id) {
-                return Err(Error::new("Hero builds repeat a hero"));
+            if !paths.insert((hero.hero_id, hero.path_id())) {
+                return Err(Error::new("Hero builds repeat a hero and build path pair"));
+            }
+            if names
+                .insert(hero.hero_id, &hero.hero_name)
+                .is_some_and(|name| name != &hero.hero_name)
+            {
+                return Err(Error::new(
+                    "Build variants use different names for the same hero",
+                ));
             }
             validate_hero(hero)?;
         }
-        Ok(())
+        validate_purchase_statistics(self, current)
     }
 }
 
+fn validate_purchase_statistics(catalog: &HeroBuildCatalog, required: bool) -> Result<()> {
+    let mut hero_counts = BTreeMap::new();
+    let mut item_counts = BTreeMap::new();
+    for hero in &catalog.heroes {
+        for item in hero.core.iter().chain(&hero.situational) {
+            let Some(statistics) = &item.statistics else {
+                if required {
+                    return Err(Error::new(
+                        "Current builds require item purchase statistics",
+                    ));
+                }
+                continue;
+            };
+            statistics.validate()?;
+            if statistics.hero_matches > catalog.cohort.player_matches
+                || hero_counts
+                    .insert(hero.hero_id, statistics.hero_matches)
+                    .is_some_and(|previous| previous != statistics.hero_matches)
+                || item_counts
+                    .insert((hero.hero_id, item.item_id), statistics)
+                    .is_some_and(|previous| previous != statistics)
+            {
+                return Err(Error::new(
+                    "Item purchase statistics disagree across the hero cohort",
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 fn validate_hero(hero: &HeroBuild) -> Result<()> {
+    validate_variant_id(hero.variant_id.as_deref())?;
     if let Some(focus) = &hero.ability_focus {
         focus.validate(hero)?;
     }
@@ -287,6 +393,21 @@ fn validate_hero(hero: &HeroBuild) -> Result<()> {
             "{} has an inconsistent evaluation",
             context()
         )));
+    }
+    Ok(())
+}
+
+fn validate_variant_id(variant: Option<&str>) -> Result<()> {
+    if let Some(variant) = variant
+        && (variant.is_empty()
+            || variant.len() > 80
+            || !variant
+                .bytes()
+                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-'))
+    {
+        return Err(Error::new(
+            "Build variant requires 1 to 80 lowercase letters, digits, or hyphens",
+        ));
     }
     Ok(())
 }

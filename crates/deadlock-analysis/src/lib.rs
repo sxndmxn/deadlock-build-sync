@@ -3,11 +3,13 @@
 
 mod build_assembly;
 mod build_evaluation;
+mod build_variants;
 mod database;
 mod extraction;
 mod hero_build_production;
 mod item_effects;
 mod item_imbues;
+mod item_statistics;
 mod refresh;
 mod refresh_configuration;
 mod ridge_logistic;
