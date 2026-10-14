@@ -89,6 +89,10 @@ The penalties 200 and 300 were better on each patch, by 3.3 to 7.2 standard erro
 They were best or within one standard error of the best pair in each run.
 On the largest run, the item effects predict significantly better than no item effects. Thus, the effects are a weak but real signal.
 
+**Holdout.** The run `holdout-20260916` did not exist when the penalties were selected. It has 583,496 test states.
+Compared with the penalties 5 and 100, no item effects gave +0.000515 ± 0.000086, and the penalties 200 and 300 gave −0.000133 ± 0.000023.
+The penalties 1000 and 300 gave the same value. The selected penalties were best again.
+
 **Decision.** Use the penalties 200 (global) and 300 (hero).
 
 **Effect on the builds.** The run `20261012T233433Z` made builds with both penalty pairs.
@@ -306,3 +310,24 @@ The four tested patches give strong prior evidence for the effect. Thus, a short
 **Decision.** Remove a panel only when a phase has a z value below −2. In the 34 windows, this rule kept every panel.
 A real reversal, for example after an item rework, still removes the panel when the run has enough matches.
 The panel description now states the z value at each phase.
+
+## E8: item effects that depend on rank
+
+**Hypothesis.** Item effects differ between low and high ranks in the cohort, Ritualist I to Eternus V.
+This hypothesis would support a separate build for each rank range.
+
+**Method.** `compare_effect_models` with the design `200:300:rank=SCALE` adds one coefficient for each item on the standardized rank, minus its development mean.
+The standardized rank is 0 at badge 80 and changes by 1 for each 20 badges. The scale 0 keeps only the main term, which repeats the rank covariate.
+
+**Result.** Each value is the log loss difference to the design with only the main term.
+
+| Run | Scale 0.25 | Scale 0.5 | Scale 1 |
+| --- | --- | --- | --- |
+| `20261012T233433Z` | +0.000005 ± 0.000014 | +0.000035 ± 0.000031 | +0.000125 ± 0.000056 |
+| `20261003T172322Z` | −0.000001 ± 0.000012 | +0.000010 ± 0.000032 | +0.000082 ± 0.000070 |
+| `20260913T235155Z` | +0.000013 ± 0.000006 | +0.000043 ± 0.000012 | +0.000120 ± 0.000023 |
+| `holdout-20260916` | +0.000016 ± 0.000010 | +0.000056 ± 0.000018 | +0.000151 ± 0.000029 |
+
+**Analysis.** The rank interactions did not improve the predictions on any run. Weaker shrinkage made the predictions worse.
+
+**Decision.** Do not make separate builds for rank ranges inside the default cohort.

@@ -11,7 +11,7 @@ use crate::counter_items::{
 };
 use crate::item_effects::{
     COVARIATES, EffectPenalties, EffectTable, ItemCatalog, LandmarkState, build_feature_row,
-    estimate_item_effects, fit_landmark_models,
+    estimate_item_effects, fit_landmark_models, standardized_rank,
 };
 use crate::refresh_configuration::{ExtractionResources, RunPaths};
 use crate::ridge_logistic::{FeatureRow, logistic};
@@ -174,6 +174,18 @@ pub enum Interaction {
     TeamLead,
     /// The enemy spirit share minus its mean in the development matches.
     EnemySpirit,
+    /// The standardized rank minus its mean in the development matches.
+    Rank,
+}
+
+impl Interaction {
+    /// The factor that gives the main term of the condition a standard deviation near 1.
+    const fn main_scale(self) -> f64 {
+        match self {
+            Self::TeamLead | Self::EnemySpirit => CONDITION_SCALE,
+            Self::Rank => 1.0,
+        }
+    }
 }
 
 /// One design of the item effect model.
@@ -216,16 +228,17 @@ pub fn compare_effect_models(
     let inputs = load_run_inputs(paths, resources)?;
     let (test, development): (Vec<_>, Vec<_>) =
         inputs.states.iter().partition(|state| state.is_test());
-    let spirit_mean = development
-        .iter()
-        .map(|state| state.enemy_spirit_share)
-        .sum::<f64>()
-        / count_as_f64(u64::try_from(development.len().max(1))?)?;
+    let count = count_as_f64(u64::try_from(development.len().max(1))?)?;
     let context = ModelContext {
         development: &development,
         test: &test,
         catalog: &inputs.catalog,
-        spirit_mean,
+        spirit_mean: mean_enemy_spirit_share(&development)?,
+        rank_mean: development
+            .iter()
+            .map(|state| standardized_rank(state.average_badge))
+            .sum::<f64>()
+            / count,
     };
     let mut reference = None;
     let mut results = Vec::new();
@@ -244,6 +257,7 @@ struct ModelContext<'a> {
     test: &'a [&'a LandmarkState],
     catalog: &'a ItemCatalog,
     spirit_mean: f64,
+    rank_mean: f64,
 }
 
 /// Builds the feature row of a state, with item interactions when the design has them.
@@ -257,11 +271,12 @@ fn build_model_row(
         let value = match interaction {
             Interaction::TeamLead => state.team_lead,
             Interaction::EnemySpirit => state.enemy_spirit_share - context.spirit_mean,
+            Interaction::Rank => standardized_rank(state.average_badge) - context.rank_mean,
         };
         let offset = COVARIATES + context.catalog.items.len();
         row.features.push((
             offset + context.catalog.items.len(),
-            value * CONDITION_SCALE,
+            value * interaction.main_scale(),
         ));
         row.features.extend(
             state

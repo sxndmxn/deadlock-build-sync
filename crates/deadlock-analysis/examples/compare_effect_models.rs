@@ -2,7 +2,7 @@
 
 //! Compares item effect model designs by held-out log loss on one extracted run.
 //!
-//! Usage: `cargo run --release --example compare_effect_models -- RUN_DIRECTORY [GLOBAL:HERO[:lead=SCALE|:spirit=SCALE] ...]`
+//! Usage: `cargo run --release --example compare_effect_models -- RUN_DIRECTORY [GLOBAL:HERO[:lead=SCALE|:spirit=SCALE|:rank=SCALE] ...]`
 //!
 //! `GLOBAL` and `HERO` are the item ridge penalties. `lead=SCALE` adds item and team lead
 //! interactions. `spirit=SCALE` adds item and enemy spirit share interactions.
@@ -17,8 +17,7 @@ use deadlock_analysis::{
 };
 use deadlock_data::{Error, Result};
 
-const USAGE: &str =
-    "Usage: compare_effect_models RUN_DIRECTORY [GLOBAL:HERO[:lead=SCALE|:spirit=SCALE] ...]";
+const USAGE: &str = "Usage: compare_effect_models RUN_DIRECTORY [GLOBAL:HERO[:lead=SCALE|:spirit=SCALE|:rank=SCALE] ...]";
 const GLOBAL_PENALTIES: [f64; 5] = [1.0, 5.0, 20.0, 50.0, 200.0];
 const HERO_PENALTIES: [f64; 4] = [20.0, 100.0, 300.0, 1000.0];
 /// Penalties large enough to remove all item effects. This design is the baseline.
@@ -77,6 +76,7 @@ fn main() -> Result<()> {
                 None => "none".to_owned(),
                 Some((Interaction::TeamLead, scale)) => format!("lead={scale}"),
                 Some((Interaction::EnemySpirit, scale)) => format!("spirit={scale}"),
+                Some((Interaction::Rank, scale)) => format!("rank={scale}"),
             },
             if default { "yes" } else { "no" },
             result.log_loss,
@@ -91,7 +91,7 @@ fn main() -> Result<()> {
 fn parse_design(value: &str) -> Result<EffectModel> {
     let invalid = || {
         Error::new(format!(
-            "Design must be GLOBAL:HERO[:lead=SCALE|:spirit=SCALE] with positive penalties and a scale of 0 or more: {value}"
+            "Design must be GLOBAL:HERO[:lead=SCALE|:spirit=SCALE|:rank=SCALE] with positive penalties and a scale of 0 or more: {value}"
         ))
     };
     let number = |text: &str| {
@@ -110,6 +110,7 @@ fn parse_design(value: &str) -> Result<EffectModel> {
             let kind = match name {
                 "lead" => Interaction::TeamLead,
                 "spirit" => Interaction::EnemySpirit,
+                "rank" => Interaction::Rank,
                 _ => return Err(invalid()),
             };
             let scale = scale
