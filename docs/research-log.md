@@ -41,6 +41,7 @@ The test fold contains the last 20% of matches by start time.
 | E25 | Do the later decisions hold on more new matches? | Yes, all four predictions | Keep all |
 | E26 | Does the majority imbue target win at least as often? | Yes, slightly more on four runs | Keep the rule |
 | E27 | Can the model drop hero-specific item effects? | No. They improve predictions on six runs | Keep the hero level |
+| E28 | Do the results hold on a fifth patch? | Yes, all six predictions | Keep all |
 
 ## E0: effect scale of the item score
 
@@ -843,3 +844,33 @@ A hero penalty of 10⁹ gives each hero the global item effects. Each hero model
 Each hero-specific deviation is noisy (E3), but together they improve the predictions.
 
 **Decision.** Keep the hero level with the penalty 300.
+
+## E28: a fifth patch
+
+**Purpose.** All earlier tests used four patches. A fifth patch tests whether the results hold for another game version.
+
+**Method.** The run `patch-20260812` used the patch of 2026-08-12 from 2026-08-13 to 2026-08-16. It had 23,060 matches and 276,720 player matches. No earlier test used this patch.
+These predictions were stated before the extraction:
+
+1. The penalties 200 and 300 give a lower log loss than 5 and 100 (E2).
+2. Builds with the scale 0.05 add a positive coefficient beyond builds with 0.1 (E14).
+3. The situational share adds a positive coefficient beyond CORE agreement (E21).
+4. Global item effects alone predict worse than the hero models (E27).
+5. The hierarchical label estimate has a lower error on split halves than the own result (E17).
+6. The weapon defense group has positive production coefficients at 20 and 30 minutes (E6).
+
+**Result.**
+
+| Prediction | Result | Status |
+| --- | --- | --- |
+| 1 | −0.000271 ± 0.000072 against 5 and 100 | Confirmed |
+| 2 | +0.080 ± 0.047, z = 1.7 | Confirmed |
+| 3 | +0.572 ± 0.144, z = 4.0 | Confirmed |
+| 4 | Against 5 and 100: −0.000128 for global effects alone, −0.000271 for the hero models | Confirmed in direction |
+| 5 | Error 0.174 for the own result and 0.119 for the hierarchical estimate. Correlation of halves 0.06 | Confirmed |
+| 6 | z = 1.1 and 2.5 | Confirmed |
+
+Spirit defense had z = 0.5 and 1.2. Anti-heal had z = 2.6 and 0.1.
+The harness gives standard errors only against the first design, so prediction 4 has no direct standard error.
+
+**Decision.** No change. The main results held on a fifth patch.
