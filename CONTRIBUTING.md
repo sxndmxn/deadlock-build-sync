@@ -67,6 +67,10 @@ These examples read one run directory and write tab-separated text:
 | `compare_effect_models` | Held-out log loss for ridge penalties and match condition interactions |
 | `export_split_item_effects` | Item effects from two halves of the development matches |
 | `estimate_counter_interactions` | Counter effects of defensive item groups at each phase |
+| `estimate_enemy_item_counters` | Counter effects of item groups against a share of enemy item cost |
+| `measure_counter_windows` | Counter evidence in time windows of one run |
+| `compare_scoring_pair` | Held-out signal of one effect scale beyond another |
+| `compare_variant_agreement` | Held-out signal of additional builds beyond the main build |
 
 ```bash
 cargo run --release -p deadlock-analysis --example compare_effect_models -- \
