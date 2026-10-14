@@ -36,6 +36,7 @@ The test fold contains the last 20% of matches by start time.
 | E20 | Does armor penetration win more against armor? | No | No panel |
 | E21 | Do situational items add win signal? | Yes, on five runs | Keep the TIER rule |
 | E22 | Are builds stable between match samples? | The effect term halves the stability | Keep 0.05. Note the trade-off |
+| E23 | Does an uncertainty weight stabilize builds? | Only slightly | Not added |
 
 ## E0: effect scale of the item score
 
@@ -724,3 +725,26 @@ E19 found that small samples give builds of similar test quality. Thus, many bui
 The halves share no matches. Two syncs of the same patch share most of their matches, because each sync uses all matches since the patch start. Thus, the change between such syncs is smaller than this test shows.
 
 **Decision.** Keep the scale 0.05. If stability between syncs becomes more important than the win signal, the scale 0.1 is a middle choice.
+
+## E23: an uncertainty weight in the item score
+
+**Hypothesis.** Noisy effect estimates cause the instability of E22. A score with the lower bound `effect − k × standard error` makes builds more stable without a loss of held-out signal.
+
+**Method.** Each hero model gave the standard error of each item effect from its penalized Hessian.
+The rules `0.05:0:1` and `0.05:0:2` used k = 1 and k = 2. `compare_item_scoring` measured the pooled signal, and `measure_build_stability` measured the CORE overlap between halves.
+The predictions were a higher overlap than k = 0 on each run and a coefficient within one standard error of k = 0. The code is not in the repository, because the decision was negative.
+
+**Result.**
+
+| Run | CORE overlap, k = 0, 1, 2 | Pooled coefficient, k = 0, 1, 2 |
+| --- | --- | --- |
+| `holdout-20260916` | 0.556, 0.575, 0.594 | 0.124, 0.128, 0.108 |
+| `20260913T235155Z` | 0.586, 0.597, 0.627 | 0.117, 0.105, 0.110 |
+| `confirm-20261003` | 0.476, 0.490, 0.513 | 0.139, 0.127, 0.144 |
+
+The standard errors of the coefficients were from 0.0096 to 0.0143.
+
+**Analysis.** Both predictions held, but the stability gain was only 0.01 to 0.04. Adoption alone had an overlap near 0.86.
+Thus, uncertain effects cause little of the instability. Near ties between items of similar value cause most of it.
+
+**Decision.** Do not add the uncertainty weight. The small gain does not justify the extra code and computation.
