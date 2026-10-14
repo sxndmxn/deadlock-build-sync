@@ -627,3 +627,26 @@ The ridge penalties of E2 keep the estimates stable with few matches. This test 
 The counter tests need more matches: E7 found stable results at about 18,000 matches.
 
 **Decision.** No change. A sync one or two days after a patch gives builds of full test quality.
+
+## E20: armor penetration against enemy armor
+
+**Hypothesis.** Armor penetration items win more when the enemy team owns more armor of the matching type.
+
+**Method.** `estimate_enemy_item_counters` ran two tests on five runs, with anti-heal as the negative control. The predictions were fixed before the test.
+
+1. Weapon penetration (Bullet Resist Shredder, Armor Piercer, and Hunter's Aura) against the enemy share of the six weapon defense items of E6.
+2. Spirit penetration (Mystic Vulnerability and Escalating Exposure) against the enemy share of Spirit Shielding, Spirit Resilience, Enchanter's Emblem, Witchmail, and Diviner's Kevlar.
+
+**Result.** The table gives the z values at 20 and 30 minutes on the runs `20261003T172322Z`, `20261012T233433Z`, `20260913T235155Z`, `confirm-20261003`, and `holdout-20260916`.
+
+| Test | z values | Positive |
+| --- | --- | --- |
+| Weapon penetration | −0.3, −2.4, −0.0, 0.9, −1.9, −1.1, 0.7, −1.1, −0.0, −0.3 | 2 of 10 |
+| Control | 0.9, 1.2, −0.7, 0.3, 1.6, −0.7, −0.0, 0.4, 1.4, 1.2 | 7 of 10 |
+| Spirit penetration | 0.5, −0.3, −1.4, −1.3, −2.1, −1.0, 1.3, 0.6, −0.6, −1.9 | 3 of 10 |
+| Control | −0.5, 0.4, 0.8, −1.0, 0.3, −0.4, −0.9, 1.2, 1.2, 1.3 | 6 of 10 |
+
+**Analysis.** Neither penetration group won more against armored enemies. The tendency was slightly negative. The controls showed no effect.
+A possible cause is that players buy armor when they are behind, so armor-heavy enemy teams are often weaker than their net worth shows. The data cannot separate this cause from others.
+
+**Decision.** Do not add a penetration panel.
