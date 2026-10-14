@@ -137,6 +137,10 @@ fn assemble_hero(
         .iter()
         .filter(|state| state.hero_id == hero_id)
         .collect::<Vec<_>>();
+    if all.is_empty() {
+        eprintln!("Skipping {hero_name}: the run has no matches of this hero");
+        return Ok(Vec::new());
+    }
     let (test, development): (Vec<_>, Vec<_>) =
         all.iter().copied().partition(|state| state.is_test());
     let main = assemble_build(hero_id, effects, catalog, medians).ok_or_else(|| {
