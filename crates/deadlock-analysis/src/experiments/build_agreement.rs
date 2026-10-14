@@ -524,7 +524,8 @@ pub struct BuildStability {
 /// Compares builds from the earlier and the later half of the development matches.
 ///
 /// The halves split the development matches at their median identifier. The overlap is the
-/// Jaccard index of the two CORE item sets.
+/// Jaccard index of the two CORE item sets. In cumulative mode, the second build uses all
+/// development matches, as a later sync of the same patch does.
 ///
 /// # Errors
 /// Returns an error when the run, the analysis database, or a model fails.
@@ -532,6 +533,7 @@ pub fn measure_build_stability(
     paths: &RunPaths,
     resources: ExtractionResources,
     scoring: ItemScoring,
+    cumulative: bool,
 ) -> Result<Vec<BuildStability>> {
     let inputs = load_run_inputs(paths, resources)?;
     let catalog = &inputs.catalog;
@@ -552,7 +554,11 @@ pub fn measure_build_stability(
         .copied()
         .partition(|state| state.match_id < middle);
     let earlier_effects = estimate_item_effects(&earlier, catalog, &PHASES)?;
-    let later_effects = estimate_item_effects(&later, catalog, &PHASES)?;
+    let later_effects = if cumulative {
+        estimate_item_effects(&development, catalog, &PHASES)?
+    } else {
+        estimate_item_effects(&later, catalog, &PHASES)?
+    };
     let hero_ids = development
         .iter()
         .map(|state| state.hero_id)

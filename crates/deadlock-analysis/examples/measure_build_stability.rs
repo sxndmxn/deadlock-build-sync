@@ -2,7 +2,7 @@
 
 //! Compares builds from the earlier and the later half of the development matches.
 //!
-//! Usage: `cargo run --release --example measure_build_stability -- RUN_DIRECTORY [SCALE[:FLOOR]]`
+//! Usage: `cargo run --release --example measure_build_stability -- RUN_DIRECTORY [SCALE[:FLOOR] [cumulative]]`
 //!
 //! The output is tab-separated text with one line for each hero.
 
@@ -27,7 +27,12 @@ fn main() -> Result<()> {
         threads: 8,
     };
     println!("hero_id\tcore_overlap\tsame_key_item");
-    for result in measure_build_stability(&paths, resources, scoring)? {
+    for result in measure_build_stability(
+        &paths,
+        resources,
+        scoring,
+        arguments.next().as_deref() == Some("cumulative"),
+    )? {
         println!(
             "{}\t{:.3}\t{}",
             result.hero_id, result.core_overlap, result.same_key_item

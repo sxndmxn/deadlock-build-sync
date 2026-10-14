@@ -37,6 +37,7 @@ The test fold contains the last 20% of matches by start time.
 | E21 | Do situational items add win signal? | Yes, on five runs | Keep the TIER rule |
 | E22 | Are builds stable between match samples? | The effect term halves the stability | Keep 0.05. Note the trade-off |
 | E23 | Does an uncertainty weight stabilize builds? | Only slightly | Not added |
+| E24 | How much does a build change between syncs of one patch? | About 30% of CORE | Owner decision |
 
 ## E0: effect scale of the item score
 
@@ -748,3 +749,22 @@ The standard errors of the coefficients were from 0.0096 to 0.0143.
 Thus, uncertain effects cause little of the instability. Near ties between items of similar value cause most of it.
 
 **Decision.** Do not add the uncertainty weight. The small gain does not justify the extra code and computation.
+
+## E24: the build change between two syncs of one patch
+
+**Question.** How much does a build change between two syncs of the same patch? A later sync uses all matches of the earlier sync and more.
+
+**Method.** `measure_build_stability` in cumulative mode compares the build from the first half of the development matches with the build from all development matches.
+
+**Result.**
+
+| Run | CORE overlap, `inf` | CORE overlap, 0.05 | Same key item, 0.05 |
+| --- | --- | --- | --- |
+| `holdout-20260916` | 0.904 | 0.709 | 26 of 38 |
+| `20260913T235155Z` | 0.896 | 0.689 | 22 of 38 |
+| `confirm-20261003` | 0.939 | 0.638 | 29 of 39 |
+
+**Analysis.** With the installed rule, about 30% of the CORE items and one key item in four change between such syncs.
+A rule that prefers the items of the previous build of the same patch could reduce this change. It would reduce the win signal by design, and it needs the previous catalog at each sync.
+
+**Decision.** No change. The owner decides whether stability between syncs is a goal.
