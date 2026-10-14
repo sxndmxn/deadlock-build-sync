@@ -866,11 +866,11 @@ These predictions were stated before the extraction:
 | 1 | −0.000271 ± 0.000072 against 5 and 100 | Confirmed |
 | 2 | +0.080 ± 0.047, z = 1.7 | Confirmed |
 | 3 | +0.572 ± 0.144, z = 4.0 | Confirmed |
-| 4 | Against 5 and 100: −0.000128 for global effects alone, −0.000271 for the hero models | Confirmed in direction |
+| 4 | Global effects alone: +0.000143 ± 0.000076 against the hero models | Confirmed (1.9 standard errors) |
 | 5 | Error 0.174 for the own result and 0.119 for the hierarchical estimate. Correlation of halves 0.06 | Confirmed |
 | 6 | z = 1.1 and 2.5 | Confirmed |
 
 Spirit defense had z = 0.5 and 1.2. Anti-heal had z = 2.6 and 0.1.
-The harness gives standard errors only against the first design, so prediction 4 has no direct standard error.
+A second comparison with the hero models as the first design gave the standard error of prediction 4.
 
 **Decision.** No change. The main results held on a fifth patch.
