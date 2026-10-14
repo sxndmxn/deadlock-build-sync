@@ -456,3 +456,59 @@ pub fn compare_training_fractions(
     }
     Ok(results)
 }
+
+/// Tests whether owning the situational items predicts the match result beyond CORE agreement.
+///
+/// The builds come from development matches. For each test state, the base value is the CORE
+/// agreement, and the alternative value is the share of the hero's situational items that the
+/// player owns.
+///
+/// # Errors
+/// Returns an error when the run, the analysis database, or a model fails.
+pub fn compare_situational_signal(
+    paths: &RunPaths,
+    resources: ExtractionResources,
+) -> Result<AgreementPair> {
+    let inputs = load_run_inputs(paths, resources)?;
+    let catalog = &inputs.catalog;
+    let (test, development): (Vec<_>, Vec<_>) =
+        inputs.states.iter().partition(|state| state.is_test());
+    let effects = estimate_item_effects(&development, catalog, &PHASES)?;
+    let hero_ids = test
+        .iter()
+        .map(|state| state.hero_id)
+        .collect::<BTreeSet<_>>();
+    let mut samples = Vec::new();
+    let mut heroes = 0;
+    for hero_id in hero_ids {
+        let Some(build) = assemble_build(hero_id, &effects, catalog, &inputs.medians) else {
+            continue;
+        };
+        let situational = build
+            .situational
+            .iter()
+            .map(|item| item.item_id)
+            .collect::<BTreeSet<_>>();
+        if situational.is_empty() {
+            continue;
+        }
+        heroes += 1;
+        let total = count_as_f64(u64::try_from(situational.len())?)?;
+        for state in test
+            .iter()
+            .copied()
+            .filter(|state| state.hero_id == hero_id)
+        {
+            let Some(core) = measure_agreement(state, &build.phase_sets, catalog) else {
+                continue;
+            };
+            let owned = state
+                .item_ids
+                .iter()
+                .filter(|item| situational.contains(item))
+                .count();
+            samples.push((state, core, count_as_f64(u64::try_from(owned)?)? / total));
+        }
+    }
+    fit_agreement_pair(&samples, heroes)
+}

@@ -650,3 +650,26 @@ The counter tests need more matches: E7 found stable results at about 18,000 mat
 A possible cause is that players buy armor when they are behind, so armor-heavy enemy teams are often weaker than their net worth shows. The data cannot separate this cause from others.
 
 **Decision.** Do not add a penetration panel.
+
+## E21: the signal of the situational items
+
+**Hypothesis.** The situational items of TIER 1 to TIER 4 carry held-out win signal beyond MAIN CORE.
+
+**Method.** `compare_situational_signal` assembles each hero's build from development matches.
+For each test state, the base value is the CORE agreement, and the alternative value is the share of the hero's situational items that the player owns.
+The pair model of E11 fits both values with the covariates. The prediction was a positive alternative coefficient.
+
+**Result.**
+
+| Run | CORE agreement | z | Situational share | z |
+| --- | --- | --- | --- | --- |
+| `20261012T233433Z` | +0.174 ± 0.030 | 5.9 | +0.756 ± 0.158 | 4.8 |
+| `20261003T172322Z` | +0.058 ± 0.044 | 1.3 | +0.429 ± 0.225 | 1.9 |
+| `20260913T235155Z` | +0.140 ± 0.015 | 9.3 | +0.515 ± 0.080 | 6.4 |
+| `holdout-20260916` | +0.145 ± 0.016 | 9.3 | +0.520 ± 0.080 | 6.5 |
+| `confirm-20261003` | +0.165 ± 0.022 | 7.5 | +0.690 ± 0.112 | 6.1 |
+
+**Analysis.** The situational share added signal beyond CORE agreement on all five runs, and significantly on four.
+The share counts items, not cost. The net worth covariate removes most, but not necessarily all, of the wealth that more items can show.
+
+**Decision.** Keep the situational rule.
