@@ -8,7 +8,7 @@ use crate::item_effects::{ItemCatalog, LandmarkState, relative_net_worth, standa
 use crate::ridge_logistic::{FeatureRow, fit_ridge_logistic};
 
 /// Test landmarks. Each one compares owned items with the latest phase set at or before it.
-const EVALUATION_LANDMARKS: [u32; 5] = [540, 900, 1200, 1500, 1800];
+pub const EVALUATION_LANDMARKS: [u32; 5] = [540, 900, 1200, 1500, 1800];
 const AGREEMENT_COLUMN: usize = 4;
 const WIDTH: usize = 5 + EVALUATION_LANDMARKS.len() - 1;
 const MINIMUM_OBSERVATIONS: usize = 200;
@@ -76,6 +76,30 @@ fn fit_agreement(rows: &[FeatureRow]) -> Result<BuildEvaluation> {
     })
 }
 
+/// Returns the cost share of the build's latest phase set that the player owns at the state.
+///
+/// The value is missing outside the test landmarks or before the first phase set.
+#[must_use]
+pub fn measure_agreement(
+    state: &LandmarkState,
+    phase_sets: &PhaseSets,
+    catalog: &ItemCatalog,
+) -> Option<f64> {
+    if !EVALUATION_LANDMARKS.contains(&state.landmark_s) {
+        return None;
+    }
+    let (_, target) = phase_sets.range(..=state.landmark_s).next_back()?;
+    let target_cost = catalog.cost(target);
+    if target_cost == 0 {
+        return None;
+    }
+    let owned = state.item_ids.iter().copied().collect::<BTreeSet<_>>();
+    Some(
+        f64::from(catalog.cost(&target.intersection(&owned).copied().collect()))
+            / f64::from(target_cost),
+    )
+}
+
 fn build_evaluation_row(
     state: &LandmarkState,
     phase_sets: &PhaseSets,
@@ -84,14 +108,7 @@ fn build_evaluation_row(
     let position = EVALUATION_LANDMARKS
         .iter()
         .position(|landmark| *landmark == state.landmark_s)?;
-    let (_, target) = phase_sets.range(..=state.landmark_s).next_back()?;
-    let target_cost = catalog.cost(target);
-    if target_cost == 0 {
-        return None;
-    }
-    let owned = state.item_ids.iter().copied().collect::<BTreeSet<_>>();
-    let agreement = f64::from(catalog.cost(&target.intersection(&owned).copied().collect()))
-        / f64::from(target_cost);
+    let agreement = measure_agreement(state, phase_sets, catalog)?;
     let mut features = vec![
         (0, 1.0),
         (1, relative_net_worth(state.net_worth, state.landmark_s)),

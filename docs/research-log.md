@@ -398,3 +398,29 @@ A possible cause is that players buy debuff removal after crowd control has alre
 This result shows that the counter method measures associations, which can contain selection. The armor and anti-heal results passed stated predictions, negative controls, and a holdout, but they remain observational.
 
 **Decision.** Use the share condition for VS SUSTAIN. Do not add a panel for debuff removal.
+
+## E11: the evidence of additional builds
+
+**Hypothesis.** An additional build (variant) describes a distinct winning path.
+Thus, agreement with a variant predicts the match result beyond agreement with the main build.
+
+**Method.** `compare_variant_agreement` assembles the main build and the variants of each hero from development matches, as production does.
+For each test state of a hero with variants, one pooled model uses the main agreement and the largest variant agreement.
+The covariates are relative net worth, team lead, rank, and landmark. The standard errors treat each match as one cluster.
+
+**Result.**
+
+| Run | Heroes with variants | Main agreement | z | Variant agreement | z |
+| --- | --- | --- | --- | --- | --- |
+| `20261012T233433Z` | 31 | −0.094 ± 0.051 | −1.8 | +0.100 ± 0.050 | +2.0 |
+| `20261003T172322Z` | 30 | +0.156 ± 0.063 | +2.5 | −0.132 ± 0.066 | −2.0 |
+| `20260913T235155Z` | 30 | +0.090 ± 0.020 | +4.6 | −0.012 ± 0.021 | −0.6 |
+| `holdout-20260916` | 30 | +0.197 ± 0.021 | +9.3 | −0.092 ± 0.023 | −4.1 |
+
+**Analysis.** On the two large runs, main agreement predicts winning, and variant agreement adds nothing or has a negative coefficient.
+On the holdout run, players who move from the main build toward a variant win less in similar states.
+On the small runs, the sign of the variant coefficient changes between runs.
+The variants select players who own a key item. Their item combinations can reflect match conditions as well as strategies.
+
+**Decision.** The data does not support the variants as better winning paths. They can remain as play style options with their own confidence labels.
+The owner decides whether to keep them. No code change.

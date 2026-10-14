@@ -3,18 +3,21 @@ use std::collections::{BTreeMap, BTreeSet};
 use deadlock_data::{Error, Result, count_as_f64};
 use deadlock_guides::{BuildEvaluation, Confidence, CounterEvidence};
 
-use crate::build_assembly::{ItemScoring, PHASES, assemble_build_with_scoring};
-use crate::build_evaluation::{evaluate_build, evaluate_pooled_builds};
+use crate::build_assembly::{ItemScoring, PHASES, assemble_build, assemble_build_with_scoring};
+use crate::build_evaluation::{
+    EVALUATION_LANDMARKS, evaluate_build, evaluate_pooled_builds, measure_agreement,
+};
+use crate::build_variants::select_item_variants;
 use crate::counter_items::{
     CONDITION_SCALE, CounterGroups, GroupInteraction, enemy_item_conditions,
     fit_group_interactions, mean_enemy_spirit_share, measure_counter_groups, spirit_conditions,
 };
 use crate::item_effects::{
     COVARIATES, EffectPenalties, EffectTable, ItemCatalog, LandmarkState, build_feature_row,
-    estimate_item_effects, fit_landmark_models, standardized_rank,
+    estimate_item_effects, fit_landmark_models, relative_net_worth, standardized_rank,
 };
 use crate::refresh_configuration::{ExtractionResources, RunPaths};
-use crate::ridge_logistic::{FeatureRow, logistic};
+use crate::ridge_logistic::{FeatureRow, fit_ridge_logistic, logistic};
 use crate::run_inputs::{AssemblyInputs, load_run_inputs};
 
 /// The held-out test result of one item score rule over all heroes.
@@ -550,4 +553,108 @@ pub fn estimate_enemy_item_counters(
         });
     }
     Ok(results)
+}
+
+/// The held-out association of main build and variant agreement with the match result.
+#[derive(Debug)]
+pub struct VariantResult {
+    pub main: GroupInteraction,
+    pub variant: GroupInteraction,
+    pub heroes: usize,
+    pub observations: usize,
+}
+
+/// Tests whether variant agreement predicts the match result beyond main build agreement.
+///
+/// The builds come from development matches, as in production. For each test state of a hero
+/// with variants, the model uses the main agreement and the largest variant agreement.
+/// The covariates are relative net worth, team lead, rank, and landmark.
+///
+/// # Errors
+/// Returns an error when the run, the analysis database, or a model fails.
+pub fn compare_variant_agreement(
+    paths: &RunPaths,
+    resources: ExtractionResources,
+) -> Result<VariantResult> {
+    let inputs = load_run_inputs(paths, resources)?;
+    let catalog = &inputs.catalog;
+    let (test, development): (Vec<_>, Vec<_>) =
+        inputs.states.iter().partition(|state| state.is_test());
+    let effects = estimate_item_effects(&development, catalog, &PHASES)?;
+    let heroes = test
+        .iter()
+        .map(|state| state.hero_id)
+        .collect::<BTreeSet<_>>();
+    let mut rows = Vec::new();
+    let mut matches = Vec::new();
+    let mut variant_heroes = 0;
+    for hero_id in heroes {
+        let Some(main) = assemble_build(hero_id, &effects, catalog, &inputs.medians) else {
+            continue;
+        };
+        let hero_development = development
+            .iter()
+            .copied()
+            .filter(|state| state.hero_id == hero_id)
+            .collect::<Vec<_>>();
+        let variants = select_item_variants(
+            hero_id,
+            &hero_development,
+            &effects,
+            catalog,
+            &inputs.medians,
+            &main,
+        )?;
+        if variants.is_empty() {
+            continue;
+        }
+        variant_heroes += 1;
+        for state in test.iter().filter(|state| state.hero_id == hero_id) {
+            let Some(main_agreement) = measure_agreement(state, &main.phase_sets, catalog) else {
+                continue;
+            };
+            let Some(variant_agreement) = variants
+                .iter()
+                .filter_map(|variant| measure_agreement(state, &variant.build.phase_sets, catalog))
+                .max_by(f64::total_cmp)
+            else {
+                continue;
+            };
+            let mut features = vec![
+                (0, 1.0),
+                (1, relative_net_worth(state.net_worth, state.landmark_s)),
+                (2, state.team_lead),
+                (3, standardized_rank(state.average_badge)),
+                (4, main_agreement),
+                (5, variant_agreement),
+            ];
+            if let Some(position) = EVALUATION_LANDMARKS
+                .iter()
+                .position(|landmark| *landmark == state.landmark_s)
+                .filter(|position| *position > 0)
+            {
+                features.push((5 + position, 1.0));
+            }
+            rows.push(FeatureRow {
+                features,
+                label: if state.won { 1.0 } else { 0.0 },
+            });
+            matches.push(state.match_id);
+        }
+    }
+    let width = 5 + EVALUATION_LANDMARKS.len();
+    let references = rows.iter().collect::<Vec<_>>();
+    let fit = fit_ridge_logistic(&references, &vec![0.0; width], &vec![1.0; width])?;
+    Ok(VariantResult {
+        main: GroupInteraction {
+            coefficient: fit.coefficients[4],
+            standard_error: fit.clustered_standard_error(4, &references, &matches)?,
+        },
+        variant: GroupInteraction {
+            coefficient: fit.coefficients[5],
+            standard_error: fit.clustered_standard_error(5, &references, &matches)?,
+        },
+        heroes: variant_heroes,
+        observations: rows.len(),
+    })
 }
