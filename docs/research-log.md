@@ -40,6 +40,7 @@ The test fold contains the last 20% of matches by start time.
 | E24 | How much does a build change between syncs of one patch? | About 30% of CORE | Owner decision |
 | E25 | Do the later decisions hold on more new matches? | Yes, all four predictions | Keep all |
 | E26 | Does the majority imbue target win at least as often? | Yes, slightly more on four runs | Keep the rule |
+| E27 | Can the model drop hero-specific item effects? | No. They improve predictions on six runs | Keep the hero level |
 
 ## E0: effect scale of the item score
 
@@ -819,3 +820,26 @@ The query pooled the win rate differences of the cells by inverse variance.
 The comparison adjusts only for net worth at the purchase, so it remains observational.
 
 **Decision.** Keep the majority imbue rule.
+
+## E27: hero-specific item effects
+
+**Hypothesis.** Hero-specific item effects add no predictive value beyond the global model. If true, the model can drop the hero level.
+
+**Method.** `compare_effect_models` compared the design `200:300` with `200:1e9` and `200:3000` on six runs.
+A hero penalty of 10⁹ gives each hero the global item effects. Each hero model keeps its own intercept and covariates in all designs.
+
+**Result.** Each value is the log loss difference to the design `200:300`.
+
+| Run | Global item effects only | Hero penalty 3000 |
+| --- | --- | --- |
+| `20261012T233433Z` | +0.000303 ± 0.000088 | +0.000191 ± 0.000069 |
+| `20261003T172322Z` | +0.000135 ± 0.000086 | +0.000092 ± 0.000073 |
+| `20260913T235155Z` | +0.000225 ± 0.000053 | +0.000077 ± 0.000039 |
+| `holdout-20260916` | +0.000436 ± 0.000050 | +0.000202 ± 0.000035 |
+| `confirm-20261003` | +0.000654 ± 0.000079 | +0.000396 ± 0.000059 |
+| `confirm-20260913` | +0.000117 ± 0.000085 | +0.000059 ± 0.000070 |
+
+**Analysis.** Global item effects alone predicted worse on all six runs, by up to 8.3 standard errors. The hero penalty 300 was better than 3000 on all runs.
+Each hero-specific deviation is noisy (E3), but together they improve the predictions.
+
+**Decision.** Keep the hero level with the penalty 300.
