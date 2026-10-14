@@ -253,3 +253,30 @@ The `IntrinsicallyProvidedInAbility` flag marks both own armor, such as Spirit R
 Plated Armor has no resist property.
 
 **Decision.** The spirit group was selected after the results were known. A run that did not take part in the selection must confirm it.
+
+**Clustered errors.** The two teams of a match have opposite results, and the players of a team share one result.
+`RidgeFit::clustered_standard_error` treats each match as one independent cluster.
+For the final groups, the clustered errors were close to the earlier errors for weapon defense. They were up to two times larger for spirit defense at 9 minutes, because few players own these items in the lane phase.
+
+The final groups were the six weapon defense items and two spirit defense items: Spirit Shielding and Spirit Resilience.
+
+| Run | Phase | Spirit defense | Weapon defense |
+| --- | --- | --- | --- |
+| `20261012T233433Z` | 9, 20, 30 minutes | −0.014, +0.011, +0.021 | −0.051, −0.015, −0.036 |
+| `20261003T172322Z` | 9, 20, 30 minutes | −0.016, +0.002, +0.022 | −0.039, −0.024, −0.027 |
+| `20260913T235155Z` | 9, 20, 30 minutes | +0.035, +0.025, +0.033 | −0.031, −0.023, −0.042 |
+
+**Holdout.** Before the test, these predictions were stated: weapon defense is negative at each phase, and spirit defense is positive at 20 and 30 minutes.
+The holdout run `holdout-20260916` used the patch of 2026-09-16 to 2026-09-30 with 1,064,604 player matches. No selection run used these matches.
+
+| Phase | Spirit defense | z | Weapon defense | z |
+| --- | --- | --- | --- | --- |
+| 9 minutes | +0.040 ± 0.019 | +2.2 | +0.012 ± 0.011 | +1.1 |
+| 20 minutes | +0.031 ± 0.007 | +4.2 | −0.036 ± 0.008 | −4.8 |
+| 30 minutes | +0.035 ± 0.008 | +4.7 | −0.052 ± 0.009 | −5.9 |
+
+Four of five predictions passed by more than 4 standard errors. The weapon prediction at 9 minutes failed, without statistical significance.
+
+**Decision.** Add counter panels for 20 and 30 minutes. Do not claim a counter effect in the lane phase.
+Each run repeats the test with all of its matches. A panel appears only when its group has a positive coefficient, in the direction of its damage type, at both phases.
+This rule removes a panel when a patch changes the items. A short run can give weak evidence, so the panel description states the z value of the run.

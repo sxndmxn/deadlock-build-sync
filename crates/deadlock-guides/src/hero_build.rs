@@ -5,8 +5,10 @@ use deadlock_data::{Error, Result, atomic_write_json, count_as_f64, read_json};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-pub const HERO_BUILD_SCHEMA_VERSION: u32 = 7;
-pub const HERO_BUILD_METHOD: &str = "item-effect-variants-v2";
+pub const HERO_BUILD_SCHEMA_VERSION: u32 = 8;
+pub const HERO_BUILD_METHOD: &str = "item-effect-counters-v1";
+/// The largest number of items in one counter panel.
+pub const MAXIMUM_COUNTER_ITEMS: usize = 4;
 
 /// All hero builds from one source snapshot.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -17,7 +19,95 @@ pub struct HeroBuildCatalog {
     pub client_version: u64,
     pub patch: Map<String, Value>,
     pub cohort: BuildCohort,
+    /// Run evidence for each counter item group that passed its test.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub counter_evidence: Vec<CounterEvidence>,
     pub heroes: Vec<HeroBuild>,
+}
+
+/// The enemy damage type that a counter panel answers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DamageType {
+    Weapon,
+    Spirit,
+}
+
+impl DamageType {
+    #[must_use]
+    pub const fn panel_name(self) -> &'static str {
+        match self {
+            Self::Weapon => "VS WEAPON",
+            Self::Spirit => "VS SPIRIT",
+        }
+    }
+
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Weapon => "weapon",
+            Self::Spirit => "spirit",
+        }
+    }
+}
+
+/// Run evidence that the defensive items of one group win more against one enemy damage type.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CounterEvidence {
+    pub damage_type: DamageType,
+    pub phases: Vec<CounterPhase>,
+}
+
+/// The counter test of one item group at one phase landmark.
+///
+/// The coefficient is the change in log-odds for each owned group item when the enemy
+/// share of this damage type is one standard deviation above its mean.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CounterPhase {
+    pub phase_s: u32,
+    pub coefficient: f64,
+    pub standard_error: f64,
+    pub observations: u64,
+}
+
+/// Defensive items that this hero buys against one enemy damage type.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CounterPanel {
+    pub damage_type: DamageType,
+    pub items: Vec<BuildItem>,
+}
+
+impl CounterEvidence {
+    /// # Errors
+    /// Returns an error unless each phase has a positive coefficient and a valid standard error.
+    pub fn validate(&self) -> Result<()> {
+        if self.phases.is_empty()
+            || self.phases.iter().any(|phase| {
+                !phase.coefficient.is_finite()
+                    || phase.coefficient <= 0.0
+                    || !phase.standard_error.is_finite()
+                    || phase.standard_error <= 0.0
+                    || phase.observations == 0
+            })
+        {
+            return Err(Error::new(
+                "Counter evidence requires a positive coefficient at each tested phase",
+            ));
+        }
+        Ok(())
+    }
+
+    /// Returns the smallest coefficient divided by its standard error.
+    #[must_use]
+    pub fn minimum_z(&self) -> f64 {
+        self.phases
+            .iter()
+            .map(|phase| phase.coefficient / phase.standard_error)
+            .fold(f64::INFINITY, f64::min)
+    }
 }
 
 /// The matches that the builds use.
@@ -52,6 +142,8 @@ pub struct HeroBuild {
     pub ability_matches: u64,
     pub evaluation: BuildEvaluation,
     pub observations: u64,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub counters: Vec<CounterPanel>,
 }
 
 /// One item with the values that place it in the build.
@@ -253,6 +345,22 @@ impl HeroBuild {
             .iter()
             .find(|item| item.item_id == self.key_item_id)
     }
+
+    /// Returns the CORE, situational, and counter items of the build.
+    pub fn items(&self) -> impl Iterator<Item = &BuildItem> {
+        self.core
+            .iter()
+            .chain(&self.situational)
+            .chain(self.counters.iter().flat_map(|panel| &panel.items))
+    }
+
+    /// Returns the CORE, situational, and counter items of the build for changes.
+    pub fn items_mut(&mut self) -> impl Iterator<Item = &mut BuildItem> {
+        self.core
+            .iter_mut()
+            .chain(&mut self.situational)
+            .chain(self.counters.iter_mut().flat_map(|panel| &mut panel.items))
+    }
 }
 
 impl HeroBuildCatalog {
@@ -280,9 +388,16 @@ impl HeroBuildCatalog {
             (5, "item-effect-ridge-v1") => {
                 self.heroes.iter().all(|build| build.variant_id.is_none())
             }
-            (6, "item-effect-variants-v1") => true,
+            (6, "item-effect-variants-v1") | (7, "item-effect-variants-v2") => true,
             _ => false,
         };
+        let mut damage_types = BTreeSet::new();
+        for evidence in &self.counter_evidence {
+            evidence.validate()?;
+            if !damage_types.insert(evidence.damage_type) {
+                return Err(Error::new("Counter evidence repeats a damage type"));
+            }
+        }
         if !current && !legacy {
             return Err(Error::new(
                 "Hero builds use another schema or method. Run deadlock-build-sync sync",
@@ -306,6 +421,7 @@ impl HeroBuildCatalog {
                 ));
             }
             validate_hero(hero)?;
+            validate_counters(hero, &damage_types)?;
         }
         validate_purchase_statistics(self, current)
     }
@@ -315,7 +431,7 @@ fn validate_purchase_statistics(catalog: &HeroBuildCatalog, required: bool) -> R
     let mut hero_counts = BTreeMap::new();
     let mut item_counts = BTreeMap::new();
     for hero in &catalog.heroes {
-        for item in hero.core.iter().chain(&hero.situational) {
+        for item in hero.items() {
             let Some(statistics) = &item.statistics else {
                 if required {
                     return Err(Error::new(
@@ -393,6 +509,32 @@ fn validate_hero(hero: &HeroBuild) -> Result<()> {
             "{} has an inconsistent evaluation",
             context()
         )));
+    }
+    Ok(())
+}
+
+/// Checks that each counter panel has tested evidence and distinct valid items outside CORE.
+fn validate_counters(hero: &HeroBuild, damage_types: &BTreeSet<DamageType>) -> Result<()> {
+    let mut panels = BTreeSet::new();
+    for panel in &hero.counters {
+        let mut items = BTreeSet::new();
+        if !damage_types.contains(&panel.damage_type)
+            || !panels.insert(panel.damage_type)
+            || !(1..=MAXIMUM_COUNTER_ITEMS).contains(&panel.items.len())
+            || panel.items.iter().any(|item| {
+                !items.insert(item.item_id)
+                    || hero.core.iter().any(|core| core.item_id == item.item_id)
+                    || !(1..=4).contains(&item.tier)
+                    || !(0.0..=1.0).contains(&item.adoption)
+                    || !(0.0..=1.0).contains(&item.win_rate)
+                    || !item.effect.is_finite()
+            })
+        {
+            return Err(Error::new(format!(
+                "Build for {} has an invalid counter panel",
+                hero.hero_name
+            )));
+        }
     }
     Ok(())
 }

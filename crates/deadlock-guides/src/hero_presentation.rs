@@ -1,7 +1,7 @@
 use deadlock_data::{Error, Rank, RankRange, Result};
 
 use crate::build_title::format_build_name;
-use crate::hero_build::{BuildItem, HeroBuild, HeroBuildCatalog};
+use crate::hero_build::{BuildItem, CounterPanel, HeroBuild, HeroBuildCatalog};
 use crate::presentation::{
     BuildPresentation, MANAGED_MARKER, PresentationAbilities, PresentationCategory,
     PresentationContent, PresentationItem,
@@ -35,6 +35,15 @@ pub fn build_hero_presentation(
         false,
         describe_item,
     )?];
+    for panel in &build.counters {
+        categories.push(build_category(
+            panel.damage_type.panel_name(),
+            &panel.items,
+            &describe_counter_panel(panel, catalog)?,
+            true,
+            describe_item,
+        )?);
+    }
     for tier in 1..=4 {
         let items = build
             .situational
@@ -126,6 +135,20 @@ fn describe_item(item: &BuildItem) -> Result<String> {
     ))
 }
 
+/// States when to use a counter panel and the weakest phase result of its run test.
+fn describe_counter_panel(panel: &CounterPanel, catalog: &HeroBuildCatalog) -> Result<String> {
+    let evidence = catalog
+        .counter_evidence
+        .iter()
+        .find(|evidence| evidence.damage_type == panel.damage_type)
+        .ok_or_else(|| Error::new("Counter panel has no run evidence"))?;
+    let label = panel.damage_type.label();
+    Ok(format!(
+        "From mid game, when most enemy damage is {label} damage. These items won more against {label}-heavy teams on 4 tested patches. This patch: z ≥ {:.1}.",
+        evidence.minimum_z()
+    ))
+}
+
 /// Rounds the soul window to whole thousands. The window always spans at least 1k.
 fn format_soul_window([lower, upper]: [u32; 2]) -> String {
     let lower = (lower + 500) / 1000;
@@ -163,8 +186,13 @@ fn describe_build(
             build.observations, key_item.name
         ));
     }
+    let guide = if build.counters.is_empty() {
+        "Buy MAIN CORE from left to right. TIER items are situational choices."
+    } else {
+        "Buy MAIN CORE from left to right. VS panels answer the main enemy damage type. TIER items are situational choices."
+    };
     lines.extend([
-        "Buy MAIN CORE from left to right. TIER items are situational choices.".into(),
+        guide.into(),
         "Item rates count each buyer once per match across this hero's ranked matches. They do not measure the complete build.".into(),
         format!(
             "Evidence: {} (held-out test, n={}). Ranked • {} • {} to {}.",

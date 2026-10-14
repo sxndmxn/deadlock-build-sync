@@ -166,7 +166,9 @@ fn advance_phase(
     owned
 }
 
-fn describe_item(
+/// Describes one item with the hero's adoption and effect at one phase and its purchase medians.
+#[must_use]
+pub fn describe_item(
     hero_id: u64,
     item: u64,
     phase: u32,

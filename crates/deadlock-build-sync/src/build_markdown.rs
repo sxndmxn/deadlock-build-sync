@@ -54,6 +54,32 @@ pub fn render_build_markdown(build: &HeroBuild, catalog: &HeroBuildCatalog) -> R
     text.push_str("Each player match counts once per item. These rates do not measure the complete build or prove an item causes wins.\n\n");
     text.push_str("## MAIN CORE (buy from left to right)\n\n");
     write_items(&mut text, &build.core)?;
+    for panel in &build.counters {
+        let label = panel.damage_type.label();
+        let _ = writeln!(
+            text,
+            "\n## {} (from mid game, when most enemy damage is {label} damage)\n",
+            panel.damage_type.panel_name()
+        );
+        if let Some(evidence) = catalog
+            .counter_evidence
+            .iter()
+            .find(|evidence| evidence.damage_type == panel.damage_type)
+        {
+            for phase in &evidence.phases {
+                let _ = writeln!(
+                    text,
+                    "Counter test at {} min: {:+.3} ± {:.3} log-odds per item and standard deviation of enemy {label} share (n={}).",
+                    phase.phase_s / 60,
+                    phase.coefficient,
+                    phase.standard_error,
+                    phase.observations
+                );
+            }
+            text.push('\n');
+        }
+        write_items(&mut text, &panel.items)?;
+    }
     text.push_str("\n## Situational items\n\n");
     write_items(&mut text, &build.situational)?;
     Ok(text)

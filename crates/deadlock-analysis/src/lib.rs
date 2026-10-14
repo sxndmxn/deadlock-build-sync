@@ -5,6 +5,7 @@ mod build_assembly;
 mod build_benchmark;
 mod build_evaluation;
 mod build_variants;
+mod counter_items;
 mod database;
 mod extraction;
 mod hero_build_production;

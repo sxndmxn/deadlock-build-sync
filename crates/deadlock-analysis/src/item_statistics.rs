@@ -44,14 +44,15 @@ pub fn attach_item_statistics(
     build: &mut HeroBuild,
     statistics: &HeroItemStatistics,
 ) -> Result<()> {
-    for item in build.core.iter_mut().chain(&mut build.situational) {
+    let hero_id = build.hero_id;
+    for item in build.items_mut() {
         item.statistics = Some(
             statistics
-                .get(&(build.hero_id, item.item_id))
+                .get(&(hero_id, item.item_id))
                 .ok_or_else(|| {
                     Error::new(format!(
-                        "Purchase statistics are missing for hero {} and item {}",
-                        build.hero_id, item.item_id
+                        "Purchase statistics are missing for hero {hero_id} and item {}",
+                        item.item_id
                     ))
                 })?
                 .clone(),

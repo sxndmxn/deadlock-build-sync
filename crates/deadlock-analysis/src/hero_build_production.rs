@@ -3,8 +3,9 @@ use std::path::Path;
 
 use deadlock_data::{Error, RankRange, Result, integer, read_json, text};
 use deadlock_guides::{
-    BuildCohort, BuildEvaluation, HERO_BUILD_METHOD, HERO_BUILD_SCHEMA_VERSION, HeroBuild,
-    HeroBuildCatalog, TagItem, assign_build_focus, select_ability_path, select_build_tags,
+    BuildCohort, BuildEvaluation, CounterEvidence, HERO_BUILD_METHOD, HERO_BUILD_SCHEMA_VERSION,
+    HeroBuild, HeroBuildCatalog, TagItem, assign_build_focus, select_ability_path,
+    select_build_tags,
 };
 use deadlock_input::{ApiOptions, BuildTagCatalog, DeadlockApi, parse_patch_feed};
 use serde_json::Value;
@@ -14,6 +15,7 @@ use crate::build_evaluation::evaluate_build;
 use crate::build_variants::{
     MINIMUM_SEPARATION, assemble_item_variant, build_separation, select_item_variants,
 };
+use crate::counter_items::{CounterGroups, estimate_counter_evidence, select_counter_panels};
 use crate::item_effects::{EffectTable, ItemCatalog, LandmarkState, estimate_item_effects};
 use crate::item_imbues::{attach_item_imbues, load_item_imbues};
 use crate::item_statistics::{attach_item_statistics, load_item_statistics};
@@ -46,7 +48,8 @@ pub fn produce_hero_builds(
     let imbues = load_item_imbues(&database, &parameters)?;
     let statistics = load_item_statistics(&database, &parameters)?;
     drop(database);
-    let builds = assemble_hero_builds(&inputs.states, &inputs.catalog, &inputs.medians, &heroes)?;
+    let (builds, counter_evidence) =
+        assemble_hero_builds(&inputs.states, &inputs.catalog, &inputs.medians, &heroes)?;
     let mut api = build_api(api_base_url, ranks, client_version, as_of)?;
     let assets = read_json(&paths.raw.join("items-all.json"))?;
     let assets = assets
@@ -76,18 +79,20 @@ pub fn produce_hero_builds(
             as_of: text(cohort, "as_of")?.into(),
             player_matches: integer(&manifest["extraction"], "player_matches")?,
         },
+        counter_evidence,
         heroes: builds,
     };
     catalog.validate()?;
     Ok(catalog)
 }
 
+/// Assembles the builds of each hero and adds counter panels for groups that pass the run test.
 fn assemble_hero_builds(
     states: &[LandmarkState],
     catalog: &ItemCatalog,
     medians: &PurchaseMedians,
     heroes: &BTreeMap<u64, String>,
-) -> Result<Vec<HeroBuild>> {
+) -> Result<(Vec<HeroBuild>, Vec<CounterEvidence>)> {
     let development = states
         .iter()
         .filter(|state| !state.is_test())
@@ -109,7 +114,14 @@ fn assemble_hero_builds(
             medians,
         )?);
     }
-    Ok(builds)
+    eprintln!("Testing counter item groups");
+    let groups = CounterGroups::from_catalog(catalog);
+    let evidence = estimate_counter_evidence(&all, catalog, &groups)?;
+    for build in &mut builds {
+        build.counters =
+            select_counter_panels(build, &effects, catalog, medians, &groups, &evidence);
+    }
+    Ok((builds, evidence))
 }
 
 fn assemble_hero(
@@ -216,6 +228,7 @@ fn create_hero_build(
         ability_matches: 0,
         evaluation,
         observations: u64::try_from(observations)?,
+        counters: Vec::new(),
     })
 }
 

@@ -54,9 +54,10 @@ deadlock-build-sync build
 Each build has these parts:
 
 1. **MAIN CORE**: the items to buy from left to right.
-2. **TIER 1 to TIER 4**: situational items for the matching shop tier. Buy one instead of a CORE item when the match makes it a better choice.
-3. **Ability order**: the most common complete ability order at this rank.
-4. **Description**: the inferred ability focus, when supported, the key item, its power spike, and the build confidence.
+2. **VS WEAPON and VS SPIRIT**: defensive items for the main damage type of the enemy team, from the mid game. Each panel appears only when the run confirms that its items win more against that damage type.
+3. **TIER 1 to TIER 4**: situational items for the matching shop tier. Buy one instead of a CORE item when the match makes it a better choice.
+4. **Ability order**: the most common complete ability order at this rank.
+5. **Description**: the inferred ability focus, when supported, the key item, its power spike, and the build confidence.
 
 Build titles use `Steam name | ability + key item` when CORE items support a clear ability focus.
 Otherwise, titles name the first fully upgraded ability from the selected ability order.

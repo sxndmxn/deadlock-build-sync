@@ -5,12 +5,13 @@ use deadlock_guides::{BuildEvaluation, Confidence};
 
 use crate::build_assembly::{ItemScoring, PHASES, assemble_build_with_scoring};
 use crate::build_evaluation::{evaluate_build, evaluate_pooled_builds};
+use crate::counter_items::{CONDITION_SCALE, fit_group_interactions, mean_enemy_spirit_share};
 use crate::item_effects::{
-    COVARIATES, DEFAULT_PENALTIES, EffectPenalties, EffectTable, ItemCatalog, LandmarkState,
-    build_feature_row, estimate_item_effects, fit_landmark_models,
+    COVARIATES, EffectPenalties, EffectTable, ItemCatalog, LandmarkState, build_feature_row,
+    estimate_item_effects, fit_landmark_models,
 };
 use crate::refresh_configuration::{ExtractionResources, RunPaths};
-use crate::ridge_logistic::{FeatureRow, fit_ridge_logistic, logistic};
+use crate::ridge_logistic::{FeatureRow, logistic};
 use crate::run_inputs::{AssemblyInputs, load_run_inputs};
 
 /// The held-out test result of one item score rule over all heroes.
@@ -171,10 +172,6 @@ pub enum Interaction {
     /// The enemy spirit share minus its mean in the development matches.
     EnemySpirit,
 }
-
-/// The standard deviation of the team lead and the enemy spirit share is near 0.06.
-/// This factor gives the main term of a condition a standard deviation near 1.
-const CONDITION_SCALE: f64 = 16.0;
 
 /// One design of the item effect model.
 ///
@@ -390,69 +387,27 @@ pub fn estimate_counter_interactions(
     };
     let groups = [find(spirit_defense)?, find(weapon_defense)?];
     let states = inputs.states.iter().collect::<Vec<_>>();
-    let spirit_mean = states
-        .iter()
-        .map(|state| state.enemy_spirit_share)
-        .sum::<f64>()
-        / count_as_f64(u64::try_from(states.len().max(1))?)?;
-    let items = catalog.items.len();
-    let width = COVARIATES + items + 3;
-    let penalty = (0..width)
-        .map(|index| {
-            if (COVARIATES..COVARIATES + items).contains(&index) {
-                DEFAULT_PENALTIES.global_item
-            } else {
-                1.0
-            }
-        })
-        .collect::<Vec<_>>();
+    let spirit_mean = mean_enemy_spirit_share(&states)?;
     let mut results = Vec::new();
     for phase_s in PHASES {
-        let rows = states
+        let phase_states = states
             .iter()
+            .copied()
             .filter(|state| state.landmark_s == phase_s)
-            .map(|state| {
-                let condition = (state.enemy_spirit_share - spirit_mean) * CONDITION_SCALE;
-                let mut row = build_feature_row(state, catalog);
-                row.features.push((COVARIATES + items, condition));
-                for (offset, group) in groups.iter().enumerate() {
-                    let owned = state
-                        .item_ids
-                        .iter()
-                        .filter(|item| group.contains(item))
-                        .count();
-                    if owned > 0 {
-                        row.features.push((
-                            COVARIATES + items + 1 + offset,
-                            condition * count_as_f64(u64::try_from(owned)?)?,
-                        ));
-                    }
-                }
-                Ok(row)
-            })
-            .collect::<Result<Vec<_>>>()?;
-        let matches = states
-            .iter()
-            .filter(|state| state.landmark_s == phase_s)
-            .map(|state| state.match_id)
             .collect::<Vec<_>>();
-        let references = rows.iter().collect::<Vec<_>>();
-        let fit = fit_ridge_logistic(&references, &vec![0.0; width], &penalty)?;
+        let interactions = fit_group_interactions(
+            &phase_states,
+            catalog,
+            &[&groups[0], &groups[1]],
+            spirit_mean,
+        )?;
         results.push(CounterResult {
             phase_s,
-            spirit_defense: fit.coefficients[width - 2],
-            spirit_defense_standard_error: fit.clustered_standard_error(
-                width - 2,
-                &references,
-                &matches,
-            )?,
-            weapon_defense: fit.coefficients[width - 1],
-            weapon_defense_standard_error: fit.clustered_standard_error(
-                width - 1,
-                &references,
-                &matches,
-            )?,
-            observations: rows.len(),
+            spirit_defense: interactions[0].coefficient,
+            spirit_defense_standard_error: interactions[0].standard_error,
+            weapon_defense: interactions[1].coefficient,
+            weapon_defense_standard_error: interactions[1].standard_error,
+            observations: phase_states.len(),
         });
     }
     Ok(results)

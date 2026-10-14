@@ -43,13 +43,15 @@ pub fn load_item_imbues(
 }
 
 pub fn attach_item_imbues(build: &mut HeroBuild, targets: &ItemImbues, assets: &[Value]) {
-    for item in build.core.iter_mut().chain(&mut build.situational) {
+    let hero_id = build.hero_id;
+    let ability_ids = build.ability_ids.clone();
+    for item in build.items_mut() {
         item.imbue_target = targets
-            .get(&(build.hero_id, item.item_id))
+            .get(&(hero_id, item.item_id))
             .filter(|target| {
                 target.validate().is_ok()
-                    && build.ability_ids.contains(&target.ability_id)
-                    && is_current_target(build.hero_id, item.item_id, target.ability_id, assets)
+                    && ability_ids.contains(&target.ability_id)
+                    && is_current_target(hero_id, item.item_id, target.ability_id, assets)
             })
             .cloned();
     }

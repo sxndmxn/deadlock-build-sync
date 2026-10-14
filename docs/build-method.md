@@ -14,7 +14,8 @@ Exact sets divide the data into small groups, and one failed test removed the co
 
 ## Build identity
 
-Catalog schema 7 permits multiple builds for the same hero and requires item purchase counts.
+Catalog schema 8 permits multiple builds for the same hero and requires item purchase counts.
+It adds counter evidence to the catalog and counter panels to each build.
 Each additional build has a stable `variant_id` with lowercase letters, digits, or hyphens.
 The identifier has 1 to 80 characters. It does not depend on the title or catalog order.
 Steam uses the hero ID and variant identifier to update each build separately.
@@ -24,7 +25,8 @@ The hero's Markdown file contains all its catalog builds.
 A missing `variant_id` means `main`, which preserves existing Steam build identities.
 Schema 5 remains readable when builds omit `variant_id`. Schema 6 remains readable with its variant identifiers.
 Legacy catalogs without purchase counts show unavailable item rates.
-Schema 7 uses method `item-effect-variants-v2`.
+Schema 7 with method `item-effect-variants-v2` remains readable without counter panels.
+Schema 8 uses method `item-effect-counters-v1`.
 The main build keeps its existing identity. Additional builds use `item-ITEM_ID` as their variant identifier.
 
 ## Data
@@ -122,6 +124,36 @@ Production rebuilds the selected item strategies with all source folds and check
 Each additional build gets its own held-out evaluation from its development purchase sets.
 Ability order selection uses matches that include the variant's key item.
 Insufficient ability evidence leaves the order unset.
+
+## Counter panels
+
+Each build can show two panels between MAIN CORE and TIER 1: **VS WEAPON** and **VS SPIRIT**.
+Each panel lists defensive items for the main damage type of the enemy team, from the mid game.
+
+The spirit share of a hero is the share of its first item purchases, by cost, in the spirit slot.
+The enemy spirit share is the mean spirit share of the enemy heroes. A low enemy spirit share means more weapon damage.
+
+Two fixed item groups define the panels:
+
+1. Weapon defense: Battle Vest, Weapon Shielding, Bullet Resilience, Metal Skin, Plated Armor, and Return Fire.
+2. Spirit defense: Spirit Shielding and Spirit Resilience.
+
+The analysis finds the items by their class names. Items that a patch removes leave their group.
+Item asset properties cannot select these groups. One flag marks both own armor and debuffs on enemies.
+
+Each run tests both groups at 20 and 30 minutes with all of its matches.
+A global logistic model adds a main term for the standardized enemy spirit share.
+For each group, it adds the number of owned group items multiplied by that condition.
+The standard errors treat each match as one independent cluster.
+A panel appears only when its group wins more against its damage type at both phases.
+
+A panel holds at most four group items outside MAIN CORE. Each item needs a hero adoption of at least 1% at 20 or 30 minutes.
+The panel orders the items by adoption. The panel description states the smallest z value of the run test.
+
+The groups come from tests on three patches and a confirmation on a fourth patch. See [Research log](research-log.md), entry E6.
+At the 10th and 90th percentiles of enemy teams, the difference is about 0.05 log-odds for each item.
+The test did not confirm a counter effect at 9 minutes.
+The data is observational. Players can buy these items because of the enemy team, so the test cannot prove that an item causes a win.
 
 ## Displayed item rates
 
