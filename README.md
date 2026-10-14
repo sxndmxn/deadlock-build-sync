@@ -35,6 +35,7 @@ deadlock-build-sync sync
 ```
 
 `sync` downloads the ranked matches of the current patch, makes the builds, and writes them to the artifact directory.
+After a patch, wait one to two days before a sync. Builds from that amount of matches tested as well as builds from more days.
 Then it makes a Steam cache backup and installs the builds atomically.
 It keeps favorites, selected builds, saved builds, and unrelated private builds.
 It replaces only builds with the managed marker.
