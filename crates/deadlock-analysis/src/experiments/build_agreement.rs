@@ -16,6 +16,8 @@ use crate::refresh_configuration::{ExtractionResources, RunPaths};
 use crate::ridge_logistic::{FeatureRow, fit_ridge_logistic};
 use crate::run_inputs::{AssemblyInputs, load_run_inputs};
 
+use super::mix;
+
 /// The held-out test result of one item score rule over all heroes.
 #[derive(Debug)]
 pub struct ScoringResult {
@@ -194,6 +196,63 @@ pub fn compare_scoring_pair(
     alternative: ItemScoring,
 ) -> Result<AgreementPair> {
     let inputs = load_run_inputs(paths, resources)?;
+    let (samples, heroes) = build_scoring_samples(&inputs, base, alternative)?;
+    fit_agreement_pair(&samples, heroes)
+}
+
+/// Returns the z value of the alternative agreement after a random move within hero and landmark.
+///
+/// For each seed, the alternative agreements move between test states of the same hero and
+/// landmark in a fixed pseudo-random order. The move removes their relation to the result.
+/// With correct standard errors, the z values follow a standard normal distribution.
+///
+/// # Errors
+/// Returns an error when the run, the analysis database, or a model fails.
+pub fn measure_pair_placebo(
+    paths: &RunPaths,
+    resources: ExtractionResources,
+    base: ItemScoring,
+    alternative: ItemScoring,
+    seeds: &[u64],
+) -> Result<Vec<f64>> {
+    let inputs = load_run_inputs(paths, resources)?;
+    let (samples, heroes) = build_scoring_samples(&inputs, base, alternative)?;
+    let mut groups = BTreeMap::<(u64, u32), Vec<usize>>::new();
+    for (index, (state, _, _)) in samples.iter().enumerate() {
+        groups
+            .entry((state.hero_id, state.landmark_s))
+            .or_default()
+            .push(index);
+    }
+    seeds
+        .iter()
+        .map(|seed| {
+            let mut moved = samples.clone();
+            for indices in groups.values() {
+                let mut order = indices.clone();
+                order.sort_by_key(|index| {
+                    let state = samples[*index].0;
+                    mix(seed ^ state.match_id ^ (u64::from(state.player_slot) << 48))
+                });
+                for (target, source) in indices.iter().zip(&order) {
+                    moved[*target].2 = samples[*source].2;
+                }
+            }
+            let pair = fit_agreement_pair(&moved, heroes)?;
+            Ok(pair.alternative.coefficient / pair.alternative.standard_error)
+        })
+        .collect()
+}
+
+/// One test state with a base value and an alternative value.
+type AgreementSample<'a> = (&'a LandmarkState, f64, f64);
+
+/// Returns the test states with the agreements of two score rules, and the hero count.
+fn build_scoring_samples(
+    inputs: &AssemblyInputs,
+    base: ItemScoring,
+    alternative: ItemScoring,
+) -> Result<(Vec<AgreementSample<'_>>, usize)> {
     let catalog = &inputs.catalog;
     let (test, development): (Vec<_>, Vec<_>) =
         inputs.states.iter().partition(|state| state.is_test());
@@ -226,14 +285,21 @@ pub fn compare_scoring_pair(
             }
         }
     }
-    fit_agreement_pair(&samples, heroes)
+    Ok((samples, heroes))
 }
 
 /// Fits one model with two agreements, the covariates, and landmark terms.
-fn fit_agreement_pair(
-    samples: &[(&LandmarkState, f64, f64)],
-    heroes: usize,
-) -> Result<AgreementPair> {
+fn fit_agreement_pair(samples: &[AgreementSample<'_>], heroes: usize) -> Result<AgreementPair> {
+    // Hero and landmark indicators keep differences between heroes out of the agreement coefficients.
+    let hero_columns = samples
+        .iter()
+        .map(|(state, _, _)| (state.hero_id, state.landmark_s))
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .skip(1)
+        .enumerate()
+        .map(|(offset, group)| (group, 5 + EVALUATION_LANDMARKS.len() + offset))
+        .collect::<BTreeMap<_, _>>();
     let rows = samples
         .iter()
         .map(|(state, base, alternative)| {
@@ -252,6 +318,9 @@ fn fit_agreement_pair(
             {
                 features.push((5 + position, 1.0));
             }
+            if let Some(column) = hero_columns.get(&(state.hero_id, state.landmark_s)) {
+                features.push((*column, 1.0));
+            }
             FeatureRow {
                 features,
                 label: if state.won { 1.0 } else { 0.0 },
@@ -262,7 +331,7 @@ fn fit_agreement_pair(
         .iter()
         .map(|(state, _, _)| state.match_id)
         .collect::<Vec<_>>();
-    let width = 5 + EVALUATION_LANDMARKS.len();
+    let width = 5 + EVALUATION_LANDMARKS.len() + hero_columns.len();
     let references = rows.iter().collect::<Vec<_>>();
     let fit = fit_ridge_logistic(&references, &vec![0.0; width], &vec![1.0; width])?;
     let interaction = |index| -> Result<GroupInteraction> {

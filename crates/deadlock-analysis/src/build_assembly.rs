@@ -82,7 +82,7 @@ impl std::str::FromStr for ItemScoring {
 /// The item score rule of installed builds.
 pub const DEFAULT_SCORING: ItemScoring = ItemScoring {
     effect_scale: EFFECT_SCALE,
-    adoption_floor: 0.0,
+    adoption_floor: MINIMUM_ADOPTION,
 };
 
 impl ItemScoring {

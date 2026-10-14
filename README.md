@@ -35,7 +35,7 @@ deadlock-build-sync sync
 ```
 
 `sync` downloads the ranked matches of the current patch, makes the builds, and writes them to the artifact directory.
-After a patch, wait one to two days before a sync. Builds from that amount of matches tested as well as builds from more days.
+Builds improve with more matches. Sync again a few days after a patch, and again later in the patch.
 Then it makes a Steam cache backup and installs the builds atomically.
 It keeps favorites, selected builds, saved builds, and unrelated private builds.
 It replaces only builds with the managed marker.
@@ -131,7 +131,7 @@ Each Markdown file includes every catalog build for that hero.
 The catalog and installer support distinct variants for the same hero.
 The analysis selects a main build and up to two additional builds with distinct item combinations and sufficient match support.
 It evaluates each build separately. Similar candidates do not create additional entries.
-Additional builds are play style options. Held-out tests found no win advantage for them over the main build.
+Additional builds are play style options. Held-out tests found a small win signal for them beyond the main build.
 Each new run replaces the complete directory.
 
 ## Commands

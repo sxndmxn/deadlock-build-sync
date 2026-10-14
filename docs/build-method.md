@@ -95,7 +95,7 @@ The item score is:
 
 Adoption is the share of hero players who own the item at that phase.
 The first term keeps the build close to items that players at this rank use.
-An item needs an adoption of 3% before the first term becomes positive.
+An item needs an adoption of 3% before the first term becomes positive. It also needs this adoption to enter CORE at all, whatever its effect (E30).
 The second term moves the choice toward items that win more in similar states.
 A paired held-out test on four patches selected the effect scale 0.05 over the earlier 0.1. See [Research log](research-log.md), entry E14.
 
@@ -252,6 +252,7 @@ The agreement coefficient is the change in log-odds from no agreement to full ag
 | `limited` | The coefficient is zero or less, or the test has fewer than 200 observations. |
 
 The test of one build is noisy. In split-half tests, the coefficients of different heroes did not correlate on the large runs.
+The standard error treats each match as one cluster, because the landmarks of one player share one result.
 Thus, the label uses a hierarchical estimate. Each coefficient moves toward the precision-weighted mean of comparable builds: main builds or additional builds.
 The size of the move depends on the variance between builds beyond their noise. A build keeps more of its own result when that variance is large or its own error is small.
 The catalog keeps the result of the build alone, and the Markdown file shows both values. See [Research log](research-log.md), entry E17.
@@ -304,5 +305,5 @@ Net worth at the landmark is also partly a result of earlier items.
 Variant owners must survive long enough and acquire enough souls to own the key item.
 Their item combinations can reflect match conditions as well as different strategies.
 The selection thresholds are engineering rules. They do not prove an optimal number of builds.
-A held-out test found that variant agreement does not predict wins beyond main build agreement. On the largest test, its coefficient was negative.
-Thus, additional builds are play style options, not better winning paths. See [Research log](research-log.md), entry E11.
+A held-out test with hero and landmark indicators found that variant agreement adds a small positive signal beyond main build agreement on seven runs.
+The signal is weak on each run. See [Research log](research-log.md), entries E11 and E30.

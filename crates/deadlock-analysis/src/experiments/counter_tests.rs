@@ -11,6 +11,8 @@ use crate::counter_items::{
 use crate::refresh_configuration::{ExtractionResources, RunPaths};
 use crate::run_inputs::load_run_inputs;
 
+use super::mix;
+
 /// The interaction of two defensive item groups with the enemy spirit share at one phase.
 ///
 /// Each coefficient is the change in log-odds for each owned item of the group when
@@ -276,11 +278,4 @@ pub fn measure_counter_placebo(
         }
     }
     Ok(results)
-}
-
-/// Mixes the bits of a number for a fixed pseudo-random order.
-const fn mix(value: u64) -> u64 {
-    let value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
-    let value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
-    value ^ (value >> 31)
 }

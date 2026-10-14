@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use deadlock_data::Result;
 use deadlock_guides::{BuildEvaluation, Confidence, HeroEstimate};
@@ -19,6 +19,8 @@ const PENALTY: f64 = 1.0;
 /// Agreement is the cost share of the phase set that the player owns.
 /// The model adjusts for relative net worth, team lead, rank, and landmark.
 /// The agreement coefficient is the log-odds change from no agreement to full agreement.
+/// The standard error treats each match as one cluster, because the landmarks of one player
+/// share one match result.
 ///
 /// # Errors
 /// Returns an error when the model cannot be fitted.
@@ -29,14 +31,17 @@ pub fn evaluate_build(
 ) -> Result<BuildEvaluation> {
     let rows = states
         .iter()
-        .filter_map(|state| build_evaluation_row(state, phase_sets, catalog))
+        .filter_map(|state| {
+            build_evaluation_row(state, phase_sets, catalog).map(|row| (row, state.match_id))
+        })
         .collect::<Vec<_>>();
-    fit_agreement(&rows)
+    fit_agreement(&rows, WIDTH)
 }
 
 /// Tests several builds with one model, for example one build per hero.
 ///
-/// Each state uses the phase sets of its own build.
+/// Each state uses the phase sets of its own build. One indicator for each build and landmark
+/// keeps differences between builds out of the agreement coefficient.
 ///
 /// # Errors
 /// Returns an error when the model cannot be fitted.
@@ -44,18 +49,27 @@ pub fn evaluate_pooled_builds(
     builds: &[(Vec<&LandmarkState>, PhaseSets)],
     catalog: &ItemCatalog,
 ) -> Result<BuildEvaluation> {
-    let rows = builds
-        .iter()
-        .flat_map(|(states, phase_sets)| {
-            states
-                .iter()
-                .filter_map(|state| build_evaluation_row(state, phase_sets, catalog))
-        })
-        .collect::<Vec<_>>();
-    fit_agreement(&rows)
+    let mut groups = BTreeMap::<(usize, u32), usize>::new();
+    let mut rows = Vec::new();
+    for (build_index, (states, phase_sets)) in builds.iter().enumerate() {
+        for state in states {
+            let Some(mut row) = build_evaluation_row(state, phase_sets, catalog) else {
+                continue;
+            };
+            let next = groups.len();
+            let group = *groups
+                .entry((build_index, state.landmark_s))
+                .or_insert(next);
+            if group > 0 {
+                row.features.push((WIDTH + group - 1, 1.0));
+            }
+            rows.push((row, state.match_id));
+        }
+    }
+    fit_agreement(&rows, WIDTH + groups.len().saturating_sub(1))
 }
 
-fn fit_agreement(rows: &[FeatureRow]) -> Result<BuildEvaluation> {
+fn fit_agreement(rows: &[(FeatureRow, u64)], width: usize) -> Result<BuildEvaluation> {
     if rows.len() < MINIMUM_OBSERVATIONS {
         return Ok(BuildEvaluation {
             agreement_coefficient: 0.0,
@@ -65,10 +79,14 @@ fn fit_agreement(rows: &[FeatureRow]) -> Result<BuildEvaluation> {
             hero_estimate: None,
         });
     }
-    let references = rows.iter().collect::<Vec<_>>();
-    let fit = fit_ridge_logistic(&references, &[0.0; WIDTH], &[PENALTY; WIDTH])?;
+    let references = rows.iter().map(|(row, _)| row).collect::<Vec<_>>();
+    let matches = rows
+        .iter()
+        .map(|(_, match_id)| *match_id)
+        .collect::<Vec<_>>();
+    let fit = fit_ridge_logistic(&references, &vec![0.0; width], &vec![PENALTY; width])?;
     let coefficient = fit.coefficients[AGREEMENT_COLUMN];
-    let standard_error = fit.standard_error(AGREEMENT_COLUMN)?;
+    let standard_error = fit.clustered_standard_error(AGREEMENT_COLUMN, &references, &matches)?;
     Ok(BuildEvaluation {
         agreement_coefficient: coefficient,
         standard_error,

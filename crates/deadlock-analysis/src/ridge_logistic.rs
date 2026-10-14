@@ -20,18 +20,6 @@ pub struct RidgeFit {
 }
 
 impl RidgeFit {
-    /// Returns the approximate standard error of one coefficient.
-    ///
-    /// # Errors
-    /// Returns an error when the Hessian is not positive definite.
-    pub fn standard_error(&self, index: usize) -> Result<f64> {
-        let width = self.coefficients.len();
-        let mut unit = vec![0.0; width];
-        unit[index] = 1.0;
-        let solution = solve_cholesky(&self.hessian, width, &unit)?;
-        Ok(solution[index].max(0.0).sqrt())
-    }
-
     /// Returns the standard error of one coefficient when rows in the same cluster are dependent.
     ///
     /// Each cluster adds the square of its summed score, projected on one row of the inverse Hessian.

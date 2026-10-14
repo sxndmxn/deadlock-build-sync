@@ -24,15 +24,15 @@ The test fold contains the last 20% of matches by start time.
 | E8 | Do item effects depend on rank? | No | One build for the rank range |
 | E9 | Does anti-heal win more against enemy sustain? | Yes, with a negative control | VS SUSTAIN |
 | E10 | Does debuff removal win more against crowd control? | No, the opposite | No panel. Share conditions remove wealth |
-| E11 | Do additional builds add win signal? | No | Owner decision |
+| E11 | Do additional builds add win signal? | Corrected by E30: a small positive signal | Keep them |
 | E12 | Do players adapt armor to the enemy team? | Yes, partly | Keep the panels |
 | E13 | Do players sell early items? | Most early items are upgraded, not sold | No sell instructions |
 | E14 | Is the effect scale 0.05 better than 0.1? | Yes, in a paired test, and in E15 | Changed to 0.05 |
 | E15 | Do the changes hold on new matches? | Yes, except VS SPIRIT on one run | Keep all |
-| E16 | Does a 3% adoption floor help? | The paired test was unstable | No floor |
+| E16 | Does a 3% adoption floor help? | Corrected by E30: yes, on seven runs | 3% floor |
 | E17 | Are per-hero confidence labels reliable? | No. A pooled estimate predicts better | Pooled labels |
 | E18 | Does the effect term help in the lane phase? | Yes, at each landmark | One scale for all phases |
-| E19 | Do more days of matches give better builds? | No measurable gain after about 7,000 matches | Sync one to two days after a patch |
+| E19 | Do more days of matches give better builds? | Corrected by E30: yes | Sync again later in a patch |
 | E20 | Does armor penetration win more against armor? | No | No panel |
 | E21 | Do situational items add win signal? | Yes, on five runs | Keep the TIER rule |
 | E22 | Are builds stable between match samples? | The effect term halves the stability | Keep 0.05. Note the trade-off |
@@ -43,6 +43,7 @@ The test fold contains the last 20% of matches by start time.
 | E27 | Can the model drop hero-specific item effects? | No. They improve predictions on six runs | Keep the hero level |
 | E28 | Do the results hold on a fifth patch? | Yes, all six predictions | Keep all |
 | E29 | Are the counter test errors correct? | Yes. Placebo z values are standard normal | No change |
+| E30 | Are the pooled agreement tests correct? | No. Hero differences biased them. Corrected | Floor added. E11 and E19 reversed |
 
 ## E0: effect scale of the item score
 
@@ -895,3 +896,50 @@ For a standard normal distribution, 4.6% of the values are beyond ±2 and 0.3% b
 **Analysis.** The placebo z values agree with a standard normal distribution. The standard errors are correct, so the z values of E6, E9, and the confirmations have their stated meaning.
 
 **Decision.** No change.
+
+## E30: a flaw in the pooled tests and its correction
+
+**Finding.** A placebo for the paired test of E14 moved the alternative agreements between test states of the same hero and landmark.
+Without a real relation, the z values should have a mean near 0. On `holdout-20260916`, 20 repetitions had a mean z of −4.52.
+
+**Cause.** The pooled models had no hero terms. A difference between heroes, for example a lower win rate for heroes with high agreement, appeared as an agreement effect.
+This flaw affected the pooled models of E0, E11, E14, E16, E18, E19, and E21. The per-hero tests of production use one hero each, so the flaw did not affect them.
+
+A second problem affected all agreement tests. The plain standard error treated the landmarks of one player as independent, but they share one result.
+For the per-hero tests of `holdout-20260916`, the match-clustered errors were 1.18 to 1.76 times the plain errors, with a mean of 1.50.
+
+**Correction.** The pair model now has one indicator for each hero and landmark. The pooled evaluation has one indicator for each build and landmark.
+All agreement tests now use match-clustered standard errors.
+With the correction, 20 placebo repetitions had mean z values of −0.04 and −0.18 and standard deviations of 1.10 and 0.92 on two runs.
+
+**Repeated tests.** The table gives the z values of the alternative on seven runs, in the order `20261012T233433Z`, `20261003T172322Z`, `20260913T235155Z`, `holdout-20260916`, `confirm-20261003`, `confirm-20260913`, and `patch-20260812`.
+
+| Test | z values | Result |
+| --- | --- | --- |
+| E14: scale 0.05 beyond 0.1 | 1.3, 2.3, 8.3, 5.7, 4.4, 4.2, 1.5 | Holds |
+| E21: situational share beyond CORE | 4.3, 3.3, 6.1, 5.9, 2.3, 1.6, 3.9 | Holds |
+| E11: variant agreement beyond main | 1.0, 1.5, 0.8, 1.0, 1.4, 1.7, 1.3 | Reverses: positive on all runs |
+| E16: 3% adoption floor beyond no floor | 1.9, 1.3, 1.6, 1.0, 0.6, 1.3, 2.8 | Reverses: positive on all runs |
+
+E17 repeated with clustered errors on five runs. The estimated variance between heroes was 0 on three runs.
+The hierarchical estimate had a lower error than the own result on all five runs, for example 0.053 against 0.153 on `confirm-20260913`.
+
+E18 held: the rule 0.05 had a higher agreement coefficient than adoption alone at each landmark on three runs.
+
+E19 reversed. More matches gave better builds:
+
+| Run | 10% | 25% | 50% | 100% |
+| --- | --- | --- | --- | --- |
+| `holdout-20260916` | 0.165 | 0.180 | 0.202 | 0.205 |
+| `20260913T235155Z` | 0.143 | 0.139 | 0.145 | 0.199 |
+
+The standard errors were near 0.018.
+
+**Decisions.**
+
+1. Add the 3% adoption floor to the installed score rule. An item needs this adoption to enter CORE.
+2. Keep the additional builds. They add a small positive signal beyond the main build.
+3. Change the advice: builds improve with more matches, so sync again later in a patch.
+4. Keep the scale 0.05, the situational rule, and the hierarchical labels.
+
+The earlier entries keep their original text as a record. This entry corrects them where it states so.
