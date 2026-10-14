@@ -164,6 +164,7 @@ Item asset properties cannot select the defensive groups. One flag marks both ow
 
 Each run tests all groups at 20 and 30 minutes with all of its matches, in one global logistic model for each phase.
 The model has a main term for the standardized enemy spirit share and a main term for the standardized enemy sustain.
+The model also has hero terms, so the group terms compare players of the same hero (E31 in the research log).
 For each group and each condition, it adds the number of owned group items multiplied by the condition.
 The weapon and spirit groups use the spirit share terms. The anti-heal group uses the sustain terms.
 The standard errors treat each match as one independent cluster.
