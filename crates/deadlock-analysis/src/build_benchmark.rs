@@ -1,17 +1,17 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use deadlock_data::{Error, Result, count_as_f64, read_json};
+use deadlock_data::{Error, Result, count_as_f64};
 use deadlock_guides::{BuildEvaluation, Confidence};
 
 use crate::build_assembly::{ItemScoring, PHASES, assemble_build_with_scoring};
 use crate::build_evaluation::{evaluate_build, evaluate_pooled_builds};
-use crate::hero_build_production::{AssemblyInputs, load_assembly_inputs, open_run_database};
 use crate::item_effects::{
     COVARIATES, DEFAULT_PENALTIES, EffectPenalties, EffectTable, ItemCatalog, LandmarkState,
     build_feature_row, estimate_item_effects, fit_landmark_models,
 };
-use crate::refresh_configuration::{ExtractionResources, RunPaths, cohort_ranks};
+use crate::refresh_configuration::{ExtractionResources, RunPaths};
 use crate::ridge_logistic::{FeatureRow, fit_ridge_logistic, logistic};
+use crate::run_inputs::{AssemblyInputs, load_run_inputs};
 
 /// The held-out test result of one item score rule over all heroes.
 #[derive(Debug)]
@@ -161,13 +161,6 @@ pub fn estimate_split_item_effects(
         }
     }
     Ok(rows)
-}
-
-fn load_run_inputs(paths: &RunPaths, resources: ExtractionResources) -> Result<AssemblyInputs> {
-    let manifest = read_json(&paths.run.join("manifest.json"))?;
-    let ranks = cohort_ranks(&manifest["cohort"])?;
-    let (database, parameters) = open_run_database(paths, resources, ranks)?;
-    load_assembly_inputs(&database, &parameters)
 }
 
 /// A match condition that can change the effect of each item.

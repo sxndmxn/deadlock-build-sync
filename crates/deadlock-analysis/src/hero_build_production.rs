@@ -7,35 +7,20 @@ use deadlock_guides::{
     HeroBuildCatalog, TagItem, assign_build_focus, select_ability_path, select_build_tags,
 };
 use deadlock_input::{ApiOptions, BuildTagCatalog, DeadlockApi, parse_patch_feed};
-use duckdb::types::Value as SqlValue;
-use serde::Deserialize;
 use serde_json::Value;
 
-use crate::build_assembly::{
-    AssembledBuild, PHASES, PurchaseMedian, PurchaseMedians, assemble_build,
-};
+use crate::build_assembly::{AssembledBuild, PHASES, PurchaseMedians, assemble_build};
 use crate::build_evaluation::evaluate_build;
 use crate::build_variants::{
     MINIMUM_SEPARATION, assemble_item_variant, build_separation, select_item_variants,
 };
-use crate::database::{AnalysisDatabase, Parameters};
 use crate::item_effects::{EffectTable, ItemCatalog, LandmarkState, estimate_item_effects};
 use crate::item_imbues::{attach_item_imbues, load_item_imbues};
 use crate::item_statistics::{attach_item_statistics, load_item_statistics};
 use crate::refresh_configuration::{ExtractionResources, RunPaths, cohort_ranks, parse_timestamp};
-use crate::sql_resources::load_sql;
+use crate::run_inputs::{load_assembly_inputs, open_run_database};
 
 const ABILITY_MINIMUM_MATCHES: u32 = 10;
-
-#[derive(Debug, Deserialize)]
-struct PurchaseMedianRow {
-    hero_id: u64,
-    item_id: u64,
-    median_buy_time_s: f64,
-    median_net_worth: u32,
-    lower_quartile_net_worth: u32,
-    upper_quartile_net_worth: u32,
-}
 
 /// Produces a main build and distinct supported variants for each active hero.
 ///
@@ -95,71 +80,6 @@ pub fn produce_hero_builds(
     };
     catalog.validate()?;
     Ok(catalog)
-}
-
-/// Landmark states, shop items, and purchase medians for build assembly.
-pub struct AssemblyInputs {
-    pub states: Vec<LandmarkState>,
-    pub catalog: ItemCatalog,
-    pub medians: PurchaseMedians,
-}
-
-/// Opens the run database with the rank parameters of the run cohort.
-pub fn open_run_database(
-    paths: &RunPaths,
-    resources: ExtractionResources,
-    ranks: RankRange,
-) -> Result<(AnalysisDatabase, Parameters)> {
-    let database = AnalysisDatabase::open_read_only(
-        &paths.raw.join("analysis.duckdb"),
-        &paths.raw.join("duckdb-read-tmp"),
-        resources,
-    )?;
-    let parameters = Parameters::from([
-        (
-            "minimum_badge".into(),
-            SqlValue::UInt(u32::from(ranks.minimum.badge())),
-        ),
-        (
-            "maximum_badge".into(),
-            SqlValue::UInt(u32::from(ranks.maximum.badge())),
-        ),
-    ]);
-    Ok((database, parameters))
-}
-
-pub fn load_assembly_inputs(
-    database: &AnalysisDatabase,
-    parameters: &Parameters,
-) -> Result<AssemblyInputs> {
-    eprintln!("Loading landmark states");
-    let states = database.query_rows(load_sql("builds/select_landmark_states.sql")?, parameters)?;
-    let catalog = ItemCatalog::new(database.query_rows(
-        load_sql("builds/select_item_assets.sql")?,
-        &Parameters::new(),
-    )?)?;
-    let medians = database
-        .query_rows::<PurchaseMedianRow>(
-            load_sql("builds/select_item_purchase_medians.sql")?,
-            parameters,
-        )?
-        .into_iter()
-        .map(|row| {
-            (
-                (row.hero_id, row.item_id),
-                PurchaseMedian {
-                    buy_time_s: row.median_buy_time_s,
-                    net_worth: row.median_net_worth,
-                    soul_window: [row.lower_quartile_net_worth, row.upper_quartile_net_worth],
-                },
-            )
-        })
-        .collect();
-    Ok(AssemblyInputs {
-        states,
-        catalog,
-        medians,
-    })
 }
 
 fn assemble_hero_builds(

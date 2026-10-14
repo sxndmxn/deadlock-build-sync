@@ -14,6 +14,7 @@ mod item_statistics;
 mod refresh;
 mod refresh_configuration;
 mod ridge_logistic;
+mod run_inputs;
 mod sources;
 mod sql_resources;
 
