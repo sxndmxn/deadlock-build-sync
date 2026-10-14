@@ -45,6 +45,7 @@ The test fold contains the last 20% of matches by start time.
 | E29 | Are the counter test errors correct? | Yes. Placebo z values are standard normal | No change |
 | E30 | Are the pooled agreement tests correct? | No. Hero differences biased them. Corrected | Floor added. E11 and E19 reversed |
 | E31 | Do counter effects hold within each hero? | Yes | Production uses hero terms |
+| E32 | Is the scale 0.025 better with the floor? | Yes, on seven runs, with less stability | Changed to 0.025 |
 
 ## E0: effect scale of the item score
 
@@ -964,3 +965,34 @@ The prediction was that the weapon defense and anti-heal groups keep positive co
 **Analysis.** The armor effects stayed or grew within each hero. Hero matchups do not explain them. The anti-heal effect became slightly weaker but stayed positive.
 
 **Decision.** Use the hero terms in production. On `holdout-20260916`, the production evidence was weapon defense z = 5.2 and 5.0, spirit defense z = 4.0 and 4.1, and anti-heal z = 1.8 and 2.2.
+
+## E32: the effect scale with the adoption floor
+
+**Hypothesis.** E14 stopped at the scale 0.05, because smaller scales put rare items in CORE. The 3% floor of E30 prevents rare items.
+Thus, with the floor, the scale 0.025 adds signal beyond 0.05. The rule before the test was to adopt 0.025 only if it is positive on all seven runs, because smaller scales cost stability (E22).
+
+**Method.** `compare_scoring_pair` with the corrected pair model of E30 compared `0.05:0.03` (base) and `0.025:0.03` (alternative).
+`measure_build_stability` in cumulative mode measured the change between syncs.
+
+**Result.**
+
+| Run | 0.025 beyond 0.05 | z |
+| --- | --- | --- |
+| `20261012T233433Z` | +0.130 ± 0.065 | 2.0 |
+| `20261003T172322Z` | +0.135 ± 0.073 | 1.9 |
+| `20260913T235155Z` | +0.110 ± 0.031 | 3.5 |
+| `holdout-20260916` | +0.160 ± 0.026 | 6.1 |
+| `confirm-20261003` | +0.080 ± 0.042 | 1.9 |
+| `confirm-20260913` | +0.171 ± 0.061 | 2.8 |
+| `patch-20260812` | +0.144 ± 0.052 | 2.8 |
+
+| Run | CORE overlap between syncs, 0.05 | 0.025 |
+| --- | --- | --- |
+| `holdout-20260916` | 0.708 | 0.629 |
+| `20260913T235155Z` | 0.704 | 0.663 |
+| `confirm-20261003` | 0.663 | 0.626 |
+
+**Analysis.** The scale 0.025 added signal on all seven runs. It reduced the CORE overlap between syncs by 0.04 to 0.08.
+The signal keeps rising with smaller scales. A further search on the same runs would fit their specific matches, and each step costs stability.
+
+**Decision.** Use the scale 0.025 with the 3% floor. Stop the scale search. A later search needs new matches.

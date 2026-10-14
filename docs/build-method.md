@@ -91,13 +91,13 @@ When an item upgrades a component, the component leaves the owned set.
 
 The item score is:
 
-`ln(adoption / 0.03) + effect / 0.05`
+`ln(adoption / 0.03) + effect / 0.025`
 
 Adoption is the share of hero players who own the item at that phase.
 The first term keeps the build close to items that players at this rank use.
 An item needs an adoption of 3% before the first term becomes positive. It also needs this adoption to enter CORE at all, whatever its effect (E30).
 The second term moves the choice toward items that win more in similar states.
-A paired held-out test on four patches selected the effect scale 0.05 over the earlier 0.1. See [Research log](research-log.md), entry E14.
+Paired held-out tests selected the effect scale 0.05 over 0.1 (E14) and then 0.025 over 0.05 after the adoption floor (E32). See [Research log](research-log.md).
 
 MAIN CORE orders items by median net worth at first purchase, then median first purchase time.
 The player buys MAIN CORE from left to right.

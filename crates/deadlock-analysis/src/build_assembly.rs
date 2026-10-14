@@ -9,7 +9,7 @@ pub const PHASES: [u32; 3] = [540, 1200, 1800];
 /// The smallest share of hero players who own an item at a phase before CORE can use it.
 const MINIMUM_ADOPTION: f64 = 0.03;
 /// One effect step of this size equals a factor of e in adoption in the item score.
-const EFFECT_SCALE: f64 = 0.05;
+const EFFECT_SCALE: f64 = 0.025;
 /// The effect scale of the key item value. E14 tested only the CORE item score.
 const KEY_ITEM_EFFECT_SCALE: f64 = 0.1;
 const MAXIMUM_OWNED: usize = 12;
