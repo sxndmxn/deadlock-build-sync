@@ -91,6 +91,12 @@ On the largest run, the item effects predict significantly better than no item e
 
 **Decision.** Use the penalties 200 (global) and 300 (hero).
 
+**Effect on the builds.** The run `20261012T233433Z` made builds with both penalty pairs.
+For the main builds of 40 heroes, the mean Jaccard overlap of the CORE item sets was 0.78.
+The key item changed for 12 heroes, and the confidence label changed for 7 heroes.
+The catalog had 66 builds instead of 63. The labels were 10 `strong`, 32 `moderate`, and 24 `limited`, instead of 9, 36, and 18.
+No item entered or left CORE for more than 5 heroes.
+
 ## E0 repeated with the new penalties
 
 **Result.**
