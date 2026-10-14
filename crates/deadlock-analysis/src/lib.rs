@@ -29,7 +29,8 @@ pub use experiments::{
     compare_scoring_by_landmark, compare_scoring_pair, compare_situational_signal,
     compare_training_fractions, compare_variant_agreement, estimate_counter_interactions,
     estimate_enemy_item_counters, estimate_split_item_effects, measure_build_stability,
-    measure_counter_placebo, measure_counter_windows, measure_label_halves, measure_pair_placebo,
+    measure_counter_placebo, measure_counter_windows, measure_label_halves, measure_label_placebo,
+    measure_pair_placebo,
 };
 pub use hero_build_production::produce_hero_builds;
 pub use item_effects::{DEFAULT_PENALTIES, EffectPenalties};

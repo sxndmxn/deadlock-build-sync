@@ -29,10 +29,24 @@ pub fn evaluate_build(
     phase_sets: &PhaseSets,
     catalog: &ItemCatalog,
 ) -> Result<BuildEvaluation> {
-    let rows = states
+    let samples = states
         .iter()
         .filter_map(|state| {
-            build_evaluation_row(state, phase_sets, catalog).map(|row| (row, state.match_id))
+            measure_agreement(state, phase_sets, catalog).map(|agreement| (*state, agreement))
+        })
+        .collect::<Vec<_>>();
+    evaluate_agreements(&samples)
+}
+
+/// Tests given agreements of held-out states of one hero, as `evaluate_build` does.
+///
+/// # Errors
+/// Returns an error when the model cannot be fitted.
+pub fn evaluate_agreements(samples: &[(&LandmarkState, f64)]) -> Result<BuildEvaluation> {
+    let rows = samples
+        .iter()
+        .filter_map(|(state, agreement)| {
+            agreement_row(state, *agreement).map(|row| (row, state.match_id))
         })
         .collect::<Vec<_>>();
     fit_agreement(&rows, WIDTH)
@@ -125,10 +139,13 @@ fn build_evaluation_row(
     phase_sets: &PhaseSets,
     catalog: &ItemCatalog,
 ) -> Option<FeatureRow> {
+    agreement_row(state, measure_agreement(state, phase_sets, catalog)?)
+}
+
+fn agreement_row(state: &LandmarkState, agreement: f64) -> Option<FeatureRow> {
     let position = EVALUATION_LANDMARKS
         .iter()
         .position(|landmark| *landmark == state.landmark_s)?;
-    let agreement = measure_agreement(state, phase_sets, catalog)?;
     let mut features = vec![
         (0, 1.0),
         (1, relative_net_worth(state.net_worth, state.landmark_s)),

@@ -47,6 +47,7 @@ The test fold contains the last 20% of matches by start time.
 | E31 | Do counter effects hold within each hero? | Yes | Production uses hero terms |
 | E32 | Is the scale 0.025 better with the floor? | Yes, on seven runs, with less stability | Changed to 0.025 |
 | E33 | Is the final rule better than the original rule? | Yes, on seven runs | No change |
+| E34 | Are the per-hero test errors correct? | Yes, after E30 | No change |
 
 ## E0: effect scale of the item score
 
@@ -1021,3 +1022,22 @@ Both use the penalties of E2, so this test covers the score rule changes only.
 **Analysis.** The final rule added signal beyond the original rule on all seven runs. The original rule added much less beyond the final rule.
 
 **Decision.** No change. This entry measures the combined result.
+
+## E34: calibration of the per-hero build test
+
+**Hypothesis.** After E30, the match-clustered standard errors of the per-hero build test are correct.
+
+**Method.** `measure_label_placebo` assembles each hero's build from development matches.
+For each hero and repetition, it moves the agreements between test states of the same landmark in a fixed pseudo-random order, which removes any real relation.
+It then fits the per-hero test model of production. Five repetitions ran for each hero.
+
+**Result.**
+
+| Run | z values | Mean | Standard deviation | Beyond ±2 |
+| --- | --- | --- | --- | --- |
+| `holdout-20260916` | 190 | 0.035 | 0.971 | 5.3% |
+| `confirm-20261003` | 200 | 0.012 | 1.030 | 4.0% |
+
+**Analysis.** The z values agree with a standard normal distribution. The plain errors before E30 were about 1.5 times too small, which would give a standard deviation near 1.5.
+
+**Decision.** No change. The confidence labels use correct standard errors.

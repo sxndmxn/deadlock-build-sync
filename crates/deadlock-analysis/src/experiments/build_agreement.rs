@@ -5,7 +5,8 @@ use deadlock_guides::{BuildEvaluation, Confidence};
 
 use crate::build_assembly::{ItemScoring, PHASES, assemble_build, assemble_build_with_scoring};
 use crate::build_evaluation::{
-    EVALUATION_LANDMARKS, evaluate_build, evaluate_pooled_builds, measure_agreement,
+    EVALUATION_LANDMARKS, evaluate_agreements, evaluate_build, evaluate_pooled_builds,
+    measure_agreement,
 };
 use crate::build_variants::select_item_variants;
 use crate::counter_items::GroupInteraction;
@@ -664,4 +665,60 @@ pub fn measure_build_stability(
         });
     }
     Ok(results)
+}
+
+/// Returns the z values of per-hero build tests after the agreements move at random.
+///
+/// For each hero and seed, the agreements move between test states of the same landmark in a
+/// fixed pseudo-random order. With correct standard errors, the z values follow a standard
+/// normal distribution. Builds use the installed score rule.
+///
+/// # Errors
+/// Returns an error when the run, the analysis database, or a model fails.
+pub fn measure_label_placebo(
+    paths: &RunPaths,
+    resources: ExtractionResources,
+    seeds: &[u64],
+) -> Result<Vec<f64>> {
+    let inputs = load_run_inputs(paths, resources)?;
+    let catalog = &inputs.catalog;
+    let (test, development): (Vec<_>, Vec<_>) =
+        inputs.states.iter().partition(|state| state.is_test());
+    let effects = estimate_item_effects(&development, catalog, &PHASES)?;
+    let hero_ids = test
+        .iter()
+        .map(|state| state.hero_id)
+        .collect::<BTreeSet<_>>();
+    let mut z_values = Vec::new();
+    for hero_id in hero_ids {
+        let Some(build) = assemble_build(hero_id, &effects, catalog, &inputs.medians) else {
+            continue;
+        };
+        let samples = test
+            .iter()
+            .copied()
+            .filter(|state| state.hero_id == hero_id)
+            .filter_map(|state| {
+                measure_agreement(state, &build.phase_sets, catalog).map(|value| (state, value))
+            })
+            .collect::<Vec<_>>();
+        for seed in seeds {
+            let mut moved = samples.clone();
+            for landmark in EVALUATION_LANDMARKS {
+                let indices = (0..samples.len())
+                    .filter(|index| samples[*index].0.landmark_s == landmark)
+                    .collect::<Vec<_>>();
+                let mut order = indices.clone();
+                order.sort_by_key(|index| mix(seed ^ samples[*index].0.match_id));
+                for (target, source) in indices.iter().zip(&order) {
+                    moved[*target].1 = samples[*source].1;
+                }
+            }
+            let evaluation = evaluate_agreements(&moved)?;
+            if evaluation.standard_error > 0.0 {
+                z_values.push(evaluation.agreement_coefficient / evaluation.standard_error);
+            }
+        }
+    }
+    Ok(z_values)
 }
