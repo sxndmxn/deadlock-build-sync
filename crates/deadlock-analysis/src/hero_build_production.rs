@@ -170,7 +170,7 @@ fn assemble_hero_builds(
 ) -> Result<Vec<HeroBuild>> {
     let development = states
         .iter()
-        .filter(|state| state.fold != "test")
+        .filter(|state| !state.is_test())
         .collect::<Vec<_>>();
     eprintln!("Estimating item effects for the held-out test");
     let development_effects = estimate_item_effects(&development, catalog, &PHASES)?;
@@ -206,7 +206,7 @@ fn assemble_hero(
         .filter(|state| state.hero_id == hero_id)
         .collect::<Vec<_>>();
     let (test, development): (Vec<_>, Vec<_>) =
-        all.iter().copied().partition(|state| state.fold == "test");
+        all.iter().copied().partition(|state| state.is_test());
     let main = assemble_build(hero_id, effects, catalog, medians).ok_or_else(|| {
         Error::new(format!(
             "Cannot assemble a build for {hero_name}; hero coverage is incomplete"

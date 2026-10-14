@@ -10,6 +10,10 @@ use crate::item_effects::{
 const MINIMUM_OWNERS: usize = 100;
 pub const MINIMUM_SEPARATION: f64 = 0.30;
 const MAXIMUM_ADDITIONAL_BUILDS: usize = 2;
+/// The mid game and late game phases at which players must own a variant key item.
+const KEY_ITEM_PHASES: [u32; 2] = [1200, 1800];
+/// The hero adoption range of a variant key item at one of its phases.
+const KEY_ITEM_ADOPTION: std::ops::RangeInclusive<f64> = 0.05..=0.70;
 
 /// A build assembled from players who own its key item at 20 or 30 minutes.
 #[derive(Debug)]
@@ -77,9 +81,9 @@ fn has_supported_item(
     let Some(column) = catalog.column(item_id) else {
         return false;
     };
-    [1200, 1800].iter().any(|phase| {
+    KEY_ITEM_PHASES.iter().any(|phase| {
         table.get(&(hero_id, *phase)).is_some_and(|effects| {
-            (0.05..=0.70).contains(&effects.adoption[column]) && effects.effects[column] > 0.0
+            KEY_ITEM_ADOPTION.contains(&effects.adoption[column]) && effects.effects[column] > 0.0
         })
     })
 }
@@ -97,7 +101,7 @@ pub fn assemble_item_variant(
         .iter()
         .filter(|state| {
             state.hero_id == hero_id
-                && matches!(state.landmark_s, 1200 | 1800)
+                && KEY_ITEM_PHASES.contains(&state.landmark_s)
                 && state.item_ids.contains(&item_id)
         })
         .map(|state| (state.match_id, state.player_slot))

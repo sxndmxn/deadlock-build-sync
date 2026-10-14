@@ -46,7 +46,7 @@ pub fn compare_item_scoring(
 ) -> Result<Vec<ScoringResult>> {
     let inputs = load_run_inputs(paths, resources)?;
     let (test, development): (Vec<_>, Vec<_>) =
-        inputs.states.iter().partition(|state| state.fold == "test");
+        inputs.states.iter().partition(|state| state.is_test());
     eprintln!("Estimating item effects from development matches");
     let effects = estimate_item_effects(&development, &inputs.catalog, &PHASES)?;
     let mut test_by_hero = BTreeMap::<u64, Vec<&LandmarkState>>::new();
@@ -137,7 +137,7 @@ pub fn estimate_split_item_effects(
     let (even, odd): (Vec<_>, Vec<_>) = inputs
         .states
         .iter()
-        .filter(|state| state.fold != "test")
+        .filter(|state| !state.is_test())
         .partition(|state| state.match_id % 2 == 0);
     let mut rows = Vec::new();
     for (sample, states) in [("even", even), ("odd", odd)] {
@@ -222,7 +222,7 @@ pub fn compare_effect_models(
 ) -> Result<Vec<ModelResult>> {
     let inputs = load_run_inputs(paths, resources)?;
     let (test, development): (Vec<_>, Vec<_>) =
-        inputs.states.iter().partition(|state| state.fold == "test");
+        inputs.states.iter().partition(|state| state.is_test());
     let spirit_mean = development
         .iter()
         .map(|state| state.enemy_spirit_share)

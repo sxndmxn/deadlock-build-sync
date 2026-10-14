@@ -31,6 +31,17 @@ pub struct LandmarkState {
     pub enemy_spirit_share: f64,
 }
 
+/// The fold of the held-out test matches.
+const TEST_FOLD: &str = "test";
+
+impl LandmarkState {
+    /// Returns true when the state belongs to the held-out test fold.
+    #[must_use]
+    pub fn is_test(&self) -> bool {
+        self.fold == TEST_FOLD
+    }
+}
+
 #[derive(Clone, Debug, Deserialize)]
 pub struct ItemAsset {
     pub item_id: u64,
@@ -124,7 +135,7 @@ pub fn build_feature_row(state: &LandmarkState, catalog: &ItemCatalog) -> Featur
         (0, 1.0),
         (1, relative_net_worth(state.net_worth, state.landmark_s)),
         (2, state.team_lead),
-        (3, (f64::from(state.average_badge) - 80.0) / 20.0),
+        (3, standardized_rank(state.average_badge)),
     ];
     features.extend(
         state
@@ -142,6 +153,12 @@ pub fn build_feature_row(state: &LandmarkState, catalog: &ItemCatalog) -> Featur
 #[must_use]
 pub fn relative_net_worth(net_worth: u32, landmark_s: u32) -> f64 {
     f64::from(net_worth.max(1)).ln() - (f64::from(landmark_s.max(1)) * 20.0).ln()
+}
+
+/// Converts an average match badge to a rank covariate: 0 at badge 80, and 1 for each 20 badges.
+#[must_use]
+pub fn standardized_rank(average_badge: u32) -> f64 {
+    (f64::from(average_badge) - 80.0) / 20.0
 }
 
 /// Ridge penalties on item coefficients. A larger penalty pulls harder toward the prior.
