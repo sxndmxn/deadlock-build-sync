@@ -497,3 +497,31 @@ The limit of E0 remains: the test measures associations that repeat in later mat
 The scale 0.025 again put many rare items in CORE. A further search on these four runs could fit their specific matches, so the search stopped at 0.05.
 
 **Decision.** Use the effect scale 0.05 for CORE items. Keep the scale 0.1 for the key item value, which this test did not cover.
+
+## E15: confirmation on new matches
+
+**Purpose.** E2, E14, and the counter groups were tuned or selected on the same four runs. A confirmation needs matches that no earlier run used.
+
+**Method.** The run `confirm-20261003` used the patch of 2026-09-30 from 2026-10-03 17:23, the end of run `20261003T172322Z`, to 2026-10-09 21:00, the start of the next patch.
+It had 46,211 matches and 554,532 player matches. These predictions were stated before the extraction:
+
+1. P1: the penalties 200 and 300 give a lower held-out log loss than the penalties 5 and 100.
+2. P2: builds with the effect scale 0.05 add a positive coefficient beyond builds with the scale 0.1.
+3. P3: the weapon defense, spirit defense, and anti-heal groups have positive production coefficients at 20 and 30 minutes.
+
+**Result.**
+
+| Prediction | Result | Status |
+| --- | --- | --- |
+| P1 | −0.000147 ± 0.000043 against the penalties 5 and 100. No item effects gave +0.000404 ± 0.000132. | Confirmed |
+| P2 | +0.180 ± 0.031, z = 5.9 | Confirmed |
+| P3, weapon defense | z = 2.8 and 2.1 | Confirmed |
+| P3, anti-heal | z = 1.9 and 2.5 | Confirmed |
+| P3, spirit defense | z = −0.2 and −0.2 | Not confirmed |
+
+**Analysis.** The penalties, the effect scale, the weapon defense panel, and the anti-heal panel held on new matches.
+The spirit defense effect was positive on four earlier runs but zero on these matches. It is less stable than the weapon defense effect.
+
+**Decision.** Keep all three panels. The E7 rule removes a panel only for a z value below −2.
+The VS SPIRIT description states the z value of each run, so a player can see weak evidence on a patch.
+Repeat this confirmation after each method change, with a match window that no earlier test used.
