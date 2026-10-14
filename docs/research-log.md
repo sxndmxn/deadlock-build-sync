@@ -464,3 +464,36 @@ Healing Rite was sold by 36% of buyers and upgraded by 51%.
 A sell instruction would apply to very few items.
 
 **Decision.** Do not add sell instructions. Do not set the Steam `sell_priority` field, because its display in the game client is not verified.
+
+## E14: a paired test of the effect scale
+
+**Hypothesis.** Builds with the effect scale 0.05 add held-out signal beyond builds with the scale 0.1.
+
+**Method.** On the two large runs, the E0 comparison with the penalties of E2 gave these agreement coefficients:
+
+| Scale | `20260913T235155Z` | `holdout-20260916` | Rare CORE share |
+| --- | --- | --- | --- |
+| `inf` | 0.002 ± 0.010 | 0.040 ± 0.010 | 0% |
+| 0.1 | 0.085 ± 0.010 | 0.113 ± 0.010 | 0% to 1.3% |
+| 0.05 | 0.117 ± 0.010 | 0.124 ± 0.010 | 1.0% to 7.1% |
+| 0.025 | 0.195 ± 0.010 | 0.200 ± 0.011 | 20.0% to 20.3% |
+
+These coefficients use the same states, so separate standard errors cannot test a difference.
+`compare_scoring_pair` assembles both builds of each hero from development matches and fits one model with both agreements on the test states.
+The coefficient of the second agreement measures its signal beyond the first. The standard errors treat each match as one cluster.
+
+**Result.**
+
+| Run | 0.05 beyond 0.1 | 0.1 beyond `inf` |
+| --- | --- | --- |
+| `20261012T233433Z` | +0.212 ± 0.045 (z = 4.7) | +0.066 ± 0.035 (z = 1.9) |
+| `20261003T172322Z` | +0.045 ± 0.065 (z = 0.7) | +0.047 ± 0.050 (z = 0.9) |
+| `20260913T235155Z` | +0.120 ± 0.020 (z = 6.0) | +0.209 ± 0.021 (z = 10.1) |
+| `holdout-20260916` | +0.088 ± 0.025 (z = 3.6) | +0.174 ± 0.019 (z = 9.0) |
+
+**Analysis.** The 0.05 builds added signal beyond the 0.1 builds on all four runs, and significantly on three.
+The 0.1 builds added clear signal beyond adoption alone on the two large runs.
+The limit of E0 remains: the test measures associations that repeat in later matches, not proven causes.
+The scale 0.025 again put many rare items in CORE. A further search on these four runs could fit their specific matches, so the search stopped at 0.05.
+
+**Decision.** Use the effect scale 0.05 for CORE items. Keep the scale 0.1 for the key item value, which this test did not cover.

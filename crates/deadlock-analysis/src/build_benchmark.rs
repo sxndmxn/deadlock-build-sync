@@ -555,11 +555,11 @@ pub fn estimate_enemy_item_counters(
     Ok(results)
 }
 
-/// The held-out association of main build and variant agreement with the match result.
+/// The held-out association of two build agreements with the match result in one model.
 #[derive(Debug)]
-pub struct VariantResult {
-    pub main: GroupInteraction,
-    pub variant: GroupInteraction,
+pub struct AgreementPair {
+    pub base: GroupInteraction,
+    pub alternative: GroupInteraction,
     pub heroes: usize,
     pub observations: usize,
 }
@@ -568,27 +568,25 @@ pub struct VariantResult {
 ///
 /// The builds come from development matches, as in production. For each test state of a hero
 /// with variants, the model uses the main agreement and the largest variant agreement.
-/// The covariates are relative net worth, team lead, rank, and landmark.
 ///
 /// # Errors
 /// Returns an error when the run, the analysis database, or a model fails.
 pub fn compare_variant_agreement(
     paths: &RunPaths,
     resources: ExtractionResources,
-) -> Result<VariantResult> {
+) -> Result<AgreementPair> {
     let inputs = load_run_inputs(paths, resources)?;
     let catalog = &inputs.catalog;
     let (test, development): (Vec<_>, Vec<_>) =
         inputs.states.iter().partition(|state| state.is_test());
     let effects = estimate_item_effects(&development, catalog, &PHASES)?;
-    let heroes = test
+    let mut samples = Vec::new();
+    let mut heroes = 0;
+    let hero_ids = test
         .iter()
         .map(|state| state.hero_id)
         .collect::<BTreeSet<_>>();
-    let mut rows = Vec::new();
-    let mut matches = Vec::new();
-    let mut variant_heroes = 0;
-    for hero_id in heroes {
+    for hero_id in hero_ids {
         let Some(main) = assemble_build(hero_id, &effects, catalog, &inputs.medians) else {
             continue;
         };
@@ -608,25 +606,89 @@ pub fn compare_variant_agreement(
         if variants.is_empty() {
             continue;
         }
-        variant_heroes += 1;
-        for state in test.iter().filter(|state| state.hero_id == hero_id) {
-            let Some(main_agreement) = measure_agreement(state, &main.phase_sets, catalog) else {
-                continue;
-            };
-            let Some(variant_agreement) = variants
+        heroes += 1;
+        for state in test
+            .iter()
+            .copied()
+            .filter(|state| state.hero_id == hero_id)
+        {
+            let base = measure_agreement(state, &main.phase_sets, catalog);
+            let alternative = variants
                 .iter()
                 .filter_map(|variant| measure_agreement(state, &variant.build.phase_sets, catalog))
-                .max_by(f64::total_cmp)
-            else {
-                continue;
-            };
+                .max_by(f64::total_cmp);
+            if let (Some(base), Some(alternative)) = (base, alternative) {
+                samples.push((state, base, alternative));
+            }
+        }
+    }
+    fit_agreement_pair(&samples, heroes)
+}
+
+/// Tests whether agreement with builds of one score rule predicts the match result beyond
+/// agreement with builds of another score rule.
+///
+/// Both builds of each hero come from development matches. The test states are held out.
+///
+/// # Errors
+/// Returns an error when the run, the analysis database, or a model fails.
+pub fn compare_scoring_pair(
+    paths: &RunPaths,
+    resources: ExtractionResources,
+    base: ItemScoring,
+    alternative: ItemScoring,
+) -> Result<AgreementPair> {
+    let inputs = load_run_inputs(paths, resources)?;
+    let catalog = &inputs.catalog;
+    let (test, development): (Vec<_>, Vec<_>) =
+        inputs.states.iter().partition(|state| state.is_test());
+    let effects = estimate_item_effects(&development, catalog, &PHASES)?;
+    let mut samples = Vec::new();
+    let mut heroes = 0;
+    let hero_ids = test
+        .iter()
+        .map(|state| state.hero_id)
+        .collect::<BTreeSet<_>>();
+    for hero_id in hero_ids {
+        let assemble = |scoring| {
+            assemble_build_with_scoring(hero_id, &effects, catalog, &inputs.medians, scoring)
+        };
+        let (Some(base_build), Some(alternative_build)) = (assemble(base), assemble(alternative))
+        else {
+            continue;
+        };
+        heroes += 1;
+        for state in test
+            .iter()
+            .copied()
+            .filter(|state| state.hero_id == hero_id)
+        {
+            if let (Some(first), Some(second)) = (
+                measure_agreement(state, &base_build.phase_sets, catalog),
+                measure_agreement(state, &alternative_build.phase_sets, catalog),
+            ) {
+                samples.push((state, first, second));
+            }
+        }
+    }
+    fit_agreement_pair(&samples, heroes)
+}
+
+/// Fits one model with two agreements, the covariates, and landmark terms.
+fn fit_agreement_pair(
+    samples: &[(&LandmarkState, f64, f64)],
+    heroes: usize,
+) -> Result<AgreementPair> {
+    let rows = samples
+        .iter()
+        .map(|(state, base, alternative)| {
             let mut features = vec![
                 (0, 1.0),
                 (1, relative_net_worth(state.net_worth, state.landmark_s)),
                 (2, state.team_lead),
                 (3, standardized_rank(state.average_badge)),
-                (4, main_agreement),
-                (5, variant_agreement),
+                (4, *base),
+                (5, *alternative),
             ];
             if let Some(position) = EVALUATION_LANDMARKS
                 .iter()
@@ -635,26 +697,29 @@ pub fn compare_variant_agreement(
             {
                 features.push((5 + position, 1.0));
             }
-            rows.push(FeatureRow {
+            FeatureRow {
                 features,
                 label: if state.won { 1.0 } else { 0.0 },
-            });
-            matches.push(state.match_id);
-        }
-    }
+            }
+        })
+        .collect::<Vec<_>>();
+    let matches = samples
+        .iter()
+        .map(|(state, _, _)| state.match_id)
+        .collect::<Vec<_>>();
     let width = 5 + EVALUATION_LANDMARKS.len();
     let references = rows.iter().collect::<Vec<_>>();
     let fit = fit_ridge_logistic(&references, &vec![0.0; width], &vec![1.0; width])?;
-    Ok(VariantResult {
-        main: GroupInteraction {
-            coefficient: fit.coefficients[4],
-            standard_error: fit.clustered_standard_error(4, &references, &matches)?,
-        },
-        variant: GroupInteraction {
-            coefficient: fit.coefficients[5],
-            standard_error: fit.clustered_standard_error(5, &references, &matches)?,
-        },
-        heroes: variant_heroes,
+    let interaction = |index| -> Result<GroupInteraction> {
+        Ok(GroupInteraction {
+            coefficient: fit.coefficients[index],
+            standard_error: fit.clustered_standard_error(index, &references, &matches)?,
+        })
+    };
+    Ok(AgreementPair {
+        base: interaction(4)?,
+        alternative: interaction(5)?,
+        heroes,
         observations: rows.len(),
     })
 }

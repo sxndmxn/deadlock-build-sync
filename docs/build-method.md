@@ -78,12 +78,13 @@ When an item upgrades a component, the component leaves the owned set.
 
 The item score is:
 
-`ln(adoption / 0.03) + effect / 0.1`
+`ln(adoption / 0.03) + effect / 0.05`
 
 Adoption is the share of hero players who own the item at that phase.
 The first term keeps the build close to items that players at this rank use.
 An item needs an adoption of 3% before the first term becomes positive.
 The second term moves the choice toward items that win more in similar states.
+A paired held-out test on four patches selected the effect scale 0.05 over the earlier 0.1. See [Research log](research-log.md), entry E14.
 
 MAIN CORE orders items by median net worth at first purchase, then median first purchase time.
 The player buys MAIN CORE from left to right.
@@ -273,7 +274,7 @@ The scale 0.025 gives a much larger coefficient. This result does not alone just
 The test and the item effects use the same adjustment for net worth, team lead, and rank.
 Thus, an item that players buy because they win can increase both values. The test can repeat the bias of the effect estimate.
 A test that does not share this bias is necessary before a change of the installed scale.
-This table uses the earlier ridge penalties of 5 and 100. See [Research log](research-log.md) for the results with the current penalties.
+This table uses the earlier ridge penalties of 5 and 100 and the earlier effect scale 0.1. See [Research log](research-log.md) for the results with the current values.
 
 ## Limits
 

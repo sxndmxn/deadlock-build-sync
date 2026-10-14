@@ -22,7 +22,7 @@ fn main() -> Result<()> {
     };
     let result = compare_variant_agreement(&paths, resources)?;
     println!("agreement\tcoefficient\tstandard_error\tz\theroes\tobservations");
-    for (name, value) in [("main", result.main), ("variant", result.variant)] {
+    for (name, value) in [("main", result.base), ("variant", result.alternative)] {
         println!(
             "{name}\t{:.4}\t{:.4}\t{:.1}\t{}\t{}",
             value.coefficient,
