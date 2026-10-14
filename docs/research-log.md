@@ -550,3 +550,36 @@ The large coefficients with opposite signs show this problem. The prediction fai
 The paired test of E14 is valid only when the two builds differ clearly. At the scales 0.1 and 0.05, the CORE overlap was 0.70.
 
 **Decision.** Keep the floor at 0 in production. The floor remains an option of the experiment examples.
+
+## E17: reliability of the confidence label
+
+**Hypothesis.** The confidence label of a build measures that hero's build. Thus, a hero gets similar results on two halves of the same test matches.
+
+**Method.** `measure_label_halves` assembles each main build from development matches.
+It tests the build separately on test matches with even and odd identifiers and correlates the coefficients across heroes.
+
+**Result.**
+
+| Run | Heroes | Correlation of halves | Same label | Builds with a positive mean coefficient |
+| --- | --- | --- | --- | --- |
+| `20261012T233433Z` | 41 | 0.405 | 25 | 76% |
+| `confirm-20261003` | 40 | 0.021 | 14 | 80% |
+| `holdout-20260916` | 38 | 0.019 | 15 | 92% |
+
+**Analysis.** On the two large runs, the halves did not correlate. The differences between heroes are mostly noise, and the per-hero labels are not reliable.
+
+**Second hypothesis.** A hierarchical estimate predicts the other half better than the build's own result.
+The estimate moves each even-half coefficient toward the precision-weighted mean of all heroes.
+The size of the move comes from the variance between heroes beyond the noise, estimated from the even half only. The prediction was fixed before the calculation.
+
+| Run | Mean squared error, own result | Hierarchical estimate | Mean of all heroes |
+| --- | --- | --- | --- |
+| `20261012T233433Z` | 0.104 | 0.076 | 0.085 |
+| `confirm-20261003` | 0.123 | 0.075 | 0.049 |
+| `holdout-20260916` | 0.044 | 0.031 | 0.031 |
+
+The hierarchical estimate was better than the own result on all three runs. The mean of all heroes was better on two runs, which agrees with small real differences between heroes.
+
+**Decision.** Set the label from the hierarchical estimate, with separate pools for main builds and additional builds.
+Keep the own result in the catalog field `hero_estimate`.
+On the holdout run, 34 of 38 main builds became `strong`. On the short run `20261012T233433Z`, the estimated variance between heroes was larger, and 10 main builds stayed `limited`.

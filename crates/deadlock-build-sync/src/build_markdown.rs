@@ -18,6 +18,13 @@ pub fn render_build_markdown(build: &HeroBuild, catalog: &HeroBuildCatalog) -> R
         evaluation.standard_error,
         evaluation.observations
     );
+    if let Some(hero) = &evaluation.hero_estimate {
+        let _ = writeln!(
+            text,
+            "The label uses the test pooled with comparable builds of all heroes. This build alone: {:+.2} ± {:.2}.",
+            hero.agreement_coefficient, hero.standard_error
+        );
+    }
     let _ = writeln!(
         text,
         "Matches: {} to {}, badges {}–{}, client {}.\n",

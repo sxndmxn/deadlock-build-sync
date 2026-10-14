@@ -97,7 +97,7 @@ Items without sufficient evidence leave the selection empty.
 
 The method estimates how much each item adds to the win probability in similar game states.
 It then assembles a build from items that players at this rank use, tilted toward items that win more.
-A test on held-out matches gives each build a confidence label: `strong`, `moderate`, or `limited`.
+A test on held-out matches gives each build a confidence label: `strong`, `moderate`, or `limited`. The label pools the test with comparable builds of all heroes, because the test of one hero alone is mostly noise.
 See [Build method](docs/build-method.md) for the method, the test, and the limits.
 
 The data is observational. It does not prove that an item causes a win.

@@ -195,14 +195,19 @@ fn describe_build(
     let guide = if build.counters.is_empty() {
         "Buy MAIN CORE from left to right. TIER items are situational choices."
     } else {
-        "Buy MAIN CORE from left to right. VS panels answer the main enemy damage type. TIER items are situational choices."
+        "Buy MAIN CORE from left to right. VS panels answer the enemy team. TIER items are situational choices."
     };
     lines.extend([
         guide.into(),
         "Item rates count each buyer once per match across this hero's ranked matches. They do not measure the complete build.".into(),
         format!(
-            "Evidence: {} (held-out test, n={}). Ranked • {} • {} to {}.",
+            "Evidence: {} ({}, n={}). Ranked • {} • {} to {}.",
             build.evaluation.confidence.label(),
+            if build.evaluation.hero_estimate.is_some() {
+                "held-out test pooled with all heroes"
+            } else {
+                "held-out test"
+            },
             build.evaluation.observations,
             ranks.label(),
             catalog.cohort.since.get(..10).unwrap_or_default(),

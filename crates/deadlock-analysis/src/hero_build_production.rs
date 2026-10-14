@@ -11,7 +11,7 @@ use deadlock_input::{ApiOptions, BuildTagCatalog, DeadlockApi, parse_patch_feed}
 use serde_json::Value;
 
 use crate::build_assembly::{AssembledBuild, PHASES, PurchaseMedians, assemble_build};
-use crate::build_evaluation::evaluate_build;
+use crate::build_evaluation::{evaluate_build, shrink_evaluations};
 use crate::build_variants::{
     MINIMUM_SEPARATION, assemble_item_variant, build_separation, select_item_variants,
 };
@@ -113,6 +113,14 @@ fn assemble_hero_builds(
             catalog,
             medians,
         )?);
+    }
+    for variants in [false, true] {
+        let mut pool = builds
+            .iter_mut()
+            .filter(|build| build.variant_id.is_some() == variants)
+            .map(|build| &mut build.evaluation)
+            .collect::<Vec<_>>();
+        shrink_evaluations(&mut pool);
     }
     eprintln!("Testing counter item groups");
     let groups = CounterGroups::from_catalog(catalog);

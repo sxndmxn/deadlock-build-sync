@@ -278,3 +278,50 @@ fn fit_agreement_pair(
         observations: rows.len(),
     })
 }
+
+/// The held-out test of one hero's main build on two halves of the test matches.
+#[derive(Debug)]
+pub struct LabelHalves {
+    pub hero_id: u64,
+    pub even: BuildEvaluation,
+    pub odd: BuildEvaluation,
+}
+
+/// Tests each hero's main build separately on test matches with even and odd identifiers.
+///
+/// The build comes from development matches, as in production. Similar results on both halves
+/// show that the per-hero confidence label is reliable.
+///
+/// # Errors
+/// Returns an error when the run, the analysis database, or a model fails.
+pub fn measure_label_halves(
+    paths: &RunPaths,
+    resources: ExtractionResources,
+) -> Result<Vec<LabelHalves>> {
+    let inputs = load_run_inputs(paths, resources)?;
+    let catalog = &inputs.catalog;
+    let (test, development): (Vec<_>, Vec<_>) =
+        inputs.states.iter().partition(|state| state.is_test());
+    let effects = estimate_item_effects(&development, catalog, &PHASES)?;
+    let hero_ids = test
+        .iter()
+        .map(|state| state.hero_id)
+        .collect::<BTreeSet<_>>();
+    let mut results = Vec::new();
+    for hero_id in hero_ids {
+        let Some(build) = assemble_build(hero_id, &effects, catalog, &inputs.medians) else {
+            continue;
+        };
+        let (even, odd): (Vec<_>, Vec<_>) = test
+            .iter()
+            .copied()
+            .filter(|state| state.hero_id == hero_id)
+            .partition(|state| state.match_id % 2 == 0);
+        results.push(LabelHalves {
+            hero_id,
+            even: evaluate_build(&even, &build.phase_sets, catalog)?,
+            odd: evaluate_build(&odd, &build.phase_sets, catalog)?,
+        });
+    }
+    Ok(results)
+}

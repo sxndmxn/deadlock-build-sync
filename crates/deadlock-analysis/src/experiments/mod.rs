@@ -5,8 +5,8 @@ mod counter_tests;
 mod effect_models;
 
 pub use build_agreement::{
-    AgreementPair, ScoringResult, compare_item_scoring, compare_scoring_pair,
-    compare_variant_agreement,
+    AgreementPair, LabelHalves, ScoringResult, compare_item_scoring, compare_scoring_pair,
+    compare_variant_agreement, measure_label_halves,
 };
 pub use counter_tests::{
     ConditionResult, CounterResult, WindowEvidence, estimate_counter_interactions,

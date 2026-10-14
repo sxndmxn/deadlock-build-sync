@@ -238,6 +238,11 @@ The agreement coefficient is the change in log-odds from no agreement to full ag
 | `moderate` | The coefficient is above zero. |
 | `limited` | The coefficient is zero or less, or the test has fewer than 200 observations. |
 
+The test of one build is noisy. In split-half tests, the coefficients of different heroes did not correlate on the large runs.
+Thus, the label uses a hierarchical estimate. Each coefficient moves toward the precision-weighted mean of comparable builds: main builds or additional builds.
+The size of the move depends on the variance between builds beyond their noise. A build keeps more of its own result when that variance is large or its own error is small.
+The catalog keeps the result of the build alone, and the Markdown file shows both values. See [Research log](research-log.md), entry E17.
+
 The installed build uses all folds.
 
 ## Comparison with simpler choices

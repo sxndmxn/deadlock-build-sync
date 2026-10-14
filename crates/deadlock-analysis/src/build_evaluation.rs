@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
 use deadlock_data::Result;
-use deadlock_guides::{BuildEvaluation, Confidence};
+use deadlock_guides::{BuildEvaluation, Confidence, HeroEstimate};
 
 use crate::build_assembly::PhaseSets;
 use crate::item_effects::{ItemCatalog, LandmarkState, relative_net_worth, standardized_rank};
@@ -62,6 +62,7 @@ fn fit_agreement(rows: &[FeatureRow]) -> Result<BuildEvaluation> {
             standard_error: 0.0,
             observations: u64::try_from(rows.len())?,
             confidence: Confidence::Limited,
+            hero_estimate: None,
         });
     }
     let references = rows.iter().collect::<Vec<_>>();
@@ -73,6 +74,7 @@ fn fit_agreement(rows: &[FeatureRow]) -> Result<BuildEvaluation> {
         standard_error,
         observations: u64::try_from(rows.len())?,
         confidence: Confidence::classify(coefficient, standard_error),
+        hero_estimate: None,
     })
 }
 
@@ -123,4 +125,56 @@ fn build_evaluation_row(
         features,
         label: if state.won { 1.0 } else { 0.0 },
     })
+}
+
+/// Pulls the held-out coefficient of each tested build toward the mean of comparable builds.
+///
+/// Split-half tests showed that the differences between heroes are mostly noise (E17 in
+/// `docs/research-log.md`). The pull depends on the variance between builds beyond the noise:
+/// a build keeps more of its own result when that variance is large or its own error is small.
+/// Untested builds and pools with fewer than three tested builds do not change.
+pub fn shrink_evaluations(evaluations: &mut [&mut BuildEvaluation]) {
+    let tested = evaluations
+        .iter()
+        .filter(|evaluation| evaluation.standard_error > 0.0)
+        .map(|evaluation| (evaluation.agreement_coefficient, evaluation.standard_error))
+        .collect::<Vec<_>>();
+    if tested.len() < 3 {
+        return;
+    }
+    let count = f64::from(u32::try_from(tested.len()).unwrap_or(u32::MAX));
+    let weight_sum = tested.iter().map(|(_, error)| error.powi(-2)).sum::<f64>();
+    let pooled = tested
+        .iter()
+        .map(|(coefficient, error)| coefficient * error.powi(-2))
+        .sum::<f64>()
+        / weight_sum;
+    let mean = tested
+        .iter()
+        .map(|(coefficient, _)| coefficient)
+        .sum::<f64>()
+        / count;
+    let spread = tested
+        .iter()
+        .map(|(coefficient, _)| (coefficient - mean).powi(2))
+        .sum::<f64>()
+        / (count - 1.0);
+    let noise = tested.iter().map(|(_, error)| error.powi(2)).sum::<f64>() / count;
+    let between = (spread - noise).max(0.0);
+    for evaluation in evaluations
+        .iter_mut()
+        .filter(|evaluation| evaluation.standard_error > 0.0)
+    {
+        let error = evaluation.standard_error;
+        let pull = error.powi(2) / error.mul_add(error, between);
+        let coefficient = (evaluation.agreement_coefficient - pooled).mul_add(1.0 - pull, pooled);
+        let standard_error = (between * pull + pull.powi(2) / weight_sum).sqrt();
+        evaluation.hero_estimate = Some(HeroEstimate {
+            agreement_coefficient: evaluation.agreement_coefficient,
+            standard_error: error,
+        });
+        evaluation.agreement_coefficient = coefficient;
+        evaluation.standard_error = standard_error;
+        evaluation.confidence = Confidence::classify(coefficient, standard_error);
+    }
 }

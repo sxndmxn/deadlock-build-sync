@@ -323,6 +323,17 @@ pub struct BuildEvaluation {
     pub standard_error: f64,
     pub observations: u64,
     pub confidence: Confidence,
+    /// The test of this build alone, before the pull toward comparable builds of all heroes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hero_estimate: Option<HeroEstimate>,
+}
+
+/// The agreement coefficient of one build's own held-out test.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HeroEstimate {
+    pub agreement_coefficient: f64,
+    pub standard_error: f64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
