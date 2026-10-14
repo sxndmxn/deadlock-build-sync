@@ -2,10 +2,10 @@
 #![deny(warnings)]
 
 mod build_assembly;
-mod build_benchmark;
 mod build_evaluation;
 mod build_variants;
 mod counter_items;
+mod experiments;
 
 pub use counter_items::GroupInteraction;
 mod database;
@@ -22,7 +22,7 @@ mod sources;
 mod sql_resources;
 
 pub use build_assembly::{DEFAULT_SCORING, ItemScoring};
-pub use build_benchmark::{
+pub use experiments::{
     AgreementPair, ConditionResult, CounterResult, EffectModel, Interaction, ItemEffectRow,
     ModelResult, ScoringResult, WindowEvidence, compare_effect_models, compare_item_scoring,
     compare_scoring_pair, compare_variant_agreement, estimate_counter_interactions,
