@@ -76,6 +76,12 @@ These examples read one run directory and write tab-separated text:
 | `compare_training_fractions` | Held-out agreement of builds from fewer development matches |
 | `measure_label_halves` | Per-hero test results on two halves of the test matches |
 | `measure_build_stability` | CORE overlap of builds from two match samples |
+| `measure_counter_placebo` | z values of the counter test after random moves of team conditions |
+| `measure_pair_placebo` | z values of the paired test after random moves of agreements |
+| `measure_label_placebo` | z values of the per-hero test after random moves of agreements |
+
+Run a placebo for each new test model. A placebo removes the real relation, so its z values must follow a standard normal distribution.
+A placebo found the flaw of entry E30 in the pooled models.
 
 ```bash
 cargo run --release -p deadlock-analysis --example compare_effect_models -- \
