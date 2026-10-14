@@ -110,3 +110,42 @@ A rare CORE item has an adoption below 3% at the phase that added it.
 The new penalties reduced the rare CORE share at the scale 0.025 from 32.9% to 14.7%.
 
 **Decision.** Keep the scale 0.1. The agreement test cannot separate the scales. A test with more statistical power is necessary.
+
+## E3: net worth growth as the outcome
+
+**Hypothesis.** The match result depends on ten other players, so it is a noisy outcome for one item choice.
+The net worth growth after a landmark depends more directly on the player and can give more reliable item effects.
+
+**Method.** A linear ridge model predicted the logarithm of net worth growth from each phase landmark to the next landmark (9 to 12, 20 to 25, and 30 to 35 minutes).
+The covariates and owned items came from the phase landmark. The penalties were four times the win model penalties, because a linear row has about four times the weight of a logistic row.
+The split-half method of E1 measured reliability. The code is not in the repository, because the hypothesis failed.
+
+**Result.** Growth effects were more reliable than win effects. The correlations were 0.87 to 0.97 for growth and 0.45 to 0.75 for win.
+The hero-specific part (hero effect minus global effect) was less reliable.
+
+| Adoption | Win, hero minus global | Growth, hero minus global |
+| --- | --- | --- |
+| Below 3% | 0.06 | 0.18 |
+| 3% to 10% | 0.12 | 0.30 |
+| 10% or more | 0.21 | 0.56 |
+
+Growth effects did not agree with win effects. For global effects of items with an adoption of 3% or more, the correlation was −0.003 at 9 minutes, 0.335 at 20 minutes, and 0.204 at 30 minutes.
+The largest growth effects belonged to economy items: Cultist Sacrifice, Monster Rounds, and Trophy Collector.
+Cultist Sacrifice had a negative win effect at each phase, from −0.028 to −0.064.
+
+The global win models gave these covariate coefficients. Two samples gave similar values.
+
+| Phase | Relative net worth | Team lead | Rank |
+| --- | --- | --- | --- |
+| 9 minutes | −0.02 to −0.04 | 13.4 to 13.7 | about 0 |
+| 20 minutes | −0.10 to −0.21 | 25.9 | about 0 |
+| 30 minutes | −0.06 to +0.02 | 34.8 to 35.6 | about 0 |
+
+**Analysis.** Growth measures soul income, not the match result.
+After the team lead, the net worth of one player adds almost no information. An item affects the match result through the team lead.
+One player has about one sixth of the team net worth. A growth of 3% adds about 0.0025 to the team lead, which is about 0.065 log-odds at 20 minutes.
+Thus, the win model underrates economy items by a small amount. The data cannot separate this amount from the selection of players who buy these items.
+
+Hero-specific win effects are mostly noise. This result agrees with the large hero penalty that E2 selected.
+
+**Decision.** Do not use growth as the outcome. Do not change the win model for economy items.
