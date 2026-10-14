@@ -82,16 +82,13 @@ fn check_counter_presentation(catalog: &HeroBuildCatalog) -> Result<()> {
             "TIER 3",
             "TIER 4",
         ]
-        || !content.categories[1]
-            .description
-            .contains("z = 4.5 at 20 min, 5.8 at 30 min")
-        || !content.categories[2]
-            .description
-            .contains("the enemy team buys healing and lifesteal items")
+        || content.categories[1..=2]
+            .iter()
+            .any(|category| category.description != "From midgame")
         || !content.description.contains("VS panels")
     {
         return Err(Error::new(
-            "Presentation omitted the counter panel or its evidence",
+            "Presentation omitted the counter panel or has a long panel text",
         ));
     }
     encode_hero_build(&presentation, 1, 7, 1)?;

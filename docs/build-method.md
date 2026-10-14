@@ -172,7 +172,8 @@ A panel appears unless the run contradicts its group: a z value below −2 at a 
 Four patches confirmed the effects, so a short run with weak evidence keeps the panel.
 
 A panel holds at most four group items outside MAIN CORE. Each item needs a hero adoption of at least 1% at 20 or 30 minutes.
-The panel orders the items by adoption. The panel description states the z value of the run test at each phase.
+The panel orders the items by adoption. The panel description is only "From midgame", because a longer text covers the items of a narrow panel.
+The Markdown file states the z value of the run test at each phase.
 
 See [Research log](research-log.md), entries E6, E7, and E9.
 For defensive items, the difference between the 10th and 90th percentiles of enemy teams is about 0.05 log-odds for each item.

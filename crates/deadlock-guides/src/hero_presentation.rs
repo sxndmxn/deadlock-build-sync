@@ -135,25 +135,23 @@ fn describe_item(item: &BuildItem) -> Result<String> {
     ))
 }
 
-/// States when to use a counter panel and the z value of its run test at each phase.
+/// Returns the short description of a counter panel after a check of its run evidence.
 fn describe_counter_panel(panel: &CounterPanel, catalog: &HeroBuildCatalog) -> Result<String> {
     let evidence = catalog
         .counter_evidence
         .iter()
         .find(|evidence| evidence.target == panel.target)
         .ok_or_else(|| Error::new("Counter panel has no run evidence"))?;
-    let label = panel.target.label();
-    let tests = evidence
-        .phases
-        .iter()
-        .map(|phase| format!("{:.1} at {} min", phase.z(), phase.phase_s / 60))
-        .collect::<Vec<_>>()
-        .join(", ");
-    Ok(format!(
-        "From mid game, when {}. These items won more against {label}-heavy teams on 4 tested patches. This patch: z = {tests}.",
-        panel.target.condition()
-    ))
+    if evidence.phases.is_empty() {
+        return Err(Error::new("Counter panel evidence has no tested phase"));
+    }
+    // A narrow panel shows only a short text without covering its items.
+    // The panel name states the condition, and the Markdown export states the evidence.
+    Ok(COUNTER_PANEL_TEXT.into())
 }
+
+/// The description of each counter panel. The tests confirmed the effects from 20 minutes.
+const COUNTER_PANEL_TEXT: &str = "From midgame";
 
 /// Rounds the soul window to whole thousands. The window always spans at least 1k.
 fn format_soul_window([lower, upper]: [u32; 2]) -> String {
