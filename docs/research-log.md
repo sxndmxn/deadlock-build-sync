@@ -607,3 +607,23 @@ The standard errors were from 0.016 to 0.059.
 Adoption alone had almost no held-out signal after 15 minutes.
 
 **Decision.** Keep one effect scale for all phases.
+
+## E19: the amount of match data
+
+**Hypothesis.** More development matches give better builds. Thus, a sync soon after a patch gives weaker builds.
+
+**Method.** `compare_training_fractions` keeps the earliest fraction of the development matches, by match identifier.
+It estimates the item effects and assembles the builds from that fraction. All fractions use the same test matches and the installed score rule.
+
+**Result.** Each cell gives the pooled agreement coefficient. The standard errors were from 0.0097 to 0.0104.
+
+| Run | 10% | 25% | 50% | 100% |
+| --- | --- | --- | --- | --- |
+| `holdout-20260916` | 0.164 (7,098 matches) | 0.117 | 0.104 | 0.124 (70,973 matches) |
+| `20260913T235155Z` | 0.114 (6,633 matches) | 0.109 | 0.110 | 0.117 (66,323 matches) |
+
+**Analysis.** Builds from about 7,000 matches tested as well as builds from ten times more matches. At this rank range, that is one to two days after a patch.
+The ridge penalties of E2 keep the estimates stable with few matches. This test cannot show small differences.
+The counter tests need more matches: E7 found stable results at about 18,000 matches.
+
+**Decision.** No change. A sync one or two days after a patch gives builds of full test quality.

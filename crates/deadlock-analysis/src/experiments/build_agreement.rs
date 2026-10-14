@@ -382,3 +382,77 @@ pub fn compare_scoring_by_landmark(
     }
     Ok(results)
 }
+
+/// The pooled held-out test of builds from the earliest part of the development matches.
+#[derive(Debug)]
+pub struct FractionResult {
+    pub fraction: f64,
+    pub matches: usize,
+    pub evaluation: BuildEvaluation,
+}
+
+/// Tests builds that use only the earliest fraction of the development matches.
+///
+/// Match identifiers increase with time. Each fraction keeps the development matches with the
+/// smallest identifiers. All fractions use the same test matches and the installed score rule.
+///
+/// # Errors
+/// Returns an error when a fraction is outside (0, 1], or when the run or a model fails.
+pub fn compare_training_fractions(
+    paths: &RunPaths,
+    resources: ExtractionResources,
+    fractions: &[f64],
+) -> Result<Vec<FractionResult>> {
+    let inputs = load_run_inputs(paths, resources)?;
+    let catalog = &inputs.catalog;
+    let (test, development): (Vec<_>, Vec<_>) =
+        inputs.states.iter().partition(|state| state.is_test());
+    let matches = development
+        .iter()
+        .map(|state| state.match_id)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let mut test_by_hero = BTreeMap::<u64, Vec<&LandmarkState>>::new();
+    for state in &test {
+        test_by_hero.entry(state.hero_id).or_default().push(state);
+    }
+    let mut results = Vec::new();
+    for fraction in fractions {
+        if !(*fraction > 0.0 && *fraction <= 1.0) {
+            return Err(deadlock_data::Error::new("Each fraction must be in (0, 1]"));
+        }
+        let target = count_as_f64(u64::try_from(matches.len())?)? * fraction;
+        let mut kept = matches.len();
+        for count in 1..=matches.len() {
+            if count_as_f64(u64::try_from(count)?)? >= target {
+                kept = count;
+                break;
+            }
+        }
+        let last = matches
+            .get(kept.saturating_sub(1))
+            .copied()
+            .unwrap_or_default();
+        let subset = development
+            .iter()
+            .copied()
+            .filter(|state| state.match_id <= last)
+            .collect::<Vec<_>>();
+        eprintln!("Testing fraction {fraction} with {kept} matches");
+        let effects = estimate_item_effects(&subset, catalog, &PHASES)?;
+        let builds = test_by_hero
+            .iter()
+            .filter_map(|(hero_id, states)| {
+                assemble_build(*hero_id, &effects, catalog, &inputs.medians)
+                    .map(|build| (states.clone(), build.phase_sets))
+            })
+            .collect::<Vec<_>>();
+        results.push(FractionResult {
+            fraction: *fraction,
+            matches: kept,
+            evaluation: evaluate_pooled_builds(&builds, catalog)?,
+        });
+    }
+    Ok(results)
+}
