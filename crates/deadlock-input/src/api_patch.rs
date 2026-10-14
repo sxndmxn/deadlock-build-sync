@@ -58,6 +58,20 @@ impl Patch {
     }
 }
 
+/// Returns true when the title or text of a feed post contains the word "update".
+///
+/// Game updates use this word, for example "Minor Update" and "City Never Sleeps".
+/// Hero release posts are stories without it.
+fn is_game_update(row: &Value) -> bool {
+    [&row["title"], &row["content"]]
+        .iter()
+        .filter_map(|value| value.as_str())
+        .any(|text| {
+            text.split(|character: char| !character.is_ascii_alphanumeric())
+                .any(|word| word.eq_ignore_ascii_case("update"))
+        })
+}
+
 pub fn current_patch(session: &ApiSession) -> Result<Patch> {
     let response = session.get("/v2/patches", Map::new())?;
     parse_patch_feed(&response, None)
@@ -75,22 +89,24 @@ pub fn parse_patch_feed(response: &Value, as_of: Option<i64>) -> Result<Patch> {
     } else {
         response.clone()
     };
-    let mut latest: Option<(DateTime<Utc>, Value)> = None;
+    let mut dated = Vec::new();
     for row in object_rows(rows, "Patch")? {
         if let Some(published) = row["pub_date"].as_str() {
             let timestamp = parse_datetime(published)?;
-            if as_of.is_some_and(|cutoff| timestamp.timestamp() > cutoff) {
-                continue;
-            }
-            if latest
-                .as_ref()
-                .is_none_or(|(current, _)| timestamp > *current)
-            {
-                latest = Some((timestamp, row));
+            if as_of.is_none_or(|cutoff| timestamp.timestamp() <= cutoff) {
+                dated.push((timestamp, row));
             }
         }
     }
-    let (timestamp, row) = latest.ok_or_else(|| Error::new("Patch response has no dated patch"))?;
+    // Hero release posts are not patches. Use the latest game update, or the latest post
+    // when the feed has no game update.
+    let (timestamp, row) = dated
+        .iter()
+        .filter(|(_, row)| is_game_update(row))
+        .max_by_key(|(timestamp, _)| *timestamp)
+        .or_else(|| dated.iter().max_by_key(|(timestamp, _)| *timestamp))
+        .cloned()
+        .ok_or_else(|| Error::new("Patch response has no dated patch"))?;
     Ok(Patch {
         title: row["title"]
             .as_str()

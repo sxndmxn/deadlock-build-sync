@@ -32,7 +32,12 @@ The safety executable checks temporary caches, backup validation, preservation, 
 It checks source fingerprints through the resume workflow and rejects stale installations through a local reference API.
 It also checks native imbue targets through catalog serialization and Steam encoding.
 Focus checks cover supporting CORE items, conflicting targets, reload effects, descriptions, and title limits.
+Variant checks cover shared heroes, duplicate identities, complete Markdown exports, and separate Steam build IDs.
+They also check repeated installation, variant removal, and compatibility with schema 5 catalogs.
+Counter checks cover the panel order, the evidence text, the Markdown export, and catalogs with invalid counter panels.
 The analysis executable checks imbue selection with an isolated purchase database and reference assets.
+The strategy executable checks distinct item combinations, unique player counts, stable selection, and heroes with only one observed strategy.
+The item statistics executable checks purchase counts, rank filters, calibration exclusion, variant consistency, legacy display, and invalid counts.
 The checks do not read or write live Steam files.
 Fixture checks do not certify live builds.
 
@@ -47,6 +52,41 @@ CI installs the verification tools and runs this same command.
 
 Unit tests remain deferred at the user's request.
 Verify changes with the documented checks and isolated reference fixtures.
+
+## Experiments
+
+Test each change to the build method on extracted runs before you change a default.
+Record the hypothesis, method, result, and decision in [docs/research-log.md](docs/research-log.md).
+Repeat a result on at least one other patch before a change of the installed builds.
+
+These examples read one run directory and write tab-separated text:
+
+| Example | Measurement |
+| --- | --- |
+| `compare_item_scoring` | Held-out agreement and CORE adoption for each effect scale |
+| `compare_effect_models` | Held-out log loss for ridge penalties and match condition interactions |
+| `export_split_item_effects` | Item effects from two halves of the development matches |
+| `estimate_counter_interactions` | Counter effects of defensive item groups at each phase |
+| `estimate_enemy_item_counters` | Counter effects of item groups against a share of enemy item cost |
+| `measure_counter_windows` | Counter evidence in time windows of one run |
+| `compare_scoring_pair` | Held-out signal of one effect scale beyond another |
+| `compare_variant_agreement` | Held-out signal of additional builds beyond the main build |
+| `compare_situational_signal` | Held-out signal of situational items beyond CORE agreement |
+| `compare_scoring_by_landmark` | Held-out agreement of score rules at each test landmark |
+| `compare_training_fractions` | Held-out agreement of builds from fewer development matches |
+| `measure_label_halves` | Per-hero test results on two halves of the test matches |
+| `measure_build_stability` | CORE overlap of builds from two match samples |
+| `measure_counter_placebo` | z values of the counter test after random moves of team conditions |
+| `measure_pair_placebo` | z values of the paired test after random moves of agreements |
+| `measure_label_placebo` | z values of the per-hero test after random moves of agreements |
+
+Run a placebo for each new test model. A placebo removes the real relation, so its z values must follow a standard normal distribution.
+A placebo found the flaw of entry E30 in the pooled models.
+
+```bash
+cargo run --release -p deadlock-analysis --example compare_effect_models -- \
+  ~/.local/state/deadlock-build-sync/offline/results/RUN_ID 200:300 200:300:spirit=2
+```
 
 ## Data formats
 

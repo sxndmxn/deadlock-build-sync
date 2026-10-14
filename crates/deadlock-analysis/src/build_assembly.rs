@@ -9,7 +9,9 @@ pub const PHASES: [u32; 3] = [540, 1200, 1800];
 /// The smallest share of hero players who own an item at a phase before CORE can use it.
 const MINIMUM_ADOPTION: f64 = 0.03;
 /// One effect step of this size equals a factor of e in adoption in the item score.
-const EFFECT_SCALE: f64 = 0.1;
+const EFFECT_SCALE: f64 = 0.025;
+/// The effect scale of the key item value. E14 tested only the CORE item score.
+const KEY_ITEM_EFFECT_SCALE: f64 = 0.1;
 const MAXIMUM_OWNED: usize = 12;
 const SITUATIONAL_MINIMUM_EFFECT: f64 = 0.02;
 const SITUATIONAL_ITEMS_PER_TIER: usize = 6;
@@ -26,21 +28,75 @@ pub struct PurchaseMedian {
 
 pub type PurchaseMedians = BTreeMap<(u64, u64), PurchaseMedian>;
 
+/// The items that a build owns at each phase landmark.
+pub type PhaseSets = BTreeMap<u32, BTreeSet<u64>>;
+
 /// The CORE purchase order and the items the build owns at each phase.
 #[derive(Clone, Debug)]
 pub struct AssembledBuild {
     pub core: Vec<BuildItem>,
-    pub phase_sets: BTreeMap<u32, BTreeSet<u64>>,
+    pub phase_sets: PhaseSets,
     pub situational: Vec<BuildItem>,
     pub key_item_id: u64,
 }
 
-/// Scores an item by adoption, tilted toward items with a positive win effect.
+/// The item score rule: `ln(adoption / 0.03) + effect / effect_scale`.
 ///
-/// The logarithm keeps the build close to items that players at this rank use.
-/// The effect term moves the choice toward items that win more in similar states.
-fn score_item(effects: &HeroLandmarkEffects, column: usize) -> f64 {
-    (effects.adoption[column] / MINIMUM_ADOPTION).ln() + effects.effects[column] / EFFECT_SCALE
+/// A smaller effect scale moves the choice more toward items that win more.
+/// An infinite effect scale removes the effect term and selects by adoption only.
+/// Items with an adoption below the adoption floor cannot enter the build.
+#[derive(Clone, Copy, Debug)]
+pub struct ItemScoring {
+    pub effect_scale: f64,
+    pub adoption_floor: f64,
+}
+
+impl std::str::FromStr for ItemScoring {
+    type Err = deadlock_data::Error;
+
+    /// Reads `SCALE` or `SCALE:FLOOR`. The scale is positive, and `inf` selects by adoption only.
+    fn from_str(text: &str) -> deadlock_data::Result<Self> {
+        let invalid = || {
+            deadlock_data::Error::new(format!(
+                "Score rule must be SCALE or SCALE:FLOOR with a positive scale: {text}"
+            ))
+        };
+        let (scale, floor) = text.split_once(':').unwrap_or((text, "0"));
+        let effect_scale = scale
+            .parse::<f64>()
+            .ok()
+            .filter(|scale| *scale > 0.0)
+            .ok_or_else(invalid)?;
+        let adoption_floor = floor
+            .parse::<f64>()
+            .ok()
+            .filter(|floor| (0.0..1.0).contains(floor))
+            .ok_or_else(invalid)?;
+        Ok(Self {
+            effect_scale,
+            adoption_floor,
+        })
+    }
+}
+
+/// The item score rule of installed builds.
+pub const DEFAULT_SCORING: ItemScoring = ItemScoring {
+    effect_scale: EFFECT_SCALE,
+    adoption_floor: MINIMUM_ADOPTION,
+};
+
+impl ItemScoring {
+    /// Scores an item by adoption, tilted toward items with a positive win effect.
+    ///
+    /// The logarithm keeps the build close to items that players at this rank use.
+    /// The effect term moves the choice toward items that win more in similar states.
+    fn score_item(self, effects: &HeroLandmarkEffects, column: usize) -> f64 {
+        if effects.adoption[column] < self.adoption_floor {
+            return f64::NEG_INFINITY;
+        }
+        (effects.adoption[column] / MINIMUM_ADOPTION).ln()
+            + effects.effects[column] / self.effect_scale
+    }
 }
 
 /// Assembles a build phase by phase within the hero's median item spend.
@@ -51,6 +107,18 @@ pub fn assemble_build(
     catalog: &ItemCatalog,
     medians: &PurchaseMedians,
 ) -> Option<AssembledBuild> {
+    assemble_build_with_scoring(hero_id, table, catalog, medians, DEFAULT_SCORING)
+}
+
+/// Assembles a build with a specified item score rule.
+#[must_use]
+pub fn assemble_build_with_scoring(
+    hero_id: u64,
+    table: &EffectTable,
+    catalog: &ItemCatalog,
+    medians: &PurchaseMedians,
+    scoring: ItemScoring,
+) -> Option<AssembledBuild> {
     let mut owned = BTreeSet::new();
     let mut added = Vec::new();
     let mut phase_sets = BTreeMap::new();
@@ -58,7 +126,7 @@ pub fn assemble_build(
         let Some(effects) = table.get(&(hero_id, phase)) else {
             continue;
         };
-        owned = advance_phase(&owned, effects, catalog, &mut added, phase);
+        owned = advance_phase(&owned, effects, catalog, scoring, &mut added, phase);
         phase_sets.insert(phase, owned.clone());
     }
     if added.is_empty() {
@@ -93,13 +161,14 @@ fn advance_phase(
     previous: &BTreeSet<u64>,
     effects: &HeroLandmarkEffects,
     catalog: &ItemCatalog,
+    scoring: ItemScoring,
     added: &mut Vec<(u32, u64)>,
     phase: u32,
 ) -> BTreeSet<u64> {
     let score = |item: u64| {
         catalog
             .column(item)
-            .map_or(f64::MIN, |column| score_item(effects, column))
+            .map_or(f64::MIN, |column| scoring.score_item(effects, column))
     };
     let mut owned = previous
         .iter()
@@ -133,7 +202,9 @@ fn advance_phase(
     owned
 }
 
-fn describe_item(
+/// Describes one item with the hero's adoption and effect at one phase and its purchase medians.
+#[must_use]
+pub fn describe_item(
     hero_id: u64,
     item: u64,
     phase: u32,
@@ -153,6 +224,7 @@ fn describe_item(
         phase_s: phase,
         adoption: effects.adoption[column],
         win_rate: effects.owner_win_rates[column],
+        statistics: None,
         effect: effects.effects[column],
         median_net_worth: median.map_or(0, |median| median.net_worth),
         soul_window: median.map_or([0, 0], |median| median.soul_window),
@@ -184,7 +256,7 @@ fn select_key_item(core: &[BuildItem], table: &EffectTable, catalog: &ItemCatalo
                     .map(|effects| effects.adoption[column])
             })
             .unwrap_or(item.adoption);
-        item.effect / EFFECT_SCALE + (item.adoption / global.max(1e-6)).ln()
+        item.effect / KEY_ITEM_EFFECT_SCALE + (item.adoption / global.max(1e-6)).ln()
     };
     pool.into_iter()
         .max_by(|first, second| value(first).total_cmp(&value(second)))

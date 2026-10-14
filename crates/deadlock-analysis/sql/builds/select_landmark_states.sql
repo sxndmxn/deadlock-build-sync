@@ -19,10 +19,30 @@ players AS (
         AND NOT p.calibration
 ),
 
+hero_profiles AS (
+    SELECT
+        hero_id,
+        sum("cost") FILTER (WHERE slot = 'spirit')::DOUBLE / sum("cost") AS spirit_share
+    FROM purchases
+    WHERE item_purchase_ordinal = 1 AND NOT calibration
+    GROUP BY hero_id
+),
+
+team_profiles AS (
+    SELECT
+        p.match_id,
+        p.team_id,
+        avg(h.spirit_share) AS team_spirit_share
+    FROM player_matches AS p
+    INNER JOIN hero_profiles AS h ON p.hero_id = h.hero_id
+    GROUP BY p.match_id, p.team_id
+),
+
 states AS (
     SELECT
         pl.match_id,
         pl.player_slot,
+        pl.team_id,
         pl.hero_id,
         pl.won,
         pl.average_badge,
@@ -71,6 +91,9 @@ owned_items AS (
 )
 
 SELECT
+    st.match_id,
+    st.player_slot,
+    st.team_id,
     st.hero_id,
     st.fold,
     st.landmark_s,
@@ -78,11 +101,16 @@ SELECT
     st.average_badge,
     st.net_worth,
     st.team_lead::DOUBLE AS team_lead,
-    coalesce(o.item_ids, []) AS item_ids
+    coalesce(o.item_ids, []) AS item_ids,
+    coalesce(enemy.team_spirit_share, 0.0)::DOUBLE AS enemy_spirit_share
 FROM states AS st
 LEFT JOIN owned_items AS o
     ON
         st.match_id = o.match_id
         AND st.player_slot = o.player_slot
         AND st.landmark_s = o.landmark_s
+LEFT JOIN team_profiles AS enemy
+    ON
+        st.match_id = enemy.match_id
+        AND st.team_id <> enemy.team_id
 ORDER BY st.hero_id, st.landmark_s, st.match_id, st.player_slot;

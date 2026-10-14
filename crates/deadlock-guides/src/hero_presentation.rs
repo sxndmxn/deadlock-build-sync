@@ -1,7 +1,7 @@
 use deadlock_data::{Error, Rank, RankRange, Result};
 
 use crate::build_title::format_build_name;
-use crate::hero_build::{BuildItem, HeroBuild, HeroBuildCatalog};
+use crate::hero_build::{BuildItem, CounterPanel, HeroBuild, HeroBuildCatalog};
 use crate::presentation::{
     BuildPresentation, MANAGED_MARKER, PresentationAbilities, PresentationCategory,
     PresentationContent, PresentationItem,
@@ -35,6 +35,15 @@ pub fn build_hero_presentation(
         false,
         describe_item,
     )?];
+    for panel in &build.counters {
+        categories.push(build_category(
+            panel.target.panel_name(),
+            &panel.items,
+            &describe_counter_panel(panel, catalog)?,
+            true,
+            describe_item,
+        )?);
+    }
     for tier in 1..=4 {
         let items = build
             .situational
@@ -52,10 +61,17 @@ pub fn build_hero_presentation(
     }
     let abilities = (!build.ability_ids.is_empty()).then(|| PresentationAbilities {
         ability_ids: build.ability_ids.clone(),
-        annotation: format!(
-            "Most common complete order at this rank. n={}.",
-            build.ability_matches
-        ),
+        annotation: if build.variant_id.is_some() {
+            format!(
+                "Most common complete order among key item owners. n={}.",
+                build.ability_matches
+            )
+        } else {
+            format!(
+                "Most common complete order at this rank. n={}.",
+                build.ability_matches
+            )
+        },
     });
     BuildPresentation::new(PresentationContent {
         hero_id: build.hero_id,
@@ -72,7 +88,7 @@ fn build_category(
     items: &[BuildItem],
     description: &str,
     optional: bool,
-    annotate: fn(&BuildItem) -> String,
+    annotate: fn(&BuildItem) -> Result<String>,
 ) -> Result<PresentationCategory> {
     let (width, height) = if items.is_empty() {
         (EMPTY_WIDTH, EMPTY_HEIGHT)
@@ -92,28 +108,50 @@ fn build_category(
         optional,
         items: items
             .iter()
-            .map(|item| PresentationItem {
-                item_id: item.item_id,
-                name: item.name.clone(),
-                annotation: annotate(item),
-                required_flex_slots: None,
-                sell_priority: None,
-                imbue_target_ability_id: item.imbue_target.as_ref().map(|target| target.ability_id),
+            .map(|item| {
+                Ok(PresentationItem {
+                    item_id: item.item_id,
+                    name: item.name.clone(),
+                    annotation: annotate(item)?,
+                    required_flex_slots: None,
+                    sell_priority: None,
+                    imbue_target_ability_id: item
+                        .imbue_target
+                        .as_ref()
+                        .map(|target| target.ability_id),
+                })
             })
-            .collect(),
+            .collect::<Result<_>>()?,
     })
 }
 
-/// Shows the game phase, the win rate of owners, the pick rate, and the soul window, one per line.
-fn describe_item(item: &BuildItem) -> String {
-    format!(
-        "{}\nWIN RATE: {}\nPICK RATE: {}\nSOUL WINDOW: {}",
+/// Shows the game phase, purchase rates with counts, and the soul window.
+fn describe_item(item: &BuildItem) -> Result<String> {
+    let [win_rate, pick_rate] = item.describe_rates()?;
+    Ok(format!(
+        "{}\nITEM WIN RATE: {win_rate}\nPICK RATE: {pick_rate}\nSOUL WINDOW: {}",
         phase_label(item.phase_s),
-        format_share(item.win_rate),
-        format_share(item.adoption),
         format_soul_window(item.soul_window)
-    )
+    ))
 }
+
+/// Returns the short description of a counter panel after a check of its run evidence.
+fn describe_counter_panel(panel: &CounterPanel, catalog: &HeroBuildCatalog) -> Result<String> {
+    let evidence = catalog
+        .counter_evidence
+        .iter()
+        .find(|evidence| evidence.target == panel.target)
+        .ok_or_else(|| Error::new("Counter panel has no run evidence"))?;
+    if evidence.phases.is_empty() {
+        return Err(Error::new("Counter panel evidence has no tested phase"));
+    }
+    // A narrow panel shows only a short text without covering its items.
+    // The panel name states the condition, and the Markdown export states the evidence.
+    Ok(COUNTER_PANEL_TEXT.into())
+}
+
+/// The description of each counter panel. The tests confirmed the effects from 20 minutes.
+const COUNTER_PANEL_TEXT: &str = "From midgame";
 
 /// Rounds the soul window to whole thousands. The window always spans at least 1k.
 fn format_soul_window([lower, upper]: [u32; 2]) -> String {
@@ -146,11 +184,28 @@ fn describe_build(
     if let Some(ability) = &build.key_ability_name {
         lines.push(format!("Ability order: max {ability} first."));
     }
+    if build.variant_id.is_some() {
+        lines.push(format!(
+            "Item choices use {} player matches with {} at 20 or 30 minutes.",
+            build.observations, key_item.name
+        ));
+    }
+    let guide = if build.counters.is_empty() {
+        "Buy MAIN CORE from left to right. TIER items are situational choices."
+    } else {
+        "Buy MAIN CORE from left to right. VS panels answer the enemy team. TIER items are situational choices."
+    };
     lines.extend([
-        "Buy MAIN CORE from left to right. TIER items are situational choices.".into(),
+        guide.into(),
+        "Item rates count each buyer once per match across this hero's ranked matches. They do not measure the complete build.".into(),
         format!(
-            "Evidence: {} (held-out test, n={}). Ranked • {} • {} to {}.",
+            "Evidence: {} ({}, n={}). Ranked • {} • {} to {}.",
             build.evaluation.confidence.label(),
+            if build.evaluation.hero_estimate.is_some() {
+                "held-out test pooled with all heroes"
+            } else {
+                "held-out test"
+            },
             build.evaluation.observations,
             ranks.label(),
             catalog.cohort.since.get(..10).unwrap_or_default(),
@@ -187,8 +242,4 @@ fn format_souls(value: u32) -> String {
     } else {
         value.to_string()
     }
-}
-
-fn format_share(share: f64) -> String {
-    format!("{:.1}%", share * 100.0)
 }

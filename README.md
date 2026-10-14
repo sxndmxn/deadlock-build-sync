@@ -3,7 +3,7 @@
 [![CI](https://github.com/sxndmxn/deadlock-build-sync/actions/workflows/ci.yml/badge.svg)](https://github.com/sxndmxn/deadlock-build-sync/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-`deadlock-build-sync` makes one private Deadlock build for every hero from public match data.
+`deadlock-build-sync` makes private Deadlock builds for every hero from public match data.
 The CLI installs the builds in Steam's **My Builds** on Linux.
 
 ## Install
@@ -35,6 +35,8 @@ deadlock-build-sync sync
 ```
 
 `sync` downloads the ranked matches of the current patch, makes the builds, and writes them to the artifact directory.
+The current patch is the latest game update in the patch feed. A hero release post does not start a new patch.
+Builds improve with more matches. Sync again a few days after a patch, and again later in the patch.
 Then it makes a Steam cache backup and installs the builds atomically.
 It keeps favorites, selected builds, saved builds, and unrelated private builds.
 It replaces only builds with the managed marker.
@@ -54,9 +56,10 @@ deadlock-build-sync build
 Each build has these parts:
 
 1. **MAIN CORE**: the items to buy from left to right.
-2. **TIER 1 to TIER 4**: situational items for the matching shop tier. Buy one instead of a CORE item when the match makes it a better choice.
-3. **Ability order**: the most common complete ability order at this rank.
-4. **Description**: the inferred ability focus, when supported, the key item, its power spike, and the build confidence.
+2. **VS WEAPON, VS SPIRIT, and VS SUSTAIN**: counter items from the mid game, for the main damage type of the enemy team and for enemy healing. Each run repeats the counter test and removes a panel when the run contradicts it.
+3. **TIER 1 to TIER 4**: situational items for the matching shop tier. Buy one instead of a CORE item when the match makes it a better choice.
+4. **Ability order**: the most common complete ability order at this rank.
+5. **Description**: the inferred ability focus, when supported, the key item, its power spike, and the build confidence.
 
 Build titles use `Steam name | ability + key item` when CORE items support a clear ability focus.
 Otherwise, titles name the first fully upgraded ability from the selected ability order.
@@ -77,14 +80,17 @@ Each item shows four lines:
 
 ```text
 MID GAME
-WIN RATE: 52.3%
-PICK RATE: 48.1%
+ITEM WIN RATE: 52.3% (523/1000)
+PICK RATE: 50.0% (1000/2000)
 SOUL WINDOW: 8k-16k
 ```
 
 The phase is the time when the build adds the item: early game (9 minutes), mid game (20 minutes), or late game (30 minutes).
-The win rate is the share of hero players who own the item at that time and win the match.
-The pick rate is the share of hero players who own the item at that time.
+The item win rate is wins divided by buyer matches for this hero.
+The pick rate is buyer matches divided by all selected matches for this hero.
+Both rates show their numerator and denominator. Each player match counts once per item, regardless of purchase time or build variant.
+These are observed item purchase statistics. They do not measure the complete build or prove an item causes wins.
+Catalogs without purchase counts show `unavailable` until regeneration.
 The soul window is the net worth range in which most players buy the item: the middle half of the first purchases.
 
 Items with sufficient match evidence also select an ability in the native **IMBUE ABILITY** control.
@@ -93,7 +99,7 @@ Items without sufficient evidence leave the selection empty.
 
 The method estimates how much each item adds to the win probability in similar game states.
 It then assembles a build from items that players at this rank use, tilted toward items that win more.
-A test on held-out matches gives each build a confidence label: `strong`, `moderate`, or `limited`.
+A test on held-out matches gives each build a confidence label: `strong`, `moderate`, or `limited`. The label pools the test with comparable builds of all heroes, because the test of one hero alone is mostly noise.
 See [Build method](docs/build-method.md) for the method, the test, and the limits.
 
 The data is observational. It does not prove that an item causes a win.
@@ -122,6 +128,11 @@ JSON spacing and object key order do not affect these fingerprints.
 The default artifact directory is `$XDG_STATE_HOME/deadlock-build-sync/artifacts`.
 If `XDG_STATE_HOME` is not set, the CLI uses `~/.local/state/deadlock-build-sync/artifacts`.
 The directory contains `hero-builds.json` and one Markdown file per hero in `builds/`.
+Each Markdown file includes every catalog build for that hero.
+The catalog and installer support distinct variants for the same hero.
+The analysis selects a main build and up to two additional builds with distinct item combinations and sufficient match support.
+It evaluates each build separately. Similar candidates do not create additional entries.
+Additional builds are play style options. Held-out tests found a small win signal for them beyond the main build.
 Each new run replaces the complete directory.
 
 ## Commands

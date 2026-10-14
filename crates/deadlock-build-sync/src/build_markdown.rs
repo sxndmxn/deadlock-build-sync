@@ -1,10 +1,13 @@
 use std::fmt::Write as _;
 
+use deadlock_data::Result;
 use deadlock_guides::{BuildItem, HeroBuild, HeroBuildCatalog};
 
 /// Renders one hero build as Markdown with the values behind each item.
-#[must_use]
-pub fn render_build_markdown(build: &HeroBuild, catalog: &HeroBuildCatalog) -> String {
+///
+/// # Errors
+/// Returns an error when item purchase counts are invalid.
+pub fn render_build_markdown(build: &HeroBuild, catalog: &HeroBuildCatalog) -> Result<String> {
     let mut text = format!("# {}\n\n", build.title);
     let evaluation = &build.evaluation;
     let _ = writeln!(
@@ -15,6 +18,13 @@ pub fn render_build_markdown(build: &HeroBuild, catalog: &HeroBuildCatalog) -> S
         evaluation.standard_error,
         evaluation.observations
     );
+    if let Some(hero) = &evaluation.hero_estimate {
+        let _ = writeln!(
+            text,
+            "The label uses the test pooled with comparable builds of all heroes. This build alone: {:+.2} ± {:.2}.",
+            hero.agreement_coefficient, hero.standard_error
+        );
+    }
     let _ = writeln!(
         text,
         "Matches: {} to {}, badges {}–{}, client {}.\n",
@@ -36,33 +46,72 @@ pub fn render_build_markdown(build: &HeroBuild, catalog: &HeroBuildCatalog) -> S
             "Key item: {} at about {} net worth.\n",
             item.name, build.power_spike_net_worth
         );
+        if build.variant_id.is_some() {
+            let _ = writeln!(
+                text,
+                "Item choices use {} player matches with {} at 20 or 30 minutes.\n",
+                build.observations, item.name
+            );
+        }
     }
+    text.push_str("Item rates use all selected ranked matches for this hero, regardless of build or purchase time.\n");
+    text.push_str(
+        "Win rate shows wins / buyer matches. Pick rate shows buyer matches / hero matches.\n",
+    );
+    text.push_str("Each player match counts once per item. These rates do not measure the complete build or prove an item causes wins.\n\n");
     text.push_str("## MAIN CORE (buy from left to right)\n\n");
-    write_items(&mut text, &build.core);
+    write_items(&mut text, &build.core)?;
+    for panel in &build.counters {
+        let label = panel.target.label();
+        let _ = writeln!(
+            text,
+            "\n## {} (from mid game, when {})\n",
+            panel.target.panel_name(),
+            panel.target.condition()
+        );
+        if let Some(evidence) = catalog
+            .counter_evidence
+            .iter()
+            .find(|evidence| evidence.target == panel.target)
+        {
+            for phase in &evidence.phases {
+                let _ = writeln!(
+                    text,
+                    "Counter test at {} min: {:+.3} ± {:.3} log-odds per item and standard deviation of the enemy {label} condition (n={}).",
+                    phase.phase_s / 60,
+                    phase.coefficient,
+                    phase.standard_error,
+                    phase.observations
+                );
+            }
+            text.push('\n');
+        }
+        write_items(&mut text, &panel.items)?;
+    }
     text.push_str("\n## Situational items\n\n");
-    write_items(&mut text, &build.situational);
-    text
+    write_items(&mut text, &build.situational)?;
+    Ok(text)
 }
 
-fn write_items(text: &mut String, items: &[BuildItem]) {
+fn write_items(text: &mut String, items: &[BuildItem]) -> Result<()> {
     text.push_str(
-        "| Item | Tier | Cost | Phase | Win rate | Pick rate | Soul window | Effect | Net worth |\n",
+        "| Item | Tier | Cost | Phase | Item win rate (wins/buyers) | Pick rate (buyers/hero matches) | Soul window | Effect | Net worth |\n",
     );
     text.push_str("| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n");
     for item in items {
+        let [win_rate, pick_rate] = item.describe_rates()?;
         let _ = writeln!(
             text,
-            "| {} | {} | {} | {} min | {:.1}% | {:.1}% | {}–{} | {:+.3} | {} |",
+            "| {} | {} | {} | {} min | {win_rate} | {pick_rate} | {}–{} | {:+.3} | {} |",
             item.name,
             item.tier,
             item.cost,
             item.phase_s / 60,
-            item.win_rate * 100.0,
-            item.adoption * 100.0,
             item.soul_window[0],
             item.soul_window[1],
             item.effect,
             item.median_net_worth
         );
     }
+    Ok(())
 }

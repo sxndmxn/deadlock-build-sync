@@ -73,6 +73,25 @@ pub struct RunPaths {
 }
 
 impl RunPaths {
+    /// Opens the paths of an existing analysis run directory.
+    ///
+    /// # Errors
+    /// Returns an error when the directory has no `manifest.json` file.
+    pub fn open(run: &Path) -> Result<Self> {
+        if !run.join("manifest.json").is_file() {
+            return Err(Error::new(format!(
+                "Run directory has no manifest.json: {}",
+                run.display()
+            )));
+        }
+        Ok(Self {
+            raw: run.join("raw"),
+            data: run.join("data"),
+            tables: run.join("tables"),
+            run: run.to_path_buf(),
+        })
+    }
+
     /// Creates the directories of one analysis run.
     ///
     /// # Errors

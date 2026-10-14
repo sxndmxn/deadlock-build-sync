@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use deadlock_analysis::{
@@ -63,7 +63,7 @@ pub fn generate_builds(
     Ok((directory, catalog))
 }
 
-/// Writes the catalog and one Markdown file per hero, then replaces the directory.
+/// Writes the catalog and all builds in each hero's Markdown file, then replaces the directory.
 ///
 /// # Errors
 /// Returns an error when validation or the guarded directory replacement fails.
@@ -73,11 +73,23 @@ pub fn write_build_artifacts(directory: &Path, catalog: &HeroBuildCatalog) -> Re
     catalog.write(&staged.join(CATALOG_FILE))?;
     let builds = staged.join("builds");
     std::fs::create_dir(&builds)?;
+    let mut documents = BTreeMap::<String, (u64, String)>::new();
     for build in &catalog.heroes {
-        atomic_write(
-            &builds.join(format!("{}.md", markdown_name(&build.hero_name))),
-            render_build_markdown(build, catalog).as_bytes(),
-        )?;
+        let (hero_id, text) = documents
+            .entry(markdown_name(&build.hero_name))
+            .or_insert_with(|| (build.hero_id, String::new()));
+        if *hero_id != build.hero_id {
+            return Err(Error::new(
+                "Different heroes have the same Markdown file name",
+            ));
+        }
+        if !text.is_empty() {
+            text.push('\n');
+        }
+        text.push_str(&render_build_markdown(build, catalog)?);
+    }
+    for (name, (_, text)) in documents {
+        atomic_write(&builds.join(format!("{name}.md")), text.as_bytes())?;
     }
     transaction.commit()
 }
@@ -143,7 +155,7 @@ pub fn resolve_persona(location: &CacheLocation, configured: Option<&str>) -> Re
         .ok_or_else(|| Error::new("Cannot resolve the local Steam persona. Supply --persona NAME"))
 }
 
-/// Installs one managed build per hero. Builds for heroes in the catalog replace older managed builds.
+/// Installs every managed build path. Builds for heroes in the catalog replace older managed builds.
 ///
 /// # Errors
 /// Returns an error when the catalog is malformed or stale, or the guarded installation fails.
