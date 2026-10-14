@@ -131,6 +131,7 @@ Each Markdown file includes every catalog build for that hero.
 The catalog and installer support distinct variants for the same hero.
 The analysis selects a main build and up to two additional builds with distinct item combinations and sufficient match support.
 It evaluates each build separately. Similar candidates do not create additional entries.
+Additional builds are play style options. Held-out tests found no win advantage for them over the main build.
 Each new run replaces the complete directory.
 
 ## Commands
