@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use deadlock_data::{Error, Result, integer, read_json, text};
+use deadlock_data::{Error, RankRange, Result, integer, read_json, text};
 use deadlock_guides::{
     BuildCohort, BuildEvaluation, HERO_BUILD_METHOD, HERO_BUILD_SCHEMA_VERSION, HeroBuild,
     HeroBuildCatalog, TagItem, assign_build_focus, select_ability_path, select_build_tags,
@@ -56,49 +56,12 @@ pub fn produce_hero_builds(
     let patch = parse_patch_feed(&read_json(&paths.raw.join("patches.json"))?, Some(as_of))?;
     let client_version = integer(&manifest["sources"], "client_version")?;
     let heroes = read_hero_names(&paths.raw.join("heroes.json"))?;
-    let database = AnalysisDatabase::open_read_only(
-        &paths.raw.join("analysis.duckdb"),
-        &paths.raw.join("duckdb-read-tmp"),
-        resources,
-    )?;
-    let parameters = Parameters::from([
-        (
-            "minimum_badge".into(),
-            SqlValue::UInt(u32::from(ranks.minimum.badge())),
-        ),
-        (
-            "maximum_badge".into(),
-            SqlValue::UInt(u32::from(ranks.maximum.badge())),
-        ),
-    ]);
-    eprintln!("Loading landmark states");
-    let states: Vec<LandmarkState> =
-        database.query_rows(load_sql("builds/select_landmark_states.sql")?, &parameters)?;
-    let catalog = ItemCatalog::new(database.query_rows(
-        load_sql("builds/select_item_assets.sql")?,
-        &Parameters::new(),
-    )?)?;
-    let medians = database
-        .query_rows::<PurchaseMedianRow>(
-            load_sql("builds/select_item_purchase_medians.sql")?,
-            &parameters,
-        )?
-        .into_iter()
-        .map(|row| {
-            (
-                (row.hero_id, row.item_id),
-                PurchaseMedian {
-                    buy_time_s: row.median_buy_time_s,
-                    net_worth: row.median_net_worth,
-                    soul_window: [row.lower_quartile_net_worth, row.upper_quartile_net_worth],
-                },
-            )
-        })
-        .collect::<PurchaseMedians>();
+    let (database, parameters) = open_run_database(paths, resources, ranks)?;
+    let inputs = load_assembly_inputs(&database, &parameters)?;
     let imbues = load_item_imbues(&database, &parameters)?;
     let statistics = load_item_statistics(&database, &parameters)?;
     drop(database);
-    let builds = assemble_hero_builds(&states, &catalog, &medians, &heroes)?;
+    let builds = assemble_hero_builds(&inputs.states, &inputs.catalog, &inputs.medians, &heroes)?;
     let mut api = build_api(api_base_url, ranks, client_version, as_of)?;
     let assets = read_json(&paths.raw.join("items-all.json"))?;
     let assets = assets
@@ -132,6 +95,71 @@ pub fn produce_hero_builds(
     };
     catalog.validate()?;
     Ok(catalog)
+}
+
+/// Landmark states, shop items, and purchase medians for build assembly.
+pub struct AssemblyInputs {
+    pub states: Vec<LandmarkState>,
+    pub catalog: ItemCatalog,
+    pub medians: PurchaseMedians,
+}
+
+/// Opens the run database with the rank parameters of the run cohort.
+pub fn open_run_database(
+    paths: &RunPaths,
+    resources: ExtractionResources,
+    ranks: RankRange,
+) -> Result<(AnalysisDatabase, Parameters)> {
+    let database = AnalysisDatabase::open_read_only(
+        &paths.raw.join("analysis.duckdb"),
+        &paths.raw.join("duckdb-read-tmp"),
+        resources,
+    )?;
+    let parameters = Parameters::from([
+        (
+            "minimum_badge".into(),
+            SqlValue::UInt(u32::from(ranks.minimum.badge())),
+        ),
+        (
+            "maximum_badge".into(),
+            SqlValue::UInt(u32::from(ranks.maximum.badge())),
+        ),
+    ]);
+    Ok((database, parameters))
+}
+
+pub fn load_assembly_inputs(
+    database: &AnalysisDatabase,
+    parameters: &Parameters,
+) -> Result<AssemblyInputs> {
+    eprintln!("Loading landmark states");
+    let states = database.query_rows(load_sql("builds/select_landmark_states.sql")?, parameters)?;
+    let catalog = ItemCatalog::new(database.query_rows(
+        load_sql("builds/select_item_assets.sql")?,
+        &Parameters::new(),
+    )?)?;
+    let medians = database
+        .query_rows::<PurchaseMedianRow>(
+            load_sql("builds/select_item_purchase_medians.sql")?,
+            parameters,
+        )?
+        .into_iter()
+        .map(|row| {
+            (
+                (row.hero_id, row.item_id),
+                PurchaseMedian {
+                    buy_time_s: row.median_buy_time_s,
+                    net_worth: row.median_net_worth,
+                    soul_window: [row.lower_quartile_net_worth, row.upper_quartile_net_worth],
+                },
+            )
+        })
+        .collect();
+    Ok(AssemblyInputs {
+        states,
+        catalog,
+        medians,
+    })
 }
 
 fn assemble_hero_builds(
@@ -273,7 +301,7 @@ fn create_hero_build(
 
 fn build_api(
     api_base_url: &str,
-    ranks: deadlock_data::RankRange,
+    ranks: RankRange,
     client_version: u64,
     as_of: i64,
 ) -> Result<DeadlockApi> {

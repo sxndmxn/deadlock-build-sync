@@ -26,21 +26,41 @@ pub struct PurchaseMedian {
 
 pub type PurchaseMedians = BTreeMap<(u64, u64), PurchaseMedian>;
 
+/// The items that a build owns at each phase landmark.
+pub type PhaseSets = BTreeMap<u32, BTreeSet<u64>>;
+
 /// The CORE purchase order and the items the build owns at each phase.
 #[derive(Clone, Debug)]
 pub struct AssembledBuild {
     pub core: Vec<BuildItem>,
-    pub phase_sets: BTreeMap<u32, BTreeSet<u64>>,
+    pub phase_sets: PhaseSets,
     pub situational: Vec<BuildItem>,
     pub key_item_id: u64,
 }
 
-/// Scores an item by adoption, tilted toward items with a positive win effect.
+/// The item score rule: `ln(adoption / 0.03) + effect / effect_scale`.
 ///
-/// The logarithm keeps the build close to items that players at this rank use.
-/// The effect term moves the choice toward items that win more in similar states.
-fn score_item(effects: &HeroLandmarkEffects, column: usize) -> f64 {
-    (effects.adoption[column] / MINIMUM_ADOPTION).ln() + effects.effects[column] / EFFECT_SCALE
+/// A smaller effect scale moves the choice more toward items that win more.
+/// An infinite effect scale removes the effect term and selects by adoption only.
+#[derive(Clone, Copy, Debug)]
+pub struct ItemScoring {
+    pub effect_scale: f64,
+}
+
+/// The item score rule of installed builds.
+pub const DEFAULT_SCORING: ItemScoring = ItemScoring {
+    effect_scale: EFFECT_SCALE,
+};
+
+impl ItemScoring {
+    /// Scores an item by adoption, tilted toward items with a positive win effect.
+    ///
+    /// The logarithm keeps the build close to items that players at this rank use.
+    /// The effect term moves the choice toward items that win more in similar states.
+    fn score_item(self, effects: &HeroLandmarkEffects, column: usize) -> f64 {
+        (effects.adoption[column] / MINIMUM_ADOPTION).ln()
+            + effects.effects[column] / self.effect_scale
+    }
 }
 
 /// Assembles a build phase by phase within the hero's median item spend.
@@ -51,6 +71,18 @@ pub fn assemble_build(
     catalog: &ItemCatalog,
     medians: &PurchaseMedians,
 ) -> Option<AssembledBuild> {
+    assemble_build_with_scoring(hero_id, table, catalog, medians, DEFAULT_SCORING)
+}
+
+/// Assembles a build with a specified item score rule.
+#[must_use]
+pub fn assemble_build_with_scoring(
+    hero_id: u64,
+    table: &EffectTable,
+    catalog: &ItemCatalog,
+    medians: &PurchaseMedians,
+    scoring: ItemScoring,
+) -> Option<AssembledBuild> {
     let mut owned = BTreeSet::new();
     let mut added = Vec::new();
     let mut phase_sets = BTreeMap::new();
@@ -58,7 +90,7 @@ pub fn assemble_build(
         let Some(effects) = table.get(&(hero_id, phase)) else {
             continue;
         };
-        owned = advance_phase(&owned, effects, catalog, &mut added, phase);
+        owned = advance_phase(&owned, effects, catalog, scoring, &mut added, phase);
         phase_sets.insert(phase, owned.clone());
     }
     if added.is_empty() {
@@ -93,13 +125,14 @@ fn advance_phase(
     previous: &BTreeSet<u64>,
     effects: &HeroLandmarkEffects,
     catalog: &ItemCatalog,
+    scoring: ItemScoring,
     added: &mut Vec<(u32, u64)>,
     phase: u32,
 ) -> BTreeSet<u64> {
     let score = |item: u64| {
         catalog
             .column(item)
-            .map_or(f64::MIN, |column| score_item(effects, column))
+            .map_or(f64::MIN, |column| scoring.score_item(effects, column))
     };
     let mut owned = previous
         .iter()

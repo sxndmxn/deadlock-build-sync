@@ -2,6 +2,7 @@
 #![deny(warnings)]
 
 mod build_assembly;
+mod build_benchmark;
 mod build_evaluation;
 mod build_variants;
 mod database;
@@ -16,6 +17,8 @@ mod ridge_logistic;
 mod sources;
 mod sql_resources;
 
+pub use build_assembly::{DEFAULT_SCORING, ItemScoring};
+pub use build_benchmark::{ScoringResult, compare_item_scoring};
 pub use hero_build_production::produce_hero_builds;
 pub use refresh::{ExtractedRun, extract_run};
 pub use refresh_configuration::{ExtractionResources, RefreshRequest, RunPaths, parse_timestamp};

@@ -201,6 +201,33 @@ The pooled agreement coefficient was 0.168 ± 0.028 for adoption only and 0.191 
 The difference is small and within the uncertainty of two days of data.
 This comparison does not establish that the score gives every hero a better build than item popularity alone.
 
+The `compare_item_scoring` example repeats this comparison for any extracted run:
+
+```bash
+cargo run --release -p deadlock-analysis --example compare_item_scoring -- RUN_DIRECTORY [EFFECT_SCALE ...]
+```
+
+It estimates item effects once from development matches.
+Each effect scale then assembles every hero's build, and one pooled model tests all builds on the test fold.
+The effect scale `inf` selects by adoption only. The output is tab-separated text.
+
+The run of 2026-10-12 used the patch of 2026-10-09, Ritualist I to Eternus V, 41 heroes, and 246,495 test states.
+
+| Effect scale | Agreement coefficient | Strong | Moderate | Limited |
+| --- | --- | --- | --- | --- |
+| `inf` (adoption only) | 0.078 ± 0.021 | 12 | 15 | 14 |
+| 0.4 | 0.115 ± 0.020 | 12 | 13 | 16 |
+| 0.2 | 0.098 ± 0.020 | 10 | 18 | 13 |
+| 0.1 (installed) | 0.089 ± 0.020 | 9 | 21 | 11 |
+| 0.05 | 0.100 ± 0.020 | 9 | 20 | 12 |
+| 0.025 | 0.281 ± 0.021 | 9 | 28 | 4 |
+
+The scales from `inf` to 0.05 are within the uncertainty of each other.
+The scale 0.025 gives a much larger coefficient. This result does not alone justify a change of the installed scale.
+The test and the item effects use the same adjustment for net worth, team lead, and rank.
+Thus, an item that players buy because they win can increase both values. The test can repeat the bias of the effect estimate.
+A test that does not share this bias is necessary before a change of the installed scale.
+
 ## Limits
 
 The data is observational. Effects describe outcomes in similar observed states.

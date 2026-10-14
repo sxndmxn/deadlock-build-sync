@@ -1,8 +1,9 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 
 use deadlock_data::Result;
 use deadlock_guides::{BuildEvaluation, Confidence};
 
+use crate::build_assembly::PhaseSets;
 use crate::item_effects::{ItemCatalog, LandmarkState, relative_net_worth};
 use crate::ridge_logistic::{FeatureRow, fit_ridge_logistic};
 
@@ -23,13 +24,38 @@ const PENALTY: f64 = 1.0;
 /// Returns an error when the model cannot be fitted.
 pub fn evaluate_build(
     states: &[&LandmarkState],
-    phase_sets: &BTreeMap<u32, BTreeSet<u64>>,
+    phase_sets: &PhaseSets,
     catalog: &ItemCatalog,
 ) -> Result<BuildEvaluation> {
     let rows = states
         .iter()
         .filter_map(|state| build_evaluation_row(state, phase_sets, catalog))
         .collect::<Vec<_>>();
+    fit_agreement(&rows)
+}
+
+/// Tests several builds with one model, for example one build per hero.
+///
+/// Each state uses the phase sets of its own build.
+///
+/// # Errors
+/// Returns an error when the model cannot be fitted.
+pub fn evaluate_pooled_builds(
+    builds: &[(Vec<&LandmarkState>, PhaseSets)],
+    catalog: &ItemCatalog,
+) -> Result<BuildEvaluation> {
+    let rows = builds
+        .iter()
+        .flat_map(|(states, phase_sets)| {
+            states
+                .iter()
+                .filter_map(|state| build_evaluation_row(state, phase_sets, catalog))
+        })
+        .collect::<Vec<_>>();
+    fit_agreement(&rows)
+}
+
+fn fit_agreement(rows: &[FeatureRow]) -> Result<BuildEvaluation> {
     if rows.len() < MINIMUM_OBSERVATIONS {
         return Ok(BuildEvaluation {
             agreement_coefficient: 0.0,
@@ -52,7 +78,7 @@ pub fn evaluate_build(
 
 fn build_evaluation_row(
     state: &LandmarkState,
-    phase_sets: &BTreeMap<u32, BTreeSet<u64>>,
+    phase_sets: &PhaseSets,
     catalog: &ItemCatalog,
 ) -> Option<FeatureRow> {
     let position = EVALUATION_LANDMARKS
