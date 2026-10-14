@@ -2,7 +2,7 @@
 
 //! Tests whether item groups win more when the enemy team owns more of a set of items.
 //!
-//! Usage: `cargo run --release --example estimate_enemy_item_counters -- RUN_DIRECTORY CONDITION_CLASSES GROUP_CLASSES...`
+//! Usage: `cargo run --release --example estimate_enemy_item_counters -- RUN_DIRECTORY CONDITION_CLASSES GROUP_CLASSES... [hero-terms]`
 //!
 //! Each class list is comma-separated item class names. The condition is the share of enemy
 //! item cost in the condition items at the landmark, standardized within the phase.
@@ -14,13 +14,18 @@ use std::path::Path;
 use deadlock_analysis::{ExtractionResources, RunPaths, estimate_enemy_item_counters};
 use deadlock_data::{Error, Result};
 
-const USAGE: &str =
-    "Usage: estimate_enemy_item_counters RUN_DIRECTORY CONDITION_CLASSES GROUP_CLASSES...";
+const USAGE: &str = "Usage: estimate_enemy_item_counters RUN_DIRECTORY CONDITION_CLASSES GROUP_CLASSES... [hero-terms]";
 
 fn main() -> Result<()> {
     let arguments = std::env::args().skip(1).collect::<Vec<_>>();
     let [run, condition, groups @ ..] = arguments.as_slice() else {
         return Err(Error::new(USAGE));
+    };
+    let hero_terms = groups.last().is_some_and(|last| last == "hero-terms");
+    let groups = if hero_terms {
+        &groups[..groups.len() - 1]
+    } else {
+        groups
     };
     if groups.is_empty() {
         return Err(Error::new(USAGE));
@@ -36,7 +41,8 @@ fn main() -> Result<()> {
         .map(|group| group.split(',').collect::<Vec<_>>())
         .collect::<Vec<_>>();
     println!("phase_s\tgroup\tcoefficient\tstandard_error\tz\tobservations");
-    for result in estimate_enemy_item_counters(&paths, resources, &condition, &groups)? {
+    for result in estimate_enemy_item_counters(&paths, resources, &condition, &groups, hero_terms)?
+    {
         for (group, interaction) in result.interactions.iter().enumerate() {
             println!(
                 "{}\t{group}\t{:.4}\t{:.4}\t{:.1}\t{}",

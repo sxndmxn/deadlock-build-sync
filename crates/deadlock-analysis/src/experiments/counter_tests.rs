@@ -157,6 +157,7 @@ pub fn estimate_enemy_item_counters(
     resources: ExtractionResources,
     condition_items: &[&str],
     groups: &[Vec<&str>],
+    hero_terms: bool,
 ) -> Result<Vec<ConditionResult>> {
     let inputs = load_run_inputs(paths, resources)?;
     let catalog = &inputs.catalog;
@@ -195,7 +196,7 @@ pub fn estimate_enemy_item_counters(
             catalog,
             &group_references,
             &[&conditions, &spirit],
-            false,
+            hero_terms,
         )?;
         interactions.truncate(group_references.len());
         results.push(ConditionResult {

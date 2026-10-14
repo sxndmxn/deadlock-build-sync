@@ -48,6 +48,7 @@ The test fold contains the last 20% of matches by start time.
 | E32 | Is the scale 0.025 better with the floor? | Yes, on seven runs, with less stability | Changed to 0.025 |
 | E33 | Is the final rule better than the original rule? | Yes, on seven runs | No change |
 | E34 | Are the per-hero test errors correct? | Yes, after E30 | No change |
+| E35 | Do rejected counter groups work within each hero? | No | No change |
 
 ## E0: effect scale of the item score
 
@@ -1041,3 +1042,21 @@ It then fits the per-hero test model of production. Five repetitions ran for eac
 **Analysis.** The z values agree with a standard normal distribution. The plain errors before E30 were about 1.5 times too small, which would give a standard deviation near 1.5.
 
 **Decision.** No change. The confidence labels use correct standard errors.
+
+## E35: the rejected counter groups within each hero
+
+**Question.** E10 and E20 used models without hero terms. Do debuff removal or armor penetration become counter groups within each hero?
+
+**Method.** `estimate_enemy_item_counters` with the option `hero-terms` repeated the tests of E10 and E20 on seven runs, at 20 and 30 minutes.
+
+**Result.** Each test has 14 cells. The pooled z combines the cells by inverse variance, so it is too large in size.
+
+| Test | Positive cells | Pooled z | Range of z |
+| --- | --- | --- | --- |
+| Debuff removal against crowd control | 4 | −2.1 | −2.2 to 1.1 |
+| Weapon penetration against weapon defense | 7 | −0.4 | −2.2 to 1.8 |
+| Spirit penetration against spirit defense | 4 | −0.9 | −1.8 to 1.5 |
+
+**Analysis.** None of the groups won more against its condition within each hero. Debuff removal stayed negative.
+
+**Decision.** No panels for these groups. The decisions of E10 and E20 stand.
