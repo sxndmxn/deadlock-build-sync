@@ -1,11 +1,11 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use deadlock_data::{Error, Result};
 use deadlock_guides::CounterEvidence;
 
 use crate::build_assembly::PHASES;
 use crate::counter_items::{
-    CounterGroups, GroupInteraction, enemy_item_conditions, fit_group_interactions,
+    COUNTER_PHASES, CounterGroups, GroupInteraction, enemy_item_conditions, fit_group_interactions,
     mean_enemy_spirit_share, measure_counter_groups, spirit_conditions,
 };
 use crate::refresh_configuration::{ExtractionResources, RunPaths};
@@ -200,4 +200,87 @@ pub fn estimate_enemy_item_counters(
         });
     }
     Ok(results)
+}
+
+/// The z values of one placebo repetition of the counter test.
+#[derive(Debug)]
+pub struct PlaceboResult {
+    pub seed: u64,
+    pub phase_s: u32,
+    pub z_values: Vec<f64>,
+}
+
+/// Repeats the counter test after the team conditions are moved to other teams at random.
+///
+/// The move removes any real relation between the conditions and the players. Thus, the z values
+/// should follow a standard normal distribution when the standard errors are correct.
+/// The z values hold the spirit block for each group, then the sustain block for each group.
+///
+/// # Errors
+/// Returns an error when the run, the analysis database, or a model fails.
+pub fn measure_counter_placebo(
+    paths: &RunPaths,
+    resources: ExtractionResources,
+    seeds: &[u64],
+) -> Result<Vec<PlaceboResult>> {
+    let inputs = load_run_inputs(paths, resources)?;
+    let catalog = &inputs.catalog;
+    let groups = CounterGroups::from_catalog(catalog);
+    let item_groups = groups.item_groups();
+    let states = inputs.states.iter().collect::<Vec<_>>();
+    let spirit_mean = mean_enemy_spirit_share(&states)?;
+    let mut results = Vec::new();
+    for phase_s in COUNTER_PHASES {
+        let phase_states = states
+            .iter()
+            .copied()
+            .filter(|state| state.landmark_s == phase_s)
+            .collect::<Vec<_>>();
+        let spirit = spirit_conditions(&phase_states, spirit_mean);
+        let sustain = enemy_item_conditions(&phase_states, catalog, groups.sustain_items())?;
+        let teams = phase_states
+            .iter()
+            .zip(spirit.iter().zip(&sustain))
+            .map(|(state, (spirit, sustain))| {
+                ((state.match_id, state.team_id), (*spirit, *sustain))
+            })
+            .collect::<BTreeMap<_, _>>();
+        for seed in seeds {
+            let mut keys = teams.keys().copied().collect::<Vec<_>>();
+            keys.sort_by_key(|(match_id, team_id)| {
+                mix(seed ^ match_id ^ (u64::from(team_id.unsigned_abs()) << 40))
+            });
+            let moved = teams
+                .keys()
+                .zip(&keys)
+                .map(|(target, source)| (*target, teams[source]))
+                .collect::<BTreeMap<_, _>>();
+            let (placebo_spirit, placebo_sustain): (Vec<_>, Vec<_>) = phase_states
+                .iter()
+                .map(|state| moved[&(state.match_id, state.team_id)])
+                .unzip();
+            let interactions = fit_group_interactions(
+                &phase_states,
+                catalog,
+                &item_groups,
+                &[&placebo_spirit, &placebo_sustain],
+            )?;
+            results.push(PlaceboResult {
+                seed: *seed,
+                phase_s,
+                z_values: interactions
+                    .iter()
+                    .map(|interaction| interaction.coefficient / interaction.standard_error)
+                    .collect(),
+            });
+        }
+    }
+    Ok(results)
+}
+
+/// Mixes the bits of a number for a fixed pseudo-random order.
+const fn mix(value: u64) -> u64 {
+    let value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    let value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    value ^ (value >> 31)
 }

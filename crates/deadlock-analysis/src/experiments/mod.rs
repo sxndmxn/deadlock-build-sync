@@ -11,8 +11,8 @@ pub use build_agreement::{
     measure_build_stability, measure_label_halves,
 };
 pub use counter_tests::{
-    ConditionResult, CounterResult, WindowEvidence, estimate_counter_interactions,
-    estimate_enemy_item_counters, measure_counter_windows,
+    ConditionResult, CounterResult, PlaceboResult, WindowEvidence, estimate_counter_interactions,
+    estimate_enemy_item_counters, measure_counter_placebo, measure_counter_windows,
 };
 pub use effect_models::{
     EffectModel, Interaction, ItemEffectRow, ModelResult, compare_effect_models,

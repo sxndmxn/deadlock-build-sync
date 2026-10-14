@@ -42,6 +42,7 @@ The test fold contains the last 20% of matches by start time.
 | E26 | Does the majority imbue target win at least as often? | Yes, slightly more on four runs | Keep the rule |
 | E27 | Can the model drop hero-specific item effects? | No. They improve predictions on six runs | Keep the hero level |
 | E28 | Do the results hold on a fifth patch? | Yes, all six predictions | Keep all |
+| E29 | Are the counter test errors correct? | Yes. Placebo z values are standard normal | No change |
 
 ## E0: effect scale of the item score
 
@@ -874,3 +875,23 @@ Spirit defense had z = 0.5 and 1.2. Anti-heal had z = 2.6 and 0.1.
 A second comparison with the hero models as the first design gave the standard error of prediction 4.
 
 **Decision.** No change. The main results held on a fifth patch.
+
+## E29: calibration of the counter test errors
+
+**Hypothesis.** The match-clustered standard errors of the counter test are correct. If true, the z values of a test without a real relation follow a standard normal distribution.
+
+**Method.** `measure_counter_placebo` computes the enemy spirit and sustain conditions of each team. It then moves the conditions of each team to another team in a fixed pseudo-random order, which removes any real relation.
+It repeats the production counter model 20 times for each run. Each repetition gives 12 z values: three groups, two conditions, and two phases.
+
+**Result.**
+
+| Run | z values | Mean | Standard deviation | Beyond ±2 | Beyond ±3 |
+| --- | --- | --- | --- | --- | --- |
+| `holdout-20260916` | 240 | −0.082 | 0.943 | 3.8% | 0.0% |
+| `confirm-20261003` | 240 | 0.036 | 1.054 | 5.4% | 0.4% |
+
+For a standard normal distribution, 4.6% of the values are beyond ±2 and 0.3% beyond ±3.
+
+**Analysis.** The placebo z values agree with a standard normal distribution. The standard errors are correct, so the z values of E6, E9, and the confirmations have their stated meaning.
+
+**Decision.** No change.

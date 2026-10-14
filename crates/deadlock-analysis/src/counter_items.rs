@@ -96,6 +96,20 @@ impl CounterGroups {
     }
 }
 
+impl CounterGroups {
+    /// Returns the items of each group, in the group order.
+    #[must_use]
+    pub fn item_groups(&self) -> Vec<&BTreeSet<u64>> {
+        self.groups.iter().map(|(_, items)| items).collect()
+    }
+
+    /// Returns the healing and lifesteal items that define the enemy sustain condition.
+    #[must_use]
+    pub const fn sustain_items(&self) -> &BTreeSet<u64> {
+        &self.sustain_items
+    }
+}
+
 fn find_classes(catalog: &ItemCatalog, class_names: &[&str]) -> BTreeSet<u64> {
     catalog
         .items
