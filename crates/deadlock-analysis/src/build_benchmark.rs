@@ -431,14 +431,27 @@ pub fn estimate_counter_interactions(
                 Ok(row)
             })
             .collect::<Result<Vec<_>>>()?;
+        let matches = states
+            .iter()
+            .filter(|state| state.landmark_s == phase_s)
+            .map(|state| state.match_id)
+            .collect::<Vec<_>>();
         let references = rows.iter().collect::<Vec<_>>();
         let fit = fit_ridge_logistic(&references, &vec![0.0; width], &penalty)?;
         results.push(CounterResult {
             phase_s,
             spirit_defense: fit.coefficients[width - 2],
-            spirit_defense_standard_error: fit.standard_error(width - 2)?,
+            spirit_defense_standard_error: fit.clustered_standard_error(
+                width - 2,
+                &references,
+                &matches,
+            )?,
             weapon_defense: fit.coefficients[width - 1],
-            weapon_defense_standard_error: fit.standard_error(width - 1)?,
+            weapon_defense_standard_error: fit.clustered_standard_error(
+                width - 1,
+                &references,
+                &matches,
+            )?,
             observations: rows.len(),
         });
     }

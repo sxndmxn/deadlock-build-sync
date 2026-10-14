@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use deadlock_data::{Error, Result};
 
 const MAXIMUM_ITERATIONS: usize = 30;
@@ -28,6 +30,45 @@ impl RidgeFit {
         unit[index] = 1.0;
         let solution = solve_cholesky(&self.hessian, width, &unit)?;
         Ok(solution[index].max(0.0).sqrt())
+    }
+
+    /// Returns the standard error of one coefficient when rows in the same cluster are dependent.
+    ///
+    /// Each cluster adds the square of its summed score, projected on one row of the inverse Hessian.
+    /// The clusters must be independent of each other. A match is one cluster.
+    ///
+    /// # Errors
+    /// Returns an error when the cluster count differs from the row count,
+    /// or when the Hessian is not positive definite.
+    pub fn clustered_standard_error(
+        &self,
+        index: usize,
+        rows: &[&FeatureRow],
+        clusters: &[u64],
+    ) -> Result<f64> {
+        if rows.len() != clusters.len() {
+            return Err(Error::new("Each row requires one cluster"));
+        }
+        let width = self.coefficients.len();
+        let mut unit = vec![0.0; width];
+        unit[index] = 1.0;
+        let projection = solve_cholesky(&self.hessian, width, &unit)?;
+        let mut sums = BTreeMap::<u64, f64>::new();
+        for (row, cluster) in rows.iter().zip(clusters) {
+            let score = row
+                .features
+                .iter()
+                .map(|(column, value)| self.coefficients[*column] * value)
+                .sum::<f64>();
+            let residual = row.label - logistic(score);
+            *sums.entry(*cluster).or_default() += residual
+                * row
+                    .features
+                    .iter()
+                    .map(|(column, value)| projection[*column] * value)
+                    .sum::<f64>();
+        }
+        Ok(sums.values().map(|sum| sum * sum).sum::<f64>().sqrt())
     }
 }
 
