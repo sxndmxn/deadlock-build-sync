@@ -325,3 +325,60 @@ pub fn measure_label_halves(
     }
     Ok(results)
 }
+
+/// The pooled held-out test of one score rule at one test landmark.
+#[derive(Debug)]
+pub struct LandmarkAgreement {
+    pub scoring: ItemScoring,
+    pub landmark_s: u32,
+    pub evaluation: BuildEvaluation,
+}
+
+/// Tests the builds of each score rule separately at each test landmark, pooled over heroes.
+///
+/// # Errors
+/// Returns an error when the run, the analysis database, or a model fails.
+pub fn compare_scoring_by_landmark(
+    paths: &RunPaths,
+    resources: ExtractionResources,
+    rules: &[ItemScoring],
+) -> Result<Vec<LandmarkAgreement>> {
+    let inputs = load_run_inputs(paths, resources)?;
+    let catalog = &inputs.catalog;
+    let (test, development): (Vec<_>, Vec<_>) =
+        inputs.states.iter().partition(|state| state.is_test());
+    let effects = estimate_item_effects(&development, catalog, &PHASES)?;
+    let hero_ids = test
+        .iter()
+        .map(|state| state.hero_id)
+        .collect::<BTreeSet<_>>();
+    let mut results = Vec::new();
+    for scoring in rules {
+        let builds = hero_ids
+            .iter()
+            .filter_map(|hero_id| {
+                assemble_build_with_scoring(*hero_id, &effects, catalog, &inputs.medians, *scoring)
+                    .map(|build| (*hero_id, build.phase_sets))
+            })
+            .collect::<Vec<_>>();
+        for landmark_s in EVALUATION_LANDMARKS {
+            let groups = builds
+                .iter()
+                .map(|(hero_id, phase_sets)| {
+                    let states = test
+                        .iter()
+                        .copied()
+                        .filter(|state| state.hero_id == *hero_id && state.landmark_s == landmark_s)
+                        .collect::<Vec<_>>();
+                    (states, phase_sets.clone())
+                })
+                .collect::<Vec<_>>();
+            results.push(LandmarkAgreement {
+                scoring: *scoring,
+                landmark_s,
+                evaluation: evaluate_pooled_builds(&groups, catalog)?,
+            });
+        }
+    }
+    Ok(results)
+}

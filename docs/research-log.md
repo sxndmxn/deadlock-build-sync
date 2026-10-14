@@ -583,3 +583,27 @@ The hierarchical estimate was better than the own result on all three runs. The 
 **Decision.** Set the label from the hierarchical estimate, with separate pools for main builds and additional builds.
 Keep the own result in the catalog field `hero_estimate`.
 On the holdout run, 34 of 38 main builds became `strong`. On the short run `20261012T233433Z`, the estimated variance between heroes was larger, and 10 main builds stayed `limited`.
+
+## E18: the effect term in each game phase
+
+**Hypothesis.** Item choices matter less in the lane phase, so adoption alone is as good as the installed score rule at 9 minutes.
+
+**Method.** `compare_scoring_by_landmark` assembles each hero's build from development matches with the rules `inf` and `0.05`.
+It tests the builds of each rule, pooled over heroes, separately at each test landmark.
+
+**Result.** Each cell gives the agreement coefficient for the rules `inf` and `0.05`.
+
+| Landmark | `holdout-20260916` | `confirm-20261003` | `20260913T235155Z` |
+| --- | --- | --- | --- |
+| 9 minutes | 0.069, 0.133 | 0.060, 0.167 | 0.010, 0.092 |
+| 15 minutes | 0.033, 0.089 | 0.025, 0.069 | 0.004, 0.089 |
+| 20 minutes | 0.054, 0.179 | 0.092, 0.227 | 0.039, 0.191 |
+| 25 minutes | −0.027, 0.194 | 0.000, 0.265 | −0.009, 0.186 |
+| 30 minutes | 0.069, 0.316 | 0.030, 0.264 | 0.024, 0.259 |
+
+The standard errors were from 0.016 to 0.059.
+
+**Analysis.** The installed rule was better at each landmark on each run, also at 9 minutes. Its advantage grew in later phases.
+Adoption alone had almost no held-out signal after 15 minutes.
+
+**Decision.** Keep one effect scale for all phases.
