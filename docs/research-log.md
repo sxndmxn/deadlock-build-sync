@@ -9,6 +9,33 @@ Unless an entry states otherwise, the data is run `20261012T233433Z`.
 This run uses the patch of 2026-10-09, Ritualist I to Eternus V, 41 heroes, and 270,708 player matches.
 The test fold contains the last 20% of matches by start time.
 
+## Summary
+
+| Entry | Question | Result | Decision |
+| --- | --- | --- | --- |
+| E0 | Does a smaller effect scale give better builds? | A large gain did not repeat, and rare items entered CORE | Superseded by E14 |
+| E1 | Are rare item effects reliable? | No. Rare items had the least reliable effects | Test stronger penalties |
+| E2 | Which ridge penalties predict best? | 200 and 300, on four runs and E15 | Changed from 5 and 100 |
+| E3 | Is net worth growth a better outcome? | Reliable, but it measures soul income | Rejected |
+| E4 | Do item effects depend on the team lead? | No | No "IF BEHIND" panel |
+| E5 | Does a test of all items find counter items? | No. The enemy composition explained the gain | Use directed tests |
+| E6 | Does armor win more against the matching damage type? | Yes, with a holdout confirmation | VS WEAPON and VS SPIRIT |
+| E7 | Does the panel rule hold on short runs? | No. It dropped real panels | Remove a panel only for z below −2 |
+| E8 | Do item effects depend on rank? | No | One build for the rank range |
+| E9 | Does anti-heal win more against enemy sustain? | Yes, with a negative control | VS SUSTAIN |
+| E10 | Does debuff removal win more against crowd control? | No, the opposite | No panel. Share conditions remove wealth |
+| E11 | Do additional builds add win signal? | No | Owner decision |
+| E12 | Do players adapt armor to the enemy team? | Yes, partly | Keep the panels |
+| E13 | Do players sell early items? | Most early items are upgraded, not sold | No sell instructions |
+| E14 | Is the effect scale 0.05 better than 0.1? | Yes, in a paired test, and in E15 | Changed to 0.05 |
+| E15 | Do the changes hold on new matches? | Yes, except VS SPIRIT on one run | Keep all |
+| E16 | Does a 3% adoption floor help? | The paired test was unstable | No floor |
+| E17 | Are per-hero confidence labels reliable? | No. A pooled estimate predicts better | Pooled labels |
+| E18 | Does the effect term help in the lane phase? | Yes, at each landmark | One scale for all phases |
+| E19 | Do more days of matches give better builds? | No measurable gain after about 7,000 matches | Sync one to two days after a patch |
+| E20 | Does armor penetration win more against armor? | No | No panel |
+| E21 | Do situational items add win signal? | Yes, on five runs | Keep the TIER rule |
+
 ## E0: effect scale of the item score
 
 **Hypothesis.** The item score `ln(adoption / 0.03) + effect / scale` gives better builds than adoption alone.
