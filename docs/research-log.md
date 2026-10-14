@@ -39,6 +39,7 @@ The test fold contains the last 20% of matches by start time.
 | E23 | Does an uncertainty weight stabilize builds? | Only slightly | Not added |
 | E24 | How much does a build change between syncs of one patch? | About 30% of CORE | Owner decision |
 | E25 | Do the later decisions hold on more new matches? | Yes, all four predictions | Keep all |
+| E26 | Does the majority imbue target win at least as often? | Yes, slightly more on four runs | Keep the rule |
 
 ## E0: effect scale of the item score
 
@@ -794,3 +795,27 @@ It had 17,160 matches and 205,920 player matches. These predictions were stated 
 Spirit defense had z = 1.3 and 2.3. It was positive again after the zero result of E15.
 
 **Decision.** No change. The results of E14, E17, E21, and the counter groups held on a second set of new matches.
+
+## E26: the majority imbue target
+
+**Hypothesis.** Players who imbue the majority ability of an item win at least as often as players who imbue another ability on the same item.
+The build selects the majority target by count, not by wins, so this test is not circular.
+
+**Method.** A query used the first purchases with an imbue target, for each hero and item with a majority target of at least 20 observations.
+It divided the buyers of each hero and item into fifths by net worth at the purchase. Each fifth needed 20 buyers in each group.
+The query pooled the win rate differences of the cells by inverse variance.
+
+**Result.**
+
+| Run | Cells | Majority buyers | Other buyers | Difference | z | Positive cells |
+| --- | --- | --- | --- | --- | --- | --- |
+| `holdout-20260916` | 500 | 691,369 | 168,479 | +0.0018 ± 0.0015 | 1.2 | 244 |
+| `20260913T235155Z` | 541 | 847,160 | 193,356 | −0.0003 ± 0.0014 | −0.2 | 282 |
+| `confirm-20261003` | 404 | 336,463 | 93,894 | +0.0060 ± 0.0020 | 3.0 | 221 |
+| `confirm-20260913` | 304 | 91,273 | 29,476 | +0.0065 ± 0.0036 | 1.8 | 158 |
+| `20261012T233433Z` | 298 | 159,280 | 43,053 | +0.0033 ± 0.0029 | 1.1 | 140 |
+
+**Analysis.** The majority target won at least as often on each run, with a small advantage on four runs.
+The comparison adjusts only for net worth at the purchase, so it remains observational.
+
+**Decision.** Keep the majority imbue rule.
