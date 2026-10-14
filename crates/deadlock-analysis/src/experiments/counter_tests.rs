@@ -70,6 +70,7 @@ pub fn estimate_counter_interactions(
             catalog,
             &[&groups[0], &groups[1]],
             &[&spirit_conditions(&phase_states, spirit_mean)],
+            false,
         )?;
         results.push(CounterResult {
             phase_s,
@@ -101,6 +102,7 @@ pub fn measure_counter_windows(
     paths: &RunPaths,
     resources: ExtractionResources,
     windows: usize,
+    hero_terms: bool,
 ) -> Result<Vec<WindowEvidence>> {
     if windows == 0 {
         return Err(Error::new("The window count must be positive"));
@@ -129,7 +131,7 @@ pub fn measure_counter_windows(
             Ok(WindowEvidence {
                 window,
                 matches: chunk.len(),
-                evidence: measure_counter_groups(&states, &inputs.catalog, &groups)?,
+                evidence: measure_counter_groups(&states, &inputs.catalog, &groups, hero_terms)?,
             })
         })
         .collect()
@@ -193,6 +195,7 @@ pub fn estimate_enemy_item_counters(
             catalog,
             &group_references,
             &[&conditions, &spirit],
+            false,
         )?;
         interactions.truncate(group_references.len());
         results.push(ConditionResult {
@@ -266,6 +269,7 @@ pub fn measure_counter_placebo(
                 catalog,
                 &item_groups,
                 &[&placebo_spirit, &placebo_sustain],
+                false,
             )?;
             results.push(PlaceboResult {
                 seed: *seed,

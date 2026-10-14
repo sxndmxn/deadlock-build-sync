@@ -149,6 +149,7 @@ pub fn fit_group_interactions(
     catalog: &ItemCatalog,
     groups: &[&BTreeSet<u64>],
     conditions: &[&[f64]],
+    hero_terms: bool,
 ) -> Result<Vec<GroupInteraction>> {
     if conditions.iter().any(|values| values.len() != states.len()) {
         return Err(Error::new(
@@ -157,7 +158,20 @@ pub fn fit_group_interactions(
     }
     let items = catalog.items.len();
     let block = 1 + groups.len();
-    let width = COVARIATES + items + conditions.len() * block;
+    let hero_ids = states
+        .iter()
+        .map(|state| state.hero_id)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .skip(1)
+        .collect::<Vec<_>>();
+    let hero_base = COVARIATES + items + conditions.len() * block;
+    let hero_block = 1 + conditions.len();
+    let width = if hero_terms {
+        hero_base + hero_ids.len() * hero_block
+    } else {
+        hero_base
+    };
     let penalty = (0..width)
         .map(|index| {
             if (COVARIATES..COVARIATES + items).contains(&index) {
@@ -192,6 +206,18 @@ pub fn fit_group_interactions(
                     if *count > 0.0 {
                         row.features.push((base + 1 + offset, condition * count));
                     }
+                }
+            }
+            if let Some(position) = hero_ids
+                .iter()
+                .position(|hero| *hero == state.hero_id)
+                .filter(|_| hero_terms)
+            {
+                let base = hero_base + position * hero_block;
+                row.features.push((base, 1.0));
+                for (condition_index, values) in conditions.iter().enumerate() {
+                    row.features
+                        .push((base + 1 + condition_index, values[row_index]));
                 }
             }
             Ok(row)
@@ -232,6 +258,7 @@ pub fn mean_enemy_spirit_share(states: &[&LandmarkState]) -> Result<f64> {
 /// Tests each counter group at each counter phase with all matches of the run.
 ///
 /// The evidence keeps a group unless a phase contradicts its counter effect.
+/// The model has hero terms, so it compares players of the same hero (E31).
 ///
 /// # Errors
 /// Returns an error when a model cannot be fitted.
@@ -240,7 +267,7 @@ pub fn estimate_counter_evidence(
     catalog: &ItemCatalog,
     groups: &CounterGroups,
 ) -> Result<Vec<CounterEvidence>> {
-    let mut evidence = measure_counter_groups(states, catalog, groups)?;
+    let mut evidence = measure_counter_groups(states, catalog, groups, true)?;
     evidence.retain(CounterEvidence::is_supported);
     Ok(evidence)
 }
@@ -248,6 +275,7 @@ pub fn estimate_counter_evidence(
 /// Measures each counter group at each counter phase, in the direction of its damage type.
 ///
 /// The weapon group coefficient changes sign, because a low spirit share means more weapon damage.
+/// With hero terms, the model compares players of the same hero only.
 ///
 /// # Errors
 /// Returns an error when a model cannot be fitted.
@@ -255,6 +283,7 @@ pub fn measure_counter_groups(
     states: &[&LandmarkState],
     catalog: &ItemCatalog,
     groups: &CounterGroups,
+    hero_terms: bool,
 ) -> Result<Vec<CounterEvidence>> {
     let spirit_mean = mean_enemy_spirit_share(states)?;
     let item_groups = groups
@@ -281,8 +310,13 @@ pub fn measure_counter_groups(
         }
         let spirit = spirit_conditions(&phase_states, spirit_mean);
         let sustain = enemy_item_conditions(&phase_states, catalog, &groups.sustain_items)?;
-        let interactions =
-            fit_group_interactions(&phase_states, catalog, &item_groups, &[&spirit, &sustain])?;
+        let interactions = fit_group_interactions(
+            &phase_states,
+            catalog,
+            &item_groups,
+            &[&spirit, &sustain],
+            hero_terms,
+        )?;
         let (spirit_block, sustain_block) = interactions.split_at(item_groups.len());
         for (index, group) in evidence.iter_mut().enumerate() {
             let (direction, interaction) = match group.target {

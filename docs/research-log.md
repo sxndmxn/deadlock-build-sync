@@ -44,6 +44,7 @@ The test fold contains the last 20% of matches by start time.
 | E28 | Do the results hold on a fifth patch? | Yes, all six predictions | Keep all |
 | E29 | Are the counter test errors correct? | Yes. Placebo z values are standard normal | No change |
 | E30 | Are the pooled agreement tests correct? | No. Hero differences biased them. Corrected | Floor added. E11 and E19 reversed |
+| E31 | Do counter effects hold within each hero? | Yes | Production uses hero terms |
 
 ## E0: effect scale of the item score
 
@@ -943,3 +944,23 @@ The standard errors were near 0.018.
 4. Keep the scale 0.05, the situational rule, and the hierarchical labels.
 
 The earlier entries keep their original text as a record. This entry corrects them where it states so.
+
+## E31: counter effects within each hero
+
+**Hypothesis.** The counter effects of E6 and E9 are not hero matchup effects. For example, heroes that often buy armor could do well against some enemy compositions for another reason.
+
+**Method.** `fit_group_interactions` has an option for hero terms: one indicator for each hero, and one hero term for each condition.
+With these terms, the group terms compare players of the same hero. `measure_counter_windows` with one window and the option `hero-terms` measured each run.
+The prediction was that the weapon defense and anti-heal groups keep positive coefficients at 20 and 30 minutes on most runs.
+
+**Result.** Each group has 14 cells: seven runs and two phases. The pooled z combines the cells by inverse variance. The two phases of a run share matches, so these z values are too large.
+
+| Group | Hero terms: positive cells | Pooled z | No hero terms: positive cells | Pooled z |
+| --- | --- | --- | --- | --- |
+| Weapon defense | 14 | 10.7 | 14 | 10.0 |
+| Spirit defense | 14 | 7.7 | 12 | 7.4 |
+| Anti-heal | 10 | 5.3 | 14 | 6.7 |
+
+**Analysis.** The armor effects stayed or grew within each hero. Hero matchups do not explain them. The anti-heal effect became slightly weaker but stayed positive.
+
+**Decision.** Use the hero terms in production. On `holdout-20260916`, the production evidence was weapon defense z = 5.2 and 5.0, spirit defense z = 4.0 and 4.1, and anti-heal z = 1.8 and 2.2.
