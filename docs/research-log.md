@@ -700,3 +700,26 @@ The pair model of E11 fits both values with the covariates. The prediction was a
 The share counts items, not cost. The net worth covariate removes most, but not necessarily all, of the wealth that more items can show.
 
 **Decision.** Keep the situational rule.
+
+## E22: build stability
+
+**Hypothesis.** The effect term makes builds less stable, because effect estimates are noisier than adoption.
+
+**Method.** `measure_build_stability` splits the development matches at their median identifier.
+It assembles each hero's build from each half and measures the Jaccard overlap of the two CORE item sets and the agreement of the key items.
+
+**Result.** Each cell gives the mean CORE overlap over heroes.
+
+| Run | `inf` | 0.1 | 0.05 |
+| --- | --- | --- | --- |
+| `holdout-20260916` | 0.866 | 0.689 | 0.556 |
+| `20260913T235155Z` | 0.849 | 0.675 | 0.586 |
+| `confirm-20261003` | 0.857 | 0.618 | 0.476 |
+
+With the scale 0.05, the key item was the same for 15 to 23 of 38 or 39 heroes.
+
+**Analysis.** The effect term causes most of the change between the halves. There is a trade-off between the win signal of E14 and stability.
+E19 found that small samples give builds of similar test quality. Thus, many builds of similar quality exist, and small differences in the estimates select between them.
+The halves share no matches. Two syncs of the same patch share most of their matches, because each sync uses all matches since the patch start. Thus, the change between such syncs is smaller than this test shows.
+
+**Decision.** Keep the scale 0.05. If stability between syncs becomes more important than the win signal, the scale 0.1 is a middle choice.

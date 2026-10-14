@@ -5,10 +5,10 @@ mod counter_tests;
 mod effect_models;
 
 pub use build_agreement::{
-    AgreementPair, FractionResult, LabelHalves, LandmarkAgreement, ScoringResult,
+    AgreementPair, BuildStability, FractionResult, LabelHalves, LandmarkAgreement, ScoringResult,
     compare_item_scoring, compare_scoring_by_landmark, compare_scoring_pair,
     compare_situational_signal, compare_training_fractions, compare_variant_agreement,
-    measure_label_halves,
+    measure_build_stability, measure_label_halves,
 };
 pub use counter_tests::{
     ConditionResult, CounterResult, WindowEvidence, estimate_counter_interactions,

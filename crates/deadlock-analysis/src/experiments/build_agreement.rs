@@ -512,3 +512,81 @@ pub fn compare_situational_signal(
     }
     fit_agreement_pair(&samples, heroes)
 }
+
+/// The CORE overlap of one hero's builds from two disjoint halves of the development matches.
+#[derive(Debug)]
+pub struct BuildStability {
+    pub hero_id: u64,
+    pub core_overlap: f64,
+    pub same_key_item: bool,
+}
+
+/// Compares builds from the earlier and the later half of the development matches.
+///
+/// The halves split the development matches at their median identifier. The overlap is the
+/// Jaccard index of the two CORE item sets.
+///
+/// # Errors
+/// Returns an error when the run, the analysis database, or a model fails.
+pub fn measure_build_stability(
+    paths: &RunPaths,
+    resources: ExtractionResources,
+    scoring: ItemScoring,
+) -> Result<Vec<BuildStability>> {
+    let inputs = load_run_inputs(paths, resources)?;
+    let catalog = &inputs.catalog;
+    let development = inputs
+        .states
+        .iter()
+        .filter(|state| !state.is_test())
+        .collect::<Vec<_>>();
+    let matches = development
+        .iter()
+        .map(|state| state.match_id)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let middle = matches.get(matches.len() / 2).copied().unwrap_or_default();
+    let (earlier, later): (Vec<_>, Vec<_>) = development
+        .iter()
+        .copied()
+        .partition(|state| state.match_id < middle);
+    let earlier_effects = estimate_item_effects(&earlier, catalog, &PHASES)?;
+    let later_effects = estimate_item_effects(&later, catalog, &PHASES)?;
+    let hero_ids = development
+        .iter()
+        .map(|state| state.hero_id)
+        .collect::<BTreeSet<_>>();
+    let mut results = Vec::new();
+    for hero_id in hero_ids {
+        let (Some(first), Some(second)) = (
+            assemble_build_with_scoring(
+                hero_id,
+                &earlier_effects,
+                catalog,
+                &inputs.medians,
+                scoring,
+            ),
+            assemble_build_with_scoring(hero_id, &later_effects, catalog, &inputs.medians, scoring),
+        ) else {
+            continue;
+        };
+        let items = |build: &crate::build_assembly::AssembledBuild| {
+            build
+                .core
+                .iter()
+                .map(|item| item.item_id)
+                .collect::<BTreeSet<_>>()
+        };
+        let (first_items, second_items) = (items(&first), items(&second));
+        let union = first_items.union(&second_items).count().max(1);
+        let shared = first_items.intersection(&second_items).count();
+        results.push(BuildStability {
+            hero_id,
+            core_overlap: count_as_f64(u64::try_from(shared)?)?
+                / count_as_f64(u64::try_from(union)?)?,
+            same_key_item: first.key_item_id == second.key_item_id,
+        });
+    }
+    Ok(results)
+}
