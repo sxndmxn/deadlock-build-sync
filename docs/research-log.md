@@ -49,6 +49,7 @@ The test fold contains the last 20% of matches by start time.
 | E33 | Is the final rule better than the original rule? | Yes, on seven runs | No change |
 | E34 | Are the per-hero test errors correct? | Yes, after E30 | No change |
 | E35 | Do rejected counter groups work within each hero? | No | No change |
+| E36 | Does the key item add signal beyond CORE? | No | Keep it as a name only |
 
 ## E0: effect scale of the item score
 
@@ -1060,3 +1061,26 @@ It then fits the per-hero test model of production. Five repetitions ran for eac
 **Analysis.** None of the groups won more against its condition within each hero. Debuff removal stayed negative.
 
 **Decision.** No panels for these groups. The decisions of E10 and E20 stand.
+
+## E36: the signal of the key item
+
+**Hypothesis.** The description says "Play around" the key item. Thus, owning the key item at 20 or 30 minutes predicts winning beyond CORE agreement.
+
+**Method.** `compare_key_item_signal` uses the corrected pair model of E30. The base value is the CORE agreement. The alternative value is 1 when the player owns the key item.
+
+**Result.**
+
+| Run | CORE agreement z | Key item coefficient | z |
+| --- | --- | --- | --- |
+| `20261012T233433Z` | 3.5 | +0.054 ± 0.027 | 2.0 |
+| `20261003T172322Z` | 4.5 | −0.049 ± 0.035 | −1.4 |
+| `20260913T235155Z` | 9.6 | −0.027 ± 0.015 | −1.8 |
+| `holdout-20260916` | 11.0 | −0.023 ± 0.015 | −1.6 |
+| `confirm-20261003` | 6.2 | +0.009 ± 0.019 | 0.5 |
+| `confirm-20260913` | 4.6 | −0.006 ± 0.029 | −0.2 |
+| `patch-20260812` | 5.4 | +0.005 ± 0.025 | 0.2 |
+
+**Analysis.** The key item added no signal beyond CORE agreement. The complete build carries the signal, not one item.
+The key item remains useful as a name and as a power spike in the description, but it is not a separate win claim.
+
+**Decision.** No code change. Do not describe the key item as a cause of wins.

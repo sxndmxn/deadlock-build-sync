@@ -722,3 +722,50 @@ pub fn measure_label_placebo(
     }
     Ok(z_values)
 }
+
+/// Tests whether owning the key item predicts the match result beyond CORE agreement.
+///
+/// The builds come from development matches. The test uses states at 20 and 30 minutes, after
+/// most players can afford a Tier 3 or Tier 4 item. The alternative value is 1 when the player
+/// owns the key item.
+///
+/// # Errors
+/// Returns an error when the run, the analysis database, or a model fails.
+pub fn compare_key_item_signal(
+    paths: &RunPaths,
+    resources: ExtractionResources,
+) -> Result<AgreementPair> {
+    let inputs = load_run_inputs(paths, resources)?;
+    let catalog = &inputs.catalog;
+    let (test, development): (Vec<_>, Vec<_>) =
+        inputs.states.iter().partition(|state| state.is_test());
+    let effects = estimate_item_effects(&development, catalog, &PHASES)?;
+    let hero_ids = test
+        .iter()
+        .map(|state| state.hero_id)
+        .collect::<BTreeSet<_>>();
+    let mut samples = Vec::new();
+    let mut heroes = 0;
+    for hero_id in hero_ids {
+        let Some(build) = assemble_build(hero_id, &effects, catalog, &inputs.medians) else {
+            continue;
+        };
+        heroes += 1;
+        for state in test
+            .iter()
+            .copied()
+            .filter(|state| state.hero_id == hero_id && state.landmark_s >= 1200)
+        {
+            let Some(core) = measure_agreement(state, &build.phase_sets, catalog) else {
+                continue;
+            };
+            let owns = if state.item_ids.contains(&build.key_item_id) {
+                1.0
+            } else {
+                0.0
+            };
+            samples.push((state, core, owns));
+        }
+    }
+    fit_agreement_pair(&samples, heroes)
+}

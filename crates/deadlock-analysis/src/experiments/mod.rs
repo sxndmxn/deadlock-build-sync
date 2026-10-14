@@ -6,9 +6,10 @@ mod effect_models;
 
 pub use build_agreement::{
     AgreementPair, BuildStability, FractionResult, LabelHalves, LandmarkAgreement, ScoringResult,
-    compare_item_scoring, compare_scoring_by_landmark, compare_scoring_pair,
-    compare_situational_signal, compare_training_fractions, compare_variant_agreement,
-    measure_build_stability, measure_label_halves, measure_label_placebo, measure_pair_placebo,
+    compare_item_scoring, compare_key_item_signal, compare_scoring_by_landmark,
+    compare_scoring_pair, compare_situational_signal, compare_training_fractions,
+    compare_variant_agreement, measure_build_stability, measure_label_halves,
+    measure_label_placebo, measure_pair_placebo,
 };
 pub use counter_tests::{
     ConditionResult, CounterResult, PlaceboResult, WindowEvidence, estimate_counter_interactions,
