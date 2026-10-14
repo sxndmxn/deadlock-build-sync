@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use deadlock_data::{Result, count_as_f64};
+use deadlock_data::{Error, Result, count_as_f64};
 use deadlock_guides::{
     BuildItem, CounterEvidence, CounterPanel, CounterPhase, DamageType, HeroBuild,
     MAXIMUM_COUNTER_ITEMS,
@@ -74,22 +74,38 @@ pub struct GroupInteraction {
     pub standard_error: f64,
 }
 
-/// Fits one global model at one landmark with the enemy spirit share and item group interactions.
+/// Returns the standardized enemy spirit share of each state.
+#[must_use]
+pub fn spirit_conditions(states: &[&LandmarkState], spirit_mean: f64) -> Vec<f64> {
+    states
+        .iter()
+        .map(|state| (state.enemy_spirit_share - spirit_mean) * CONDITION_SCALE)
+        .collect()
+}
+
+/// Fits one global model at one landmark with match conditions and item group interactions.
 ///
-/// The model adds a main term for the standardized enemy spirit share and one term for each group:
-/// the number of owned group items multiplied by that condition. A positive coefficient means that
-/// the group wins more against enemy teams with more spirit damage.
+/// Each condition has one standardized value for each state. For each condition, the model adds
+/// a main term and one term for each group: the number of owned group items multiplied by the
+/// condition. A positive coefficient means that the group wins more when the condition is higher.
+/// The result holds the interactions of the first condition for each group, then of the next condition.
 ///
 /// # Errors
-/// Returns an error when the model cannot be fitted.
+/// Returns an error when a condition has the wrong value count, or when the model fails.
 pub fn fit_group_interactions(
     states: &[&LandmarkState],
     catalog: &ItemCatalog,
     groups: &[&BTreeSet<u64>],
-    spirit_mean: f64,
+    conditions: &[&[f64]],
 ) -> Result<Vec<GroupInteraction>> {
+    if conditions.iter().any(|values| values.len() != states.len()) {
+        return Err(Error::new(
+            "Each condition requires one value for each state",
+        ));
+    }
     let items = catalog.items.len();
-    let width = COVARIATES + items + 1 + groups.len();
+    let block = 1 + groups.len();
+    let width = COVARIATES + items + conditions.len() * block;
     let penalty = (0..width)
         .map(|index| {
             if (COVARIATES..COVARIATES + items).contains(&index) {
@@ -101,21 +117,29 @@ pub fn fit_group_interactions(
         .collect::<Vec<_>>();
     let rows = states
         .iter()
-        .map(|state| {
-            let condition = (state.enemy_spirit_share - spirit_mean) * CONDITION_SCALE;
+        .enumerate()
+        .map(|(row_index, state)| {
             let mut row = build_feature_row(state, catalog);
-            row.features.push((COVARIATES + items, condition));
-            for (offset, group) in groups.iter().enumerate() {
-                let owned = state
-                    .item_ids
-                    .iter()
-                    .filter(|item| group.contains(item))
-                    .count();
-                if owned > 0 {
-                    row.features.push((
-                        COVARIATES + items + 1 + offset,
-                        condition * count_as_f64(u64::try_from(owned)?)?,
-                    ));
+            let owned = groups
+                .iter()
+                .map(|group| {
+                    count_as_f64(u64::try_from(
+                        state
+                            .item_ids
+                            .iter()
+                            .filter(|item| group.contains(item))
+                            .count(),
+                    )?)
+                })
+                .collect::<Result<Vec<_>>>()?;
+            for (condition_index, values) in conditions.iter().enumerate() {
+                let condition = values[row_index];
+                let base = COVARIATES + items + condition_index * block;
+                row.features.push((base, condition));
+                for (offset, count) in owned.iter().enumerate() {
+                    if *count > 0.0 {
+                        row.features.push((base + 1 + offset, condition * count));
+                    }
                 }
             }
             Ok(row)
@@ -127,9 +151,12 @@ pub fn fit_group_interactions(
         .map(|state| state.match_id)
         .collect::<Vec<_>>();
     let fit = fit_ridge_logistic(&references, &vec![0.0; width], &penalty)?;
-    (0..groups.len())
-        .map(|offset| {
-            let index = COVARIATES + items + 1 + offset;
+    (0..conditions.len())
+        .flat_map(|condition_index| {
+            (0..groups.len())
+                .map(move |offset| COVARIATES + items + condition_index * block + 1 + offset)
+        })
+        .map(|index| {
             Ok(GroupInteraction {
                 coefficient: fit.coefficients[index],
                 standard_error: fit.clustered_standard_error(index, &references, &matches)?,
@@ -200,8 +227,12 @@ pub fn measure_counter_groups(
         if phase_states.is_empty() {
             return Ok(Vec::new());
         }
-        let interactions =
-            fit_group_interactions(&phase_states, catalog, &item_groups, spirit_mean)?;
+        let interactions = fit_group_interactions(
+            &phase_states,
+            catalog,
+            &item_groups,
+            &[&spirit_conditions(&phase_states, spirit_mean)],
+        )?;
         for (group, interaction) in evidence.iter_mut().zip(interactions) {
             let direction = match group.damage_type {
                 DamageType::Spirit => 1.0,

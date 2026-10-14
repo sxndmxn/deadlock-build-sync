@@ -6,8 +6,8 @@ use deadlock_guides::{BuildEvaluation, Confidence, CounterEvidence};
 use crate::build_assembly::{ItemScoring, PHASES, assemble_build_with_scoring};
 use crate::build_evaluation::{evaluate_build, evaluate_pooled_builds};
 use crate::counter_items::{
-    CONDITION_SCALE, CounterGroups, fit_group_interactions, mean_enemy_spirit_share,
-    measure_counter_groups,
+    CONDITION_SCALE, CounterGroups, GroupInteraction, fit_group_interactions,
+    mean_enemy_spirit_share, measure_counter_groups, spirit_conditions,
 };
 use crate::item_effects::{
     COVARIATES, EffectPenalties, EffectTable, ItemCatalog, LandmarkState, build_feature_row,
@@ -417,7 +417,7 @@ pub fn estimate_counter_interactions(
             &phase_states,
             catalog,
             &[&groups[0], &groups[1]],
-            spirit_mean,
+            &[&spirit_conditions(&phase_states, spirit_mean)],
         )?;
         results.push(CounterResult {
             phase_s,
@@ -481,4 +481,113 @@ pub fn measure_counter_windows(
             })
         })
         .collect()
+}
+
+/// The interactions of item groups with one enemy item condition at one phase.
+#[derive(Debug)]
+pub struct ConditionResult {
+    pub phase_s: u32,
+    pub interactions: Vec<GroupInteraction>,
+    pub observations: usize,
+}
+
+/// Tests whether item groups win more when the enemy team owns more of a set of items.
+///
+/// The condition of a state is the summed cost of condition items that the enemy players own
+/// at the landmark, standardized within the phase. Items are given by class name.
+///
+/// # Errors
+/// Returns an error when a class name is unknown, or when the run or a model fails.
+pub fn estimate_enemy_item_counters(
+    paths: &RunPaths,
+    resources: ExtractionResources,
+    condition_items: &[&str],
+    groups: &[Vec<&str>],
+) -> Result<Vec<ConditionResult>> {
+    let inputs = load_run_inputs(paths, resources)?;
+    let catalog = &inputs.catalog;
+    let find = |names: &[&str]| {
+        names
+            .iter()
+            .map(|name| {
+                catalog
+                    .items
+                    .iter()
+                    .find(|item| item.class_name == *name)
+                    .map(|item| item.item_id)
+                    .ok_or_else(|| Error::new(format!("Unknown item class name: {name}")))
+            })
+            .collect::<Result<BTreeSet<_>>>()
+    };
+    let condition_set = find(condition_items)?;
+    let item_groups = groups
+        .iter()
+        .map(|names| find(names))
+        .collect::<Result<Vec<_>>>()?;
+    let group_references = item_groups.iter().collect::<Vec<_>>();
+    let all_states = inputs.states.iter().collect::<Vec<_>>();
+    let spirit_mean = mean_enemy_spirit_share(&all_states)?;
+    let mut results = Vec::new();
+    for phase_s in PHASES {
+        let phase_states = inputs
+            .states
+            .iter()
+            .filter(|state| state.landmark_s == phase_s)
+            .collect::<Vec<_>>();
+        let mut team_costs = BTreeMap::<(u64, i32), f64>::new();
+        let mut match_costs = BTreeMap::<u64, f64>::new();
+        for state in &phase_states {
+            let cost = state
+                .item_ids
+                .iter()
+                .filter(|item| condition_set.contains(item))
+                .filter_map(|item| catalog.asset(*item))
+                .map(|asset| f64::from(asset.cost))
+                .sum::<f64>();
+            *team_costs
+                .entry((state.match_id, state.team_id))
+                .or_default() += cost;
+            *match_costs.entry(state.match_id).or_default() += cost;
+        }
+        let enemy_costs = phase_states
+            .iter()
+            .map(|state| {
+                match_costs
+                    .get(&state.match_id)
+                    .copied()
+                    .unwrap_or_default()
+                    - team_costs
+                        .get(&(state.match_id, state.team_id))
+                        .copied()
+                        .unwrap_or_default()
+            })
+            .collect::<Vec<_>>();
+        let count = count_as_f64(u64::try_from(enemy_costs.len().max(1))?)?;
+        let mean = enemy_costs.iter().sum::<f64>() / count;
+        let deviation = (enemy_costs
+            .iter()
+            .map(|cost| (cost - mean).powi(2))
+            .sum::<f64>()
+            / count)
+            .sqrt()
+            .max(1.0);
+        let conditions = enemy_costs
+            .iter()
+            .map(|cost| (cost - mean) / deviation)
+            .collect::<Vec<_>>();
+        let spirit = spirit_conditions(&phase_states, spirit_mean);
+        let mut interactions = fit_group_interactions(
+            &phase_states,
+            catalog,
+            &group_references,
+            &[&conditions, &spirit],
+        )?;
+        interactions.truncate(group_references.len());
+        results.push(ConditionResult {
+            phase_s,
+            interactions,
+            observations: phase_states.len(),
+        });
+    }
+    Ok(results)
 }

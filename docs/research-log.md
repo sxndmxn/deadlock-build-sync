@@ -331,3 +331,37 @@ The standardized rank is 0 at badge 80 and changes by 1 for each 20 badges. The 
 **Analysis.** The rank interactions did not improve the predictions on any run. Weaker shrinkage made the predictions worse.
 
 **Decision.** Do not make separate builds for rank ranges inside the default cohort.
+
+## E9: anti-heal items against enemy sustain
+
+**Hypothesis.** Anti-heal items win more when the enemy team owns more healing and lifesteal items.
+
+**Method.** The item assets defined both groups before the test.
+Anti-heal items reduce the healing of enemies: Healbane, Toxic Bullets, Decay, Crippling Headshot, Inhibitor, and Spirit Burn.
+Haunting Shot has the property, but it is not in the shop of any run. Cheat Death has the property as a cost to its own buyer.
+Sustain items give healing or lifesteal: Bullet Lifesteal, Spirit Lifesteal, Leech, Siphon Bullets, Healing Rite, Healing Booster, Restorative Locket, Healing Nova, Healing Tempo, Rescue Beam, Melee Lifesteal, Lifestrike, Vampiric Burst, and Extra Regen.
+
+`estimate_enemy_item_counters` uses the items that the enemy players own at the landmark, as players can see them in the game.
+The condition is the summed cost of enemy sustain items, standardized within the phase.
+The spirit defense group of E6 is a negative control. It has no stated relation to enemy sustain.
+
+**First result.** The first model had only the sustain condition.
+Anti-heal had a positive coefficient at 20 and 30 minutes on all four runs.
+The control was negative on six of eight cells and reached z = −2.1 on the holdout run.
+Many sustain items are weapon items, so a sustain-heavy team is often a weapon-heavy team.
+
+**Adjusted result.** The final model also adds the enemy spirit share, with its own main term and group interactions.
+
+| Run | Anti-heal z at 20 and 30 minutes | Control z at 20 and 30 minutes |
+| --- | --- | --- |
+| `20261012T233433Z` | 1.7, 0.7 | −0.4, 0.7 |
+| `20261003T172322Z` | 0.9, 0.7 | −0.4, −0.3 |
+| `20260913T235155Z` | 3.4, 2.9 | −0.4, −1.2 |
+| `holdout-20260916` | 2.0, 2.0 | −1.0, −1.1 |
+
+The anti-heal coefficients were from +0.008 to +0.016 log-odds for each item and each standard deviation of enemy sustain.
+
+**Analysis.** After the adjustment, the control showed no effect. Anti-heal kept the predicted sign in all eight cells and was significant on the two large runs.
+The effect is about one third of the armor effect of E6.
+
+**Decision.** Add a VS SUSTAIN panel with the anti-heal items, from the mid game. Use the same contradiction rule as E7.

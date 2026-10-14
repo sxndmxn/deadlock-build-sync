@@ -203,6 +203,7 @@ fn create_states(owners: u32) -> Vec<LandmarkState> {
                 states.push(LandmarkState {
                     match_id: group * u64::from(owners) + u64::from(owner),
                     player_slot: 0,
+                    team_id: 0,
                     hero_id: 1,
                     fold: "development".into(),
                     landmark_s,

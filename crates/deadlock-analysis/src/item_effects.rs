@@ -19,6 +19,7 @@ const MINIMUM_HERO_ROWS: usize = 100;
 pub struct LandmarkState {
     pub match_id: u64,
     pub player_slot: u32,
+    pub team_id: i32,
     pub hero_id: u64,
     pub fold: String,
     pub landmark_s: u32,

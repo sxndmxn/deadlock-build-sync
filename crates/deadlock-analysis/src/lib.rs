@@ -6,6 +6,8 @@ mod build_benchmark;
 mod build_evaluation;
 mod build_variants;
 mod counter_items;
+
+pub use counter_items::GroupInteraction;
 mod database;
 mod extraction;
 mod hero_build_production;
@@ -21,9 +23,10 @@ mod sql_resources;
 
 pub use build_assembly::{DEFAULT_SCORING, ItemScoring};
 pub use build_benchmark::{
-    CounterResult, EffectModel, Interaction, ItemEffectRow, ModelResult, ScoringResult,
-    WindowEvidence, compare_effect_models, compare_item_scoring, estimate_counter_interactions,
-    estimate_split_item_effects, measure_counter_windows,
+    ConditionResult, CounterResult, EffectModel, Interaction, ItemEffectRow, ModelResult,
+    ScoringResult, WindowEvidence, compare_effect_models, compare_item_scoring,
+    estimate_counter_interactions, estimate_enemy_item_counters, estimate_split_item_effects,
+    measure_counter_windows,
 };
 pub use hero_build_production::produce_hero_builds;
 pub use item_effects::{DEFAULT_PENALTIES, EffectPenalties};

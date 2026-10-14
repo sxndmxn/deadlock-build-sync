@@ -93,6 +93,7 @@ owned_items AS (
 SELECT
     st.match_id,
     st.player_slot,
+    st.team_id,
     st.hero_id,
     st.fold,
     st.landmark_s,
