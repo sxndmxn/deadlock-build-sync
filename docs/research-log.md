@@ -637,7 +637,7 @@ The counter tests need more matches: E7 found stable results at about 18,000 mat
 1. Weapon penetration (Bullet Resist Shredder, Armor Piercer, and Hunter's Aura) against the enemy share of the six weapon defense items of E6.
 2. Spirit penetration (Mystic Vulnerability and Escalating Exposure) against the enemy share of Spirit Shielding, Spirit Resilience, Enchanter's Emblem, Witchmail, and Diviner's Kevlar.
 
-**Result.** The table gives the z values at 20 and 30 minutes on the runs `20261003T172322Z`, `20261012T233433Z`, `20260913T235155Z`, `confirm-20261003`, and `holdout-20260916`.
+**Result.** The table gives the z values at 20 and 30 minutes on the runs `20260913T235155Z`, `20261003T172322Z`, `20261012T233433Z`, `confirm-20261003`, and `holdout-20260916`, in this order.
 
 | Test | z values | Positive |
 | --- | --- | --- |
