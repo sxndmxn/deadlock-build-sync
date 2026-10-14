@@ -22,8 +22,9 @@ The scale 0.025 gave 0.281 ± 0.021. See the table in [Build method](build-metho
 **Analysis.** At the scale 0.025, 32.9% of CORE items had an adoption below 3%. At the scale 0.1, the share was 1.1%.
 The median CORE item adoption fell from 40.5% to 9.5%.
 Healing Rite entered CORE for all 41 heroes with a mean adoption of 1.1%.
-Players sell Healing Rite in 83% of matches, after a median of 11.5 minutes.
-Thus, ownership of Healing Rite at a late landmark identifies the rare players who did not sell it.
+Of the buyers of Healing Rite, 36% sell it and 51% use it as a component of an upgrade.
+Entry E13 corrects an earlier value of 83% sold, which counted upgrades as sales.
+Thus, ownership of Healing Rite at a late landmark identifies the rare players who neither sold nor upgraded it.
 
 The team lead before each purchase was at most 0.017 for every item with at least 300 buyers.
 Thus, these items do not win because players buy them when their team is already ahead.
@@ -424,3 +425,42 @@ The variants select players who own a key item. Their item combinations can refl
 
 **Decision.** The data does not support the variants as better winning paths. They can remain as play style options with their own confidence labels.
 The owner decides whether to keep them. No code change.
+
+## E12: armor choices of players against the enemy team
+
+**Hypothesis.** Players do not adapt their armor to the enemy damage type. If true, the counter panels give new information.
+
+**Method.** A query of the holdout run divided players in matches longer than 30 minutes into fifths by the enemy spirit share.
+It measured the share of players who own at least one item of each defense group of E6 at 30 minutes.
+
+**Result.**
+
+| Enemy spirit fifth | Mean enemy spirit share | Own weapon defense | Own spirit defense |
+| --- | --- | --- | --- |
+| 1 | 0.369 | 21.9% | 19.8% |
+| 2 | 0.417 | 18.7% | 23.5% |
+| 3 | 0.447 | 16.8% | 25.2% |
+| 4 | 0.476 | 15.4% | 27.5% |
+| 5 | 0.522 | 12.9% | 31.0% |
+
+**Analysis.** Players adapt. They own weapon defense 1.7 times as often against the most weapon-heavy fifth, and spirit defense 1.6 times as often against the most spirit-heavy fifth.
+E6 shows that matched armor still wins more at this level of adaptation.
+
+**Decision.** Keep the counter panels. They support a correct habit and name the tested items.
+
+## E13: item sales
+
+**Hypothesis.** Players sell many early items, so the items could show when to sell them.
+
+**Method.** A query of the holdout run classified the first purchase of each item.
+A sale at the same second as the purchase of an upgrade that uses the item as a component is an upgrade, not a sale.
+For upgraded Healing Booster, 98.6% of the recorded sales had the same time as the Healing Tempo purchase.
+
+**Result.** Only two items with at least 2,000 buyers were sold by most buyers: Golden Goose Egg (94%) and Restorative Shot (66%).
+Most other early items were upgraded, for example Headshot Booster (80%) and Extra Health (60%), or kept.
+Healing Rite was sold by 36% of buyers and upgraded by 51%.
+
+**Analysis.** The landmark ownership of the build method treats an upgraded component as not owned, which is correct.
+A sell instruction would apply to very few items.
+
+**Decision.** Do not add sell instructions. Do not set the Steam `sell_priority` field, because its display in the game client is not verified.
