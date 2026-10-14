@@ -525,3 +525,28 @@ The spirit defense effect was positive on four earlier runs but zero on these ma
 **Decision.** Keep all three panels. The E7 rule removes a panel only for a z value below −2.
 The VS SPIRIT description states the z value of each run, so a player can see weak evidence on a patch.
 Repeat this confirmation after each method change, with a match window that no earlier test used.
+
+## E16: an adoption floor for CORE items
+
+**Hypothesis.** At the effect scale 0.05, 1% to 7% of CORE items have an adoption below 3%.
+A hard adoption floor of 3% removes these items without a loss of held-out signal.
+
+**Method.** `ItemScoring` has an optional adoption floor. The rule `0.05:0.03` blocks items with an adoption below 3%.
+`compare_scoring_pair` compared the rule `0.05` (base) and `0.05:0.03` (alternative) on five runs.
+The prediction was that the alternative coefficient is not significantly negative on any run.
+
+**Result.**
+
+| Run | Base coefficient | Alternative coefficient |
+| --- | --- | --- |
+| `20261012T233433Z` | −0.783 ± 0.240 | +0.930 ± 0.237 (z = 3.9) |
+| `20261003T172322Z` | −1.038 ± 0.284 | +1.079 ± 0.280 (z = 3.8) |
+| `20260913T235155Z` | +0.082 ± 0.070 | +0.036 ± 0.069 (z = 0.5) |
+| `holdout-20260916` | −0.380 ± 0.086 | +0.513 ± 0.087 (z = 5.9) |
+| `confirm-20261003` | +0.718 ± 0.139 | −0.586 ± 0.138 (z = −4.3) |
+
+**Analysis.** The two builds differ in one or two items. Thus, the two agreements are almost the same variable, and the model divides their common effect in an unstable direction.
+The large coefficients with opposite signs show this problem. The prediction failed on the confirmation run.
+The paired test of E14 is valid only when the two builds differ clearly. At the scales 0.1 and 0.05, the CORE overlap was 0.70.
+
+**Decision.** Keep the floor at 0 in production. The floor remains an option of the experiment examples.
