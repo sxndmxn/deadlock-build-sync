@@ -55,7 +55,7 @@ The global ridge penalty of 5 does not shrink rare items enough. Hero models inh
 
 **Hypothesis.** The ridge penalties of 5 (global) and 100 (hero) are too weak.
 
-**Method.** `compare_effect_penalties` fits the effect models on development matches for each penalty pair.
+**Method.** `compare_effect_models` fits the effect models on development matches for each penalty pair.
 It predicts the match result of each test state at the three phase landmarks and measures the mean log loss.
 The difference to the first pair uses the same states. Its standard error treats each match as one independent unit.
 Penalties of 10⁹ remove all item effects and give the baseline.
@@ -149,3 +149,101 @@ Thus, the win model underrates economy items by a small amount. The data cannot 
 Hero-specific win effects are mostly noise. This result agrees with the large hero penalty that E2 selected.
 
 **Decision.** Do not use growth as the outcome. Do not change the win model for economy items.
+
+## E4: item effects that depend on the team lead
+
+**Hypothesis.** Some items win more when the team is behind, and other items win more when the team is ahead.
+This hypothesis would support an "IF BEHIND" panel.
+
+**Method.** `compare_effect_models` with the design `200:300:lead=SCALE` adds one coefficient for each item on the team lead.
+The design also adds a main term for the condition. The team lead already has a covariate, so this main term repeats it.
+The standard deviation of the team lead is 0.056 to 0.072 at the phase landmarks. The scale multiplies the interaction value. A larger scale makes the penalty weaker.
+
+**Result.** Each value is the log loss difference to the design `200:300` without interactions. The main term was not in this version of the test.
+
+| Run | Scale 4 | Scale 16 | Scale 64 |
+| --- | --- | --- | --- |
+| `20261012T233433Z` | −0.000023 ± 0.000014 | +0.000061 ± 0.000058 | +0.001127 ± 0.000159 |
+| `20261003T172322Z` | +0.000011 ± 0.000019 | +0.000290 ± 0.000093 | +0.002053 ± 0.000261 |
+| `20260913T235155Z` | −0.000020 ± 0.000011 | +0.000058 ± 0.000030 | +0.000641 ± 0.000061 |
+
+**Analysis.** With strong shrinkage, the interactions did not change the predictions significantly, and the sign was not stable. With weaker shrinkage, the predictions became worse.
+
+**Decision.** Do not make an "IF BEHIND" panel. The data gives no evidence that item effects depend on the team lead.
+
+## E5: item effects that depend on the enemy damage type
+
+**Hypothesis.** Some items win more against enemy teams that deal more spirit damage.
+
+**Method.** The landmark query now gives `enemy_spirit_share`: the mean spirit share of the five or six enemy heroes.
+The spirit share of a hero is the share of its first item purchases, by cost, in the spirit slot. It uses all ranks and folds of the run.
+Hero spirit shares were from 0.04 to 0.72. The enemy team mean was 0.436 with a standard deviation of 0.062.
+`compare_effect_models` with the design `200:300:spirit=SCALE` adds a main term for the enemy spirit share and one interaction for each item.
+The scale 0 keeps only the main term.
+
+**Result.** Each value is the log loss difference to the design with only the main term.
+
+| Run | No enemy term | Scale 2 | Scale 4 | Scale 8 |
+| --- | --- | --- | --- | --- |
+| `20261012T233433Z` | +0.000372 ± 0.000337 | −0.000009 ± 0.000009 | −0.000006 ± 0.000021 | +0.000042 ± 0.000043 |
+| `20261003T172322Z` | +0.000477 ± 0.000097 | +0.000017 ± 0.000016 | +0.000072 ± 0.000042 | +0.000261 ± 0.000089 |
+| `20260913T235155Z` | −0.000005 ± 0.000021 | −0.000002 ± 0.000007 | +0.000010 ± 0.000014 | +0.000055 ± 0.000024 |
+
+**Analysis.** An earlier version of this test had no main term. It showed an improvement of 3.7 standard errors on one run.
+The main term explains that improvement: the enemy composition predicts the match result on two runs.
+The 156 item interactions add no information to the main term.
+
+**Decision.** A test of all items at once cannot find counter items. Test a small group of items with a stated direction (E6).
+
+## E6: defensive items against the matching damage type
+
+**Hypothesis.** Spirit defense items win more against enemy teams with a high spirit share.
+Weapon defense items win more against enemy teams with a low spirit share.
+
+**Method.** `estimate_counter_interactions` fits one global model for each phase with all matches of the run.
+The model adds a main term for the enemy spirit share and two interaction terms.
+Each term is the number of owned items in one group multiplied by the standardized enemy spirit share.
+The standard errors come from the model Hessian. They treat each state as independent, so they are too small.
+
+The first groups were these items:
+
+1. Spirit defense: Spirit Shielding, Enchanter's Emblem, Spirit Resilience, Counterspell, Witchmail, and Dispel Magic.
+2. Weapon defense: Weapon Shielding, Battle Vest, Bullet Resilience, Metal Skin, Plated Armor, and Return Fire.
+
+**Result for the groups.**
+
+| Run | Phase | Spirit defense | Weapon defense |
+| --- | --- | --- | --- |
+| `20261012T233433Z` | 9, 20, 30 minutes | +0.002, +0.007, +0.020 | −0.051, −0.014, −0.034 |
+| `20261003T172322Z` | 9, 20, 30 minutes | +0.022, +0.001, +0.015 | −0.038, −0.024, −0.025 |
+| `20260913T235155Z` | 9, 20, 30 minutes | +0.006, +0.007, +0.008 | −0.031, −0.021, −0.038 |
+
+All 18 signs agree with the hypothesis. On the largest run, the weapon defense values are 2.5 to 4.2 standard errors from zero.
+
+**Result for each item.** The values pool three runs and three phases by inverse variance. The z values are too large, because the phases of one run share matches.
+
+| Group | Item | Expected signs | Pooled value | z |
+| --- | --- | --- | --- | --- |
+| Weapon defense | Battle Vest | 9 of 9 | −0.020 | −3.8 |
+| Weapon defense | Metal Skin | 6 of 9 | −0.058 | −3.6 |
+| Weapon defense | Bullet Resilience | 7 of 9 | −0.057 | −3.0 |
+| Weapon defense | Plated Armor | 5 of 9 | −0.057 | −2.7 |
+| Weapon defense | Return Fire | 5 of 9 | −0.041 | −2.4 |
+| Weapon defense | Weapon Shielding | 7 of 9 | −0.030 | −2.3 |
+| Spirit defense | Spirit Resilience | 7 of 9 | +0.029 | +4.7 |
+| Spirit defense | Spirit Shielding | 5 of 9 | +0.017 | +3.0 |
+| Spirit defense | Enchanter's Emblem | 7 of 9 | +0.006 | +1.4 |
+| Spirit defense | Witchmail | 4 of 9 | +0.006 | +0.4 |
+| Spirit defense | Dispel Magic | 4 of 9 | −0.003 | −0.6 |
+| Spirit defense | Counterspell | 4 of 9 | −0.013 | −1.8 |
+
+**Analysis.** All six weapon defense items agree with the hypothesis.
+Of the spirit defense items, only the two items that give spirit resist without another main function agree.
+Counterspell blocks abilities, and Dispel Magic removes debuffs. They do not reduce spirit damage.
+At the 10th and 90th percentiles of enemy teams, the difference is about 0.05 log-odds for each item.
+
+The item assets cannot select these groups automatically.
+The `IntrinsicallyProvidedInAbility` flag marks both own armor, such as Spirit Resilience, and enemy debuffs, such as Mystic Vulnerability.
+Plated Armor has no resist property.
+
+**Decision.** The spirit group was selected after the results were known. A run that did not take part in the selection must confirm it.

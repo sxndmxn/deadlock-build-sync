@@ -27,6 +27,8 @@ pub struct LandmarkState {
     pub net_worth: u32,
     pub team_lead: f64,
     pub item_ids: Vec<u64>,
+    /// The mean share of item spend on spirit items for the enemy heroes in all matches of the run.
+    pub enemy_spirit_share: f64,
 }
 
 #[derive(Clone, Debug, Deserialize)]

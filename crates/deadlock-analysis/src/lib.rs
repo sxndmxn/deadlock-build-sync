@@ -19,7 +19,8 @@ mod sql_resources;
 
 pub use build_assembly::{DEFAULT_SCORING, ItemScoring};
 pub use build_benchmark::{
-    ItemEffectRow, PenaltyResult, ScoringResult, compare_effect_penalties, compare_item_scoring,
+    CounterResult, EffectModel, Interaction, ItemEffectRow, ModelResult, ScoringResult,
+    compare_effect_models, compare_item_scoring, estimate_counter_interactions,
     estimate_split_item_effects,
 };
 pub use hero_build_production::produce_hero_builds;

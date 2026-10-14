@@ -211,6 +211,7 @@ fn create_states(owners: u32) -> Vec<LandmarkState> {
                     net_worth: 15000,
                     team_lead: 0.0,
                     item_ids,
+                    enemy_spirit_share: 0.4,
                 });
             }
         }

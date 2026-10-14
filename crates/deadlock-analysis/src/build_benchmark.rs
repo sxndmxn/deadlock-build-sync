@@ -1,17 +1,17 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
-use deadlock_data::{Result, count_as_f64, read_json};
+use deadlock_data::{Error, Result, count_as_f64, read_json};
 use deadlock_guides::{BuildEvaluation, Confidence};
 
 use crate::build_assembly::{ItemScoring, PHASES, assemble_build_with_scoring};
 use crate::build_evaluation::{evaluate_build, evaluate_pooled_builds};
 use crate::hero_build_production::{AssemblyInputs, load_assembly_inputs, open_run_database};
 use crate::item_effects::{
-    COVARIATES, EffectPenalties, EffectTable, ItemCatalog, LandmarkState, build_feature_row,
-    estimate_item_effects, fit_landmark_models, select_feature_rows,
+    COVARIATES, DEFAULT_PENALTIES, EffectPenalties, EffectTable, ItemCatalog, LandmarkState,
+    build_feature_row, estimate_item_effects, fit_landmark_models,
 };
 use crate::refresh_configuration::{ExtractionResources, RunPaths, cohort_ranks};
-use crate::ridge_logistic::logistic;
+use crate::ridge_logistic::{FeatureRow, fit_ridge_logistic, logistic};
 
 /// The held-out test result of one item score rule over all heroes.
 #[derive(Debug)]
@@ -170,20 +170,44 @@ fn load_run_inputs(paths: &RunPaths, resources: ExtractionResources) -> Result<A
     load_assembly_inputs(&database, &parameters)
 }
 
-/// The held-out prediction quality of one pair of ridge penalties.
+/// A match condition that can change the effect of each item.
+#[derive(Clone, Copy, Debug)]
+pub enum Interaction {
+    /// The team lead of the player.
+    TeamLead,
+    /// The enemy spirit share minus its mean in the development matches.
+    EnemySpirit,
+}
+
+/// The standard deviation of the team lead and the enemy spirit share is near 0.06.
+/// This factor gives the main term of a condition a standard deviation near 1.
+const CONDITION_SCALE: f64 = 16.0;
+
+/// One design of the item effect model.
 ///
-/// The difference compares the log loss with the first pair of the grid on the same states.
+/// With an interaction, the model has a main term for the condition value.
+/// Each item also has a coefficient on the condition value, multiplied by the scale.
+/// A larger scale makes the interaction penalty weaker. A scale of 0 keeps only the main term.
+#[derive(Clone, Copy, Debug)]
+pub struct EffectModel {
+    pub penalties: EffectPenalties,
+    pub interaction: Option<(Interaction, f64)>,
+}
+
+/// The held-out prediction quality of one effect model design.
+///
+/// The difference compares the log loss with the first design on the same states.
 /// Its standard error treats each match as one independent unit.
 #[derive(Debug)]
-pub struct PenaltyResult {
-    pub penalties: EffectPenalties,
+pub struct ModelResult {
+    pub model: EffectModel,
     pub log_loss: f64,
     pub difference: f64,
     pub difference_standard_error: f64,
     pub observations: usize,
 }
 
-/// Compares ridge penalties by the log loss of match result predictions on the test fold.
+/// Compares effect model designs by the log loss of match result predictions on the test fold.
 ///
 /// The models use development matches at each phase landmark. Each test state uses
 /// its hero model, or the global model when the hero has too few development rows.
@@ -191,42 +215,98 @@ pub struct PenaltyResult {
 ///
 /// # Errors
 /// Returns an error when the run, the analysis database, or a model fails.
-pub fn compare_effect_penalties(
+pub fn compare_effect_models(
     paths: &RunPaths,
     resources: ExtractionResources,
-    grid: &[EffectPenalties],
-) -> Result<Vec<PenaltyResult>> {
+    designs: &[EffectModel],
+) -> Result<Vec<ModelResult>> {
     let inputs = load_run_inputs(paths, resources)?;
     let (test, development): (Vec<_>, Vec<_>) =
         inputs.states.iter().partition(|state| state.fold == "test");
+    let spirit_mean = development
+        .iter()
+        .map(|state| state.enemy_spirit_share)
+        .sum::<f64>()
+        / count_as_f64(u64::try_from(development.len().max(1))?)?;
+    let context = ModelContext {
+        development: &development,
+        test: &test,
+        catalog: &inputs.catalog,
+        spirit_mean,
+    };
     let mut reference = None;
     let mut results = Vec::new();
-    for penalties in grid {
-        eprintln!(
-            "Testing penalties {} and {}",
-            penalties.global_item, penalties.hero_item
-        );
-        let losses = measure_match_losses(&development, &test, &inputs.catalog, *penalties)?;
+    for model in designs {
+        eprintln!("Testing {model:?}");
+        let losses = measure_match_losses(&context, *model)?;
         let reference = reference.get_or_insert_with(|| losses.clone());
-        results.push(compare_match_losses(*penalties, &losses, reference)?);
+        results.push(compare_match_losses(*model, &losses, reference)?);
     }
     Ok(results)
 }
 
+/// The states, items, and condition mean that all designs of one comparison share.
+struct ModelContext<'a> {
+    development: &'a [&'a LandmarkState],
+    test: &'a [&'a LandmarkState],
+    catalog: &'a ItemCatalog,
+    spirit_mean: f64,
+}
+
+/// Builds the feature row of a state, with item interactions when the design has them.
+fn build_model_row(
+    state: &LandmarkState,
+    context: &ModelContext,
+    model: EffectModel,
+) -> FeatureRow {
+    let mut row = build_feature_row(state, context.catalog);
+    if let Some((interaction, scale)) = model.interaction {
+        let value = match interaction {
+            Interaction::TeamLead => state.team_lead,
+            Interaction::EnemySpirit => state.enemy_spirit_share - context.spirit_mean,
+        };
+        let offset = COVARIATES + context.catalog.items.len();
+        row.features.push((
+            offset + context.catalog.items.len(),
+            value * CONDITION_SCALE,
+        ));
+        row.features.extend(
+            state
+                .item_ids
+                .iter()
+                .filter_map(|item| context.catalog.column(*item))
+                .map(|column| (offset + column, value * scale)),
+        );
+    }
+    row
+}
+
 /// Returns the summed log loss and the state count of each test match.
 fn measure_match_losses(
-    development: &[&LandmarkState],
-    test: &[&LandmarkState],
-    catalog: &ItemCatalog,
-    penalties: EffectPenalties,
+    context: &ModelContext,
+    model: EffectModel,
 ) -> Result<BTreeMap<u64, (f64, usize)>> {
-    let width = COVARIATES + catalog.items.len();
+    let catalog = context.catalog;
+    let width = if model.interaction.is_some() {
+        COVARIATES + 2 * catalog.items.len() + 1
+    } else {
+        COVARIATES + catalog.items.len()
+    };
     let mut losses = BTreeMap::<u64, (f64, usize)>::new();
     for landmark in PHASES {
-        let training = select_feature_rows(development, catalog, landmark);
-        let models = fit_landmark_models(&training, width, penalties)?;
-        for state in test.iter().filter(|state| state.landmark_s == landmark) {
-            let row = build_feature_row(state, catalog);
+        let training = context
+            .development
+            .iter()
+            .filter(|state| state.landmark_s == landmark)
+            .map(|state| (state.hero_id, build_model_row(state, context, model)))
+            .collect::<Vec<_>>();
+        let models = fit_landmark_models(&training, width, model.penalties)?;
+        for state in context
+            .test
+            .iter()
+            .filter(|state| state.landmark_s == landmark)
+        {
+            let row = build_model_row(state, context, model);
             let coefficients = models.heroes.get(&state.hero_id).unwrap_or(&models.global);
             let score = row
                 .features
@@ -247,10 +327,10 @@ fn measure_match_losses(
 }
 
 fn compare_match_losses(
-    penalties: EffectPenalties,
+    model: EffectModel,
     losses: &BTreeMap<u64, (f64, usize)>,
     reference: &BTreeMap<u64, (f64, usize)>,
-) -> Result<PenaltyResult> {
+) -> Result<ModelResult> {
     let observations = losses.values().map(|(_, count)| count).sum::<usize>();
     let states = count_as_f64(u64::try_from(observations)?)?;
     let matches = count_as_f64(u64::try_from(losses.len())?)?;
@@ -264,11 +344,110 @@ fn compare_match_losses(
         .map(|difference| (difference - mean).powi(2))
         .sum::<f64>()
         / (matches - 1.0).max(1.0);
-    Ok(PenaltyResult {
-        penalties,
+    Ok(ModelResult {
+        model,
         log_loss: losses.values().map(|(loss, _)| loss).sum::<f64>() / states,
         difference: differences.iter().sum::<f64>() / states,
         difference_standard_error: (variance * matches).sqrt() / states,
         observations,
     })
+}
+
+/// The interaction of two defensive item groups with the enemy spirit share at one phase.
+///
+/// Each coefficient is the change in log-odds for each owned item of the group when
+/// the enemy spirit share is one standard deviation (about 0.06) above its mean.
+#[derive(Debug)]
+pub struct CounterResult {
+    pub phase_s: u32,
+    pub spirit_defense: f64,
+    pub spirit_defense_standard_error: f64,
+    pub weapon_defense: f64,
+    pub weapon_defense_standard_error: f64,
+    pub observations: usize,
+}
+
+/// Tests whether defensive items win more against the matching enemy damage type.
+///
+/// The global model of each phase uses all matches. It adds a main term for the enemy
+/// spirit share and one interaction term for each item group.
+///
+/// # Errors
+/// Returns an error when an item name is unknown, or when the run or a model fails.
+pub fn estimate_counter_interactions(
+    paths: &RunPaths,
+    resources: ExtractionResources,
+    spirit_defense: &[&str],
+    weapon_defense: &[&str],
+) -> Result<Vec<CounterResult>> {
+    let inputs = load_run_inputs(paths, resources)?;
+    let catalog = &inputs.catalog;
+    let find = |names: &[&str]| {
+        names
+            .iter()
+            .map(|name| {
+                catalog
+                    .items
+                    .iter()
+                    .find(|item| item.item_name == *name)
+                    .map(|item| item.item_id)
+                    .ok_or_else(|| Error::new(format!("Unknown item name: {name}")))
+            })
+            .collect::<Result<BTreeSet<_>>>()
+    };
+    let groups = [find(spirit_defense)?, find(weapon_defense)?];
+    let states = inputs.states.iter().collect::<Vec<_>>();
+    let spirit_mean = states
+        .iter()
+        .map(|state| state.enemy_spirit_share)
+        .sum::<f64>()
+        / count_as_f64(u64::try_from(states.len().max(1))?)?;
+    let items = catalog.items.len();
+    let width = COVARIATES + items + 3;
+    let penalty = (0..width)
+        .map(|index| {
+            if (COVARIATES..COVARIATES + items).contains(&index) {
+                DEFAULT_PENALTIES.global_item
+            } else {
+                1.0
+            }
+        })
+        .collect::<Vec<_>>();
+    let mut results = Vec::new();
+    for phase_s in PHASES {
+        let rows = states
+            .iter()
+            .filter(|state| state.landmark_s == phase_s)
+            .map(|state| {
+                let condition = (state.enemy_spirit_share - spirit_mean) * CONDITION_SCALE;
+                let mut row = build_feature_row(state, catalog);
+                row.features.push((COVARIATES + items, condition));
+                for (offset, group) in groups.iter().enumerate() {
+                    let owned = state
+                        .item_ids
+                        .iter()
+                        .filter(|item| group.contains(item))
+                        .count();
+                    if owned > 0 {
+                        row.features.push((
+                            COVARIATES + items + 1 + offset,
+                            condition * count_as_f64(u64::try_from(owned)?)?,
+                        ));
+                    }
+                }
+                Ok(row)
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let references = rows.iter().collect::<Vec<_>>();
+        let fit = fit_ridge_logistic(&references, &vec![0.0; width], &penalty)?;
+        results.push(CounterResult {
+            phase_s,
+            spirit_defense: fit.coefficients[width - 2],
+            spirit_defense_standard_error: fit.standard_error(width - 2)?,
+            weapon_defense: fit.coefficients[width - 1],
+            weapon_defense_standard_error: fit.standard_error(width - 1)?,
+            observations: rows.len(),
+        });
+    }
+    Ok(results)
 }
