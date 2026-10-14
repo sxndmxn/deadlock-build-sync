@@ -966,6 +966,7 @@ The prediction was that the weapon defense and anti-heal groups keep positive co
 **Analysis.** The armor effects stayed or grew within each hero. Hero matchups do not explain them. The anti-heal effect became slightly weaker but stayed positive.
 
 **Decision.** Use the hero terms in production. On `holdout-20260916`, the production evidence was weapon defense z = 5.2 and 5.0, spirit defense z = 4.0 and 4.1, and anti-heal z = 1.8 and 2.2.
+The E7 rule with hero terms kept every panel in 5 windows of `holdout-20260916` and 12 windows of `20260913T235155Z`. The lowest z value of a group in a window was −1.06.
 
 ## E32: the effect scale with the adoption floor
 
