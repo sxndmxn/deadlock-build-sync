@@ -35,6 +35,7 @@ The test fold contains the last 20% of matches by start time.
 | E19 | Do more days of matches give better builds? | No measurable gain after about 7,000 matches | Sync one to two days after a patch |
 | E20 | Does armor penetration win more against armor? | No | No panel |
 | E21 | Do situational items add win signal? | Yes, on five runs | Keep the TIER rule |
+| E22 | Are builds stable between match samples? | The effect term halves the stability | Keep 0.05. Note the trade-off |
 
 ## E0: effect scale of the item score
 
