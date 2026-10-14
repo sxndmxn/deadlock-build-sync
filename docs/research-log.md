@@ -38,6 +38,7 @@ The test fold contains the last 20% of matches by start time.
 | E22 | Are builds stable between match samples? | The effect term halves the stability | Keep 0.05. Note the trade-off |
 | E23 | Does an uncertainty weight stabilize builds? | Only slightly | Not added |
 | E24 | How much does a build change between syncs of one patch? | About 30% of CORE | Owner decision |
+| E25 | Do the later decisions hold on more new matches? | Yes, all four predictions | Keep all |
 
 ## E0: effect scale of the item score
 
@@ -768,3 +769,28 @@ Thus, uncertain effects cause little of the instability. Near ties between items
 A rule that prefers the items of the previous build of the same patch could reduce this change. It would reduce the win signal by design, and it needs the previous catalog at each sync.
 
 **Decision.** No change. The owner decides whether stability between syncs is a goal.
+
+## E25: a second confirmation on new matches
+
+**Purpose.** E17 and E21 came after the confirmation of E15. A second set of new matches tests them and repeats two earlier results.
+
+**Method.** The run `confirm-20260913` used the patch of 2026-08-22 from 2026-09-13 23:52, the end of run `20260913T235155Z`, to 2026-09-16 22:41, the start of the next patch.
+It had 17,160 matches and 205,920 player matches. These predictions were stated before the extraction:
+
+1. Q1: builds with the effect scale 0.05 add a positive coefficient beyond builds with the scale 0.1 (E14).
+2. Q2: the situational share adds a positive coefficient beyond CORE agreement (E21).
+3. Q3: on split halves, the hierarchical estimate has a lower mean squared error than the build's own result (E17).
+4. Q4: the weapon defense and anti-heal groups have positive production coefficients at 20 and 30 minutes.
+
+**Result.**
+
+| Prediction | Result | Status |
+| --- | --- | --- |
+| Q1 | +0.227 ± 0.063, z = 3.6 | Confirmed |
+| Q2 | +0.355 ± 0.156, z = 2.3 | Confirmed |
+| Q3 | Correlation of halves 0.028. Error 0.153 for the own result, 0.071 for the hierarchical estimate, and 0.052 for the mean of all heroes | Confirmed |
+| Q4 | Weapon defense z = 1.7 and 1.6. Anti-heal z = 0.5 and 1.5 | Confirmed |
+
+Spirit defense had z = 1.3 and 2.3. It was positive again after the zero result of E15.
+
+**Decision.** No change. The results of E14, E17, E21, and the counter groups held on a second set of new matches.
