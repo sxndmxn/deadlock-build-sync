@@ -285,3 +285,5 @@ Net worth at the landmark is also partly a result of earlier items.
 Variant owners must survive long enough and acquire enough souls to own the key item.
 Their item combinations can reflect match conditions as well as different strategies.
 The selection thresholds are engineering rules. They do not prove an optimal number of builds.
+A held-out test found that variant agreement does not predict wins beyond main build agreement. On the largest test, its coefficient was negative.
+Thus, additional builds are play style options, not better winning paths. See [Research log](research-log.md), entry E11.
