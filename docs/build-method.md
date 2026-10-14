@@ -57,11 +57,15 @@ A positive effect means that the item wins more than the typical other use of th
 
 The analysis fits two levels of models:
 
-1. A global model uses all heroes. Its item coefficients have a ridge penalty of 5.
-2. A hero model uses one hero. Its ridge penalty of 100 pulls each item coefficient toward the global value.
+1. A global model uses all heroes. Its item coefficients have a ridge penalty of 200.
+2. A hero model uses one hero. Its ridge penalty of 300 pulls each item coefficient toward the global value.
 
 Thus, a hero with few matches inherits the global estimate, and a hero with many matches uses its own data.
 This is a simple form of hierarchical shrinkage.
+
+Held-out log loss selected these penalties on three patches. The earlier penalties of 5 and 100 left rare items with large, unreliable effects.
+After net worth, team lead, and rank, item ownership adds little information about the match result.
+See [Research log](research-log.md) entries E1 and E2.
 
 ## Build assembly
 
@@ -227,6 +231,7 @@ The scale 0.025 gives a much larger coefficient. This result does not alone just
 The test and the item effects use the same adjustment for net worth, team lead, and rank.
 Thus, an item that players buy because they win can increase both values. The test can repeat the bias of the effect estimate.
 A test that does not share this bias is necessary before a change of the installed scale.
+This table uses the earlier ridge penalties of 5 and 100. See [Research log](research-log.md) for the results with the current penalties.
 
 ## Limits
 

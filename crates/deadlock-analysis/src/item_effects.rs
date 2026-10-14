@@ -7,9 +7,10 @@ use crate::ridge_logistic::{FeatureRow, fit_ridge_logistic};
 
 /// Covariates before the item columns: intercept, relative net worth, team lead, and rank.
 pub const COVARIATES: usize = 4;
-const GLOBAL_ITEM_PENALTY: f64 = 5.0;
+/// Held-out log loss selected these penalties on three patches. See `docs/research-log.md` (E2).
+const GLOBAL_ITEM_PENALTY: f64 = 200.0;
 const GLOBAL_COVARIATE_PENALTY: f64 = 1e-4;
-const HERO_ITEM_PENALTY: f64 = 100.0;
+const HERO_ITEM_PENALTY: f64 = 300.0;
 const HERO_COVARIATE_PENALTY: f64 = 1.0;
 const MINIMUM_HERO_ROWS: usize = 100;
 
@@ -141,6 +142,65 @@ pub fn relative_net_worth(net_worth: u32, landmark_s: u32) -> f64 {
     f64::from(net_worth.max(1)).ln() - (f64::from(landmark_s.max(1)) * 20.0).ln()
 }
 
+/// Ridge penalties on item coefficients. A larger penalty pulls harder toward the prior.
+///
+/// The global model pulls toward zero. Each hero model pulls toward the global model.
+#[derive(Clone, Copy, Debug)]
+pub struct EffectPenalties {
+    pub global_item: f64,
+    pub hero_item: f64,
+}
+
+/// The ridge penalties of installed builds.
+pub const DEFAULT_PENALTIES: EffectPenalties = EffectPenalties {
+    global_item: GLOBAL_ITEM_PENALTY,
+    hero_item: HERO_ITEM_PENALTY,
+};
+
+/// All coefficients of the global model and each hero model at one landmark.
+#[derive(Debug)]
+pub struct LandmarkModels {
+    pub global: Vec<f64>,
+    pub heroes: BTreeMap<u64, Vec<f64>>,
+}
+
+/// Fits the global model and each hero model with sufficient rows.
+///
+/// # Errors
+/// Returns an error when a model cannot be fitted.
+pub fn fit_landmark_models(
+    rows: &[(u64, FeatureRow)],
+    width: usize,
+    penalties: EffectPenalties,
+) -> Result<LandmarkModels> {
+    let all_rows = rows.iter().map(|(_, row)| row).collect::<Vec<_>>();
+    let global = fit_ridge_logistic(
+        &all_rows,
+        &vec![0.0; width],
+        &build_penalty(width, GLOBAL_COVARIATE_PENALTY, penalties.global_item),
+    )?
+    .coefficients;
+    let mut heroes = BTreeMap::new();
+    let hero_ids = rows.iter().map(|(hero, _)| *hero).collect::<BTreeSet<_>>();
+    for hero in hero_ids {
+        let hero_rows = rows
+            .iter()
+            .filter(|(owner, _)| *owner == hero)
+            .map(|(_, row)| row)
+            .collect::<Vec<_>>();
+        if hero_rows.len() < MINIMUM_HERO_ROWS {
+            continue;
+        }
+        let fit = fit_ridge_logistic(
+            &hero_rows,
+            &global,
+            &build_penalty(width, HERO_COVARIATE_PENALTY, penalties.hero_item),
+        )?;
+        heroes.insert(hero, fit.coefficients);
+    }
+    Ok(LandmarkModels { global, heroes })
+}
+
 /// Estimates item effects for each hero and landmark.
 ///
 /// A global model for all heroes gives the prior. Each hero model pulls its item
@@ -154,52 +214,59 @@ pub fn estimate_item_effects(
     catalog: &ItemCatalog,
     landmarks: &[u32],
 ) -> Result<EffectTable> {
+    estimate_item_effects_with_penalties(states, catalog, landmarks, DEFAULT_PENALTIES)
+}
+
+/// Estimates item effects with specified ridge penalties.
+///
+/// # Errors
+/// Returns an error when a model cannot be fitted.
+pub fn estimate_item_effects_with_penalties(
+    states: &[&LandmarkState],
+    catalog: &ItemCatalog,
+    landmarks: &[u32],
+    penalties: EffectPenalties,
+) -> Result<EffectTable> {
     let width = COVARIATES + catalog.items.len();
     let mut table = EffectTable::new();
     for landmark in landmarks {
-        let selected = states
-            .iter()
-            .filter(|state| state.landmark_s == *landmark)
-            .map(|state| (state.hero_id, build_feature_row(state, catalog)))
-            .collect::<Vec<_>>();
+        let selected = select_feature_rows(states, catalog, *landmark);
         if selected.is_empty() {
             continue;
         }
+        let models = fit_landmark_models(&selected, width, penalties)?;
         let all_rows = selected.iter().map(|(_, row)| row).collect::<Vec<_>>();
-        let global = fit_ridge_logistic(
-            &all_rows,
-            &vec![0.0; width],
-            &build_penalty(width, GLOBAL_COVARIATE_PENALTY, GLOBAL_ITEM_PENALTY),
-        )?;
         table.insert(
             (ALL_HEROES, *landmark),
-            summarize_hero(&all_rows, &global.coefficients, catalog)?,
+            summarize_hero(&all_rows, &models.global, catalog)?,
         );
-        let heroes = selected
-            .iter()
-            .map(|(hero, _)| *hero)
-            .collect::<BTreeSet<_>>();
-        for hero in heroes {
+        for (hero, coefficients) in &models.heroes {
             let rows = selected
                 .iter()
-                .filter(|(owner, _)| *owner == hero)
+                .filter(|(owner, _)| owner == hero)
                 .map(|(_, row)| row)
                 .collect::<Vec<_>>();
-            if rows.len() < MINIMUM_HERO_ROWS {
-                continue;
-            }
-            let fit = fit_ridge_logistic(
-                &rows,
-                &global.coefficients,
-                &build_penalty(width, HERO_COVARIATE_PENALTY, HERO_ITEM_PENALTY),
-            )?;
             table.insert(
-                (hero, *landmark),
-                summarize_hero(&rows, &fit.coefficients, catalog)?,
+                (*hero, *landmark),
+                summarize_hero(&rows, coefficients, catalog)?,
             );
         }
     }
     Ok(table)
+}
+
+/// Returns the hero and feature row of each state at one landmark.
+#[must_use]
+pub fn select_feature_rows(
+    states: &[&LandmarkState],
+    catalog: &ItemCatalog,
+    landmark: u32,
+) -> Vec<(u64, FeatureRow)> {
+    states
+        .iter()
+        .filter(|state| state.landmark_s == landmark)
+        .map(|state| (state.hero_id, build_feature_row(state, catalog)))
+        .collect()
 }
 
 fn build_penalty(width: usize, covariate: f64, item: f64) -> Vec<f64> {

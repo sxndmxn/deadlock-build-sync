@@ -18,7 +18,11 @@ mod sources;
 mod sql_resources;
 
 pub use build_assembly::{DEFAULT_SCORING, ItemScoring};
-pub use build_benchmark::{ScoringResult, compare_item_scoring};
+pub use build_benchmark::{
+    ItemEffectRow, PenaltyResult, ScoringResult, compare_effect_penalties, compare_item_scoring,
+    estimate_split_item_effects,
+};
 pub use hero_build_production::produce_hero_builds;
+pub use item_effects::{DEFAULT_PENALTIES, EffectPenalties};
 pub use refresh::{ExtractedRun, extract_run};
 pub use refresh_configuration::{ExtractionResources, RefreshRequest, RunPaths, parse_timestamp};

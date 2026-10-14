@@ -7,7 +7,7 @@
 //! The output is tab-separated text with one line for each effect scale.
 //! The effect scale `inf` selects items by adoption only.
 
-use std::path::PathBuf;
+use std::path::Path;
 
 use deadlock_analysis::{
     DEFAULT_SCORING, ExtractionResources, ItemScoring, RunPaths, compare_item_scoring,
@@ -18,15 +18,10 @@ const DEFAULT_EFFECT_SCALES: [f64; 6] = [f64::INFINITY, 0.4, 0.2, 0.1, 0.05, 0.0
 
 fn main() -> Result<()> {
     let mut arguments = std::env::args().skip(1);
-    let run = PathBuf::from(arguments.next().ok_or_else(|| {
+    let run = arguments.next().ok_or_else(|| {
         Error::new("Usage: compare_item_scoring RUN_DIRECTORY [EFFECT_SCALE ...]")
-    })?);
-    if !run.join("manifest.json").is_file() {
-        return Err(Error::new(format!(
-            "Run directory has no manifest.json: {}",
-            run.display()
-        )));
-    }
+    })?;
+    let paths = RunPaths::open(Path::new(&run))?;
     let mut scales = arguments
         .map(|value| {
             value
@@ -39,12 +34,6 @@ fn main() -> Result<()> {
     if scales.is_empty() {
         scales = DEFAULT_EFFECT_SCALES.to_vec();
     }
-    let paths = RunPaths {
-        raw: run.join("raw"),
-        data: run.join("data"),
-        tables: run.join("tables"),
-        run,
-    };
     let rules = scales
         .into_iter()
         .map(|effect_scale| ItemScoring { effect_scale })
@@ -54,12 +43,12 @@ fn main() -> Result<()> {
         threads: 8,
     };
     println!(
-        "effect_scale\tdefault\tagreement_coefficient\tstandard_error\tobservations\theroes\tstrong\tmoderate\tlimited"
+        "effect_scale\tdefault\tagreement_coefficient\tstandard_error\tobservations\theroes\tstrong\tmoderate\tlimited\tmedian_core_adoption\trare_core_share"
     );
     for result in compare_item_scoring(&paths, resources, &rules)? {
         let scale = result.scoring.effect_scale;
         println!(
-            "{scale}\t{}\t{:.4}\t{:.4}\t{}\t{}\t{}\t{}\t{}",
+            "{scale}\t{}\t{:.4}\t{:.4}\t{}\t{}\t{}\t{}\t{}\t{:.3}\t{:.3}",
             if scale.total_cmp(&DEFAULT_SCORING.effect_scale).is_eq() {
                 "yes"
             } else {
@@ -72,6 +61,8 @@ fn main() -> Result<()> {
             result.strong,
             result.moderate,
             result.limited,
+            result.median_core_adoption,
+            result.rare_core_share,
         );
     }
     Ok(())
