@@ -71,6 +71,11 @@ These examples read one run directory and write tab-separated text:
 | `measure_counter_windows` | Counter evidence in time windows of one run |
 | `compare_scoring_pair` | Held-out signal of one effect scale beyond another |
 | `compare_variant_agreement` | Held-out signal of additional builds beyond the main build |
+| `compare_situational_signal` | Held-out signal of situational items beyond CORE agreement |
+| `compare_scoring_by_landmark` | Held-out agreement of score rules at each test landmark |
+| `compare_training_fractions` | Held-out agreement of builds from fewer development matches |
+| `measure_label_halves` | Per-hero test results on two halves of the test matches |
+| `measure_build_stability` | CORE overlap of builds from two match samples |
 
 ```bash
 cargo run --release -p deadlock-analysis --example compare_effect_models -- \
