@@ -55,21 +55,22 @@ pub fn render_build_markdown(build: &HeroBuild, catalog: &HeroBuildCatalog) -> R
     text.push_str("## MAIN CORE (buy from left to right)\n\n");
     write_items(&mut text, &build.core)?;
     for panel in &build.counters {
-        let label = panel.damage_type.label();
+        let label = panel.target.label();
         let _ = writeln!(
             text,
-            "\n## {} (from mid game, when most enemy damage is {label} damage)\n",
-            panel.damage_type.panel_name()
+            "\n## {} (from mid game, when {})\n",
+            panel.target.panel_name(),
+            panel.target.condition()
         );
         if let Some(evidence) = catalog
             .counter_evidence
             .iter()
-            .find(|evidence| evidence.damage_type == panel.damage_type)
+            .find(|evidence| evidence.target == panel.target)
         {
             for phase in &evidence.phases {
                 let _ = writeln!(
                     text,
-                    "Counter test at {} min: {:+.3} ± {:.3} log-odds per item and standard deviation of enemy {label} share (n={}).",
+                    "Counter test at {} min: {:+.3} ± {:.3} log-odds per item and standard deviation of the enemy {label} condition (n={}).",
                     phase.phase_s / 60,
                     phase.coefficient,
                     phase.standard_error,

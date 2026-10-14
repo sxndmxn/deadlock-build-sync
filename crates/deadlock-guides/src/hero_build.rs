@@ -27,20 +27,25 @@ pub struct HeroBuildCatalog {
     pub heroes: Vec<HeroBuild>,
 }
 
-/// The enemy damage type that a counter panel answers.
+/// The enemy team property that a counter panel answers.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum DamageType {
+pub enum CounterTarget {
+    /// The enemy team deals mostly weapon damage.
     Weapon,
+    /// The enemy team deals mostly spirit damage.
     Spirit,
+    /// The enemy team owns many healing and lifesteal items.
+    Sustain,
 }
 
-impl DamageType {
+impl CounterTarget {
     #[must_use]
     pub const fn panel_name(self) -> &'static str {
         match self {
             Self::Weapon => "VS WEAPON",
             Self::Spirit => "VS SPIRIT",
+            Self::Sustain => "VS SUSTAIN",
         }
     }
 
@@ -49,22 +54,33 @@ impl DamageType {
         match self {
             Self::Weapon => "weapon",
             Self::Spirit => "spirit",
+            Self::Sustain => "sustain",
+        }
+    }
+
+    /// Describes the match condition in which the panel applies.
+    #[must_use]
+    pub const fn condition(self) -> &'static str {
+        match self {
+            Self::Weapon => "most enemy damage is weapon damage",
+            Self::Spirit => "most enemy damage is spirit damage",
+            Self::Sustain => "the enemy team buys healing and lifesteal items",
         }
     }
 }
 
-/// Run evidence that the defensive items of one group win more against one enemy damage type.
+/// Run evidence that the items of one group win more against one enemy team property.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CounterEvidence {
-    pub damage_type: DamageType,
+    pub target: CounterTarget,
     pub phases: Vec<CounterPhase>,
 }
 
 /// The counter test of one item group at one phase landmark.
 ///
 /// The coefficient is the change in log-odds for each owned group item when the enemy
-/// share of this damage type is one standard deviation above its mean.
+/// condition of this target is one standard deviation above its mean.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CounterPhase {
@@ -74,11 +90,11 @@ pub struct CounterPhase {
     pub observations: u64,
 }
 
-/// Defensive items that this hero buys against one enemy damage type.
+/// Counter items that this hero buys against one enemy team property.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CounterPanel {
-    pub damage_type: DamageType,
+    pub target: CounterTarget,
     pub items: Vec<BuildItem>,
 }
 
@@ -403,10 +419,10 @@ impl HeroBuildCatalog {
             (6, "item-effect-variants-v1") | (7, "item-effect-variants-v2") => true,
             _ => false,
         };
-        let mut damage_types = BTreeSet::new();
+        let mut targets = BTreeSet::new();
         for evidence in &self.counter_evidence {
             evidence.validate()?;
-            if !damage_types.insert(evidence.damage_type) {
+            if !targets.insert(evidence.target) {
                 return Err(Error::new("Counter evidence repeats a damage type"));
             }
         }
@@ -433,7 +449,7 @@ impl HeroBuildCatalog {
                 ));
             }
             validate_hero(hero)?;
-            validate_counters(hero, &damage_types)?;
+            validate_counters(hero, &targets)?;
         }
         validate_purchase_statistics(self, current)
     }
@@ -526,12 +542,12 @@ fn validate_hero(hero: &HeroBuild) -> Result<()> {
 }
 
 /// Checks that each counter panel has tested evidence and distinct valid items outside CORE.
-fn validate_counters(hero: &HeroBuild, damage_types: &BTreeSet<DamageType>) -> Result<()> {
+fn validate_counters(hero: &HeroBuild, targets: &BTreeSet<CounterTarget>) -> Result<()> {
     let mut panels = BTreeSet::new();
     for panel in &hero.counters {
         let mut items = BTreeSet::new();
-        if !damage_types.contains(&panel.damage_type)
-            || !panels.insert(panel.damage_type)
+        if !targets.contains(&panel.target)
+            || !panels.insert(panel.target)
             || !(1..=MAXIMUM_COUNTER_ITEMS).contains(&panel.items.len())
             || panel.items.iter().any(|item| {
                 !items.insert(item.item_id)

@@ -25,7 +25,7 @@ fn main() -> Result<()> {
         memory_limit_mb: 12_000,
         threads: 8,
     };
-    println!("window\tmatches\tdamage_type\tphase_s\tcoefficient\tstandard_error\tobservations");
+    println!("window\tmatches\ttarget\tphase_s\tcoefficient\tstandard_error\tobservations");
     for window in measure_counter_windows(&paths, resources, windows)? {
         for evidence in &window.evidence {
             for phase in &evidence.phases {
@@ -33,7 +33,7 @@ fn main() -> Result<()> {
                     "{}\t{}\t{}\t{}\t{:.4}\t{:.4}\t{}",
                     window.window,
                     window.matches,
-                    evidence.damage_type.label(),
+                    evidence.target.label(),
                     phase.phase_s,
                     phase.coefficient,
                     phase.standard_error,

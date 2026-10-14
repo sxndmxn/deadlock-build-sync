@@ -80,7 +80,7 @@ impl BuildPresentation {
 }
 
 /// The optional counter panels between MAIN CORE and the tiers, in their required order.
-const COUNTER_PANELS: [&str; 2] = ["VS WEAPON", "VS SPIRIT"];
+const COUNTER_PANELS: [&str; 3] = ["VS WEAPON", "VS SPIRIT", "VS SUSTAIN"];
 
 fn validate_panel_order(categories: &[PresentationCategory]) -> Result<()> {
     let counters = categories.len().saturating_sub(5);
@@ -105,7 +105,7 @@ fn validate_panel_order(categories: &[PresentationCategory]) -> Result<()> {
         })
     {
         return Err(Error::new(
-            "Build requires MAIN CORE, optional VS WEAPON and VS SPIRIT panels in this order, and four optional tiers",
+            "Build requires MAIN CORE, optional VS WEAPON, VS SPIRIT, and VS SUSTAIN panels in this order, and four optional tiers",
         ));
     }
     Ok(())

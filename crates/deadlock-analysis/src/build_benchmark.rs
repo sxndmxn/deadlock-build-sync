@@ -6,8 +6,8 @@ use deadlock_guides::{BuildEvaluation, Confidence, CounterEvidence};
 use crate::build_assembly::{ItemScoring, PHASES, assemble_build_with_scoring};
 use crate::build_evaluation::{evaluate_build, evaluate_pooled_builds};
 use crate::counter_items::{
-    CONDITION_SCALE, CounterGroups, GroupInteraction, fit_group_interactions,
-    mean_enemy_spirit_share, measure_counter_groups, spirit_conditions,
+    CONDITION_SCALE, CounterGroups, GroupInteraction, enemy_item_conditions,
+    fit_group_interactions, mean_enemy_spirit_share, measure_counter_groups, spirit_conditions,
 };
 use crate::item_effects::{
     COVARIATES, EffectPenalties, EffectTable, ItemCatalog, LandmarkState, build_feature_row,
@@ -534,47 +534,7 @@ pub fn estimate_enemy_item_counters(
             .iter()
             .filter(|state| state.landmark_s == phase_s)
             .collect::<Vec<_>>();
-        let mut team_costs = BTreeMap::<(u64, i32), f64>::new();
-        let mut match_costs = BTreeMap::<u64, f64>::new();
-        for state in &phase_states {
-            let cost = state
-                .item_ids
-                .iter()
-                .filter(|item| condition_set.contains(item))
-                .filter_map(|item| catalog.asset(*item))
-                .map(|asset| f64::from(asset.cost))
-                .sum::<f64>();
-            *team_costs
-                .entry((state.match_id, state.team_id))
-                .or_default() += cost;
-            *match_costs.entry(state.match_id).or_default() += cost;
-        }
-        let enemy_costs = phase_states
-            .iter()
-            .map(|state| {
-                match_costs
-                    .get(&state.match_id)
-                    .copied()
-                    .unwrap_or_default()
-                    - team_costs
-                        .get(&(state.match_id, state.team_id))
-                        .copied()
-                        .unwrap_or_default()
-            })
-            .collect::<Vec<_>>();
-        let count = count_as_f64(u64::try_from(enemy_costs.len().max(1))?)?;
-        let mean = enemy_costs.iter().sum::<f64>() / count;
-        let deviation = (enemy_costs
-            .iter()
-            .map(|cost| (cost - mean).powi(2))
-            .sum::<f64>()
-            / count)
-            .sqrt()
-            .max(1.0);
-        let conditions = enemy_costs
-            .iter()
-            .map(|cost| (cost - mean) / deviation)
-            .collect::<Vec<_>>();
+        let conditions = enemy_item_conditions(&phase_states, catalog, &condition_set)?;
         let spirit = spirit_conditions(&phase_states, spirit_mean);
         let mut interactions = fit_group_interactions(
             &phase_states,

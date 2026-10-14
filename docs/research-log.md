@@ -365,3 +365,7 @@ The anti-heal coefficients were from +0.008 to +0.016 log-odds for each item and
 The effect is about one third of the armor effect of E6.
 
 **Decision.** Add a VS SUSTAIN panel with the anti-heal items, from the mid game. Use the same contradiction rule as E7.
+
+**Production.** The production test fits all three groups in one model for each phase, with both conditions.
+On the holdout run, this joint model gave weapon defense z = 4.4 and 5.2, spirit defense z = 4.1 and 4.2, and anti-heal z = 2.1 and 2.3 at 20 and 30 minutes.
+On run `20261012T233433Z`, 57 builds had three panels and 9 builds had two panels.

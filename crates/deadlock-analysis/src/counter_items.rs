@@ -1,8 +1,8 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use deadlock_data::{Error, Result, count_as_f64};
 use deadlock_guides::{
-    BuildItem, CounterEvidence, CounterPanel, CounterPhase, DamageType, HeroBuild,
+    BuildItem, CounterEvidence, CounterPanel, CounterPhase, CounterTarget, HeroBuild,
     MAXIMUM_COUNTER_ITEMS,
 };
 
@@ -12,12 +12,12 @@ use crate::item_effects::{
 };
 use crate::ridge_logistic::fit_ridge_logistic;
 
-/// The defensive item class names of each counter group.
+/// The item class names of each counter group.
 ///
-/// Experiment E6 in `docs/research-log.md` selected these items and confirmed them on a held-out patch.
-const COUNTER_GROUPS: [(DamageType, &[&str]); 2] = [
+/// Experiments E6 and E9 in `docs/research-log.md` tested these groups on four patches.
+const COUNTER_GROUPS: [(CounterTarget, &[&str]); 3] = [
     (
-        DamageType::Weapon,
+        CounterTarget::Weapon,
         &[
             "upgrade_regenerating_bullet_shield",
             "upgrade_weapon_shielding",
@@ -28,9 +28,37 @@ const COUNTER_GROUPS: [(DamageType, &[&str]); 2] = [
         ],
     ),
     (
-        DamageType::Spirit,
+        CounterTarget::Spirit,
         &["upgrade_spirit_bubble", "upgrade_tech_purge"],
     ),
+    (
+        CounterTarget::Sustain,
+        &[
+            "upgrade_healbane",
+            "upgrade_toxic_bullets",
+            "upgrade_rupture",
+            "upgrade_banshee_slugs",
+            "upgrade_inhibitor",
+            "upgrade_spirit_burn",
+        ],
+    ),
+];
+/// The healing and lifesteal item class names that define the enemy sustain condition.
+const SUSTAIN_ITEMS: [&str; 14] = [
+    "upgrade_vampire",
+    "upgrade_health_stealing_magic",
+    "upgrade_damage_recycler",
+    "upgrade_siphon_bullets",
+    "upgrade_health_stimpak",
+    "upgrade_healing_booster",
+    "upgrade_restorative_locket",
+    "upgrade_health_nova",
+    "upgrade_healbuff",
+    "upgrade_rescue_beam",
+    "upgrade_lifestrike_gauntlets",
+    "upgrade_boxing_glove",
+    "upgrade_surging_power",
+    "upgrade_endurance",
 ];
 /// The mid game and late game landmarks. The counter effect did not replicate in the lane phase.
 pub const COUNTER_PHASES: [u32; 2] = [1200, 1800];
@@ -43,28 +71,38 @@ const MINIMUM_PANEL_ADOPTION: f64 = 0.01;
 /// The counter item groups that exist in the current shop.
 #[derive(Debug)]
 pub struct CounterGroups {
-    groups: Vec<(DamageType, BTreeSet<u64>)>,
+    groups: Vec<(CounterTarget, BTreeSet<u64>)>,
+    sustain_items: BTreeSet<u64>,
 }
 
 impl CounterGroups {
     /// Finds the group items in the shop. Items that a patch removed are left out.
+    /// The sustain group is left out when the shop has no sustain condition items.
     #[must_use]
     pub fn from_catalog(catalog: &ItemCatalog) -> Self {
+        let sustain_items = find_classes(catalog, &SUSTAIN_ITEMS);
         let groups = COUNTER_GROUPS
             .iter()
-            .map(|(damage_type, class_names)| {
-                let items = catalog
-                    .items
-                    .iter()
-                    .filter(|item| class_names.contains(&item.class_name.as_str()))
-                    .map(|item| item.item_id)
-                    .collect::<BTreeSet<_>>();
-                (*damage_type, items)
+            .map(|(target, class_names)| (*target, find_classes(catalog, class_names)))
+            .filter(|(target, items)| {
+                !items.is_empty()
+                    && (*target != CounterTarget::Sustain || !sustain_items.is_empty())
             })
-            .filter(|(_, items)| !items.is_empty())
             .collect();
-        Self { groups }
+        Self {
+            groups,
+            sustain_items,
+        }
     }
+}
+
+fn find_classes(catalog: &ItemCatalog, class_names: &[&str]) -> BTreeSet<u64> {
+    catalog
+        .items
+        .iter()
+        .filter(|item| class_names.contains(&item.class_name.as_str()))
+        .map(|item| item.item_id)
+        .collect()
 }
 
 /// The coefficient and match-clustered standard error of one item group interaction.
@@ -213,8 +251,8 @@ pub fn measure_counter_groups(
     let mut evidence = groups
         .groups
         .iter()
-        .map(|(damage_type, _)| CounterEvidence {
-            damage_type: *damage_type,
+        .map(|(target, _)| CounterEvidence {
+            target: *target,
             phases: Vec::new(),
         })
         .collect::<Vec<_>>();
@@ -227,16 +265,16 @@ pub fn measure_counter_groups(
         if phase_states.is_empty() {
             return Ok(Vec::new());
         }
-        let interactions = fit_group_interactions(
-            &phase_states,
-            catalog,
-            &item_groups,
-            &[&spirit_conditions(&phase_states, spirit_mean)],
-        )?;
-        for (group, interaction) in evidence.iter_mut().zip(interactions) {
-            let direction = match group.damage_type {
-                DamageType::Spirit => 1.0,
-                DamageType::Weapon => -1.0,
+        let spirit = spirit_conditions(&phase_states, spirit_mean);
+        let sustain = enemy_item_conditions(&phase_states, catalog, &groups.sustain_items)?;
+        let interactions =
+            fit_group_interactions(&phase_states, catalog, &item_groups, &[&spirit, &sustain])?;
+        let (spirit_block, sustain_block) = interactions.split_at(item_groups.len());
+        for (index, group) in evidence.iter_mut().enumerate() {
+            let (direction, interaction) = match group.target {
+                CounterTarget::Spirit => (1.0, spirit_block[index]),
+                CounterTarget::Weapon => (-1.0, spirit_block[index]),
+                CounterTarget::Sustain => (1.0, sustain_block[index]),
             };
             group.phases.push(CounterPhase {
                 phase_s,
@@ -247,6 +285,61 @@ pub fn measure_counter_groups(
         }
     }
     Ok(evidence)
+}
+
+/// Returns the standardized cost of condition items that the enemy team owns, for each state.
+///
+/// The cost sums the condition items of all enemy players at the landmark of the state.
+/// The states must belong to one landmark. The values have mean 0 and standard deviation 1.
+///
+/// # Errors
+/// Returns an error when the state count cannot be converted.
+pub fn enemy_item_conditions(
+    states: &[&LandmarkState],
+    catalog: &ItemCatalog,
+    items: &BTreeSet<u64>,
+) -> Result<Vec<f64>> {
+    let mut team_costs = BTreeMap::<(u64, i32), f64>::new();
+    let mut match_costs = BTreeMap::<u64, f64>::new();
+    for state in states {
+        let cost = state
+            .item_ids
+            .iter()
+            .filter(|item| items.contains(item))
+            .filter_map(|item| catalog.asset(*item))
+            .map(|asset| f64::from(asset.cost))
+            .sum::<f64>();
+        *team_costs
+            .entry((state.match_id, state.team_id))
+            .or_default() += cost;
+        *match_costs.entry(state.match_id).or_default() += cost;
+    }
+    let enemy_costs = states
+        .iter()
+        .map(|state| {
+            match_costs
+                .get(&state.match_id)
+                .copied()
+                .unwrap_or_default()
+                - team_costs
+                    .get(&(state.match_id, state.team_id))
+                    .copied()
+                    .unwrap_or_default()
+        })
+        .collect::<Vec<_>>();
+    let count = count_as_f64(u64::try_from(enemy_costs.len().max(1))?)?;
+    let mean = enemy_costs.iter().sum::<f64>() / count;
+    let deviation = (enemy_costs
+        .iter()
+        .map(|cost| (cost - mean).powi(2))
+        .sum::<f64>()
+        / count)
+        .sqrt()
+        .max(1.0);
+    Ok(enemy_costs
+        .iter()
+        .map(|cost| (cost - mean) / deviation)
+        .collect())
 }
 
 /// Selects the counter items that this hero buys, for each group with run evidence.
@@ -265,12 +358,8 @@ pub fn select_counter_panels(
     groups
         .groups
         .iter()
-        .filter(|(damage_type, _)| {
-            evidence
-                .iter()
-                .any(|group| group.damage_type == *damage_type)
-        })
-        .filter_map(|(damage_type, items)| {
+        .filter(|(target, _)| evidence.iter().any(|group| group.target == *target))
+        .filter_map(|(target, items)| {
             let mut candidates = items
                 .iter()
                 .filter(|item| !build.core.iter().any(|core| core.item_id == **item))
@@ -286,7 +375,7 @@ pub fn select_counter_panels(
             });
             candidates.truncate(MAXIMUM_COUNTER_ITEMS);
             (!candidates.is_empty()).then_some(CounterPanel {
-                damage_type: *damage_type,
+                target: *target,
                 items: candidates,
             })
         })

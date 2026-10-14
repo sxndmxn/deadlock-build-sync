@@ -127,34 +127,43 @@ Insufficient ability evidence leaves the order unset.
 
 ## Counter panels
 
-Each build can show two panels between MAIN CORE and TIER 1: **VS WEAPON** and **VS SPIRIT**.
-Each panel lists defensive items for the main damage type of the enemy team, from the mid game.
+Each build can show three panels between MAIN CORE and TIER 1, from the mid game:
+
+1. **VS WEAPON**: defensive items for an enemy team that deals mostly weapon damage.
+2. **VS SPIRIT**: defensive items for an enemy team that deals mostly spirit damage.
+3. **VS SUSTAIN**: anti-heal items for an enemy team that buys healing and lifesteal items.
 
 The spirit share of a hero is the share of its first item purchases, by cost, in the spirit slot.
 The enemy spirit share is the mean spirit share of the enemy heroes. A low enemy spirit share means more weapon damage.
+The enemy sustain is the summed cost of healing and lifesteal items that the enemy players own at the landmark.
+Players can see these enemy items in the game.
 
-Two fixed item groups define the panels:
+Fixed item groups define the panels:
 
 1. Weapon defense: Battle Vest, Weapon Shielding, Bullet Resilience, Metal Skin, Plated Armor, and Return Fire.
 2. Spirit defense: Spirit Shielding and Spirit Resilience.
+3. Anti-heal: Healbane, Toxic Bullets, Decay, Crippling Headshot, Inhibitor, and Spirit Burn.
 
+The sustain condition uses Bullet Lifesteal, Spirit Lifesteal, Leech, Siphon Bullets, Healing Rite, Healing Booster, Restorative Locket, Healing Nova, Healing Tempo, Rescue Beam, Melee Lifesteal, Lifestrike, Vampiric Burst, and Extra Regen.
 The analysis finds the items by their class names. Items that a patch removes leave their group.
-Item asset properties cannot select these groups. One flag marks both own armor and debuffs on enemies.
+Item asset properties cannot select the defensive groups. One flag marks both own armor and debuffs on enemies.
 
-Each run tests both groups at 20 and 30 minutes with all of its matches.
-A global logistic model adds a main term for the standardized enemy spirit share.
-For each group, it adds the number of owned group items multiplied by that condition.
+Each run tests all groups at 20 and 30 minutes with all of its matches, in one global logistic model for each phase.
+The model has a main term for the standardized enemy spirit share and a main term for the standardized enemy sustain.
+For each group and each condition, it adds the number of owned group items multiplied by the condition.
+The weapon and spirit groups use the spirit share terms. The anti-heal group uses the sustain terms.
 The standard errors treat each match as one independent cluster.
 A panel appears unless the run contradicts its group: a z value below −2 at a phase removes the panel.
-Four patches confirmed the effect, so a short run with weak evidence keeps the panel.
+Four patches confirmed the effects, so a short run with weak evidence keeps the panel.
 
 A panel holds at most four group items outside MAIN CORE. Each item needs a hero adoption of at least 1% at 20 or 30 minutes.
 The panel orders the items by adoption. The panel description states the z value of the run test at each phase.
 
-The groups come from tests on three patches and a confirmation on a fourth patch. See [Research log](research-log.md), entry E6.
-At the 10th and 90th percentiles of enemy teams, the difference is about 0.05 log-odds for each item.
-The test did not confirm a counter effect at 9 minutes.
-The data is observational. Players can buy these items because of the enemy team, so the test cannot prove that an item causes a win.
+See [Research log](research-log.md), entries E6, E7, and E9.
+For defensive items, the difference between the 10th and 90th percentiles of enemy teams is about 0.05 log-odds for each item.
+The anti-heal effect is about one third of this size.
+The tests did not confirm a counter effect at 9 minutes.
+The data is observational. Players can buy these items because of the enemy team, so the tests cannot prove that an item causes a win.
 
 ## Displayed item rates
 

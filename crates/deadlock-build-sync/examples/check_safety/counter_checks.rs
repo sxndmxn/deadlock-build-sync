@@ -3,9 +3,9 @@ use std::fs;
 use deadlock_build_sync::write_build_artifacts;
 use deadlock_data::{Error, Result};
 use deadlock_guides::{
-    BuildPresentation, CounterEvidence, CounterPanel, CounterPhase, DamageType, HERO_BUILD_METHOD,
-    HERO_BUILD_SCHEMA_VERSION, HeroBuildCatalog, ItemStatistics, MAXIMUM_COUNTER_ITEMS,
-    build_hero_presentation,
+    BuildPresentation, CounterEvidence, CounterPanel, CounterPhase, CounterTarget,
+    HERO_BUILD_METHOD, HERO_BUILD_SCHEMA_VERSION, HeroBuildCatalog, ItemStatistics,
+    MAXIMUM_COUNTER_ITEMS, build_hero_presentation,
 };
 use deadlock_steam::encode_hero_build;
 
@@ -30,12 +30,15 @@ fn create_counter_catalog() -> Result<HeroBuildCatalog> {
             buyer_wins: 21,
         });
     }
-    build.counters = vec![CounterPanel {
-        damage_type: DamageType::Weapon,
-        items: vec![build.situational[0].clone()],
-    }];
-    catalog.counter_evidence = vec![CounterEvidence {
-        damage_type: DamageType::Weapon,
+    build.counters = [CounterTarget::Weapon, CounterTarget::Sustain]
+        .into_iter()
+        .map(|target| CounterPanel {
+            target,
+            items: vec![build.situational[0].clone()],
+        })
+        .collect();
+    let weapon = CounterEvidence {
+        target: CounterTarget::Weapon,
         phases: vec![
             CounterPhase {
                 phase_s: 1200,
@@ -50,7 +53,12 @@ fn create_counter_catalog() -> Result<HeroBuildCatalog> {
                 observations: 800,
             },
         ],
-    }];
+    };
+    let sustain = CounterEvidence {
+        target: CounterTarget::Sustain,
+        ..weapon.clone()
+    };
+    catalog.counter_evidence = vec![weapon, sustain];
     catalog.validate()?;
     Ok(catalog)
 }
@@ -68,6 +76,7 @@ fn check_counter_presentation(catalog: &HeroBuildCatalog) -> Result<()> {
         != [
             "MAIN CORE",
             "VS WEAPON",
+            "VS SUSTAIN",
             "TIER 1",
             "TIER 2",
             "TIER 3",
@@ -76,6 +85,9 @@ fn check_counter_presentation(catalog: &HeroBuildCatalog) -> Result<()> {
         || !content.categories[1]
             .description
             .contains("z = 4.5 at 20 min, 5.8 at 30 min")
+        || !content.categories[2]
+            .description
+            .contains("the enemy team buys healing and lifesteal items")
         || !content.description.contains("VS panels")
     {
         return Err(Error::new(

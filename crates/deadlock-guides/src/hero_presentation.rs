@@ -37,7 +37,7 @@ pub fn build_hero_presentation(
     )?];
     for panel in &build.counters {
         categories.push(build_category(
-            panel.damage_type.panel_name(),
+            panel.target.panel_name(),
             &panel.items,
             &describe_counter_panel(panel, catalog)?,
             true,
@@ -140,9 +140,9 @@ fn describe_counter_panel(panel: &CounterPanel, catalog: &HeroBuildCatalog) -> R
     let evidence = catalog
         .counter_evidence
         .iter()
-        .find(|evidence| evidence.damage_type == panel.damage_type)
+        .find(|evidence| evidence.target == panel.target)
         .ok_or_else(|| Error::new("Counter panel has no run evidence"))?;
-    let label = panel.damage_type.label();
+    let label = panel.target.label();
     let tests = evidence
         .phases
         .iter()
@@ -150,7 +150,8 @@ fn describe_counter_panel(panel: &CounterPanel, catalog: &HeroBuildCatalog) -> R
         .collect::<Vec<_>>()
         .join(", ");
     Ok(format!(
-        "From mid game, when most enemy damage is {label} damage. These items won more against {label}-heavy teams on 4 tested patches. This patch: z = {tests}."
+        "From mid game, when {}. These items won more against {label}-heavy teams on 4 tested patches. This patch: z = {tests}.",
+        panel.target.condition()
     ))
 }
 
