@@ -287,9 +287,10 @@ pub fn measure_counter_groups(
     Ok(evidence)
 }
 
-/// Returns the standardized cost of condition items that the enemy team owns, for each state.
+/// Returns the standardized share of enemy item cost in the condition items, for each state.
 ///
-/// The cost sums the condition items of all enemy players at the landmark of the state.
+/// The share divides the cost of condition items that the enemy players own at the landmark
+/// by the cost of all items that they own. A share describes the enemy build without its wealth.
 /// The states must belong to one landmark. The values have mean 0 and standard deviation 1.
 ///
 /// # Errors
@@ -299,46 +300,57 @@ pub fn enemy_item_conditions(
     catalog: &ItemCatalog,
     items: &BTreeSet<u64>,
 ) -> Result<Vec<f64>> {
-    let mut team_costs = BTreeMap::<(u64, i32), f64>::new();
-    let mut match_costs = BTreeMap::<u64, f64>::new();
+    let mut team_costs = BTreeMap::<(u64, i32), [f64; 2]>::new();
+    let mut match_costs = BTreeMap::<u64, [f64; 2]>::new();
     for state in states {
-        let cost = state
+        let mut costs = [0.0, 0.0];
+        for asset in state
             .item_ids
             .iter()
-            .filter(|item| items.contains(item))
             .filter_map(|item| catalog.asset(*item))
-            .map(|asset| f64::from(asset.cost))
-            .sum::<f64>();
-        *team_costs
-            .entry((state.match_id, state.team_id))
-            .or_default() += cost;
-        *match_costs.entry(state.match_id).or_default() += cost;
+        {
+            let cost = f64::from(asset.cost);
+            costs[1] += cost;
+            if items.contains(&asset.item_id) {
+                costs[0] += cost;
+            }
+        }
+        for total in [
+            team_costs
+                .entry((state.match_id, state.team_id))
+                .or_default(),
+            match_costs.entry(state.match_id).or_default(),
+        ] {
+            total[0] += costs[0];
+            total[1] += costs[1];
+        }
     }
-    let enemy_costs = states
+    let shares = states
         .iter()
         .map(|state| {
-            match_costs
+            let all = match_costs
                 .get(&state.match_id)
                 .copied()
-                .unwrap_or_default()
-                - team_costs
-                    .get(&(state.match_id, state.team_id))
-                    .copied()
-                    .unwrap_or_default()
+                .unwrap_or_default();
+            let own = team_costs
+                .get(&(state.match_id, state.team_id))
+                .copied()
+                .unwrap_or_default();
+            (all[0] - own[0]) / (all[1] - own[1]).max(1.0)
         })
         .collect::<Vec<_>>();
-    let count = count_as_f64(u64::try_from(enemy_costs.len().max(1))?)?;
-    let mean = enemy_costs.iter().sum::<f64>() / count;
-    let deviation = (enemy_costs
+    let count = count_as_f64(u64::try_from(shares.len().max(1))?)?;
+    let mean = shares.iter().sum::<f64>() / count;
+    let deviation = (shares
         .iter()
-        .map(|cost| (cost - mean).powi(2))
+        .map(|share| (share - mean).powi(2))
         .sum::<f64>()
         / count)
         .sqrt()
-        .max(1.0);
-    Ok(enemy_costs
+        .max(1e-9);
+    Ok(shares
         .iter()
-        .map(|cost| (cost - mean) / deviation)
+        .map(|share| (share - mean) / deviation)
         .collect())
 }
 

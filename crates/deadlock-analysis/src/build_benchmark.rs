@@ -493,8 +493,8 @@ pub struct ConditionResult {
 
 /// Tests whether item groups win more when the enemy team owns more of a set of items.
 ///
-/// The condition of a state is the summed cost of condition items that the enemy players own
-/// at the landmark, standardized within the phase. Items are given by class name.
+/// The condition of a state is the share of enemy item cost in the condition items at the
+/// landmark, standardized within the phase. Items are given by class name.
 ///
 /// # Errors
 /// Returns an error when a class name is unknown, or when the run or a model fails.

@@ -4,8 +4,9 @@
 //!
 //! Usage: `cargo run --release --example estimate_enemy_item_counters -- RUN_DIRECTORY CONDITION_CLASSES GROUP_CLASSES...`
 //!
-//! Each class list is comma-separated item class names. The condition is the summed cost of
-//! condition items that the enemy team owns at the landmark, standardized within the phase.
+//! Each class list is comma-separated item class names. The condition is the share of enemy
+//! item cost in the condition items at the landmark, standardized within the phase.
+//! The model also adjusts for the enemy spirit share.
 //! The output is tab-separated text with one line for each phase and group.
 
 use std::path::Path;

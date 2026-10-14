@@ -135,7 +135,7 @@ Each build can show three panels between MAIN CORE and TIER 1, from the mid game
 
 The spirit share of a hero is the share of its first item purchases, by cost, in the spirit slot.
 The enemy spirit share is the mean spirit share of the enemy heroes. A low enemy spirit share means more weapon damage.
-The enemy sustain is the summed cost of healing and lifesteal items that the enemy players own at the landmark.
+The enemy sustain is the share of enemy item cost in healing and lifesteal items at the landmark. A share describes the enemy build without its wealth.
 Players can see these enemy items in the game.
 
 Fixed item groups define the panels:

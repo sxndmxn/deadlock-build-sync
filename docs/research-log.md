@@ -367,5 +367,34 @@ The effect is about one third of the armor effect of E6.
 **Decision.** Add a VS SUSTAIN panel with the anti-heal items, from the mid game. Use the same contradiction rule as E7.
 
 **Production.** The production test fits all three groups in one model for each phase, with both conditions.
-On the holdout run, this joint model gave weapon defense z = 4.4 and 5.2, spirit defense z = 4.1 and 4.2, and anti-heal z = 2.1 and 2.3 at 20 and 30 minutes.
+On the holdout run, this joint model gave weapon defense z = 4.4 and 5.1, spirit defense z = 4.1 and 4.1, and anti-heal z = 2.2 and 2.0 at 20 and 30 minutes, with the share condition of E10.
 On run `20261012T233433Z`, 57 builds had three panels and 9 builds had two panels.
+
+## E10: debuff removal against enemy crowd control, and the enemy wealth check
+
+**Hypothesis.** Debuff removal items win more when the enemy team owns more crowd control items.
+
+**Method.** The groups were fixed before the test.
+Debuff removal: Debuff Reducer, Dispel Magic, Unstoppable, and Indomitable.
+Crowd control: the 17 shop items, present in all four runs, with a stun, silence, tether, or slow property in the item assets.
+The spirit defense group of E6 was the negative control. The test used `estimate_enemy_item_counters`.
+
+**First result.** With the summed cost of enemy crowd control items as the condition, debuff removal was negative at 20 and 30 minutes on all four runs, with z from −0.1 to −2.4.
+The control showed no effect.
+
+**Wealth check.** A richer enemy team owns more items of each kind. Thus, a summed cost also measures enemy wealth, and E9 used the same kind of condition.
+The condition changed to the share of enemy item cost in the condition items. Both tests ran again.
+
+| Test | z at 20 and 30 minutes: `20260913T235155Z`, `20261003T172322Z`, `20261012T233433Z`, holdout |
+| --- | --- |
+| Anti-heal against sustain share | 3.2, 2.7; 0.7, 0.6; 1.6, 0.9; 2.1, 1.7 |
+| Control against sustain share | −0.5, −1.0; −0.0, −0.4; −0.4, 0.7; −1.0, −1.4 |
+| Debuff removal against crowd control share | −0.7, −1.9; −1.2, −2.3; −0.2, −1.5; −1.6, −1.4 |
+| Control against crowd control share | 0.5, −0.6; −1.2, −0.1; 0.3, −0.6; 0.6, 0.9 |
+
+**Analysis.** The anti-heal result of E9 does not depend on enemy wealth.
+Debuff removal won less, not more, against crowd control. Enemy wealth does not explain this result.
+A possible cause is that players buy debuff removal after crowd control has already hurt them in the match. The data cannot separate this cause from others.
+This result shows that the counter method measures associations, which can contain selection. The armor and anti-heal results passed stated predictions, negative controls, and a holdout, but they remain observational.
+
+**Decision.** Use the share condition for VS SUSTAIN. Do not add a panel for debuff removal.
