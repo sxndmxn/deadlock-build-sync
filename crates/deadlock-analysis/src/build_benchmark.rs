@@ -1,11 +1,14 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use deadlock_data::{Error, Result, count_as_f64};
-use deadlock_guides::{BuildEvaluation, Confidence};
+use deadlock_guides::{BuildEvaluation, Confidence, CounterEvidence};
 
 use crate::build_assembly::{ItemScoring, PHASES, assemble_build_with_scoring};
 use crate::build_evaluation::{evaluate_build, evaluate_pooled_builds};
-use crate::counter_items::{CONDITION_SCALE, fit_group_interactions, mean_enemy_spirit_share};
+use crate::counter_items::{
+    CONDITION_SCALE, CounterGroups, fit_group_interactions, mean_enemy_spirit_share,
+    measure_counter_groups,
+};
 use crate::item_effects::{
     COVARIATES, EffectPenalties, EffectTable, ItemCatalog, LandmarkState, build_feature_row,
     estimate_item_effects, fit_landmark_models,
@@ -411,4 +414,56 @@ pub fn estimate_counter_interactions(
         });
     }
     Ok(results)
+}
+
+/// The counter evidence of one time window of a run.
+#[derive(Debug)]
+pub struct WindowEvidence {
+    pub window: usize,
+    pub matches: usize,
+    pub evidence: Vec<CounterEvidence>,
+}
+
+/// Measures the counter groups in windows with equal match counts, ordered by match identifier.
+///
+/// Match identifiers increase with time, so each window covers a part of the run period.
+///
+/// # Errors
+/// Returns an error when the window count is zero, or when the run or a model fails.
+pub fn measure_counter_windows(
+    paths: &RunPaths,
+    resources: ExtractionResources,
+    windows: usize,
+) -> Result<Vec<WindowEvidence>> {
+    if windows == 0 {
+        return Err(Error::new("The window count must be positive"));
+    }
+    let inputs = load_run_inputs(paths, resources)?;
+    let groups = CounterGroups::from_catalog(&inputs.catalog);
+    let matches = inputs
+        .states
+        .iter()
+        .map(|state| state.match_id)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let size = matches.len().div_ceil(windows);
+    matches
+        .chunks(size.max(1))
+        .enumerate()
+        .map(|(window, chunk)| {
+            let ids = chunk.iter().copied().collect::<BTreeSet<_>>();
+            let states = inputs
+                .states
+                .iter()
+                .filter(|state| ids.contains(&state.match_id))
+                .collect::<Vec<_>>();
+            eprintln!("Measuring window {window} with {} matches", chunk.len());
+            Ok(WindowEvidence {
+                window,
+                matches: chunk.len(),
+                evidence: measure_counter_groups(&states, &inputs.catalog, &groups)?,
+            })
+        })
+        .collect()
 }

@@ -9,6 +9,8 @@ pub const HERO_BUILD_SCHEMA_VERSION: u32 = 8;
 pub const HERO_BUILD_METHOD: &str = "item-effect-counters-v1";
 /// The largest number of items in one counter panel.
 pub const MAXIMUM_COUNTER_ITEMS: usize = 4;
+/// A counter phase with a z value below this limit contradicts the counter effect.
+pub const COUNTER_CONTRADICTION_Z: f64 = -2.0;
 
 /// All hero builds from one source snapshot.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -80,33 +82,43 @@ pub struct CounterPanel {
     pub items: Vec<BuildItem>,
 }
 
+impl CounterPhase {
+    /// Returns the coefficient divided by its standard error.
+    #[must_use]
+    pub fn z(&self) -> f64 {
+        self.coefficient / self.standard_error
+    }
+}
+
 impl CounterEvidence {
+    /// Returns true unless a phase contradicts the counter effect with a z value below −2.
+    ///
+    /// Four patches confirmed the effect. Thus, a short run with weak evidence keeps the panel,
+    /// and only clear contrary evidence removes it. See E7 in `docs/research-log.md`.
+    #[must_use]
+    pub fn is_supported(&self) -> bool {
+        self.phases
+            .iter()
+            .all(|phase| phase.z() >= COUNTER_CONTRADICTION_Z)
+    }
+
     /// # Errors
-    /// Returns an error unless each phase has a positive coefficient and a valid standard error.
+    /// Returns an error for invalid values or a phase that contradicts the counter effect.
     pub fn validate(&self) -> Result<()> {
         if self.phases.is_empty()
             || self.phases.iter().any(|phase| {
                 !phase.coefficient.is_finite()
-                    || phase.coefficient <= 0.0
                     || !phase.standard_error.is_finite()
                     || phase.standard_error <= 0.0
                     || phase.observations == 0
             })
+            || !self.is_supported()
         {
             return Err(Error::new(
-                "Counter evidence requires a positive coefficient at each tested phase",
+                "Counter evidence requires valid phases without a contradiction",
             ));
         }
         Ok(())
-    }
-
-    /// Returns the smallest coefficient divided by its standard error.
-    #[must_use]
-    pub fn minimum_z(&self) -> f64 {
-        self.phases
-            .iter()
-            .map(|phase| phase.coefficient / phase.standard_error)
-            .fold(f64::INFINITY, f64::min)
     }
 }
 

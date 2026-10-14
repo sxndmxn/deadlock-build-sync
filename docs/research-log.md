@@ -278,5 +278,31 @@ The holdout run `holdout-20260916` used the patch of 2026-09-16 to 2026-09-30 wi
 Four of five predictions passed by more than 4 standard errors. The weapon prediction at 9 minutes failed, without statistical significance.
 
 **Decision.** Add counter panels for 20 and 30 minutes. Do not claim a counter effect in the lane phase.
-Each run repeats the test with all of its matches. A panel appears only when its group has a positive coefficient, in the direction of its damage type, at both phases.
+Each run repeats the test with all of its matches. The first rule showed a panel only when its group had a positive coefficient, in the direction of its damage type, at both phases. E7 replaced this rule.
 This rule removes a panel when a patch changes the items. A short run can give weak evidence, so the panel description states the z value of the run.
+
+## E7: counter panel rule on short runs
+
+**Hypothesis.** The first panel rule requires a positive counter coefficient at 20 and 30 minutes.
+The counter effect is real, so this rule should keep the panels on short runs too.
+
+**Method.** `measure_counter_windows` divides a run into windows with equal match counts, ordered by match identifier.
+Match identifiers increase with time. The holdout run gave 5 windows of 17,744 matches, near the size of a three-day run.
+Run `20260913T235155Z` gave 12 windows of 6,909 matches.
+
+**Result.**
+
+| Run | Matches for each window | Weapon rule passed | Spirit rule passed |
+| --- | --- | --- | --- |
+| `holdout-20260916` | 17,744 | 5 of 5 | 5 of 5 |
+| `20260913T235155Z` | 6,909 | 6 of 12 | 10 of 12 |
+
+The smallest z value of a group in a window was from −0.69 to 2.73.
+
+**Analysis.** At the size of a three-day run, the rule kept all panels.
+At about 7,000 matches, it removed a real panel in 8 of 24 cases. The default match range starts at the current patch, so a sync soon after a patch has few matches.
+The four tested patches give strong prior evidence for the effect. Thus, a short run should need clear contrary evidence to remove a panel.
+
+**Decision.** Remove a panel only when a phase has a z value below −2. In the 34 windows, this rule kept every panel.
+A real reversal, for example after an item rework, still removes the panel when the run has enough matches.
+The panel description now states the z value at each phase.

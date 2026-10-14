@@ -152,12 +152,27 @@ pub fn mean_enemy_spirit_share(states: &[&LandmarkState]) -> Result<f64> {
 
 /// Tests each counter group at each counter phase with all matches of the run.
 ///
-/// The evidence keeps a group only when it wins more against its damage type at each phase.
-/// The weapon group coefficient changes sign, because a low spirit share means more weapon damage.
+/// The evidence keeps a group unless a phase contradicts its counter effect.
 ///
 /// # Errors
 /// Returns an error when a model cannot be fitted.
 pub fn estimate_counter_evidence(
+    states: &[&LandmarkState],
+    catalog: &ItemCatalog,
+    groups: &CounterGroups,
+) -> Result<Vec<CounterEvidence>> {
+    let mut evidence = measure_counter_groups(states, catalog, groups)?;
+    evidence.retain(CounterEvidence::is_supported);
+    Ok(evidence)
+}
+
+/// Measures each counter group at each counter phase, in the direction of its damage type.
+///
+/// The weapon group coefficient changes sign, because a low spirit share means more weapon damage.
+///
+/// # Errors
+/// Returns an error when a model cannot be fitted.
+pub fn measure_counter_groups(
     states: &[&LandmarkState],
     catalog: &ItemCatalog,
     groups: &CounterGroups,
@@ -200,7 +215,6 @@ pub fn estimate_counter_evidence(
             });
         }
     }
-    evidence.retain(|group| group.phases.iter().all(|phase| phase.coefficient > 0.0));
     Ok(evidence)
 }
 

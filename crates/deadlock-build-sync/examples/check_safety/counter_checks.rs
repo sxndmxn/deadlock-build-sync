@@ -73,7 +73,9 @@ fn check_counter_presentation(catalog: &HeroBuildCatalog) -> Result<()> {
             "TIER 3",
             "TIER 4",
         ]
-        || !content.categories[1].description.contains("z ≥ 4.5")
+        || !content.categories[1]
+            .description
+            .contains("z = 4.5 at 20 min, 5.8 at 30 min")
         || !content.description.contains("VS panels")
     {
         return Err(Error::new(
@@ -110,7 +112,7 @@ fn check_invalid_counters(catalog: &HeroBuildCatalog) -> Result<()> {
     let mut no_evidence = catalog.clone();
     no_evidence.counter_evidence.clear();
     let mut negative = catalog.clone();
-    negative.counter_evidence[0].phases[0].coefficient = -0.01;
+    negative.counter_evidence[0].phases[0].coefficient = -0.02;
     let mut core_item = catalog.clone();
     core_item.heroes[0].counters[0].items[0] = core_item.heroes[0].core[0].clone();
     let mut too_many = catalog.clone();
@@ -124,7 +126,10 @@ fn check_invalid_counters(catalog: &HeroBuildCatalog) -> Result<()> {
         .collect();
     for (invalid, reason) in [
         (no_evidence, "a counter panel without run evidence"),
-        (negative, "counter evidence with a negative coefficient"),
+        (
+            negative,
+            "counter evidence with a contradiction below z = −2",
+        ),
         (core_item, "a counter panel item in CORE"),
         (too_many, "a counter panel with too many items"),
     ] {

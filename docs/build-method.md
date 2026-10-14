@@ -145,10 +145,11 @@ Each run tests both groups at 20 and 30 minutes with all of its matches.
 A global logistic model adds a main term for the standardized enemy spirit share.
 For each group, it adds the number of owned group items multiplied by that condition.
 The standard errors treat each match as one independent cluster.
-A panel appears only when its group wins more against its damage type at both phases.
+A panel appears unless the run contradicts its group: a z value below −2 at a phase removes the panel.
+Four patches confirmed the effect, so a short run with weak evidence keeps the panel.
 
 A panel holds at most four group items outside MAIN CORE. Each item needs a hero adoption of at least 1% at 20 or 30 minutes.
-The panel orders the items by adoption. The panel description states the smallest z value of the run test.
+The panel orders the items by adoption. The panel description states the z value of the run test at each phase.
 
 The groups come from tests on three patches and a confirmation on a fourth patch. See [Research log](research-log.md), entry E6.
 At the 10th and 90th percentiles of enemy teams, the difference is about 0.05 log-odds for each item.

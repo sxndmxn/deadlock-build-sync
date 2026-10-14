@@ -135,7 +135,7 @@ fn describe_item(item: &BuildItem) -> Result<String> {
     ))
 }
 
-/// States when to use a counter panel and the weakest phase result of its run test.
+/// States when to use a counter panel and the z value of its run test at each phase.
 fn describe_counter_panel(panel: &CounterPanel, catalog: &HeroBuildCatalog) -> Result<String> {
     let evidence = catalog
         .counter_evidence
@@ -143,9 +143,14 @@ fn describe_counter_panel(panel: &CounterPanel, catalog: &HeroBuildCatalog) -> R
         .find(|evidence| evidence.damage_type == panel.damage_type)
         .ok_or_else(|| Error::new("Counter panel has no run evidence"))?;
     let label = panel.damage_type.label();
+    let tests = evidence
+        .phases
+        .iter()
+        .map(|phase| format!("{:.1} at {} min", phase.z(), phase.phase_s / 60))
+        .collect::<Vec<_>>()
+        .join(", ");
     Ok(format!(
-        "From mid game, when most enemy damage is {label} damage. These items won more against {label}-heavy teams on 4 tested patches. This patch: z ≥ {:.1}.",
-        evidence.minimum_z()
+        "From mid game, when most enemy damage is {label} damage. These items won more against {label}-heavy teams on 4 tested patches. This patch: z = {tests}."
     ))
 }
 
