@@ -46,6 +46,7 @@ The test fold contains the last 20% of matches by start time.
 | E30 | Are the pooled agreement tests correct? | No. Hero differences biased them. Corrected | Floor added. E11 and E19 reversed |
 | E31 | Do counter effects hold within each hero? | Yes | Production uses hero terms |
 | E32 | Is the scale 0.025 better with the floor? | Yes, on seven runs, with less stability | Changed to 0.025 |
+| E33 | Is the final rule better than the original rule? | Yes, on seven runs | No change |
 
 ## E0: effect scale of the item score
 
@@ -996,3 +997,26 @@ Thus, with the floor, the scale 0.025 adds signal beyond 0.05. The rule before t
 The signal keeps rising with smaller scales. A further search on the same runs would fit their specific matches, and each step costs stability.
 
 **Decision.** Use the scale 0.025 with the 3% floor. Stop the scale search. A later search needs new matches.
+
+## E33: the final score rule against the original rule
+
+**Question.** How much do the score rule changes of this research improve the builds together?
+
+**Method.** `compare_scoring_pair` with the corrected pair model compared the original rule `0.1` without a floor (base) and the final rule `0.025:0.03` (alternative).
+Both use the penalties of E2, so this test covers the score rule changes only.
+
+**Result.**
+
+| Run | Original rule | z | Final rule | z |
+| --- | --- | --- | --- | --- |
+| `20261012T233433Z` | +0.035 ± 0.043 | 0.8 | +0.109 ± 0.044 | 2.5 |
+| `20261003T172322Z` | +0.033 ± 0.060 | 0.5 | +0.170 ± 0.061 | 2.8 |
+| `20260913T235155Z` | +0.040 ± 0.021 | 1.9 | +0.176 ± 0.021 | 8.4 |
+| `holdout-20260916` | +0.072 ± 0.022 | 3.4 | +0.176 ± 0.022 | 8.1 |
+| `confirm-20261003` | +0.072 ± 0.030 | 2.4 | +0.132 ± 0.031 | 4.2 |
+| `confirm-20260913` | +0.029 ± 0.048 | 0.6 | +0.238 ± 0.052 | 4.6 |
+| `patch-20260812` | +0.020 ± 0.043 | 0.5 | +0.152 ± 0.044 | 3.4 |
+
+**Analysis.** The final rule added signal beyond the original rule on all seven runs. The original rule added much less beyond the final rule.
+
+**Decision.** No change. This entry measures the combined result.
