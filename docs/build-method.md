@@ -1,5 +1,18 @@
 # Build method
 
+## Overview
+
+The analysis makes the builds in these steps:
+
+1. Extract the ranked matches of the current patch and record each player's state at fixed landmark times. See [Data](#data).
+2. Estimate how much each item adds to the win probability in similar game states, with strong shrinkage of rare and hero-specific values. See [Item effects](#item-effects).
+3. Assemble MAIN CORE phase by phase from items that players use, tilted toward items that win more. See [Build assembly](#build-assembly).
+4. Add situational TIER items and, for heroes with distinct item combinations, additional builds. See [Additional builds](#additional-builds).
+5. Test the counter item groups on the run and add the VS panels that the run does not contradict. See [Counter panels](#counter-panels).
+6. Test each build on held-out matches and set its confidence label with the evidence of all heroes. See [Evaluation](#evaluation).
+
+The [Research log](research-log.md) records the tests behind each value and each rejected idea.
+
 ## Decision
 
 Make a build for every active hero. Hero coverage does not limit each hero to one build.
