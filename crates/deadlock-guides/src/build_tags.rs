@@ -1,8 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use deadlock_data::{Error, Result};
-use deadlock_input::{AXIS_CLASSES, BuildTagCatalog, FUNCTION_CLASSES, clean_mechanical_text};
-use serde::{Deserialize, Serialize};
+use deadlock_input::{BuildTagCatalog, FUNCTION_CLASSES, clean_mechanical_text};
 use serde_json::Value;
 
 /// One CORE item for tag selection: the item ID and its shop tier.
@@ -12,11 +11,11 @@ pub struct TagItem {
     pub tier: u8,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 pub struct BuildTagSelection {
     pub tag_ids: [u64; 3],
-    pub class_names: [String; 3],
-    pub labels: [String; 3],
+    /// The name of the first fully upgraded ability.
+    pub ability_name: String,
 }
 
 /// # Errors
@@ -50,29 +49,27 @@ pub fn select_build_tags(
         .min_by_key(|(priority, item)| (*priority, item.item_id))
         .map(|(_, item)| item)
         .ok_or_else(|| Error::new("Core has no supported item tier for its icon"))?;
-    let (ability_class, ability_label) = asset_identity(ability)?;
-    let (item_class, item_label) = asset_identity(assets[&icon.item_id])?;
-    let (axis, function) = classify_core(core, &assets)?;
-    catalog.require(axis)?;
-    let function = catalog.require(function)?;
+    let ability_name = select_asset_name(ability)?;
+    select_asset_name(assets[&icon.item_id])?;
+    let function = catalog.require(classify_core(core, &assets)?)?;
     let tag_ids = [ability_id, icon.item_id, function.tag_id];
     if tag_ids.into_iter().collect::<BTreeSet<_>>().len() != 3 {
         return Err(Error::new("Selected build icons are not distinct"));
     }
     Ok(BuildTagSelection {
         tag_ids,
-        class_names: [ability_class, item_class, function.class_name.clone()],
-        labels: [ability_label, item_label, function.label.clone()],
+        ability_name,
     })
 }
 
-fn asset_identity(asset: &Value) -> Result<(String, String)> {
+/// Returns the asset name, after a check that the asset has a class and a name.
+fn select_asset_name(asset: &Value) -> Result<String> {
     let class_name = deadlock_data::text(asset, "class_name")?.trim();
-    let label = deadlock_data::text(asset, "name")?.trim();
-    if class_name.is_empty() || label.is_empty() {
+    let name = deadlock_data::text(asset, "name")?.trim();
+    if class_name.is_empty() || name.is_empty() {
         return Err(Error::new("Selected icon has no asset identity"));
     }
-    Ok((class_name.into(), label.into()))
+    Ok(name.into())
 }
 
 pub fn first_fully_upgraded_ability(path: &[u64]) -> Result<u64> {
@@ -191,11 +188,8 @@ fn contains_effect_phrase(text: &str, phrase: &str) -> bool {
     })
 }
 
-fn classify_core(
-    core: &[TagItem],
-    assets: &BTreeMap<u64, &Value>,
-) -> Result<(&'static str, &'static str)> {
-    let mut axes = [0_u64; 3];
+/// Returns the function tag class with the largest CORE item cost. The first class wins a tie.
+fn classify_core(core: &[TagItem], assets: &BTreeMap<u64, &Value>) -> Result<&'static str> {
     let mut functions = [0_u64; 8];
     for item in core {
         let asset = assets[&item.item_id];
@@ -207,37 +201,17 @@ fn classify_core(
                     .as_u64()
                     .ok_or_else(|| Error::new("Item cost must be a nonnegative integer"))
             })?;
-        let slot = asset["item_slot_type"]
-            .as_str()
-            .unwrap_or_default()
-            .to_lowercase();
-        if let Some(index) = ["weapon", "spirit", "vitality"]
-            .iter()
-            .position(|expected| *expected == slot)
-        {
-            add_cost(&mut axes[index], cost)?;
-        }
-        add_cost(&mut functions[classify_function(asset)], cost)?;
+        let total = &mut functions[classify_function(asset)];
+        *total = total
+            .checked_add(cost)
+            .ok_or_else(|| Error::new("Build tag cost exceeds 64 bits"))?;
     }
-    Ok((
-        AXIS_CLASSES[first_maximum(&axes)],
-        FUNCTION_CLASSES[first_maximum(&functions)],
-    ))
-}
-
-fn add_cost(total: &mut u64, amount: u64) -> Result<()> {
-    *total = total
-        .checked_add(amount)
-        .ok_or_else(|| Error::new("Build tag cost exceeds 64 bits"))?;
-    Ok(())
-}
-
-fn first_maximum(values: &[u64]) -> usize {
-    values
+    let index = functions
         .iter()
         .enumerate()
-        .min_by_key(|(index, value)| (std::cmp::Reverse(*value), *index))
-        .map_or(0, |(index, _)| index)
+        .min_by_key(|(index, value)| (std::cmp::Reverse(**value), *index))
+        .map_or(0, |(index, _)| index);
+    Ok(FUNCTION_CLASSES[index])
 }
 
 fn extract_description_text(value: &Value) -> String {

@@ -281,7 +281,7 @@ fn attach_ability_and_tags(
     match select_build_tags(&build.ability_ids, &core, assets, tags) {
         Ok(selection) => {
             build.tag_ids = selection.tag_ids;
-            build.key_ability_name = Some(selection.labels[0].clone());
+            build.key_ability_name = Some(selection.ability_name);
         }
         Err(_) => build.tag_ids = select_fallback_tags(&build)?,
     }

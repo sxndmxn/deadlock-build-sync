@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use deadlock_data::{Error, Result, fingerprint, integer, text};
-use serde_json::{Value, json};
+use deadlock_data::{Error, Result, integer, text};
+use serde_json::Value;
 
 pub const AXIS_CLASSES: [&str; 3] = [
     "citadel_build_tag_weapon",
@@ -34,7 +34,6 @@ pub struct BuildTag {
 #[derive(Clone, Debug)]
 pub struct BuildTagCatalog {
     tags: BTreeMap<String, BuildTag>,
-    sha256: String,
 }
 
 impl BuildTagCatalog {
@@ -72,22 +71,7 @@ impl BuildTagCatalog {
                 "Build tag catalog must contain exactly the 14 supported tags",
             ));
         }
-        let canonical = tags
-            .values()
-            .map(|tag| json!({"class_name": tag.class_name, "label": tag.label, "id": tag.tag_id}))
-            .collect::<Vec<_>>();
-        let sha256 = fingerprint(&json!(canonical))?;
-        Ok(Self { tags, sha256 })
-    }
-
-    #[must_use]
-    pub const fn tags(&self) -> &BTreeMap<String, BuildTag> {
-        &self.tags
-    }
-
-    #[must_use]
-    pub fn sha256(&self) -> &str {
-        &self.sha256
+        Ok(Self { tags })
     }
 
     /// # Errors
