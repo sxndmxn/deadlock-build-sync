@@ -68,8 +68,6 @@ impl Cohort {
 pub struct RunPaths {
     pub run: PathBuf,
     pub raw: PathBuf,
-    pub data: PathBuf,
-    pub tables: PathBuf,
 }
 
 impl RunPaths {
@@ -95,13 +93,9 @@ impl RunPaths {
         let run = root.join("results").join(identifier);
         let paths = Self {
             raw: run.join("raw"),
-            data: run.join("data"),
-            tables: run.join("tables"),
             run,
         };
-        for path in [&paths.raw, &paths.data, &paths.tables] {
-            std::fs::create_dir_all(path)?;
-        }
+        std::fs::create_dir_all(&paths.raw)?;
         Ok(paths)
     }
 }
