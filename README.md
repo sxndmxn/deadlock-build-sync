@@ -39,7 +39,7 @@ Then it makes a Steam cache backup and installs the builds atomically.
 It keeps favorites, selected builds, saved builds, and unrelated private builds.
 It replaces only builds with the managed marker.
 It prevents writes if Deadlock is in operation or process inspection is not possible.
-With one week of matches, a sync takes about 2 to 3 minutes.
+With one week of matches, a sync takes about 2 minutes.
 
 The CLI finds Steam caches in native, legacy, Flatpak, and Snap locations.
 Use `--account-id` or `--cache-path` to select a cache.
@@ -146,7 +146,7 @@ A failed removal prints a warning and does not stop the command.
 
 Use `--trace stages` for workflow events or `--trace calls` for instrumented calls.
 `DEADLOCK_BUILD_SYNC_TRACE` accepts the same values. The CLI does not make traces by default.
-The API requests for ability orders run on a separate thread. The trace shows them as one `wait_for_api` stage.
+The API requests for ability orders run on separate threads. The trace shows them as one `wait_for_api` stage.
 
 ```bash
 deadlock-build-sync build --trace stages

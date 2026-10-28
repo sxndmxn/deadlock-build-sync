@@ -26,9 +26,9 @@ Lower the default minimum rank from `emissary-i` to `ritualist-i`.
 Write `hero-builds.json` and one Markdown file per hero. Replace the complete artifact directory on each run.
 Include the analysis code in every build. The `analysis` feature no longer exists.
 Download only ranked matches in the selected rank range, and read the remote data with 64 threads.
-With one week of matches, a build takes about 2.5 minutes instead of about 11 minutes.
+With one week of matches, a build takes about 2 minutes instead of about 11 minutes.
 Each analysis run uses 0.9 GiB instead of 4.3 GiB.
-Send the ability order requests during the local analysis.
+Send the ability order requests from four threads during the local analysis.
 After a successful build, remove the other analysis runs whose name has the automatic format.
 Describe every option in `--help`.
 Name the update command when `status` finds stale builds.
