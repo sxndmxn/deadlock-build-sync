@@ -21,6 +21,7 @@ use crate::sql_resources::sql;
 
 const EFFECT_LANDMARKS: [u32; 8] = [360, 540, 720, 900, 1200, 1500, 1800, 2100];
 const ABILITY_MINIMUM_MATCHES: u32 = 10;
+const ABILITY_REQUEST_THREADS: usize = 4;
 
 #[derive(Debug, Deserialize)]
 struct PurchaseMedianRow {
@@ -106,23 +107,54 @@ struct ApiInputs {
     ability_rows: BTreeMap<u64, Vec<Value>>,
 }
 
+/// Requests the ability orders from several threads.
+///
+/// An uncached request takes about 1 s. The client still starts at most one request
+/// in each request interval, so the threads do not increase the request rate.
 fn request_api_inputs(
     api: &mut DeadlockApi,
     heroes: &BTreeMap<u64, String>,
     since: i64,
 ) -> Result<ApiInputs> {
     eprintln!("Requesting ability orders for {} heroes", heroes.len());
-    Ok(ApiInputs {
-        tag_assets: api.build_tags()?,
-        ability_rows: heroes
-            .keys()
-            .map(|hero_id| {
-                Ok((
-                    *hero_id,
-                    api.ability_order_stats(*hero_id, since, ABILITY_MINIMUM_MATCHES)?,
-                ))
+    let tag_assets = api.build_tags()?;
+    let api = &*api;
+    let hero_ids = heroes.keys().copied().collect::<Vec<_>>();
+    let ability_rows = std::thread::scope(|scope| {
+        let requests = (0..ABILITY_REQUEST_THREADS)
+            .map(|first| {
+                let assigned = hero_ids
+                    .iter()
+                    .copied()
+                    .skip(first)
+                    .step_by(ABILITY_REQUEST_THREADS)
+                    .collect::<Vec<_>>();
+                scope.spawn(move || {
+                    assigned
+                        .into_iter()
+                        .map(|hero_id| {
+                            Ok((
+                                hero_id,
+                                api.ability_order_stats(hero_id, since, ABILITY_MINIMUM_MATCHES)?,
+                            ))
+                        })
+                        .collect::<Result<Vec<_>>>()
+                })
             })
-            .collect::<Result<_>>()?,
+            .collect::<Vec<_>>();
+        let mut rows = BTreeMap::new();
+        for request in requests {
+            rows.extend(
+                request
+                    .join()
+                    .map_err(|_| Error::new("Ability order requests stopped unexpectedly"))??,
+            );
+        }
+        Ok::<_, Error>(rows)
+    })?;
+    Ok(ApiInputs {
+        tag_assets,
+        ability_rows,
     })
 }
 
