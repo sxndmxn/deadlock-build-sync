@@ -4,8 +4,5 @@ CREATE OR REPLACE TABLE item_assets (
     class_name VARCHAR,
     tier INTEGER,
     "cost" INTEGER,
-    slot VARCHAR,
-    active BOOLEAN,
-    unique_item BOOLEAN,
     component_items_json VARCHAR
 );
