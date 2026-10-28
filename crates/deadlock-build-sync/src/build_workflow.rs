@@ -184,7 +184,6 @@ pub fn install_catalog(
                 timestamp: u64::try_from(chrono::Utc::now().timestamp())?,
                 snapshot: &snapshot,
                 expected_hero_ids: &expected,
-                allow_subset: false,
             },
         )
     })?;
