@@ -3,7 +3,9 @@ use duckdb::types::{TimeUnit, Value as SqlValue};
 use serde_json::{Value, json};
 
 use crate::database::{AnalysisDatabase, Parameters};
-use crate::refresh_configuration::{Cohort, DUCKLAKE_URL, ExtractionResources, RunPaths};
+use crate::refresh_configuration::{
+    Cohort, DUCKLAKE_URL, ExtractionResources, RunPaths, format_timestamp,
+};
 use crate::sql_resources::sql;
 
 /// 64 threads read one day of remote rows 3.8 times faster than 8 threads, at equal bytes.
@@ -19,6 +21,7 @@ pub fn extract_cohort(
         let database = connect_database(paths, resources)?;
         load_item_assets(&database, paths)?;
         extract_source_players(&database, cohort, resources)?;
+        eprintln!("Preparing match tables");
         database.execute(
             sql!("extract/create_eligible_matches"),
             &Parameters::from([(
@@ -26,18 +29,14 @@ pub fn extract_cohort(
                 SqlValue::Timestamp(TimeUnit::Second, cohort.as_of),
             )]),
         )?;
-        extract_table(
-            &database,
-            "player_matches",
-            sql!("extract/create_player_matches"),
-        )?;
+        database.execute(sql!("extract/create_player_matches"), &Parameters::new())?;
         create_match_folds(&database, cohort)?;
-        for (table, query) in [
-            ("player_snapshots", sql!("extract/create_player_snapshots")),
-            ("team_snapshots", sql!("extract/create_team_snapshots")),
-            ("purchases", sql!("extract/create_purchases")),
+        for query in [
+            sql!("extract/create_player_snapshots"),
+            sql!("extract/create_team_snapshots"),
+            sql!("extract/create_purchases"),
         ] {
-            extract_table(&database, table, query)?;
+            database.execute(query, &Parameters::new())?;
         }
         let counts = collect_extraction_counts(&database, cohort)?;
         drop(database);
@@ -87,7 +86,11 @@ fn extract_source_players(
     cohort: &Cohort,
     resources: ExtractionResources,
 ) -> Result<()> {
-    eprintln!("Extracting source_players");
+    eprintln!(
+        "Downloading ranked matches from {} to {}",
+        format_timestamp(cohort.since)?,
+        format_timestamp(cohort.as_of)?
+    );
     set_threads(database, resources.threads.max(REMOTE_READ_THREADS))?;
     database.execute_remote(
         sql!("extract/create_source_players"),
@@ -101,11 +104,6 @@ fn set_threads(database: &AnalysisDatabase, threads: u16) -> Result<()> {
         sql!("extract/set_threads"),
         &Parameters::from([("threads".into(), i64::from(threads).into())]),
     )
-}
-
-fn extract_table(database: &AnalysisDatabase, table: &str, query: &str) -> Result<()> {
-    eprintln!("Extracting {table}");
-    database.execute(query, &Parameters::new())
 }
 
 fn build_cohort_parameters(cohort: &Cohort) -> Parameters {
