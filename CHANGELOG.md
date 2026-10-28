@@ -25,6 +25,13 @@ Show four lines for each item: the game phase, the win rate, the pick rate, and 
 Lower the default minimum rank from `emissary-i` to `ritualist-i`.
 Write `hero-builds.json` and one Markdown file per hero. Replace the complete artifact directory on each run.
 Include the analysis code in every build. The `analysis` feature no longer exists.
+Download only ranked matches in the selected rank range, and read the remote data with 64 threads.
+With one week of matches, a build takes about 2.5 minutes instead of about 11 minutes.
+Each analysis run uses 0.9 GiB instead of 4.3 GiB.
+Send the ability order requests during the local analysis.
+Remove earlier analysis runs that have an automatic identifier after a successful build.
+Describe every option in `--help`.
+Name the update command when `status` finds stale builds.
 
 ### Removed
 
@@ -36,6 +43,7 @@ Remove rank expansion, subset bundles, and the API response cache.
 
 ### Fixed
 
+Read the remote match catalog in the DuckDB 2.0 storage format.
 Verify all seven source JSON fingerprints before resuming an extracted run.
 Check the current patch and client version in the shared installation function for both `sync` and `install`.
 Restore native IMBUE ABILITY selection for MAIN CORE and situational items with sufficient evidence.
