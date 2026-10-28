@@ -27,23 +27,8 @@ pub fn state_directory() -> Result<PathBuf> {
 }
 
 /// # Errors
-/// Returns an error if the file cannot be read or contains invalid JSON.
-pub fn read_json(path: &Path) -> Result<Value> {
-    read_json_bytes(path).map(|(_, value)| value)
-}
-
-/// # Errors
 /// Returns an error if the file exceeds the size limit, cannot be read, or contains invalid JSON.
-pub fn read_json_bytes(path: &Path) -> Result<(Vec<u8>, Value)> {
-    let bytes = read_artifact_bytes(path)?;
-    let value = serde_json::from_slice(&bytes)
-        .map_err(|error| Error::from(error).context(path.display()))?;
-    Ok((bytes, value))
-}
-
-/// # Errors
-/// Returns an error if the file exceeds the JSON size limit or cannot be read.
-pub fn read_artifact_bytes(path: &Path) -> Result<Vec<u8>> {
+pub fn read_json(path: &Path) -> Result<Value> {
     let mut bytes = Vec::new();
     File::open(path)?
         .take(MAXIMUM_JSON_BYTES + 1)
@@ -54,7 +39,7 @@ pub fn read_artifact_bytes(path: &Path) -> Result<Vec<u8>> {
             path.display()
         )));
     }
-    Ok(bytes)
+    serde_json::from_slice(&bytes).map_err(|error| Error::from(error).context(path.display()))
 }
 
 /// # Errors
