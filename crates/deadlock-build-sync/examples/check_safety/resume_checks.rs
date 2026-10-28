@@ -39,6 +39,40 @@ pub fn check_resume_sources() -> Result<()> {
     if fs::read(paths.raw.join("analysis.duckdb"))? != b"extraction marker" {
         return Err(Error::new("Resume changed the extracted database"));
     }
+    check_run_removal(root.path())
+}
+
+/// Removal must keep the current run, named runs, and runs that another process locks.
+fn check_run_removal(root: &Path) -> Result<()> {
+    let results = root.join("results");
+    for name in ["20261001T000000Z", "20261002T000000Z", "named-run"] {
+        fs::create_dir_all(results.join(name).join("raw"))?;
+    }
+    fs::create_dir_all(results.join("20261003T000000Z"))?;
+    let lock = fs::File::create(results.join("20261003T000000Z").join(".refresh.lock"))?;
+    lock.lock()?;
+    let mut request = create_request(root);
+    request.run_id = Some("20261004T000000Z".into());
+    create_snapshot(&RunPaths::create(root, request.run_id.as_deref())?)?;
+    let removed = extract_run(&request)?.remove_earlier_runs()?;
+    drop(lock);
+    let mut remaining = fs::read_dir(&results)?
+        .map(|entry| Ok(entry?.file_name().to_string_lossy().into_owned()))
+        .collect::<Result<Vec<_>>>()?;
+    remaining.sort();
+    if removed != 2
+        || remaining
+            != [
+                "20261003T000000Z",
+                "20261004T000000Z",
+                "named-run",
+                "reference",
+            ]
+    {
+        return Err(Error::new(format!(
+            "Run removal removed {removed} runs and kept {remaining:?}"
+        )));
+    }
     Ok(())
 }
 

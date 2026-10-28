@@ -113,6 +113,8 @@ The data is observational. It does not prove that an item causes a win.
 
 DuckDB downloads ICU, DuckLake, and HTTPFS extensions if they are missing.
 The CLI keeps analysis runs in `$XDG_STATE_HOME/deadlock-build-sync/offline/results`.
+After a successful build, it removes earlier runs that have an automatic identifier.
+Runs with a `--run-id` name stay.
 Before reuse, `--resume` verifies all seven source JSON files against the fingerprints in the run manifest.
 Missing files, changed contents, and incomplete or malformed fingerprints stop the run.
 JSON spacing and object key order do not affect these fingerprints.

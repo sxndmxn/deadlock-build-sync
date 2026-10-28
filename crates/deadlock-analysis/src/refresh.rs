@@ -1,4 +1,4 @@
-use std::fs::{File, OpenOptions};
+use std::fs::{File, OpenOptions, TryLockError};
 
 use deadlock_data::{Error, Result, atomic_write_json, read_json, text, trace_operation};
 use deadlock_guides::HERO_BUILD_METHOD;
@@ -8,15 +8,56 @@ use serde_json::json;
 use crate::extraction::extract_cohort;
 use crate::refresh_configuration::{
     Cohort, RANK_RESET_AT, RefreshRequest, RunPaths, cohort_ranks, implementation_record,
-    parse_timestamp,
+    is_automatic_run_id, parse_timestamp,
 };
 use crate::sources::{capture_sources, validate_source_fingerprints};
+
+const RUN_LOCK_FILE: &str = ".refresh.lock";
 
 /// An extracted run and the lock that keeps other processes from changing it.
 #[derive(Debug)]
 pub struct ExtractedRun {
     pub paths: RunPaths,
     _lock: File,
+}
+
+impl ExtractedRun {
+    /// Removes the other runs that have an automatic identifier, and returns their count.
+    ///
+    /// Runs with an identifier from `--run-id` stay. A run that another process locks stays.
+    ///
+    /// # Errors
+    /// Returns an error when a run directory cannot be read, locked, or removed.
+    pub fn remove_earlier_runs(&self) -> Result<usize> {
+        let Some(results) = self.paths.run.parent() else {
+            return Ok(0);
+        };
+        let mut removed = 0;
+        for entry in std::fs::read_dir(results)? {
+            let entry = entry?;
+            if Some(entry.file_name().as_os_str()) == self.paths.run.file_name()
+                || !entry.file_name().to_str().is_some_and(is_automatic_run_id)
+                || !entry.file_type()?.is_dir()
+            {
+                continue;
+            }
+            let lock_path = entry.path().join(RUN_LOCK_FILE);
+            let lock = if lock_path.is_file() {
+                let lock = File::open(lock_path)?;
+                match lock.try_lock() {
+                    Ok(()) => Some(lock),
+                    Err(TryLockError::WouldBlock) => continue,
+                    Err(TryLockError::Error(error)) => return Err(error.into()),
+                }
+            } else {
+                None
+            };
+            std::fs::remove_dir_all(entry.path())?;
+            drop(lock);
+            removed += 1;
+        }
+        Ok(removed)
+    }
 }
 
 /// Captures sources and extracts the cohort, or reuses a completed extraction with `resume`.
@@ -35,7 +76,7 @@ pub fn extract_run(request: &RefreshRequest) -> Result<ExtractedRun> {
         .truncate(false)
         .read(true)
         .write(true)
-        .open(paths.run.join(".refresh.lock"))?;
+        .open(paths.run.join(RUN_LOCK_FILE))?;
     lock.try_lock()
         .map_err(|error| Error::new(format!("Analysis run is locked: {error}")))?;
     if request.resume {

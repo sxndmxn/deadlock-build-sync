@@ -60,6 +60,10 @@ pub fn generate_builds(
     })?;
     write_build_artifacts(&directory, &catalog)?;
     eprintln!("Analysis run: {}", run.paths.run.display());
+    let removed = run.remove_earlier_runs()?;
+    if removed > 0 {
+        eprintln!("Removed {removed} earlier analysis runs");
+    }
     Ok((directory, catalog))
 }
 

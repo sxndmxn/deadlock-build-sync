@@ -64,6 +64,13 @@ impl Cohort {
     }
 }
 
+/// The run identifier format when `--run-id` is absent: the UTC start time.
+const AUTOMATIC_RUN_ID_FORMAT: &str = "%Y%m%dT%H%M%SZ";
+
+pub fn is_automatic_run_id(identifier: &str) -> bool {
+    chrono::NaiveDateTime::parse_from_str(identifier, AUTOMATIC_RUN_ID_FORMAT).is_ok()
+}
+
 #[derive(Clone, Debug)]
 pub struct RunPaths {
     pub run: PathBuf,
@@ -77,7 +84,11 @@ impl RunPaths {
     /// Returns an error for an invalid run identifier or a failed directory creation.
     pub fn create(root: &Path, run_id: Option<&str>) -> Result<Self> {
         let identifier = run_id.map_or_else(
-            || chrono::Utc::now().format("%Y%m%dT%H%M%SZ").to_string(),
+            || {
+                chrono::Utc::now()
+                    .format(AUTOMATIC_RUN_ID_FORMAT)
+                    .to_string()
+            },
             str::to_owned,
         );
         if identifier.is_empty()
