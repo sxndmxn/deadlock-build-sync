@@ -119,7 +119,7 @@ fn request_api_inputs(
             .map(|hero_id| {
                 Ok((
                     *hero_id,
-                    api.ability_order_stats(*hero_id, since, ABILITY_MINIMUM_MATCHES, &[])?,
+                    api.ability_order_stats(*hero_id, since, ABILITY_MINIMUM_MATCHES)?,
                 ))
             })
             .collect::<Result<_>>()?,
@@ -261,7 +261,7 @@ fn attach_ability_and_tags(
     assets: &[Value],
     tags: &BuildTagCatalog,
 ) -> Result<HeroBuild> {
-    if let Some(path) = select_ability_path(rows, &[])? {
+    if let Some(path) = select_ability_path(rows)? {
         build.ability_ids = path.ability_ids;
         build.ability_matches = path.matches;
     }

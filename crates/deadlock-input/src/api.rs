@@ -46,14 +46,12 @@ impl DeadlockApi {
         hero_id: u64,
         minimum_timestamp: i64,
         minimum_matches: u32,
-        item_ids: &[u64],
     ) -> Result<Vec<Value>> {
         api_analytics::ability_order_stats(
             &self.session,
             hero_id,
             minimum_timestamp,
             minimum_matches,
-            item_ids,
         )
     }
 }

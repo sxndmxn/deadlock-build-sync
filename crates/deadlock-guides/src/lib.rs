@@ -3,7 +3,6 @@
 
 mod ability_focus;
 mod ability_order;
-mod ability_path;
 mod build_tags;
 mod build_title;
 mod hero_build;
@@ -11,8 +10,7 @@ mod hero_presentation;
 mod presentation;
 
 pub use ability_focus::assign_build_focus;
-pub use ability_order::select_ability_path;
-pub use ability_path::AbilityPath;
+pub use ability_order::{AbilityPath, select_ability_path};
 pub use build_tags::{BuildTagSelection, TagItem, select_build_tags};
 pub use hero_build::{
     AbilityFocus, BuildCohort, BuildEvaluation, BuildItem, Confidence, HERO_BUILD_METHOD,
