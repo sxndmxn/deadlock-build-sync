@@ -485,7 +485,6 @@ dependencies = [
  "chrono",
  "deadlock-data",
  "htmlize",
- "serde",
  "serde_json",
  "ureq",
 ]
@@ -494,7 +493,6 @@ dependencies = [
 name = "deadlock-steam"
 version = "0.1.0"
 dependencies = [
- "base64",
  "chrono",
  "deadlock-data",
  "deadlock-guides",
@@ -502,7 +500,6 @@ dependencies = [
  "prost",
  "regex-lite",
  "ruzstd",
- "serde",
  "serde_json",
  "tempfile",
 ]
