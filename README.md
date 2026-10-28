@@ -139,14 +139,14 @@ Each new run replaces the complete directory.
 
 The CLI keeps analysis runs in `$XDG_STATE_HOME/deadlock-build-sync/offline/results`.
 After a successful build, it removes the other runs whose name has the automatic format, such as `20261028T031941Z`.
-Runs with another name stay. Runs that another process uses stay.
+Runs with another name stay. Runs that another process uses, or that changed in the last hour, stay.
 A failed removal prints a warning and does not stop the command.
 
 ## Tracing and development
 
 Use `--trace stages` for workflow events or `--trace calls` for instrumented calls.
 `DEADLOCK_BUILD_SYNC_TRACE` accepts the same values. The CLI does not make traces by default.
-The API requests for ability orders run on separate threads. The trace shows them as one `wait_for_api` stage.
+The ability order and build tag requests run on separate threads, so the call trace does not show them. The `wait_for_api` stage shows how long the main thread waits for them after its local work.
 
 ```bash
 deadlock-build-sync build --trace stages

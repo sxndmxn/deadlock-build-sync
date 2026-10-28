@@ -29,6 +29,7 @@ impl ExtractedRun {
     /// Removes the other runs whose identifier has the automatic format, and returns their count.
     ///
     /// Runs with another identifier stay. A run that another process locks stays.
+    /// A run that changed in the last hour stays.
     /// A failed removal prints a warning, because the build itself is complete.
     #[must_use]
     pub fn remove_other_automatic_runs(&self) -> usize {
@@ -75,25 +76,27 @@ impl ExtractedRun {
 
 /// Removes a run directory unless another process can own it, and returns whether it removed it.
 ///
-/// A run creates its lock file after its directory. Thus a run without a lock file
-/// that changed in the last hour can be a run that another process starts now.
+/// A new run creates its directory, then its lock file, and then it locks the file.
+/// Thus a run that changed in the last hour stays, also when nothing locks it.
 fn remove_unlocked_run(path: &Path) -> std::io::Result<bool> {
     let metadata = std::fs::symlink_metadata(path)?;
-    if !metadata.is_dir() {
+    if !metadata.is_dir()
+        || metadata.modified()?.elapsed().unwrap_or_default() < UNLOCKED_RUN_MINIMUM_AGE
+    {
         return Ok(false);
     }
-    let lock = match File::open(path.join(RUN_LOCK_FILE)) {
-        Ok(lock) => match lock.try_lock() {
-            Ok(()) => Some(lock),
-            Err(TryLockError::WouldBlock) => return Ok(false),
-            Err(TryLockError::Error(error)) => return Err(error),
-        },
-        Err(error) if error.kind() == ErrorKind::NotFound => {
-            if metadata.modified()?.elapsed().unwrap_or_default() < UNLOCKED_RUN_MINIMUM_AGE {
-                return Ok(false);
+    let lock_path = path.join(RUN_LOCK_FILE);
+    let lock = match std::fs::symlink_metadata(&lock_path) {
+        Ok(lock) if lock.is_file() => {
+            let lock = File::open(lock_path)?;
+            match lock.try_lock() {
+                Ok(()) => Some(lock),
+                Err(TryLockError::WouldBlock) => return Ok(false),
+                Err(TryLockError::Error(error)) => return Err(error),
             }
-            None
         }
+        Ok(_) => return Err(std::io::Error::other("The run lock is not a regular file")),
+        Err(error) if error.kind() == ErrorKind::NotFound => None,
         Err(error) => return Err(error),
     };
     std::fs::remove_dir_all(path)?;

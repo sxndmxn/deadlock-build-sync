@@ -43,7 +43,8 @@ pub fn check_resume_sources() -> Result<()> {
     check_run_removal(root.path())
 }
 
-/// Removal must keep the current run, named runs, locked runs, and new runs without a lock.
+/// Removal must keep the current run, named runs, locked runs, and new runs.
+/// It must remove old automatic runs with or without an unlocked lock file.
 fn check_run_removal(root: &Path) -> Result<()> {
     let results = root.join("results");
     for name in [
@@ -54,13 +55,21 @@ fn check_run_removal(root: &Path) -> Result<()> {
     ] {
         fs::create_dir_all(results.join(name).join("raw"))?;
     }
+    for name in ["20261003T000000Z", "20261006T000000Z"] {
+        fs::create_dir_all(results.join(name))?;
+        fs::File::create(results.join(name).join(".refresh.lock"))?;
+    }
+    let lock = fs::File::open(results.join("20261003T000000Z").join(".refresh.lock"))?;
+    lock.lock()?;
     let two_hours_ago = SystemTime::now() - Duration::from_secs(7200);
-    for name in ["20261001T000000Z", "20261002T000000Z"] {
+    for name in [
+        "20261001T000000Z",
+        "20261002T000000Z",
+        "20261003T000000Z",
+        "20261006T000000Z",
+    ] {
         fs::File::open(results.join(name))?.set_modified(two_hours_ago)?;
     }
-    fs::create_dir_all(results.join("20261003T000000Z"))?;
-    let lock = fs::File::create(results.join("20261003T000000Z").join(".refresh.lock"))?;
-    lock.lock()?;
     let mut request = create_request(root);
     request.run_id = Some("20261004T000000Z".into());
     create_snapshot(&RunPaths::create(root, request.run_id.as_deref())?)?;
@@ -70,7 +79,7 @@ fn check_run_removal(root: &Path) -> Result<()> {
         .map(|entry| Ok(entry?.file_name().to_string_lossy().into_owned()))
         .collect::<Result<Vec<_>>>()?;
     remaining.sort();
-    if removed != 2
+    if removed != 3
         || remaining
             != [
                 "20261003T000000Z",
