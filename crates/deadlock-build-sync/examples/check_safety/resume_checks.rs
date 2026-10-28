@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::Path;
+use std::time::{Duration, SystemTime};
 
 use deadlock_analysis::{ExtractionResources, RefreshRequest, RunPaths, extract_run};
 use deadlock_data::{Error, RankRange, Result, atomic_write_json, fingerprint};
@@ -42,11 +43,20 @@ pub fn check_resume_sources() -> Result<()> {
     check_run_removal(root.path())
 }
 
-/// Removal must keep the current run, named runs, and runs that another process locks.
+/// Removal must keep the current run, named runs, locked runs, and new runs without a lock.
 fn check_run_removal(root: &Path) -> Result<()> {
     let results = root.join("results");
-    for name in ["20261001T000000Z", "20261002T000000Z", "named-run"] {
+    for name in [
+        "20261001T000000Z",
+        "20261002T000000Z",
+        "20261005T000000Z",
+        "named-run",
+    ] {
         fs::create_dir_all(results.join(name).join("raw"))?;
+    }
+    let two_hours_ago = SystemTime::now() - Duration::from_secs(7200);
+    for name in ["20261001T000000Z", "20261002T000000Z"] {
+        fs::File::open(results.join(name))?.set_modified(two_hours_ago)?;
     }
     fs::create_dir_all(results.join("20261003T000000Z"))?;
     let lock = fs::File::create(results.join("20261003T000000Z").join(".refresh.lock"))?;
@@ -54,7 +64,7 @@ fn check_run_removal(root: &Path) -> Result<()> {
     let mut request = create_request(root);
     request.run_id = Some("20261004T000000Z".into());
     create_snapshot(&RunPaths::create(root, request.run_id.as_deref())?)?;
-    let removed = extract_run(&request)?.remove_earlier_runs()?;
+    let removed = extract_run(&request)?.remove_other_automatic_runs();
     drop(lock);
     let mut remaining = fs::read_dir(&results)?
         .map(|entry| Ok(entry?.file_name().to_string_lossy().into_owned()))
@@ -65,6 +75,7 @@ fn check_run_removal(root: &Path) -> Result<()> {
             != [
                 "20261003T000000Z",
                 "20261004T000000Z",
+                "20261005T000000Z",
                 "named-run",
                 "reference",
             ]

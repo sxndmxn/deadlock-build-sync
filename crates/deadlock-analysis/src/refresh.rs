@@ -1,4 +1,7 @@
 use std::fs::{File, OpenOptions, TryLockError};
+use std::io::ErrorKind;
+use std::path::Path;
+use std::time::Duration;
 
 use deadlock_data::{Error, Result, atomic_write_json, read_json, text, trace_operation};
 use deadlock_guides::HERO_BUILD_METHOD;
@@ -13,6 +16,7 @@ use crate::refresh_configuration::{
 use crate::sources::{capture_sources, validate_source_fingerprints};
 
 const RUN_LOCK_FILE: &str = ".refresh.lock";
+const UNLOCKED_RUN_MINIMUM_AGE: Duration = Duration::from_secs(3600);
 
 /// An extracted run and the lock that keeps other processes from changing it.
 #[derive(Debug)]
@@ -22,42 +26,79 @@ pub struct ExtractedRun {
 }
 
 impl ExtractedRun {
-    /// Removes the other runs that have an automatic identifier, and returns their count.
+    /// Removes the other runs whose identifier has the automatic format, and returns their count.
     ///
-    /// Runs with an identifier from `--run-id` stay. A run that another process locks stays.
-    ///
-    /// # Errors
-    /// Returns an error when a run directory cannot be read, locked, or removed.
-    pub fn remove_earlier_runs(&self) -> Result<usize> {
+    /// Runs with another identifier stay. A run that another process locks stays.
+    /// A failed removal prints a warning, because the build itself is complete.
+    #[must_use]
+    pub fn remove_other_automatic_runs(&self) -> usize {
         let Some(results) = self.paths.run.parent() else {
-            return Ok(0);
+            return 0;
+        };
+        let entries = match std::fs::read_dir(results) {
+            Ok(entries) => entries,
+            Err(error) => {
+                eprintln!("Warning: Cannot read analysis runs: {error}");
+                return 0;
+            }
         };
         let mut removed = 0;
-        for entry in std::fs::read_dir(results)? {
-            let entry = entry?;
-            if Some(entry.file_name().as_os_str()) == self.paths.run.file_name()
-                || !entry.file_name().to_str().is_some_and(is_automatic_run_id)
-                || !entry.file_type()?.is_dir()
+        for entry in entries {
+            let path = match entry {
+                Ok(entry) => entry.path(),
+                Err(error) => {
+                    eprintln!("Warning: Cannot read analysis runs: {error}");
+                    continue;
+                }
+            };
+            if path.file_name() == self.paths.run.file_name()
+                || !path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(is_automatic_run_id)
             {
                 continue;
             }
-            let lock_path = entry.path().join(RUN_LOCK_FILE);
-            let lock = if lock_path.is_file() {
-                let lock = File::open(lock_path)?;
-                match lock.try_lock() {
-                    Ok(()) => Some(lock),
-                    Err(TryLockError::WouldBlock) => continue,
-                    Err(TryLockError::Error(error)) => return Err(error.into()),
-                }
-            } else {
-                None
-            };
-            std::fs::remove_dir_all(entry.path())?;
-            drop(lock);
-            removed += 1;
+            match remove_unlocked_run(&path) {
+                Ok(true) => removed += 1,
+                Ok(false) => (),
+                Err(error) if error.kind() == ErrorKind::NotFound => (),
+                Err(error) => eprintln!(
+                    "Warning: Cannot remove analysis run {}: {error}",
+                    path.display()
+                ),
+            }
         }
-        Ok(removed)
+        removed
     }
+}
+
+/// Removes a run directory unless another process can own it, and returns whether it removed it.
+///
+/// A run creates its lock file after its directory. Thus a run without a lock file
+/// that changed in the last hour can be a run that another process starts now.
+fn remove_unlocked_run(path: &Path) -> std::io::Result<bool> {
+    let metadata = std::fs::symlink_metadata(path)?;
+    if !metadata.is_dir() {
+        return Ok(false);
+    }
+    let lock = match File::open(path.join(RUN_LOCK_FILE)) {
+        Ok(lock) => match lock.try_lock() {
+            Ok(()) => Some(lock),
+            Err(TryLockError::WouldBlock) => return Ok(false),
+            Err(TryLockError::Error(error)) => return Err(error),
+        },
+        Err(error) if error.kind() == ErrorKind::NotFound => {
+            if metadata.modified()?.elapsed().unwrap_or_default() < UNLOCKED_RUN_MINIMUM_AGE {
+                return Ok(false);
+            }
+            None
+        }
+        Err(error) => return Err(error),
+    };
+    std::fs::remove_dir_all(path)?;
+    drop(lock);
+    Ok(true)
 }
 
 /// Captures sources and extracts the cohort, or reuses a completed extraction with `resume`.

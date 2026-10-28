@@ -138,8 +138,9 @@ The directory contains `hero-builds.json` and one Markdown file per hero in `bui
 Each new run replaces the complete directory.
 
 The CLI keeps analysis runs in `$XDG_STATE_HOME/deadlock-build-sync/offline/results`.
-After a successful build, it removes earlier runs that have an automatic identifier.
-Runs with a `--run-id` name stay.
+After a successful build, it removes the other runs whose name has the automatic format, such as `20261028T031941Z`.
+Runs with another name stay. Runs that another process uses stay.
+A failed removal prints a warning and does not stop the command.
 
 ## Tracing and development
 

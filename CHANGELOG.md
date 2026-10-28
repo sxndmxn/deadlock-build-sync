@@ -29,7 +29,7 @@ Download only ranked matches in the selected rank range, and read the remote dat
 With one week of matches, a build takes about 2.5 minutes instead of about 11 minutes.
 Each analysis run uses 0.9 GiB instead of 4.3 GiB.
 Send the ability order requests during the local analysis.
-Remove earlier analysis runs that have an automatic identifier after a successful build.
+After a successful build, remove the other analysis runs whose name has the automatic format.
 Describe every option in `--help`.
 Name the update command when `status` finds stale builds.
 
