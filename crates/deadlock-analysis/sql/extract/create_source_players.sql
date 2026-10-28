@@ -11,8 +11,6 @@ SELECT
     start_time,
     duration_s,
     net_worth,
-    match_mode,
-    game_mode,
     rewards_eligible,
     player_match_outcome,
     player_rank_initial_calibration_games,
@@ -26,6 +24,9 @@ FROM remote."main".match_player
 WHERE
     start_time >= $since::TIMESTAMPTZ
     AND start_time <= $as_of::TIMESTAMPTZ
+    AND match_mode = $match_mode
+    AND game_mode = $game_mode
+    AND average_badge BETWEEN $minimum_badge AND $maximum_badge
 QUALIFY row_number() OVER (
     PARTITION BY match_id, account_id, start_time
     ORDER BY created_at DESC

@@ -2,12 +2,7 @@ CREATE TABLE eligible_matches AS
 WITH candidate_matches AS (
     SELECT match_id
     FROM source_players
-    WHERE
-        match_mode = $match_mode
-        AND game_mode = $game_mode
-        AND start_time >= $since::TIMESTAMPTZ
-        AND start_time + duration_s * INTERVAL '1 second' <= $as_of::TIMESTAMPTZ
-        AND average_badge BETWEEN $minimum_badge AND $maximum_badge
+    WHERE start_time + duration_s * INTERVAL '1 second' <= $as_of::TIMESTAMPTZ
     GROUP BY match_id
     HAVING
         count(*) = 12

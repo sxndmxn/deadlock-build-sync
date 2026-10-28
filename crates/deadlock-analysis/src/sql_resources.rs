@@ -134,6 +134,10 @@ const SQL: &[(&str, &str)] = &[
         include_str!("../sql/extract/select_source_snapshot.sql"),
     ),
     (
+        "extract/set_threads.sql",
+        include_str!("../sql/extract/set_threads.sql"),
+    ),
+    (
         "extract/set_temp_directory.sql",
         include_str!("../sql/extract/set_temp_directory.sql"),
     ),

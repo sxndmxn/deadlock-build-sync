@@ -83,6 +83,7 @@ discovery_end = 1
 train_end = 2
 validation_end = 3
 directory = '/tmp/sqlfluff'
+threads = 8
 metadata_path = '/tmp/sqlfluff/metadata.duckdb'
 table = 'source_table'
 path = '/tmp/sqlfluff/output.parquet'
