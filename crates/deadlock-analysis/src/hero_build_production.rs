@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use deadlock_data::{Error, Result, integer, read_json, text};
+use deadlock_data::{Error, RankRange, Result, integer, read_json, text, trace_operation};
 use deadlock_guides::{
     BuildCohort, HERO_BUILD_METHOD, HERO_BUILD_SCHEMA_VERSION, HeroBuild, HeroBuildCatalog,
     TagItem, assign_build_focus, select_ability_path, select_build_tags,
@@ -15,7 +15,7 @@ use crate::build_assembly::{PHASES, PurchaseMedian, PurchaseMedians, assemble_bu
 use crate::build_evaluation::evaluate_build;
 use crate::database::{AnalysisDatabase, Parameters};
 use crate::item_effects::{ItemCatalog, LandmarkState, estimate_item_effects};
-use crate::item_imbues::{attach_item_imbues, load_item_imbues};
+use crate::item_imbues::{ItemImbues, attach_item_imbues, load_item_imbues};
 use crate::refresh_configuration::{ExtractionResources, RunPaths, cohort_ranks, parse_timestamp};
 use crate::sql_resources::sql;
 
@@ -51,6 +51,88 @@ pub fn produce_hero_builds(
     let patch = parse_patch_feed(&read_json(&paths.raw.join("patches.json"))?, Some(as_of))?;
     let client_version = integer(&manifest["sources"], "client_version")?;
     let heroes = read_hero_names(&paths.raw.join("heroes.json"))?;
+    let mut api = build_api(api_base_url, ranks, client_version, as_of)?;
+    // The API requests wait on a fixed request interval, so they run during the local work.
+    let (builds, imbues, api_inputs) = std::thread::scope(|scope| {
+        let requests = scope.spawn(|| request_api_inputs(&mut api, &heroes, patch.start_timestamp));
+        let local = assemble_from_database(paths, resources, ranks, &heroes);
+        let remote = trace_operation("analysis.wait_for_api", Some("wait_for_api"), || {
+            requests
+                .join()
+                .map_err(|_| Error::new("API requests stopped unexpectedly"))?
+        });
+        let (builds, imbues) = local?;
+        Ok::<_, Error>((builds, imbues, remote?))
+    })?;
+    let assets = read_json(&paths.raw.join("items-all.json"))?;
+    let assets = assets
+        .as_array()
+        .ok_or_else(|| Error::new("Item assets must be an array"))?;
+    let tags = BuildTagCatalog::from_assets(&api_inputs.tag_assets)?;
+    let builds = builds
+        .into_iter()
+        .map(|build| {
+            let rows = api_inputs
+                .ability_rows
+                .get(&build.hero_id)
+                .map_or(&[][..], Vec::as_slice);
+            let mut build = attach_ability_and_tags(build, rows, assets, &tags)?;
+            attach_item_imbues(&mut build, &imbues, assets);
+            assign_build_focus(&mut build, assets)?;
+            Ok(build)
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let catalog = HeroBuildCatalog {
+        schema_version: HERO_BUILD_SCHEMA_VERSION,
+        method: HERO_BUILD_METHOD.into(),
+        client_version,
+        patch: patch.to_document()?,
+        cohort: BuildCohort {
+            minimum_badge: ranks.minimum.badge(),
+            maximum_badge: ranks.maximum.badge(),
+            since: text(cohort, "since")?.into(),
+            as_of: text(cohort, "as_of")?.into(),
+            player_matches: integer(&manifest["extraction"], "player_matches")?,
+        },
+        heroes: builds,
+    };
+    catalog.validate()?;
+    Ok(catalog)
+}
+
+/// The build tag assets and the ability order statistics of each hero.
+struct ApiInputs {
+    tag_assets: Vec<Value>,
+    ability_rows: BTreeMap<u64, Vec<Value>>,
+}
+
+fn request_api_inputs(
+    api: &mut DeadlockApi,
+    heroes: &BTreeMap<u64, String>,
+    since: i64,
+) -> Result<ApiInputs> {
+    eprintln!("Requesting ability orders for {} heroes", heroes.len());
+    Ok(ApiInputs {
+        tag_assets: api.build_tags()?,
+        ability_rows: heroes
+            .keys()
+            .map(|hero_id| {
+                Ok((
+                    *hero_id,
+                    api.ability_order_stats(*hero_id, since, ABILITY_MINIMUM_MATCHES, &[])?,
+                ))
+            })
+            .collect::<Result<_>>()?,
+    })
+}
+
+/// Reads the extracted matches and assembles the CORE and situational items of each hero.
+fn assemble_from_database(
+    paths: &RunPaths,
+    resources: ExtractionResources,
+    ranks: RankRange,
+    heroes: &BTreeMap<u64, String>,
+) -> Result<(Vec<HeroBuild>, ItemImbues)> {
     let database = AnalysisDatabase::open_read_only(
         &paths.raw.join("analysis.duckdb"),
         &paths.raw.join("duckdb-read-tmp"),
@@ -88,39 +170,10 @@ pub fn produce_hero_builds(
         .collect::<PurchaseMedians>();
     let imbues = load_item_imbues(&database, &parameters)?;
     drop(database);
-    let builds = assemble_hero_builds(&states, &catalog, &medians, &heroes)?;
-    let mut api = build_api(api_base_url, ranks, client_version, as_of)?;
-    let assets = read_json(&paths.raw.join("items-all.json"))?;
-    let assets = assets
-        .as_array()
-        .ok_or_else(|| Error::new("Item assets must be an array"))?;
-    let tags = BuildTagCatalog::from_assets(&api.build_tags()?)?;
-    let builds = builds
-        .into_iter()
-        .map(|build| {
-            let mut build =
-                attach_ability_and_tags(build, &mut api, patch.start_timestamp, assets, &tags)?;
-            attach_item_imbues(&mut build, &imbues, assets);
-            assign_build_focus(&mut build, assets)?;
-            Ok(build)
-        })
-        .collect::<Result<Vec<_>>>()?;
-    let catalog = HeroBuildCatalog {
-        schema_version: HERO_BUILD_SCHEMA_VERSION,
-        method: HERO_BUILD_METHOD.into(),
-        client_version,
-        patch: patch.to_document()?,
-        cohort: BuildCohort {
-            minimum_badge: ranks.minimum.badge(),
-            maximum_badge: ranks.maximum.badge(),
-            since: text(cohort, "since")?.into(),
-            as_of: text(cohort, "as_of")?.into(),
-            player_matches: integer(&manifest["extraction"], "player_matches")?,
-        },
-        heroes: builds,
-    };
-    catalog.validate()?;
-    Ok(catalog)
+    Ok((
+        assemble_hero_builds(&states, &catalog, &medians, heroes)?,
+        imbues,
+    ))
 }
 
 fn assemble_hero_builds(
@@ -185,7 +238,7 @@ fn assemble_hero_builds(
 
 fn build_api(
     api_base_url: &str,
-    ranks: deadlock_data::RankRange,
+    ranks: RankRange,
     client_version: u64,
     as_of: i64,
 ) -> Result<DeadlockApi> {
@@ -204,14 +257,11 @@ fn build_api(
 /// Without a complete ability order, the icons use CORE items instead of the ability.
 fn attach_ability_and_tags(
     mut build: HeroBuild,
-    api: &mut DeadlockApi,
-    since: i64,
+    rows: &[Value],
     assets: &[Value],
     tags: &BuildTagCatalog,
 ) -> Result<HeroBuild> {
-    eprintln!("Selecting ability order and icons for {}", build.hero_name);
-    let rows = api.ability_order_stats(build.hero_id, since, ABILITY_MINIMUM_MATCHES, &[])?;
-    if let Some(path) = select_ability_path(&rows, &[])? {
+    if let Some(path) = select_ability_path(rows, &[])? {
         build.ability_ids = path.ability_ids;
         build.ability_matches = path.matches;
     }
