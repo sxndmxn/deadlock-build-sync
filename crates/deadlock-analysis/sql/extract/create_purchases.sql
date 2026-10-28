@@ -47,20 +47,23 @@ valid_purchases AS (
         a.active,
         a.unique_item,
         a.component_items_json,
+        -- SQLFluff 4.3 reads DuckDB lambda parameters as column references.
+        -- noqa: disable=RF02
         list_last(list_transform(
             list_filter(
                 list_zip(e.stat_times, e.stat_net_worths),
-                x -> x[1] <= e.buy_time
+                LAMBDA x: x[1] <= e.buy_time
             ),
-            x -> x[2]
+            LAMBDA x: x[2]
         )) AS own_net_worth_at_buy,
         list_last(list_transform(
             list_filter(
                 list_zip(e.stat_times, e.stat_net_worths),
-                x -> x[1] <= e.buy_time
+                LAMBDA x: x[1] <= e.buy_time
             ),
-            x -> x[1]
+            LAMBDA x: x[1]
         )) AS state_observed_at_s
+        -- noqa: enable=RF02
     FROM expanded AS e
     INNER JOIN item_assets AS a ON e.item_id = a.item_id
     WHERE e.buy_time > 0 AND e.buy_time <= e.duration_s
