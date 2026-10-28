@@ -107,7 +107,7 @@ The data is observational. It does not prove that an item causes a win.
 | `--since` | Current patch | First match start time (ISO 8601, UTC) |
 | `--as-of` | Now | Last match end time (ISO 8601, UTC) |
 | `--extraction-memory-mb` | 12000 | Database memory limit in decimal MB |
-| `--extraction-threads` | 8 | Database threads |
+| `--extraction-threads` | 8 | Database threads. The match download uses at least 64 |
 | `--run-id` | Current time | Name of the analysis run |
 | `--resume` | Off | Reuse the extracted matches of `--run-id` |
 
