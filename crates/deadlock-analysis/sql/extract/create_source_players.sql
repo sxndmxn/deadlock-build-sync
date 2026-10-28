@@ -1,3 +1,6 @@
+-- The filters run before the version selection. This gives the same rows when all
+-- versions of a player row have the same mode, game mode, and badge. On 2026-10-28,
+-- 7.5 million of 15.0 million keys had more than one version, and none differed.
 CREATE OR REPLACE TABLE source_players AS
 SELECT
     match_id,

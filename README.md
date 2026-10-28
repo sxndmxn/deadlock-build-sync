@@ -146,6 +146,7 @@ A failed removal prints a warning and does not stop the command.
 
 Use `--trace stages` for workflow events or `--trace calls` for instrumented calls.
 `DEADLOCK_BUILD_SYNC_TRACE` accepts the same values. The CLI does not make traces by default.
+The API requests for ability orders run on a separate thread. The trace shows them as one `wait_for_api` stage.
 
 ```bash
 deadlock-build-sync build --trace stages
