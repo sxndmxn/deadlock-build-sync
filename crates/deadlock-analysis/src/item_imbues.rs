@@ -6,7 +6,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::database::{AnalysisDatabase, Parameters};
-use crate::sql_resources::load_sql;
+use crate::sql_resources::sql;
 
 #[derive(Debug, Deserialize)]
 struct ItemImbueRow {
@@ -24,10 +24,7 @@ pub fn load_item_imbues(
     parameters: &Parameters,
 ) -> Result<ItemImbues> {
     Ok(database
-        .query_rows::<ItemImbueRow>(
-            load_sql("builds/select_item_imbue_targets.sql")?,
-            parameters,
-        )?
+        .query_rows::<ItemImbueRow>(sql!("builds/select_item_imbue_targets"), parameters)?
         .into_iter()
         .map(|row| {
             (

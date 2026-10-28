@@ -1,4 +1,4 @@
-CREATE TABLE source_players AS
+CREATE OR REPLACE TABLE source_players AS
 SELECT
     match_id,
     account_id,

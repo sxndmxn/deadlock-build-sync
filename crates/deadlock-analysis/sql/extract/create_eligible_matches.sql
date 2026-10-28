@@ -1,4 +1,4 @@
-CREATE TABLE eligible_matches AS
+CREATE OR REPLACE TABLE eligible_matches AS
 WITH candidate_matches AS (
     SELECT match_id
     FROM source_players

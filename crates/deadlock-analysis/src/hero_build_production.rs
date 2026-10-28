@@ -17,7 +17,7 @@ use crate::database::{AnalysisDatabase, Parameters};
 use crate::item_effects::{ItemCatalog, LandmarkState, estimate_item_effects};
 use crate::item_imbues::{attach_item_imbues, load_item_imbues};
 use crate::refresh_configuration::{ExtractionResources, RunPaths, cohort_ranks, parse_timestamp};
-use crate::sql_resources::load_sql;
+use crate::sql_resources::sql;
 
 const EFFECT_LANDMARKS: [u32; 8] = [360, 540, 720, 900, 1200, 1500, 1800, 2100];
 const ABILITY_MINIMUM_MATCHES: u32 = 10;
@@ -68,16 +68,12 @@ pub fn produce_hero_builds(
     ]);
     eprintln!("Loading landmark states");
     let states: Vec<LandmarkState> =
-        database.query_rows(load_sql("builds/select_landmark_states.sql")?, &parameters)?;
-    let catalog = ItemCatalog::new(database.query_rows(
-        load_sql("builds/select_item_assets.sql")?,
-        &Parameters::new(),
-    )?)?;
+        database.query_rows(sql!("builds/select_landmark_states"), &parameters)?;
+    let catalog = ItemCatalog::new(
+        database.query_rows(sql!("builds/select_item_assets"), &Parameters::new())?,
+    )?;
     let medians = database
-        .query_rows::<PurchaseMedianRow>(
-            load_sql("builds/select_item_purchase_medians.sql")?,
-            &parameters,
-        )?
+        .query_rows::<PurchaseMedianRow>(sql!("builds/select_item_purchase_medians"), &parameters)?
         .into_iter()
         .map(|row| {
             (

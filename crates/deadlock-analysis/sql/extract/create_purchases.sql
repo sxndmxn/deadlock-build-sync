@@ -1,4 +1,4 @@
-CREATE TABLE purchases AS
+CREATE OR REPLACE TABLE purchases AS
 WITH expanded AS (
     SELECT
         p.match_id,

@@ -1,4 +1,4 @@
-CREATE TABLE item_assets (
+CREATE OR REPLACE TABLE item_assets (
     item_id UBIGINT,
     item_name VARCHAR,
     class_name VARCHAR,

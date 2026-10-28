@@ -1,4 +1,4 @@
-CREATE TABLE player_matches AS
+CREATE OR REPLACE TABLE player_matches AS
 SELECT
     p.match_id,
     p.player_slot,
