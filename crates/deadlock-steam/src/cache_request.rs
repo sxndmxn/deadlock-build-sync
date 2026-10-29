@@ -98,7 +98,6 @@ pub struct CacheUpdateRequest<'request> {
     pub timestamp: u64,
     pub snapshot: &'request BuildSnapshot,
     pub expected_hero_ids: &'request BTreeSet<u64>,
-    pub allow_subset: bool,
 }
 
 pub fn validate_request(request: &CacheUpdateRequest<'_>) -> Result<BTreeSet<BuildKey>> {
@@ -122,9 +121,7 @@ pub fn validate_request(request: &CacheUpdateRequest<'_>) -> Result<BTreeSet<Bui
         .iter()
         .map(|key| key.hero_id)
         .collect::<BTreeSet<_>>();
-    if !heroes.is_subset(request.expected_hero_ids)
-        || (!request.allow_subset && &heroes != request.expected_hero_ids)
-    {
+    if &heroes != request.expected_hero_ids {
         return Err(Error::new(
             "Generated guides do not match the required hero coverage",
         ));

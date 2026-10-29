@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use deadlock_data::{Error, Result, integer, read_json, text};
+use deadlock_data::{Error, RankRange, Result, integer, read_json, text, trace_operation};
 use deadlock_guides::{
     BuildCohort, HERO_BUILD_METHOD, HERO_BUILD_SCHEMA_VERSION, HeroBuild, HeroBuildCatalog,
     TagItem, assign_build_focus, select_ability_path, select_build_tags,
@@ -15,12 +15,13 @@ use crate::build_assembly::{PHASES, PurchaseMedian, PurchaseMedians, assemble_bu
 use crate::build_evaluation::evaluate_build;
 use crate::database::{AnalysisDatabase, Parameters};
 use crate::item_effects::{ItemCatalog, LandmarkState, estimate_item_effects};
-use crate::item_imbues::{attach_item_imbues, load_item_imbues};
+use crate::item_imbues::{ItemImbues, attach_item_imbues, load_item_imbues};
 use crate::refresh_configuration::{ExtractionResources, RunPaths, cohort_ranks, parse_timestamp};
-use crate::sql_resources::load_sql;
+use crate::sql_resources::sql;
 
 const EFFECT_LANDMARKS: [u32; 8] = [360, 540, 720, 900, 1200, 1500, 1800, 2100];
 const ABILITY_MINIMUM_MATCHES: u32 = 10;
+const ABILITY_REQUEST_THREADS: usize = 4;
 
 #[derive(Debug, Deserialize)]
 struct PurchaseMedianRow {
@@ -51,59 +52,32 @@ pub fn produce_hero_builds(
     let patch = parse_patch_feed(&read_json(&paths.raw.join("patches.json"))?, Some(as_of))?;
     let client_version = integer(&manifest["sources"], "client_version")?;
     let heroes = read_hero_names(&paths.raw.join("heroes.json"))?;
-    let database = AnalysisDatabase::open_read_only(
-        &paths.raw.join("analysis.duckdb"),
-        &paths.raw.join("duckdb-read-tmp"),
-        resources,
-    )?;
-    let parameters = Parameters::from([
-        (
-            "minimum_badge".into(),
-            SqlValue::UInt(u32::from(ranks.minimum.badge())),
-        ),
-        (
-            "maximum_badge".into(),
-            SqlValue::UInt(u32::from(ranks.maximum.badge())),
-        ),
-    ]);
-    eprintln!("Loading landmark states");
-    let states: Vec<LandmarkState> =
-        database.query_rows(load_sql("builds/select_landmark_states.sql")?, &parameters)?;
-    let catalog = ItemCatalog::new(database.query_rows(
-        load_sql("builds/select_item_assets.sql")?,
-        &Parameters::new(),
-    )?)?;
-    let medians = database
-        .query_rows::<PurchaseMedianRow>(
-            load_sql("builds/select_item_purchase_medians.sql")?,
-            &parameters,
-        )?
-        .into_iter()
-        .map(|row| {
-            (
-                (row.hero_id, row.item_id),
-                PurchaseMedian {
-                    buy_time_s: row.median_buy_time_s,
-                    net_worth: row.median_net_worth,
-                    soul_window: [row.lower_quartile_net_worth, row.upper_quartile_net_worth],
-                },
-            )
-        })
-        .collect::<PurchaseMedians>();
-    let imbues = load_item_imbues(&database, &parameters)?;
-    drop(database);
-    let builds = assemble_hero_builds(&states, &catalog, &medians, &heroes)?;
     let mut api = build_api(api_base_url, ranks, client_version, as_of)?;
+    // The API requests wait on a fixed request interval, so they run during the local work.
+    let (builds, imbues, api_inputs) = std::thread::scope(|scope| {
+        let requests = scope.spawn(|| request_api_inputs(&mut api, &heroes, patch.start_timestamp));
+        let local = assemble_from_database(paths, resources, ranks, &heroes);
+        let remote = trace_operation("analysis.wait_for_api", Some("wait_for_api"), || {
+            requests
+                .join()
+                .map_err(|_| Error::new("API requests stopped unexpectedly"))?
+        });
+        let (builds, imbues) = local?;
+        Ok::<_, Error>((builds, imbues, remote?))
+    })?;
     let assets = read_json(&paths.raw.join("items-all.json"))?;
     let assets = assets
         .as_array()
         .ok_or_else(|| Error::new("Item assets must be an array"))?;
-    let tags = BuildTagCatalog::from_assets(&api.build_tags()?)?;
+    let tags = BuildTagCatalog::from_assets(&api_inputs.tag_assets)?;
     let builds = builds
         .into_iter()
         .map(|build| {
-            let mut build =
-                attach_ability_and_tags(build, &mut api, patch.start_timestamp, assets, &tags)?;
+            let rows = api_inputs
+                .ability_rows
+                .get(&build.hero_id)
+                .map_or(&[][..], Vec::as_slice);
+            let mut build = attach_ability_and_tags(build, rows, assets, &tags)?;
             attach_item_imbues(&mut build, &imbues, assets);
             assign_build_focus(&mut build, assets)?;
             Ok(build)
@@ -125,6 +99,113 @@ pub fn produce_hero_builds(
     };
     catalog.validate()?;
     Ok(catalog)
+}
+
+/// The build tag assets and the ability order statistics of each hero.
+struct ApiInputs {
+    tag_assets: Vec<Value>,
+    ability_rows: BTreeMap<u64, Vec<Value>>,
+}
+
+/// Requests the ability orders from several threads.
+///
+/// An uncached request takes about 1 s. The client still starts at most one request
+/// in each request interval, so the threads do not increase the request rate.
+fn request_api_inputs(
+    api: &mut DeadlockApi,
+    heroes: &BTreeMap<u64, String>,
+    since: i64,
+) -> Result<ApiInputs> {
+    eprintln!("Requesting ability orders for {} heroes", heroes.len());
+    let tag_assets = api.build_tags()?;
+    let api = &*api;
+    let hero_ids = heroes.keys().copied().collect::<Vec<_>>();
+    let ability_rows = std::thread::scope(|scope| {
+        let requests = (0..ABILITY_REQUEST_THREADS)
+            .map(|first| {
+                let assigned = hero_ids
+                    .iter()
+                    .copied()
+                    .skip(first)
+                    .step_by(ABILITY_REQUEST_THREADS)
+                    .collect::<Vec<_>>();
+                scope.spawn(move || {
+                    assigned
+                        .into_iter()
+                        .map(|hero_id| {
+                            Ok((
+                                hero_id,
+                                api.ability_order_stats(hero_id, since, ABILITY_MINIMUM_MATCHES)?,
+                            ))
+                        })
+                        .collect::<Result<Vec<_>>>()
+                })
+            })
+            .collect::<Vec<_>>();
+        let mut rows = BTreeMap::new();
+        for request in requests {
+            rows.extend(
+                request
+                    .join()
+                    .map_err(|_| Error::new("Ability order requests stopped unexpectedly"))??,
+            );
+        }
+        Ok::<_, Error>(rows)
+    })?;
+    Ok(ApiInputs {
+        tag_assets,
+        ability_rows,
+    })
+}
+
+/// Reads the extracted matches and assembles the CORE and situational items of each hero.
+fn assemble_from_database(
+    paths: &RunPaths,
+    resources: ExtractionResources,
+    ranks: RankRange,
+    heroes: &BTreeMap<u64, String>,
+) -> Result<(Vec<HeroBuild>, ItemImbues)> {
+    let database = AnalysisDatabase::open_read_only(
+        &paths.raw.join("analysis.duckdb"),
+        &paths.raw.join("duckdb-read-tmp"),
+        resources,
+    )?;
+    let parameters = Parameters::from([
+        (
+            "minimum_badge".into(),
+            SqlValue::UInt(u32::from(ranks.minimum.badge())),
+        ),
+        (
+            "maximum_badge".into(),
+            SqlValue::UInt(u32::from(ranks.maximum.badge())),
+        ),
+    ]);
+    eprintln!("Loading landmark states");
+    let states: Vec<LandmarkState> =
+        database.query_rows(sql!("builds/select_landmark_states"), &parameters)?;
+    let catalog = ItemCatalog::new(
+        database.query_rows(sql!("builds/select_item_assets"), &Parameters::new())?,
+    )?;
+    let medians = database
+        .query_rows::<PurchaseMedianRow>(sql!("builds/select_item_purchase_medians"), &parameters)?
+        .into_iter()
+        .map(|row| {
+            (
+                (row.hero_id, row.item_id),
+                PurchaseMedian {
+                    buy_time_s: row.median_buy_time_s,
+                    net_worth: row.median_net_worth,
+                    soul_window: [row.lower_quartile_net_worth, row.upper_quartile_net_worth],
+                },
+            )
+        })
+        .collect::<PurchaseMedians>();
+    let imbues = load_item_imbues(&database, &parameters)?;
+    drop(database);
+    Ok((
+        assemble_hero_builds(&states, &catalog, &medians, heroes)?,
+        imbues,
+    ))
 }
 
 fn assemble_hero_builds(
@@ -189,7 +270,7 @@ fn assemble_hero_builds(
 
 fn build_api(
     api_base_url: &str,
-    ranks: deadlock_data::RankRange,
+    ranks: RankRange,
     client_version: u64,
     as_of: i64,
 ) -> Result<DeadlockApi> {
@@ -208,14 +289,11 @@ fn build_api(
 /// Without a complete ability order, the icons use CORE items instead of the ability.
 fn attach_ability_and_tags(
     mut build: HeroBuild,
-    api: &mut DeadlockApi,
-    since: i64,
+    rows: &[Value],
     assets: &[Value],
     tags: &BuildTagCatalog,
 ) -> Result<HeroBuild> {
-    eprintln!("Selecting ability order and icons for {}", build.hero_name);
-    let rows = api.ability_order_stats(build.hero_id, since, ABILITY_MINIMUM_MATCHES, &[])?;
-    if let Some(path) = select_ability_path(&rows, &[])? {
+    if let Some(path) = select_ability_path(rows)? {
         build.ability_ids = path.ability_ids;
         build.ability_matches = path.matches;
     }
@@ -235,7 +313,7 @@ fn attach_ability_and_tags(
     match select_build_tags(&build.ability_ids, &core, assets, tags) {
         Ok(selection) => {
             build.tag_ids = selection.tag_ids;
-            build.key_ability_name = Some(selection.labels[0].clone());
+            build.key_ability_name = Some(selection.ability_name);
         }
         Err(_) => build.tag_ids = select_fallback_tags(&build)?,
     }

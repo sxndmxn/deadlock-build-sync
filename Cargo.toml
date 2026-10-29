@@ -27,7 +27,7 @@ base64 = "0.23.1"
 chrono = { version = "0.4.45", default-features = false, features = ["std", "now"] }
 clap = { version = "4.6.6", default-features = false, features = ["std", "derive", "env", "help", "usage", "error-context"] }
 htmlize = { version = "1.1.0", default-features = false, features = ["unescape_fast"] }
-duckdb = { version = "1.10505.0", default-features = false, features = ["bundled", "json", "parquet"] }
+duckdb = { version = "1.20000.0", default-features = false, features = ["bundled", "json", "parquet"] }
 lz4_flex = { version = "0.14.0", default-features = false, features = ["std", "safe-encode", "safe-decode", "checked-decode"] }
 prost = { version = "0.14.4", default-features = false, features = ["std", "derive"] }
 num-traits = { version = "0.2.19", default-features = false, features = ["std"] }
@@ -67,3 +67,8 @@ overflow-checks = true
 
 [profile.dev.package.libduckdb-sys]
 debug = false
+
+# `cargo build` gives build script dependencies debug information.
+# The same value lets `cargo clippy` use that DuckDB compilation.
+[profile.dev.build-override]
+debug = true

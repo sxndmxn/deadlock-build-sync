@@ -41,7 +41,6 @@ pub fn cache_location(arguments: &LocationArguments) -> Result<CacheLocation> {
                 .as_deref()
                 .map(absolute_path)
                 .transpose()?,
-            steam_root: None,
         },
         &home_directory()?,
     )

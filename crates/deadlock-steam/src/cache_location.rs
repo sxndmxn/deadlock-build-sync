@@ -22,5 +22,4 @@ impl CacheLocation {
 pub struct CacheSearch {
     pub account_id: Option<u32>,
     pub cache_path: Option<PathBuf>,
-    pub steam_root: Option<PathBuf>,
 }

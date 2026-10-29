@@ -4,7 +4,12 @@ use std::collections::BTreeMap;
 use deadlock_data::{ObservationCounts, Result};
 use serde_json::Value;
 
-use crate::ability_path::AbilityPath;
+/// A complete ability order and the matches that follow it to the end.
+#[derive(Clone, Debug)]
+pub struct AbilityPath {
+    pub ability_ids: Vec<u64>,
+    pub matches: u64,
+}
 
 #[derive(Clone, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
 struct DecisionState {
@@ -15,8 +20,7 @@ struct DecisionState {
 #[derive(Clone, Debug, Default)]
 struct Continuation {
     path: Vec<u64>,
-    support: Vec<u64>,
-    tail: ObservationCounts,
+    matches: u64,
 }
 
 #[derive(Debug)]
@@ -32,43 +36,19 @@ type Continuations = BTreeMap<DecisionState, Option<Continuation>>;
 ///
 /// # Errors
 /// Returns an error when combined observation counts exceed 64 bits.
-pub fn select_ability_path(rows: &[Value], filter_item_ids: &[u64]) -> Result<Option<AbilityPath>> {
+pub fn select_ability_path(rows: &[Value]) -> Result<Option<AbilityPath>> {
     let observations = rows
         .iter()
         .filter_map(parse_observation)
         .collect::<Vec<_>>();
-    let cohort = sum_observations(observations.iter())?;
-    if cohort.matches == 0 {
-        return Ok(None);
-    }
-    let complete = sum_observations(
-        observations
-            .iter()
-            .filter(|observation| observation.path.len() == 16),
-    )?;
     let decisions = aggregate_decisions(&observations)?;
-    let Some(selected) =
+    Ok(
         resolve_ability_continuation(&decisions, &DecisionState::default(), &mut BTreeMap::new())
-    else {
-        return Ok(None);
-    };
-    let selection = if filter_item_ids.is_empty() {
-        "MOST_SUPPORTED_LEGAL_STATE"
-    } else {
-        "MOST_SUPPORTED_LEGAL_STATE_ITEM_FILTERED"
-    };
-    Ok(Some(AbilityPath {
-        ability_ids: selected.path,
-        matches: selected.tail.matches,
-        wins: selected.tail.wins,
-        losses: selected.tail.losses,
-        cohort_matches: cohort.matches,
-        complete_path_matches: complete.matches,
-        decision_support: selected.support,
-        selection: selection.into(),
-        filter_item_ids: filter_item_ids.to_vec(),
-        fallback_reason: None,
-    }))
+            .map(|selected| AbilityPath {
+                ability_ids: selected.path,
+                matches: selected.matches,
+            }),
+    )
 }
 
 fn parse_observation(row: &Value) -> Option<Observation> {
@@ -95,14 +75,6 @@ fn parse_observation(row: &Value) -> Option<Observation> {
     .validate()
     .ok()?;
     (counts.matches > 0).then_some(Observation { path, counts })
-}
-
-fn sum_observations<'observation>(
-    mut observations: impl Iterator<Item = &'observation Observation>,
-) -> Result<ObservationCounts> {
-    observations.try_fold(ObservationCounts::default(), |total, observation| {
-        total.checked_add(observation.counts)
-    })
 }
 
 fn aggregate_decisions(observations: &[Observation]) -> Result<Decisions> {
@@ -157,10 +129,9 @@ fn select_continuation(
         *next.ranks.entry(*ability).or_default() += 1;
         if let Some(mut continuation) = resolve_ability_continuation(decisions, &next, cache) {
             if continuation.path.is_empty() {
-                continuation.tail = *counts;
+                continuation.matches = counts.matches;
             }
             continuation.path.insert(0, *ability);
-            continuation.support.insert(0, counts.matches);
             return Some(continuation);
         }
     }

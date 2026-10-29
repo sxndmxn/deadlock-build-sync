@@ -145,31 +145,6 @@ impl Default for RankRange {
 }
 
 impl RankRange {
-    /// # Errors
-    /// Returns an error when a rank document omits a valid badge or reverses its bounds.
-    pub fn from_document(value: &serde_json::Value) -> Result<Self> {
-        let rank = |name: &str| -> Result<Rank> {
-            Rank::try_from(u16::try_from(crate::json::integer(
-                &value[name],
-                "badge_id",
-            )?)?)
-        };
-        Self {
-            minimum: rank("minimum")?,
-            maximum: rank("maximum")?,
-        }
-        .validate()
-    }
-
-    #[must_use]
-    pub fn to_document(self) -> serde_json::Value {
-        let rank = |rank: Rank| {
-            serde_json::json!({"tier":rank.tier_label().to_uppercase(), "division":rank.division_label(),
-            "badge_id":rank.badge(), "label":rank.label()})
-        };
-        serde_json::json!({"minimum":rank(self.minimum), "maximum":rank(self.maximum), "label":self.label()})
-    }
-
     #[must_use]
     pub fn api_parameters(self) -> serde_json::Map<String, serde_json::Value> {
         serde_json::Map::from_iter([

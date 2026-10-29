@@ -1,4 +1,4 @@
-CREATE TABLE team_snapshots AS
+CREATE OR REPLACE TABLE team_snapshots AS
 WITH snapshots AS (
     SELECT
         p.match_id,

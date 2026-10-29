@@ -37,7 +37,7 @@ impl ApiSession {
                 value => Some((name, value)),
             })
             .collect();
-        Ok(self.http.get_json(path, &normalized)?.data)
+        self.http.get_json(path, &normalized)
     }
 
     pub(super) fn resolve_client_version(&mut self) -> Result<u64> {

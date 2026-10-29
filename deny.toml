@@ -33,12 +33,9 @@ deny = [
     { crate = "reqwest", reason = "The blocking client uses an asynchronous runtime." },
 ]
 skip = [
-    { crate = "base64@0.22.1", reason = "Arrow requires base64 0.22; ureq requires base64 0.23." },
     { crate = "getrandom@0.2.17", reason = "ring and tempfile require incompatible getrandom versions." },
     { crate = "getrandom@0.3.4", reason = "Arrow requires getrandom 0.3; tempfile requires getrandom 0.4." },
     { crate = "hashbrown@0.15.5", reason = "DuckDB hashlink requires hashbrown 0.15; Arrow requires hashbrown 0.17." },
-    { crate = "linux-raw-sys@0.4.15", reason = "DuckDB pins a table formatter that requires rustix 0.38 and linux-raw-sys 0.4." },
-    { crate = "rustix@0.38.44", reason = "DuckDB pins a table formatter that requires rustix 0.38; tempfile requires rustix 1." },
     { crate = "syn@2.0.119", reason = "prost-derive requires syn 2; serde_derive requires syn 3." },
 ]
 

@@ -152,50 +152,73 @@ pub fn estimate_item_effects(
     catalog: &ItemCatalog,
     landmarks: &[u32],
 ) -> Result<EffectTable> {
-    let width = COVARIATES + catalog.items.len();
-    let mut table = EffectTable::new();
-    for landmark in landmarks {
-        let selected = states
+    // The landmarks are independent, so each one uses its own thread.
+    std::thread::scope(|scope| {
+        let estimates = landmarks
             .iter()
-            .filter(|state| state.landmark_s == *landmark)
-            .map(|state| (state.hero_id, build_feature_row(state, catalog)))
+            .map(|landmark| {
+                scope.spawn(move || estimate_landmark_effects(states, catalog, *landmark))
+            })
             .collect::<Vec<_>>();
-        if selected.is_empty() {
-            continue;
-        }
-        let all_rows = selected.iter().map(|(_, row)| row).collect::<Vec<_>>();
-        let global = fit_ridge_logistic(
-            &all_rows,
-            &vec![0.0; width],
-            &build_penalty(width, GLOBAL_COVARIATE_PENALTY, GLOBAL_ITEM_PENALTY),
-        )?;
-        table.insert(
-            (ALL_HEROES, *landmark),
-            summarize_hero(&all_rows, &global.coefficients, catalog)?,
-        );
-        let heroes = selected
-            .iter()
-            .map(|(hero, _)| *hero)
-            .collect::<BTreeSet<_>>();
-        for hero in heroes {
-            let rows = selected
-                .iter()
-                .filter(|(owner, _)| *owner == hero)
-                .map(|(_, row)| row)
-                .collect::<Vec<_>>();
-            if rows.len() < MINIMUM_HERO_ROWS {
-                continue;
-            }
-            let fit = fit_ridge_logistic(
-                &rows,
-                &global.coefficients,
-                &build_penalty(width, HERO_COVARIATE_PENALTY, HERO_ITEM_PENALTY),
-            )?;
-            table.insert(
-                (hero, *landmark),
-                summarize_hero(&rows, &fit.coefficients, catalog)?,
+        let mut table = EffectTable::new();
+        for estimate in estimates {
+            table.extend(
+                estimate
+                    .join()
+                    .map_err(|_| Error::new("Item effect estimation stopped unexpectedly"))??,
             );
         }
+        Ok(table)
+    })
+}
+
+fn estimate_landmark_effects(
+    states: &[&LandmarkState],
+    catalog: &ItemCatalog,
+    landmark: u32,
+) -> Result<EffectTable> {
+    let width = COVARIATES + catalog.items.len();
+    let mut table = EffectTable::new();
+    let selected = states
+        .iter()
+        .filter(|state| state.landmark_s == landmark)
+        .map(|state| (state.hero_id, build_feature_row(state, catalog)))
+        .collect::<Vec<_>>();
+    if selected.is_empty() {
+        return Ok(table);
+    }
+    let all_rows = selected.iter().map(|(_, row)| row).collect::<Vec<_>>();
+    let global = fit_ridge_logistic(
+        &all_rows,
+        &vec![0.0; width],
+        &build_penalty(width, GLOBAL_COVARIATE_PENALTY, GLOBAL_ITEM_PENALTY),
+    )?;
+    table.insert(
+        (ALL_HEROES, landmark),
+        summarize_hero(&all_rows, &global.coefficients, catalog)?,
+    );
+    let heroes = selected
+        .iter()
+        .map(|(hero, _)| *hero)
+        .collect::<BTreeSet<_>>();
+    for hero in heroes {
+        let rows = selected
+            .iter()
+            .filter(|(owner, _)| *owner == hero)
+            .map(|(_, row)| row)
+            .collect::<Vec<_>>();
+        if rows.len() < MINIMUM_HERO_ROWS {
+            continue;
+        }
+        let fit = fit_ridge_logistic(
+            &rows,
+            &global.coefficients,
+            &build_penalty(width, HERO_COVARIATE_PENALTY, HERO_ITEM_PENALTY),
+        )?;
+        table.insert(
+            (hero, landmark),
+            summarize_hero(&rows, &fit.coefficients, catalog)?,
+        );
     }
     Ok(table)
 }
