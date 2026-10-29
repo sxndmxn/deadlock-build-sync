@@ -67,3 +67,8 @@ overflow-checks = true
 
 [profile.dev.package.libduckdb-sys]
 debug = false
+
+# `cargo build` gives build script dependencies debug information.
+# The same value lets `cargo clippy` use that DuckDB compilation.
+[profile.dev.build-override]
+debug = true
