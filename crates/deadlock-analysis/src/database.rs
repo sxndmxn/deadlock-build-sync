@@ -51,6 +51,16 @@ impl AnalysisDatabase {
         })
     }
 
+    /// Opens one more connection to the same database, for use on another thread.
+    pub fn try_clone(&self) -> Result<Self> {
+        Ok(Self {
+            connection: self
+                .connection
+                .try_clone()
+                .map_err(|error| convert_database_error(&error))?,
+        })
+    }
+
     pub fn execute(&self, sql: &str, parameters: &Parameters) -> Result<()> {
         trace_operation("analysis.database.execute", None, || {
             if parameters.is_empty() {

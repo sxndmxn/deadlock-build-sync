@@ -28,6 +28,9 @@ Include the analysis code in every build. The `analysis` feature no longer exist
 Download only ranked matches in the selected rank range, and read the remote data with 64 threads.
 With one week of matches, a build takes about 2 minutes instead of about 11 minutes.
 Each analysis run uses 0.9 GiB instead of 4.3 GiB.
+Keep a cache of the downloaded rows of each remote file in `offline/cache`.
+A run downloads only the remote files that are new since the last run.
+A second build on the same day takes about 20 seconds.
 Send the ability order requests from four threads during the local analysis.
 After a successful build, remove the other analysis runs whose name has the automatic format.
 Describe every option in `--help`.

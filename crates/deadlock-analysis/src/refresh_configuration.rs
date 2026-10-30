@@ -75,6 +75,8 @@ pub fn is_automatic_run_id(identifier: &str) -> bool {
 pub struct RunPaths {
     pub run: PathBuf,
     pub raw: PathBuf,
+    /// The cache of downloaded remote files, which all runs share.
+    pub cache: PathBuf,
 }
 
 impl RunPaths {
@@ -105,6 +107,7 @@ impl RunPaths {
         let paths = Self {
             raw: run.join("raw"),
             run,
+            cache: root.join("cache"),
         };
         std::fs::create_dir_all(&paths.raw)?;
         Ok(paths)
