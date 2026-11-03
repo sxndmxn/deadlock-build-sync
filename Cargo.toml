@@ -11,18 +11,18 @@ default-members = ["crates/deadlock-build-sync"]
 resolver = "3"
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.92"
 license = "MIT"
 repository = "https://github.com/sxndmxn/deadlock-build-sync"
 
 [workspace.dependencies]
-deadlock-data = { path = "crates/deadlock-data", version = "0.1.0" }
-deadlock-input = { path = "crates/deadlock-input", version = "0.1.0" }
-deadlock-guides = { path = "crates/deadlock-guides", version = "0.1.0" }
-deadlock-steam = { path = "crates/deadlock-steam", version = "0.1.0" }
-deadlock-analysis = { path = "crates/deadlock-analysis", version = "0.1.0" }
+deadlock-data = { path = "crates/deadlock-data", version = "0.2.0" }
+deadlock-input = { path = "crates/deadlock-input", version = "0.2.0" }
+deadlock-guides = { path = "crates/deadlock-guides", version = "0.2.0" }
+deadlock-steam = { path = "crates/deadlock-steam", version = "0.2.0" }
+deadlock-analysis = { path = "crates/deadlock-analysis", version = "0.2.0" }
 base64 = "0.23.1"
 chrono = { version = "0.4.45", default-features = false, features = ["std", "now"] }
 clap = { version = "4.6.6", default-features = false, features = ["std", "derive", "env", "help", "usage", "error-context"] }

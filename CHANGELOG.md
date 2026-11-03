@@ -6,6 +6,8 @@ The project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-02
+
 ### Changed
 
 Make one build for every active hero.
@@ -74,5 +76,6 @@ Reuse compatible artifacts through fingerprints and provide explicit regeneratio
 Add Steam account discovery, backups, atomic cache replacement, and restoration.
 Add local linting, type checking, tests, packaging checks, and GitHub Actions CI.
 
-[Unreleased]: https://github.com/sxndmxn/deadlock-build-sync/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/sxndmxn/deadlock-build-sync/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/sxndmxn/deadlock-build-sync/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/sxndmxn/deadlock-build-sync/releases/tag/v0.1.0
