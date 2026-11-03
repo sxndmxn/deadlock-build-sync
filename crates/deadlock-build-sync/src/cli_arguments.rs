@@ -17,8 +17,10 @@ pub enum TraceMode {
     about = "Generate and install private Deadlock hero builds."
 )]
 pub struct Cli {
+    /// Base URL of the Deadlock API.
     #[arg(long, global = true, default_value = DEFAULT_API_BASE_URL)]
     pub api_base_url: String,
+    /// Write an execution trace: workflow stages or instrumented calls.
     #[arg(long, global = true, value_enum, env = "DEADLOCK_BUILD_SYNC_TRACE")]
     pub trace: Option<TraceMode>,
     #[command(subcommand)]
@@ -57,8 +59,10 @@ impl Command {
 
 #[derive(Debug, Args)]
 pub struct LocationArguments {
+    /// Steam account ID of the cache. Required when more than one account has a cache.
     #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
     pub account_id: Option<u32>,
+    /// Path of the Steam hero build cache file. The default is a search of the Steam directories.
     #[arg(long)]
     pub cache_path: Option<PathBuf>,
 }
@@ -68,13 +72,16 @@ pub struct BuildArguments {
     /// Directory for hero-builds.json and the Markdown builds.
     #[arg(long)]
     pub artifacts: Option<PathBuf>,
+    /// Lowest average match rank, for example ritualist-i.
     #[arg(long, default_value = "ritualist-i")]
     pub min_rank: Rank,
+    /// Highest average match rank, for example eternus-v.
     #[arg(long, default_value = "eternus-v")]
     pub max_rank: Rank,
     /// Name of the analysis run. Use with --resume to reuse its extracted matches.
     #[arg(long)]
     pub run_id: Option<String>,
+    /// Reuse the extracted matches of --run-id.
     #[arg(long, requires = "run_id")]
     pub resume: bool,
     /// First match start time (ISO 8601). The default is the current patch.
@@ -86,6 +93,7 @@ pub struct BuildArguments {
     /// Extraction memory limit in decimal megabytes.
     #[arg(long, default_value = "12000", value_parser = clap::value_parser!(u32).range(1..))]
     pub extraction_memory_mb: u32,
+    /// Database threads. The match download uses at least 64.
     #[arg(long, default_value = "8", value_parser = clap::value_parser!(u16).range(1..))]
     pub extraction_threads: u16,
 }
@@ -96,6 +104,7 @@ pub struct SyncArguments {
     pub build: BuildArguments,
     #[command(flatten)]
     pub location: LocationArguments,
+    /// Name at the start of each build title. The default is the local Steam name.
     #[arg(long)]
     pub persona: Option<String>,
 }
@@ -104,8 +113,10 @@ pub struct SyncArguments {
 pub struct InstallArguments {
     #[command(flatten)]
     pub location: LocationArguments,
+    /// Directory for hero-builds.json and the Markdown builds.
     #[arg(long)]
     pub artifacts: Option<PathBuf>,
+    /// Name at the start of each build title. The default is the local Steam name.
     #[arg(long)]
     pub persona: Option<String>,
 }
@@ -114,8 +125,10 @@ pub struct InstallArguments {
 pub struct StatusArguments {
     #[command(flatten)]
     pub location: LocationArguments,
+    /// Directory for hero-builds.json and the Markdown builds.
     #[arg(long)]
     pub artifacts: Option<PathBuf>,
+    /// Print the report as JSON.
     #[arg(long)]
     pub json: bool,
 }
@@ -124,13 +137,16 @@ pub struct StatusArguments {
 pub struct RestoreArguments {
     #[command(flatten)]
     pub location: LocationArguments,
+    /// Restore the latest complete backup. The current cache gets a backup first.
     #[arg(long, required = true)]
     pub latest: bool,
 }
 
 #[derive(Debug, Args)]
 pub struct TraceSummaryArguments {
+    /// Trace directory or trace.jsonl file.
     pub path: PathBuf,
+    /// Largest number of call tree lines to show.
     #[arg(long, default_value = "200", value_parser = clap::value_parser!(u32).range(1..))]
     pub max_nodes: u32,
 }

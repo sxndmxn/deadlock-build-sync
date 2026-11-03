@@ -60,6 +60,10 @@ pub fn generate_builds(
     })?;
     write_build_artifacts(&directory, &catalog)?;
     eprintln!("Analysis run: {}", run.paths.run.display());
+    let removed = run.remove_other_automatic_runs();
+    if removed > 0 {
+        eprintln!("Removed {removed} other automatic analysis runs");
+    }
     Ok((directory, catalog))
 }
 
@@ -180,7 +184,6 @@ pub fn install_catalog(
                 timestamp: u64::try_from(chrono::Utc::now().timestamp())?,
                 snapshot: &snapshot,
                 expected_hero_ids: &expected,
-                allow_subset: false,
             },
         )
     })?;

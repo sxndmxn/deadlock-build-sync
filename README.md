@@ -39,15 +39,28 @@ Then it makes a Steam cache backup and installs the builds atomically.
 It keeps favorites, selected builds, saved builds, and unrelated private builds.
 It replaces only builds with the managed marker.
 It prevents writes if Deadlock is in operation or process inspection is not possible.
+With one week of matches, a sync takes about 2 minutes.
 
 The CLI finds Steam caches in native, legacy, Flatpak, and Snap locations.
 Use `--account-id` or `--cache-path` to select a cache.
 
-Make builds without Steam access:
+| Command | Purpose |
+| --- | --- |
+| `sync` | Make builds for all heroes and install them with a cache backup |
+| `build` | Make builds for all heroes without Steam |
+| `install` | Install the builds in the artifact directory |
+| `status` | Show whether the builds match the current patch and whether Steam has them |
+| `restore --latest` | Restore the latest cache backup, after a backup of the current cache |
+| `trace-summary` | Show a trace summary |
 
-```bash
-deadlock-build-sync build
-```
+Use `COMMAND --help` for options.
+
+`status` gives exit code 0 when the builds match the current patch and client version and Steam has them.
+Exit code 2 means that a new sync is necessary. Exit code 1 means that an input is malformed or unavailable.
+It ignores build titles and Steam identity timestamps.
+
+`sync` and `install` compare the builds with the current patch and client version from the API before installation.
+The installation stops if these identities are different or the check is not possible.
 
 ## The builds
 
@@ -107,47 +120,33 @@ The data is observational. It does not prove that an item causes a win.
 | `--since` | Current patch | First match start time (ISO 8601, UTC) |
 | `--as-of` | Now | Last match end time (ISO 8601, UTC) |
 | `--extraction-memory-mb` | 12000 | Database memory limit in decimal MB |
-| `--extraction-threads` | 8 | Database threads |
+| `--extraction-threads` | 8 | Database threads. The match download uses at least 64 |
 | `--run-id` | Current time | Name of the analysis run |
 | `--resume` | Off | Reuse the extracted matches of `--run-id` |
 
+
 DuckDB downloads ICU, DuckLake, and HTTPFS extensions if they are missing.
-The CLI keeps analysis runs in `$XDG_STATE_HOME/deadlock-build-sync/offline/results`.
 Before reuse, `--resume` verifies all seven source JSON files against the fingerprints in the run manifest.
 Missing files, changed contents, and incomplete or malformed fingerprints stop the run.
 JSON spacing and object key order do not affect these fingerprints.
 
-## Artifacts
+## Files
 
 The default artifact directory is `$XDG_STATE_HOME/deadlock-build-sync/artifacts`.
 If `XDG_STATE_HOME` is not set, the CLI uses `~/.local/state/deadlock-build-sync/artifacts`.
 The directory contains `hero-builds.json` and one Markdown file per hero in `builds/`.
 Each new run replaces the complete directory.
 
-## Commands
-
-| Command | Purpose |
-| --- | --- |
-| `sync` | Make builds for all heroes and install them with a cache backup |
-| `build` | Make builds for all heroes without Steam |
-| `install` | Install the builds in the artifact directory |
-| `status` | Show whether the builds match the current patch and whether Steam has them |
-| `restore --latest` | Restore the latest cache backup, after a backup of the current cache |
-| `trace-summary` | Show a trace summary |
-
-Use `COMMAND --help` for options.
-
-`status` gives exit code 0 when the builds match the current patch and client version and Steam has them.
-Exit code 2 means that a new sync is necessary. Exit code 1 means that an input is malformed or unavailable.
-It ignores build titles and Steam identity timestamps.
-
-`sync` and `install` compare the builds with the current patch and client version from the API before installation.
-The installation stops if these identities are different or the check is not possible.
+The CLI keeps analysis runs in `$XDG_STATE_HOME/deadlock-build-sync/offline/results`.
+After a successful build, it removes the other runs whose name has the automatic format, such as `20261028T031941Z`.
+Runs with another name stay. Runs that another process uses, or that changed in the last hour, stay.
+A failed removal prints a warning and does not stop the command.
 
 ## Tracing and development
 
 Use `--trace stages` for workflow events or `--trace calls` for instrumented calls.
 `DEADLOCK_BUILD_SYNC_TRACE` accepts the same values. The CLI does not make traces by default.
+The ability order and build tag requests run on separate threads, so the call trace does not show them. The `wait_for_api` stage shows how long the main thread waits for them after its local work.
 
 ```bash
 deadlock-build-sync build --trace stages

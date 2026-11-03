@@ -40,13 +40,9 @@ pub fn discover_cache(search: &CacheSearch, home: &Path) -> Result<CacheLocation
     if let Some(path) = &search.cache_path {
         return resolve_explicit_location(path, search.account_id);
     }
-    let roots = match &search.steam_root {
-        Some(root) => vec![root.clone()],
-        None => steam_roots(home)?,
-    };
     let mut candidates = Vec::new();
     let mut seen = BTreeSet::new();
-    for root in roots {
+    for root in steam_roots(home)? {
         for (account_id, account) in
             find_account_directories(&root.join("userdata"), search.account_id)?
         {

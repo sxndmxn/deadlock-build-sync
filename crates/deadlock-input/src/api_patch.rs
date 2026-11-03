@@ -17,24 +17,6 @@ pub struct Patch {
 
 impl Patch {
     /// # Errors
-    /// Returns an error when patch fields or the source fingerprint are invalid.
-    pub fn from_document(value: &Value) -> Result<Self> {
-        let patch = Self {
-            title: deadlock_data::text(value, "title")?.into(),
-            start_timestamp: i64::try_from(deadlock_data::integer(value, "start_timestamp")?)?,
-            published_at: deadlock_data::text(value, "published_at")?.into(),
-            source: deadlock_data::text(value, "source")?.into(),
-            guid: deadlock_data::text(value, "guid")?.into(),
-            link: deadlock_data::text(value, "link")?.into(),
-            content_sha256: deadlock_data::text(value, "content_sha256")?.into(),
-        };
-        if value["identity"] != patch.identity()? {
-            return Err(Error::new("Patch fingerprint differs from its contents"));
-        }
-        Ok(patch)
-    }
-
-    /// # Errors
     /// Returns an error when patch identity serialization fails.
     pub fn identity(&self) -> Result<String> {
         fingerprint(

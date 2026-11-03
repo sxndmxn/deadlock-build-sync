@@ -64,6 +64,9 @@ pub fn run_status(arguments: &StatusArguments, base_url: &str) -> Result<u8> {
                 stage["detail"].as_str().unwrap_or_default()
             ))?;
         }
+        if code == 2 {
+            print_text("Run deadlock-build-sync sync to update the builds.")?;
+        }
     }
     Ok(code)
 }

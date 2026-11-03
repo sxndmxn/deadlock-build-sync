@@ -44,9 +44,7 @@ pub fn validate_source_fingerprints(paths: &RunPaths, sources: &Value) -> Result
 pub fn capture_sources(paths: &RunPaths, base_url: &str) -> Result<Value> {
     let client = JsonHttpClient::new(base_url, Duration::from_secs(120), 5)?;
     client.set_request_interval(Duration::from_millis(310))?;
-    let versions = client
-        .get_json("/v1/assets/client-versions", &BTreeMap::new())?
-        .data;
+    let versions = client.get_json("/v1/assets/client-versions", &BTreeMap::new())?;
     let version = array(&versions)?
         .iter()
         .filter_map(Value::as_u64)
@@ -55,11 +53,11 @@ pub fn capture_sources(paths: &RunPaths, base_url: &str) -> Result<Value> {
     let parameters = BTreeMap::from([("client_version".into(), version.into())]);
     let mut hero_parameters = parameters.clone();
     hero_parameters.insert("only_active".into(), true.into());
-    let heroes = client.get_json("/v1/assets/heroes", &hero_parameters)?.data;
-    let items = client.get_json("/v1/assets/items", &parameters)?.data;
-    let ranks = client.get_json("/v1/assets/ranks", &parameters)?.data;
-    let patches = client.get_json("/v2/patches", &BTreeMap::new())?.data;
-    let openapi = client.get_json("/openapi.json", &BTreeMap::new())?.data;
+    let heroes = client.get_json("/v1/assets/heroes", &hero_parameters)?;
+    let items = client.get_json("/v1/assets/items", &parameters)?;
+    let ranks = client.get_json("/v1/assets/ranks", &parameters)?;
+    let patches = client.get_json("/v2/patches", &BTreeMap::new())?;
+    let openapi = client.get_json("/openapi.json", &BTreeMap::new())?;
     let heroes = select_asset_rows(&heroes, is_active_hero)?;
     let shop_items = select_asset_rows(&items, is_shop_item)?;
     let result = json!({"client_version":version,"active_heroes":heroes.len(),"shop_items":shop_items.len()});

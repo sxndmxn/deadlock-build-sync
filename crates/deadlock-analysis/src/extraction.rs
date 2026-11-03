@@ -3,8 +3,13 @@ use duckdb::types::{TimeUnit, Value as SqlValue};
 use serde_json::{Value, json};
 
 use crate::database::{AnalysisDatabase, Parameters};
-use crate::refresh_configuration::{Cohort, DUCKLAKE_URL, ExtractionResources, RunPaths};
-use crate::sql_resources::load_sql;
+use crate::refresh_configuration::{
+    Cohort, DUCKLAKE_URL, ExtractionResources, RunPaths, format_timestamp,
+};
+use crate::sql_resources::sql;
+
+/// 64 threads read one day of remote rows 3.8 times faster than 8 threads, at equal bytes.
+const REMOTE_READ_THREADS: u16 = 64;
 
 pub fn extract_cohort(
     paths: &RunPaths,
@@ -13,22 +18,27 @@ pub fn extract_cohort(
 ) -> Result<Value> {
     trace_operation("analysis.extract_cohort", Some("extract_cohort"), || {
         cohort.validate()?;
-        let extraction = cohort.clone();
         let database = connect_database(paths, resources)?;
         load_item_assets(&database, paths)?;
-        extract_source_players(&database, &extraction)?;
-        execute_sql_resource(&database, "drop_eligible_matches", &Parameters::new())?;
-        execute_sql_resource(
-            &database,
-            "create_eligible_matches",
-            &build_cohort_parameters(&extraction),
+        extract_source_players(&database, cohort, resources)?;
+        eprintln!("Preparing match tables");
+        database.execute(
+            sql!("extract/create_eligible_matches"),
+            &Parameters::from([(
+                "as_of".into(),
+                SqlValue::Timestamp(TimeUnit::Second, cohort.as_of),
+            )]),
         )?;
-        extract_table(&database, "player_matches")?;
+        database.execute(sql!("extract/create_player_matches"), &Parameters::new())?;
         create_match_folds(&database, cohort)?;
-        for table in ["player_snapshots", "team_snapshots", "purchases"] {
-            extract_table(&database, table)?;
+        for query in [
+            sql!("extract/create_player_snapshots"),
+            sql!("extract/create_team_snapshots"),
+            sql!("extract/create_purchases"),
+        ] {
+            database.execute(query, &Parameters::new())?;
         }
-        let counts = collect_extraction_counts(&database, &extraction)?;
+        let counts = collect_extraction_counts(&database, cohort)?;
         drop(database);
         let temporary = paths.raw.join("duckdb-tmp");
         if temporary.is_dir() {
@@ -40,9 +50,8 @@ pub fn extract_cohort(
 
 fn connect_database(paths: &RunPaths, resources: ExtractionResources) -> Result<AnalysisDatabase> {
     let database = AnalysisDatabase::open(&paths.raw.join("analysis.duckdb"), resources)?;
-    execute_sql_resource(
-        &database,
-        "set_temp_directory",
+    database.execute(
+        sql!("extract/set_temp_directory"),
         &Parameters::from([(
             "directory".into(),
             paths
@@ -53,58 +62,48 @@ fn connect_database(paths: &RunPaths, resources: ExtractionResources) -> Result<
                 .into(),
         )]),
     )?;
-    for command in ["load_extensions", "create_s3_secret"] {
-        execute_sql_resource(&database, command, &Parameters::new())?;
-    }
-    execute_sql_resource(
-        &database,
-        "create_ducklake_secret",
+    database.execute(sql!("extract/load_extensions"), &Parameters::new())?;
+    database.execute(sql!("extract/create_s3_secret"), &Parameters::new())?;
+    database.execute(
+        sql!("extract/create_ducklake_secret"),
         &Parameters::from([("metadata_path".into(), SqlValue::Text(DUCKLAKE_URL.into()))]),
     )?;
-    execute_sql_resource(&database, "attach_remote", &Parameters::new())?;
-    let version = database.count(
-        load_sql("extract/select_current_snapshot.sql")?,
-        &Parameters::new(),
-    )?;
-    execute_sql_resource(&database, "detach_remote", &Parameters::new())?;
+    database.execute(sql!("extract/attach_remote"), &Parameters::new())?;
+    let version = database.count(sql!("extract/select_current_snapshot"), &Parameters::new())?;
+    database.execute(sql!("extract/detach_remote"), &Parameters::new())?;
     let version = Parameters::from([("version".into(), SqlValue::UBigInt(version))]);
-    execute_sql_resource(&database, "attach_remote_snapshot", &version)?;
-    execute_sql_resource(&database, "create_source_snapshot", &version)?;
+    database.execute(sql!("extract/attach_remote_snapshot"), &version)?;
+    database.execute(sql!("extract/create_source_snapshot"), &version)?;
     Ok(database)
 }
 
-fn execute_sql_resource(
-    database: &AnalysisDatabase,
-    name: &str,
-    parameters: &Parameters,
-) -> Result<()> {
-    database.execute(load_sql(&format!("extract/{name}.sql"))?, parameters)
-}
-
-/// Copies the cohort window from the remote lake once, keeping the newest
+/// Copies the cohort rows from the remote lake once, keeping the newest
 /// version of each player row. Later extraction steps read only this table.
-fn extract_source_players(database: &AnalysisDatabase, cohort: &Cohort) -> Result<()> {
-    eprintln!("Extracting source_players");
-    execute_sql_resource(database, "drop_source_players", &Parameters::new())?;
+///
+/// Remote reads wait on HTTP requests, so this step uses more threads than local steps.
+fn extract_source_players(
+    database: &AnalysisDatabase,
+    cohort: &Cohort,
+    resources: ExtractionResources,
+) -> Result<()> {
+    eprintln!(
+        "Downloading ranked matches from {} to {}",
+        format_timestamp(cohort.since)?,
+        format_timestamp(cohort.as_of)?
+    );
+    set_threads(database, resources.threads.max(REMOTE_READ_THREADS))?;
     database.execute_remote(
-        load_sql("extract/create_source_players.sql")?,
-        &Parameters::from([
-            (
-                "since".into(),
-                SqlValue::Timestamp(TimeUnit::Second, cohort.since),
-            ),
-            (
-                "as_of".into(),
-                SqlValue::Timestamp(TimeUnit::Second, cohort.as_of),
-            ),
-        ]),
-    )
+        sql!("extract/create_source_players"),
+        &build_cohort_parameters(cohort),
+    )?;
+    set_threads(database, resources.threads)
 }
 
-fn extract_table(database: &AnalysisDatabase, table: &str) -> Result<()> {
-    eprintln!("Extracting {table}");
-    execute_sql_resource(database, &format!("drop_{table}"), &Parameters::new())?;
-    execute_sql_resource(database, &format!("create_{table}"), &Parameters::new())
+fn set_threads(database: &AnalysisDatabase, threads: u16) -> Result<()> {
+    database.execute(
+        sql!("extract/set_threads"),
+        &Parameters::from([("threads".into(), i64::from(threads).into())]),
+    )
 }
 
 fn build_cohort_parameters(cohort: &Cohort) -> Parameters {
@@ -136,10 +135,8 @@ fn load_item_assets(database: &AnalysisDatabase, paths: &RunPaths) -> Result<()>
         .iter()
         .map(build_item_asset_row)
         .collect::<Result<Vec<_>>>()?;
-    for name in ["drop_item_assets", "create_item_assets"] {
-        execute_sql_resource(database, name, &Parameters::new())?;
-    }
-    database.insert_rows(load_sql("extract/insert_item_assets.sql")?, &rows)
+    database.execute(sql!("extract/create_item_assets"), &Parameters::new())?;
+    database.insert_rows(sql!("extract/insert_item_assets"), &rows)
 }
 
 fn build_item_asset_row(item: &Value) -> Result<Vec<SqlValue>> {
@@ -153,13 +150,6 @@ fn build_item_asset_row(item: &Value) -> Result<Vec<SqlValue>> {
         SqlValue::Text(item["class_name"].as_str().unwrap_or_default().into()),
         SqlValue::UBigInt(integer(item, "item_tier")?),
         SqlValue::UBigInt(item["cost"].as_u64().unwrap_or(0)),
-        item["item_slot_type"]
-            .as_str()
-            .unwrap_or("unknown")
-            .to_lowercase()
-            .into(),
-        item["is_active_item"].as_bool().unwrap_or(false).into(),
-        item["is_unique"].as_bool().unwrap_or(true).into(),
         serde_json::to_string(
             item.get("component_items")
                 .filter(|value| value.is_array())
@@ -170,9 +160,8 @@ fn build_item_asset_row(item: &Value) -> Result<Vec<SqlValue>> {
 }
 
 fn create_match_folds(database: &AnalysisDatabase, cohort: &Cohort) -> Result<()> {
-    execute_sql_resource(
-        database,
-        "create_split_boundaries",
+    database.execute(
+        sql!("extract/create_split_boundaries"),
         &Parameters::from([
             (
                 "minimum_badge".into(),
@@ -199,31 +188,29 @@ fn create_match_folds(database: &AnalysisDatabase, cohort: &Cohort) -> Result<()
         )
     })
     .collect();
-    execute_sql_resource(database, "fill_split_boundaries", &parameters)?;
-    execute_sql_resource(database, "create_match_folds", &Parameters::new())
+    database.execute(sql!("extract/fill_split_boundaries"), &parameters)?;
+    database.execute(sql!("extract/create_match_folds"), &Parameters::new())
 }
 
 fn collect_extraction_counts(database: &AnalysisDatabase, cohort: &Cohort) -> Result<Value> {
     let mut counts = serde_json::Map::new();
     for table in ["player_matches", "match_folds", "purchases"] {
         let count = database.count(
-            load_sql("extract/count_table_rows.sql")?,
+            sql!("extract/count_table_rows"),
             &Parameters::from([("table".into(), SqlValue::Text(table.into()))]),
         )?;
         counts.insert(table.into(), count.into());
     }
     for (name, query) in [
-        ("source_snapshot_version", "select_source_snapshot"),
-        ("heroes", "count_heroes"),
+        (
+            "source_snapshot_version",
+            sql!("extract/select_source_snapshot"),
+        ),
+        ("heroes", sql!("extract/count_heroes")),
     ] {
         counts.insert(
             name.into(),
-            database
-                .count(
-                    load_sql(&format!("extract/{query}.sql"))?,
-                    &Parameters::new(),
-                )?
-                .into(),
+            database.count(query, &Parameters::new())?.into(),
         );
     }
     counts.insert(

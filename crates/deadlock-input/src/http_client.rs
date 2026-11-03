@@ -4,17 +4,10 @@ use std::time::{Duration, Instant};
 
 use deadlock_data::{Error, Result, trace_operation};
 use serde_json::Value;
-use ureq::ResponseExt as _;
+
 use ureq::http::Uri;
 
 const MAXIMUM_RESPONSE_BYTES: u64 = 512 * 1024 * 1024;
-
-#[derive(Debug)]
-pub struct JsonHttpResponse {
-    pub data: Value,
-    pub content: Vec<u8>,
-    pub url: String,
-}
 
 #[derive(Debug)]
 struct RequestSchedule {
@@ -32,7 +25,7 @@ pub struct JsonHttpClient {
 
 #[derive(Debug)]
 enum RequestOutcome {
-    Complete(JsonHttpResponse),
+    Complete(Value),
     Retry {
         error: Error,
         delay: Duration,
@@ -89,21 +82,13 @@ impl JsonHttpClient {
 
     /// # Errors
     /// Returns an error if the parameters, response, or request schedule is invalid.
-    pub fn get_json(
-        &self,
-        path: &str,
-        parameters: &BTreeMap<String, Value>,
-    ) -> Result<JsonHttpResponse> {
+    pub fn get_json(&self, path: &str, parameters: &BTreeMap<String, Value>) -> Result<Value> {
         trace_operation("input.http.get_json", None, || {
             self.request_json(path, parameters)
         })
     }
 
-    fn request_json(
-        &self,
-        path: &str,
-        parameters: &BTreeMap<String, Value>,
-    ) -> Result<JsonHttpResponse> {
+    fn request_json(&self, path: &str, parameters: &BTreeMap<String, Value>) -> Result<Value> {
         let url = format!("{}/{}", self.base_url, path.trim_start_matches('/'));
         let parameters = encode_query_parameters(parameters)?;
         for attempt in 0..self.maximum_attempts {
@@ -205,7 +190,6 @@ impl JsonHttpClient {
                 RequestOutcome::Failed(error)
             };
         }
-        let final_url = response.get_uri().to_string();
         let content = match response
             .body_mut()
             .with_config()
@@ -216,11 +200,7 @@ impl JsonHttpClient {
             Err(error) => return build_retry_outcome(Error::new(error.to_string()), attempt),
         };
         match serde_json::from_slice(&content) {
-            Ok(data) => RequestOutcome::Complete(JsonHttpResponse {
-                data,
-                content,
-                url: final_url,
-            }),
+            Ok(data) => RequestOutcome::Complete(data),
             Err(error) => build_retry_outcome(Error::from(error), attempt),
         }
     }

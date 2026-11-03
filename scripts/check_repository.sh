@@ -72,11 +72,12 @@ uvx --from sqlfluff==4.3.0 sqlfluff lint crates/deadlock-analysis/sql
 uvx --from sqlfluff==4.3.0 sqlfluff parse crates/deadlock-analysis/sql --format json --code-only |
     jaq -e 'all(.. | objects; has("wildcard_expression") | not)'
 cargo doc --workspace --all-features --no-deps --locked
-cargo build --package deadlock-build-sync --locked
-cargo run --package deadlock-analysis --example check_imbues --locked
-cargo run --package deadlock-build-sync --example check_safety --locked
+cargo build --workspace --bins --examples --locked
+debug_directory=${CARGO_TARGET_DIR:-target}/debug
+"$debug_directory/examples/check_imbues"
+"$debug_directory/examples/check_safety"
 
-cli_path="${CARGO_TARGET_DIR:-target}/debug/deadlock-build-sync"
+cli_path="$debug_directory/deadlock-build-sync"
 "$cli_path" --help >/dev/null
 for command in sync build install status restore; do
     "$cli_path" "$command" --help >/dev/null

@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::Path;
+use std::time::{Duration, SystemTime};
 
 use deadlock_analysis::{ExtractionResources, RefreshRequest, RunPaths, extract_run};
 use deadlock_data::{Error, RankRange, Result, atomic_write_json, fingerprint};
@@ -38,6 +39,59 @@ pub fn check_resume_sources() -> Result<()> {
     drop(extract_run(&request)?);
     if fs::read(paths.raw.join("analysis.duckdb"))? != b"extraction marker" {
         return Err(Error::new("Resume changed the extracted database"));
+    }
+    check_run_removal(root.path())
+}
+
+/// Removal must keep the current run, named runs, locked runs, and new runs.
+/// It must remove old automatic runs with or without an unlocked lock file.
+fn check_run_removal(root: &Path) -> Result<()> {
+    let results = root.join("results");
+    for name in [
+        "20261001T000000Z",
+        "20261002T000000Z",
+        "20261005T000000Z",
+        "named-run",
+    ] {
+        fs::create_dir_all(results.join(name).join("raw"))?;
+    }
+    for name in ["20261003T000000Z", "20261006T000000Z"] {
+        fs::create_dir_all(results.join(name))?;
+        fs::File::create(results.join(name).join(".refresh.lock"))?;
+    }
+    let lock = fs::File::open(results.join("20261003T000000Z").join(".refresh.lock"))?;
+    lock.lock()?;
+    let two_hours_ago = SystemTime::now() - Duration::from_secs(7200);
+    for name in [
+        "20261001T000000Z",
+        "20261002T000000Z",
+        "20261003T000000Z",
+        "20261006T000000Z",
+    ] {
+        fs::File::open(results.join(name))?.set_modified(two_hours_ago)?;
+    }
+    let mut request = create_request(root);
+    request.run_id = Some("20261004T000000Z".into());
+    create_snapshot(&RunPaths::create(root, request.run_id.as_deref())?)?;
+    let removed = extract_run(&request)?.remove_other_automatic_runs();
+    drop(lock);
+    let mut remaining = fs::read_dir(&results)?
+        .map(|entry| Ok(entry?.file_name().to_string_lossy().into_owned()))
+        .collect::<Result<Vec<_>>>()?;
+    remaining.sort();
+    if removed != 3
+        || remaining
+            != [
+                "20261003T000000Z",
+                "20261004T000000Z",
+                "20261005T000000Z",
+                "named-run",
+                "reference",
+            ]
+    {
+        return Err(Error::new(format!(
+            "Run removal removed {removed} runs and kept {remaining:?}"
+        )));
     }
     Ok(())
 }

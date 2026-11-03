@@ -3,6 +3,10 @@ rustflags = ["-Dwarnings", "-Funsafe-code"]
 
 [env]
 RUSTDOCFLAGS = "-Dwarnings"
+# libduckdb-sys 1.20000.0 labels bundled v2.0.0 as a dev build, so extension downloads fail.
+# The value replaces an environment CXXFLAGS, because the build needs these defines.
+# Remove after the patch release: https://github.com/duckdb/duckdb-rs/issues/917
+CXXFLAGS = { value = '-DDUCKDB_VERSION="v2.0.0" -DDUCKDB_PATCH_VERSION="0"', force = true }
 
 [alias]
 lint = "clippy --workspace --all-targets --all-features --locked -- -D warnings"

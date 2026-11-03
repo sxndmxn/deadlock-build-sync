@@ -83,7 +83,6 @@ fn check_installation() -> Result<()> {
         timestamp: 1,
         snapshot: &snapshot,
         expected_hero_ids: &expected,
-        allow_subset: false,
     };
     let update = prepare_cache_update(&original, &request)?;
     let state = root.path().join("state");
@@ -145,7 +144,6 @@ fn check_write_guards() -> Result<()> {
                 timestamp: 1,
                 snapshot: &snapshot,
                 expected_hero_ids: &expected,
-                allow_subset: false,
             },
         )?;
         let processes = ReferenceProcesses {
@@ -220,7 +218,6 @@ fn check_valid_restore() -> Result<()> {
             timestamp: 1,
             snapshot: &snapshot,
             expected_hero_ids: &expected,
-            allow_subset: false,
         },
     )?;
     let state = root.path().join("state");

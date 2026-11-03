@@ -15,4 +15,4 @@ pub use json::{
     array, canonical_json, field, fingerprint, integer, object, sha256, text, validate_sha256,
 };
 pub use rank::{Rank, RankRange};
-pub use statistics::{ObservationCounts, count_as_f64, count_ratio};
+pub use statistics::{ObservationCounts, count_as_f64};
