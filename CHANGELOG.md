@@ -48,6 +48,7 @@ Remove rank expansion, subset bundles, and the API response cache.
 ### Fixed
 
 Read the remote match catalog in the DuckDB 2.0 storage format.
+Do not treat hero release posts in the patch feed as patches. They reset the match window to a few hours.
 Verify all seven source JSON fingerprints before resuming an extracted run.
 Check the current patch and client version in the shared installation function for both `sync` and `install`.
 Restore native IMBUE ABILITY selection for MAIN CORE and situational items with sufficient evidence.

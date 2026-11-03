@@ -35,6 +35,7 @@ deadlock-build-sync sync
 ```
 
 `sync` downloads the ranked matches of the current patch, makes the builds, and writes them to the artifact directory.
+The current patch is the latest game update in the patch feed. A hero release post does not start a new patch.
 Then it makes a Steam cache backup and installs the builds atomically.
 It keeps favorites, selected builds, saved builds, and unrelated private builds.
 It replaces only builds with the managed marker.

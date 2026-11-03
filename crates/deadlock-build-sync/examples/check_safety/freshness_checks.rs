@@ -12,6 +12,7 @@ use deadlock_steam::{CacheLocation, read_cache};
 use serde_json::{Value, json};
 
 pub fn check_installation_freshness() -> Result<()> {
+    check_hero_release_feed()?;
     let root = tempfile::tempdir()?;
     let location = CacheLocation {
         account_id: 7,
@@ -155,5 +156,29 @@ fn respond(mut stream: TcpStream, path: &str, status: u16, document: &Value) -> 
         body.len()
     )?;
     stream.write_all(&body)?;
+    Ok(())
+}
+
+/// A hero release post is not a patch. The latest post with the word "update" is the patch.
+fn check_hero_release_feed() -> Result<()> {
+    let update = json!({
+        "title":" Minor Update - 10-05-2026",
+        "pub_date":"2026-10-05T23:05:32Z",
+        "content":"- Rat King: Scrap Grenade - Damage increased from 65 to 70",
+    });
+    let release = json!({
+        "title":"Fairfax Industries Employee Spotlight",
+        "pub_date":"2026-10-13T20:59:55Z",
+        "content":"Today, Fairfax Industries is proud to introduce their most valuable salesman.",
+    });
+    let both = json!([release, update]);
+    if parse_patch_feed(&both, None)?.title != " Minor Update - 10-05-2026" {
+        return Err(Error::new("A hero release post replaced the current patch"));
+    }
+    if parse_patch_feed(&json!([release]), None)?.title != "Fairfax Industries Employee Spotlight" {
+        return Err(Error::new(
+            "A feed without updates did not use its latest post",
+        ));
+    }
     Ok(())
 }
