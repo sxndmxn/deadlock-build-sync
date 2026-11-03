@@ -8,6 +8,8 @@ mod focus_checks;
 mod freshness_checks;
 #[path = "check_safety/imbue_checks.rs"]
 mod imbue_checks;
+#[path = "check_safety/layout_checks.rs"]
+mod layout_checks;
 #[path = "check_safety/reference_data.rs"]
 mod reference_data;
 #[path = "check_safety/resume_checks.rs"]
@@ -21,6 +23,7 @@ fn main() -> deadlock_data::Result<()> {
     freshness_checks::check_installation_freshness()?;
     imbue_checks::check_imbue_encoding()?;
     focus_checks::check_build_focus()?;
+    layout_checks::check_compact_layout()?;
     steam_checks::check_steam_safety()?;
     println!("Isolated safety checks passed. The checks did not use live Steam files.");
     Ok(())
