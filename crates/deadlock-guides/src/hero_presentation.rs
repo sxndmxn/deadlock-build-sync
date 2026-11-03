@@ -7,11 +7,13 @@ use crate::presentation::{
     PresentationContent, PresentationItem,
 };
 
-const CATEGORY_COLUMNS: usize = 6;
-const COLUMN_WIDTH: f32 = 90.0;
-const PANEL_PADDING: f32 = 24.0;
-const FIRST_ROW_HEIGHT: f32 = 185.0;
-const NEXT_ROW_HEIGHT: f32 = 129.0;
+// The game command Compact All gave these sizes to installed builds on 2026-11-01.
+const MAXIMUM_COLUMNS: usize = 6;
+const ITEM_COLUMN_WIDTH: f32 = 81.75;
+const CATEGORY_SIDE_PADDING: f32 = 12.0;
+const MINIMUM_CATEGORY_WIDTH: f32 = 100.0;
+const ITEM_ROW_HEIGHT: f32 = 120.0;
+const CATEGORY_HEADER_HEIGHT: f32 = 42.75;
 const EMPTY_WIDTH: f32 = 256.0;
 const EMPTY_HEIGHT: f32 = 56.0;
 
@@ -74,16 +76,7 @@ fn build_category(
     optional: bool,
     annotate: fn(&BuildItem) -> String,
 ) -> Result<PresentationCategory> {
-    let (width, height) = if items.is_empty() {
-        (EMPTY_WIDTH, EMPTY_HEIGHT)
-    } else {
-        let columns = items.len().min(CATEGORY_COLUMNS);
-        let rows = items.len().div_ceil(CATEGORY_COLUMNS);
-        (
-            COLUMN_WIDTH.mul_add(f32::from(u16::try_from(columns)?), PANEL_PADDING),
-            NEXT_ROW_HEIGHT.mul_add(f32::from(u16::try_from(rows - 1)?), FIRST_ROW_HEIGHT),
-        )
-    };
+    let (width, height) = compact_category_size(items.len())?;
     Ok(PresentationCategory {
         name: name.into(),
         description: description.into(),
@@ -102,6 +95,23 @@ fn build_category(
             })
             .collect(),
     })
+}
+
+/// Returns the width and height that the game command Compact All gives a category.
+///
+/// The game uses the fewest rows of at most six items.
+/// It then uses the fewest columns that hold the items in those rows.
+fn compact_category_size(item_count: usize) -> Result<(f32, f32)> {
+    if item_count == 0 {
+        return Ok((EMPTY_WIDTH, EMPTY_HEIGHT));
+    }
+    let rows = item_count.div_ceil(MAXIMUM_COLUMNS);
+    let columns = item_count.div_ceil(rows);
+    let width = ITEM_COLUMN_WIDTH
+        .mul_add(f32::from(u16::try_from(columns)?), CATEGORY_SIDE_PADDING)
+        .max(MINIMUM_CATEGORY_WIDTH);
+    let height = ITEM_ROW_HEIGHT.mul_add(f32::from(u16::try_from(rows)?), CATEGORY_HEADER_HEIGHT);
+    Ok((width, height))
 }
 
 /// Shows the game phase, the win rate of owners, the pick rate, and the soul window, one per line.

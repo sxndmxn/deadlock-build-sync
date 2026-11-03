@@ -22,6 +22,7 @@ Use `ability + key item` titles, with the first fully upgraded ability as the fa
 Keep hero names out of titles.
 State the inferred focus and the first fully upgraded ability separately.
 Show four lines for each item: the game phase, the win rate, the pick rate, and the soul window.
+Give each build category the size that the game command Compact All gives it.
 Lower the default minimum rank from `emissary-i` to `ritualist-i`.
 Write `hero-builds.json` and one Markdown file per hero. Replace the complete artifact directory on each run.
 Include the analysis code in every build. The `analysis` feature no longer exists.
