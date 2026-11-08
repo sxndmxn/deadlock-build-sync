@@ -35,11 +35,13 @@ deadlock-build-sync sync
 ```
 
 `sync` downloads the ranked matches of the current patch, makes the builds, and writes them to the artifact directory.
+The current patch is the latest game update in the patch feed. A hero release post does not start a new patch.
 Then it makes a Steam cache backup and installs the builds atomically.
 It keeps favorites, selected builds, saved builds, and unrelated private builds.
 It replaces only builds with the managed marker.
 It prevents writes if Deadlock is in operation or process inspection is not possible.
-With one week of matches, a sync takes about 2 minutes.
+With one week of matches, the first sync after a patch takes about 2.5 minutes.
+Later syncs download only the remote files that changed. A second sync on the same day takes about 20 seconds.
 
 The CLI finds Steam caches in native, legacy, Flatpak, and Snap locations.
 Use `--account-id` or `--cache-path` to select a cache.
@@ -136,6 +138,12 @@ The default artifact directory is `$XDG_STATE_HOME/deadlock-build-sync/artifacts
 If `XDG_STATE_HOME` is not set, the CLI uses `~/.local/state/deadlock-build-sync/artifacts`.
 The directory contains `hero-builds.json` and one Markdown file per hero in `builds/`.
 Each new run replaces the complete directory.
+
+The CLI keeps the downloaded match rows in `$XDG_STATE_HOME/deadlock-build-sync/offline/cache`, with one entry for each remote file.
+Remote files do not change, so a run downloads only the files that are new since the last run.
+A new patch or other rank options start a new cache and remove the old one.
+You can remove the directory at any time. The next run then downloads all files again.
+All runs use the same cache, so run only one `build` or `sync` at a time.
 
 The CLI keeps analysis runs in `$XDG_STATE_HOME/deadlock-build-sync/offline/results`.
 After a successful build, it removes the other runs whose name has the automatic format, such as `20261028T031941Z`.

@@ -6,6 +6,8 @@ The project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-02
+
 ### Changed
 
 Make one build for every active hero.
@@ -22,12 +24,16 @@ Use `ability + key item` titles, with the first fully upgraded ability as the fa
 Keep hero names out of titles.
 State the inferred focus and the first fully upgraded ability separately.
 Show four lines for each item: the game phase, the win rate, the pick rate, and the soul window.
+Give each build category the size that the game command Compact All gives it.
 Lower the default minimum rank from `emissary-i` to `ritualist-i`.
 Write `hero-builds.json` and one Markdown file per hero. Replace the complete artifact directory on each run.
 Include the analysis code in every build. The `analysis` feature no longer exists.
 Download only ranked matches in the selected rank range, and read the remote data with 64 threads.
 With one week of matches, a build takes about 2 minutes instead of about 11 minutes.
 Each analysis run uses 0.9 GiB instead of 4.3 GiB.
+Keep a cache of the downloaded rows of each remote file in `offline/cache`.
+A run downloads only the remote files that are new since the last run.
+A second build on the same day takes about 20 seconds.
 Send the ability order requests from four threads during the local analysis.
 After a successful build, remove the other analysis runs whose name has the automatic format.
 Describe every option in `--help`.
@@ -44,6 +50,7 @@ Remove rank expansion, subset bundles, and the API response cache.
 ### Fixed
 
 Read the remote match catalog in the DuckDB 2.0 storage format.
+Do not treat hero release posts in the patch feed as patches. They reset the match window to a few hours.
 Verify all seven source JSON fingerprints before resuming an extracted run.
 Check the current patch and client version in the shared installation function for both `sync` and `install`.
 Restore native IMBUE ABILITY selection for MAIN CORE and situational items with sufficient evidence.
@@ -69,5 +76,6 @@ Reuse compatible artifacts through fingerprints and provide explicit regeneratio
 Add Steam account discovery, backups, atomic cache replacement, and restoration.
 Add local linting, type checking, tests, packaging checks, and GitHub Actions CI.
 
-[Unreleased]: https://github.com/sxndmxn/deadlock-build-sync/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/sxndmxn/deadlock-build-sync/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/sxndmxn/deadlock-build-sync/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/sxndmxn/deadlock-build-sync/releases/tag/v0.1.0

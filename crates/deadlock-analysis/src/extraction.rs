@@ -1,5 +1,9 @@
-use deadlock_data::{Result, array, integer, read_json, trace_operation};
+use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+use deadlock_data::{Error, Result, array, fingerprint, integer, read_json, trace_operation};
 use duckdb::types::{TimeUnit, Value as SqlValue};
+use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::database::{AnalysisDatabase, Parameters};
@@ -10,6 +14,13 @@ use crate::sql_resources::sql;
 
 /// 64 threads read one day of remote rows 3.8 times faster than 8 threads, at equal bytes.
 const REMOTE_READ_THREADS: u16 = 64;
+/// The server sends one file at about 10 to 15 MB/s, so the download reads 16 files at a time.
+const REMOTE_DOWNLOAD_CONNECTIONS: usize = 16;
+
+#[derive(Debug, Deserialize)]
+struct RemoteFile {
+    data_file: String,
+}
 
 pub fn extract_cohort(
     paths: &RunPaths,
@@ -20,7 +31,7 @@ pub fn extract_cohort(
         cohort.validate()?;
         let database = connect_database(paths, resources)?;
         load_item_assets(&database, paths)?;
-        extract_source_players(&database, cohort, resources)?;
+        extract_source_players(&database, paths, cohort, resources)?;
         eprintln!("Preparing match tables");
         database.execute(
             sql!("extract/create_eligible_matches"),
@@ -80,9 +91,11 @@ fn connect_database(paths: &RunPaths, resources: ExtractionResources) -> Result<
 /// Copies the cohort rows from the remote lake once, keeping the newest
 /// version of each player row. Later extraction steps read only this table.
 ///
+/// The cache keeps the rows of each remote file, so a run downloads only new files.
 /// Remote reads wait on HTTP requests, so this step uses more threads than local steps.
 fn extract_source_players(
     database: &AnalysisDatabase,
+    paths: &RunPaths,
     cohort: &Cohort,
     resources: ExtractionResources,
 ) -> Result<()> {
@@ -92,11 +105,117 @@ fn extract_source_players(
         format_timestamp(cohort.as_of)?
     );
     set_threads(database, resources.threads.max(REMOTE_READ_THREADS))?;
-    database.execute_remote(
+    attach_cache(database, &paths.cache, cohort)?;
+    let version = database.count(sql!("extract/select_source_snapshot"), &Parameters::new())?;
+    database.execute(
+        sql!("extract/create_remote_files"),
+        &Parameters::from([("version".into(), SqlValue::UBigInt(version))]),
+    )?;
+    database.execute(sql!("extract/delete_stale_cache_rows"), &Parameters::new())?;
+    let missing = database
+        .query_rows::<RemoteFile>(sql!("extract/select_missing_files"), &Parameters::new())?;
+    let files = database.count(
+        sql!("extract/count_table_rows"),
+        &Parameters::from([("table".into(), SqlValue::Text("remote_files".into()))]),
+    )?;
+    eprintln!(
+        "Remote files: {} new, {} from the cache",
+        missing.len(),
+        files.saturating_sub(u64::try_from(missing.len())?)
+    );
+    let parameters = build_cohort_parameters(cohort);
+    download_files(database, &missing, &parameters)?;
+    database.execute_remote(sql!("extract/create_catalog_players"), &parameters)?;
+    database.execute(
         sql!("extract/create_source_players"),
-        &build_cohort_parameters(cohort),
+        &Parameters::from([(
+            "as_of".into(),
+            SqlValue::Timestamp(TimeUnit::Second, cohort.as_of),
+        )]),
     )?;
     set_threads(database, resources.threads)
+}
+
+/// Attaches the cache of remote rows and removes the caches of other cohorts.
+///
+/// The file name contains a fingerprint of the cohort filters and of the cache SQL,
+/// so a change of either one starts a new cache.
+fn attach_cache(database: &AnalysisDatabase, directory: &Path, cohort: &Cohort) -> Result<()> {
+    let mut filters = cohort.to_document()?;
+    if let Some(filters) = filters.as_object_mut() {
+        filters.remove("as_of");
+    }
+    let key = fingerprint(&json!({
+        "filters": filters,
+        "sql": [sql!("extract/create_cache_tables"), sql!("extract/insert_cache_players")],
+    }))?;
+    let name = format!("remote-players-{key}.duckdb");
+    std::fs::create_dir_all(directory)?;
+    for entry in std::fs::read_dir(directory)? {
+        let entry = entry?;
+        if !entry.file_name().to_string_lossy().starts_with(&name) {
+            std::fs::remove_file(entry.path())?;
+        }
+    }
+    database.execute(
+        sql!("extract/attach_cache"),
+        &Parameters::from([(
+            "path".into(),
+            SqlValue::Text(directory.join(name).to_string_lossy().into_owned()),
+        )]),
+    )?;
+    database.execute(sql!("extract/create_cache_tables"), &Parameters::new())
+}
+
+/// Downloads the cohort rows of the files into the cache, on several connections at a time.
+fn download_files(
+    database: &AnalysisDatabase,
+    files: &[RemoteFile],
+    parameters: &Parameters,
+) -> Result<()> {
+    let connections = (0..REMOTE_DOWNLOAD_CONNECTIONS.min(files.len()))
+        .map(|_| database.try_clone())
+        .collect::<Result<Vec<_>>>()?;
+    let next = AtomicUsize::new(0);
+    std::thread::scope(|scope| {
+        let downloads = connections
+            .into_iter()
+            .map(|connection| {
+                let next = &next;
+                scope.spawn(move || download_next_files(&connection, files, parameters, next))
+            })
+            .collect::<Vec<_>>();
+        for download in downloads {
+            download
+                .join()
+                .map_err(|_| Error::new("A remote download thread stopped unexpectedly"))??;
+        }
+        Ok(())
+    })
+}
+
+/// Downloads files until none remain. A failure stops the other threads at their next file.
+///
+/// The file row follows the rows of the file, so an interrupted copy does not count.
+fn download_next_files(
+    connection: &AnalysisDatabase,
+    files: &[RemoteFile],
+    parameters: &Parameters,
+    next: &AtomicUsize,
+) -> Result<()> {
+    let mut parameters = parameters.clone();
+    while let Some(file) = files.get(next.fetch_add(1, Ordering::Relaxed)) {
+        let name = Parameters::from([("data_file".into(), SqlValue::Text(file.data_file.clone()))]);
+        parameters.extend(name.clone());
+        let result = connection
+            .execute_remote(sql!("extract/insert_cache_players"), &parameters)
+            .and_then(|()| connection.execute(sql!("extract/insert_cache_file"), &name));
+        if let Err(error) = result {
+            next.store(files.len(), Ordering::Relaxed);
+            return Err(error);
+        }
+    }
+    Ok(())
 }
 
 fn set_threads(database: &AnalysisDatabase, threads: u16) -> Result<()> {
@@ -113,10 +232,6 @@ fn build_cohort_parameters(cohort: &Cohort) -> Parameters {
         (
             "since".into(),
             SqlValue::Timestamp(TimeUnit::Second, cohort.since),
-        ),
-        (
-            "as_of".into(),
-            SqlValue::Timestamp(TimeUnit::Second, cohort.as_of),
         ),
         (
             "minimum_badge".into(),

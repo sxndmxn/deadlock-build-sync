@@ -57,7 +57,7 @@ Select the format from the consumer's operations and compatibility requirements.
 | --- | --- |
 | JSON | Run manifests, API source snapshots, and `hero-builds.json` |
 | JSONL | Execution traces |
-| DuckDB | Extracted match tables in `analysis.duckdb` |
+| DuckDB | Extracted match tables in `analysis.duckdb`, and the download cache |
 | Markdown | One build file per hero in `builds/` |
 
 Keep external API formats and documented artifact paths compatible.

@@ -427,7 +427,7 @@ dependencies = [
 
 [[package]]
 name = "deadlock-analysis"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "deadlock-data",
@@ -441,7 +441,7 @@ dependencies = [
 
 [[package]]
 name = "deadlock-build-sync"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "base64",
  "chrono",
@@ -458,7 +458,7 @@ dependencies = [
 
 [[package]]
 name = "deadlock-data"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "num-traits",
@@ -470,7 +470,7 @@ dependencies = [
 
 [[package]]
 name = "deadlock-guides"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "deadlock-data",
  "deadlock-input",
@@ -480,7 +480,7 @@ dependencies = [
 
 [[package]]
 name = "deadlock-input"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "deadlock-data",
@@ -491,7 +491,7 @@ dependencies = [
 
 [[package]]
 name = "deadlock-steam"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "chrono",
  "deadlock-data",
