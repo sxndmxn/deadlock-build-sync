@@ -8,7 +8,8 @@ use deadlock_steam::{
 };
 use serde_json::{Value, json};
 
-use crate::build_workflow::{CATALOG_FILE, catalog_snapshot, describe_staleness};
+use crate::artifact_transaction::CATALOG_FILE;
+use crate::build_workflow::{catalog_snapshot, describe_staleness};
 
 /// Reports whether the generated builds match the current game and whether Steam has them.
 ///

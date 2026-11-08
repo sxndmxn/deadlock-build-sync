@@ -29,7 +29,10 @@ pub fn absolute_path(path: &Path) -> Result<PathBuf> {
 }
 
 pub fn artifact_directory(configured: Option<&Path>) -> Result<PathBuf> {
-    configured.map_or_else(|| Ok(state_directory()?.join("artifacts")), absolute_path)
+    match configured {
+        Some(path) => absolute_path(path),
+        None => absolute_path(&state_directory()?.join("artifacts")),
+    }
 }
 
 pub fn cache_location(arguments: &LocationArguments) -> Result<CacheLocation> {

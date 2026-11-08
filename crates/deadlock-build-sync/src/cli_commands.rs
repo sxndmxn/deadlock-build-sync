@@ -6,9 +6,9 @@ use deadlock_guides::{BuildRules, HeroBuildCatalog};
 use deadlock_steam::{InstallResult, LinuxProcesses, require_deadlock_stopped, restore_latest};
 use serde_json::json;
 
-use crate::artifact_transaction::ArtifactTransaction;
+use crate::artifact_transaction::{ArtifactTransaction, CATALOG_FILE};
 use crate::build_workflow::{
-    BuildRequest, CATALOG_FILE, GeneratedBuilds, generate_builds, install_catalog, resolve_persona,
+    BuildRequest, GeneratedBuilds, generate_builds, install_catalog, resolve_persona,
 };
 use crate::cli_arguments::{
     BuildArguments, InstallArguments, RestoreArguments, StatusArguments, SyncArguments,

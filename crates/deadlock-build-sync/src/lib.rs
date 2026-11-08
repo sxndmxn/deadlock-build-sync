@@ -12,6 +12,7 @@ mod cli_paths;
 mod freshness;
 mod trace_summary;
 
-pub use build_workflow::{CATALOG_FILE, install_catalog, write_build_artifacts};
+pub use artifact_transaction::CATALOG_FILE;
+pub use build_workflow::{install_catalog, write_build_artifacts};
 pub use cli::run_cli;
 pub use cli_arguments::Cli;

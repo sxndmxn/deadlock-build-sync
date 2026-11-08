@@ -12,11 +12,9 @@ use deadlock_steam::{
 };
 use serde_json::json;
 
-use crate::artifact_transaction::ArtifactTransaction;
+use crate::artifact_transaction::{ArtifactTransaction, CATALOG_FILE};
 use crate::build_markdown::render_build_markdown;
 use crate::cli_paths::home_directory;
-
-pub const CATALOG_FILE: &str = "hero-builds.json";
 
 /// One request to generate builds: the match extraction, the selection rules, and the output.
 #[derive(Clone, Debug)]
@@ -42,7 +40,7 @@ pub struct GeneratedBuilds {
 /// # Errors
 /// Returns an error when extraction, production, validation, or the artifact write fails.
 pub fn generate_builds(request: &BuildRequest) -> Result<GeneratedBuilds> {
-    ArtifactTransaction::recover(&request.artifacts)?;
+    ArtifactTransaction::prepare(&request.artifacts)?;
     let run = trace_operation("analysis.extract_run", Some("extract_run"), || {
         extract_run(&request.refresh)
     })?;

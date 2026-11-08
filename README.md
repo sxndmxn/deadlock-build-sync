@@ -155,6 +155,7 @@ The analysis selects a main build and up to two additional builds with distinct 
 It evaluates each build separately. Similar candidates do not create additional entries.
 Additional builds are play style options. Held-out tests found a small win signal for them beyond the main build.
 Each new run replaces the complete directory.
+The directory must be absent, empty, or an earlier artifact directory with `hero-builds.json`. The CLI refuses a directory with other files.
 
 The CLI keeps the downloaded match rows in `$XDG_STATE_HOME/deadlock-build-sync/offline/cache`, with one entry for each remote file.
 Remote files do not change, so a run downloads only the files that are new since the last run.
