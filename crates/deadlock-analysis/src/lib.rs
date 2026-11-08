@@ -19,6 +19,7 @@ mod refresh;
 mod refresh_configuration;
 mod ridge_logistic;
 mod run_inputs;
+mod run_manifest;
 mod sources;
 mod sql_resources;
 
@@ -40,4 +41,8 @@ pub use experiments::{
 pub use hero_build_production::produce_hero_builds;
 pub use item_effects::{DEFAULT_PENALTIES, EffectPenalties};
 pub use refresh::{ExtractedRun, extract_run};
-pub use refresh_configuration::{ExtractionResources, RefreshRequest, RunPaths};
+pub use refresh_configuration::{CohortRecord, ExtractionResources, RefreshRequest, RunPaths};
+pub use run_manifest::{
+    EXTRACTION_SQL_SHA256, ExtractionRecord, MANIFEST_SCHEMA_VERSION, RunManifest, SourceRecord,
+};
+pub use sources::SOURCE_FILES;

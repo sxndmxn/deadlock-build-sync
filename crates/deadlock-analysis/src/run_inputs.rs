@@ -1,12 +1,13 @@
 use duckdb::types::Value as SqlValue;
 use serde::Deserialize;
 
-use deadlock_data::{RankRange, Result, read_json};
+use deadlock_data::{RankRange, Result};
 
 use crate::build_assembly::{PurchaseMedian, PurchaseMedians};
 use crate::database::{AnalysisDatabase, Parameters};
 use crate::item_effects::{ItemCatalog, LandmarkState};
-use crate::refresh_configuration::{ExtractionResources, RunPaths, cohort_ranks};
+use crate::refresh_configuration::{ExtractionResources, RunPaths};
+use crate::run_manifest::RunManifest;
 use crate::sql_resources::sql;
 
 #[derive(Debug, Deserialize)]
@@ -33,7 +34,7 @@ pub fn open_run_database(
     ranks: RankRange,
 ) -> Result<(AnalysisDatabase, Parameters)> {
     let database = AnalysisDatabase::open_read_only(
-        &paths.raw.join("analysis.duckdb"),
+        &paths.database(),
         &paths.raw.join("duckdb-read-tmp"),
         resources,
     )?;
@@ -85,8 +86,7 @@ pub fn load_assembly_inputs(
 /// # Errors
 /// Returns an error when the manifest, the analysis database, or a query fails.
 pub fn load_run_inputs(paths: &RunPaths, resources: ExtractionResources) -> Result<AssemblyInputs> {
-    let manifest = read_json(&paths.run.join("manifest.json"))?;
-    let ranks = cohort_ranks(&manifest["cohort"])?;
+    let ranks = RunManifest::read(paths)?.cohort.ranks()?;
     let (database, parameters) = open_run_database(paths, resources, ranks)?;
     load_assembly_inputs(&database, &parameters)
 }

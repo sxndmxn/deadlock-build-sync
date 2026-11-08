@@ -29,24 +29,41 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }
     paths.sort();
+    for path in &paths {
+        println!("cargo:rerun-if-changed={}", path.display());
+    }
+    println!("cargo:rerun-if-changed=src");
+    println!("cargo:rerun-if-changed=sql");
+    println!(
+        "cargo:rustc-env=DEADLOCK_ANALYSIS_SOURCE_SHA256={}",
+        fingerprint_files(root, &paths)?
+    );
+    // The extraction SQL defines the extracted tables. A resumed run must have the same SQL.
+    let mut extraction_sql = Vec::new();
+    collect_sources(&manifest.join("sql").join("extract"), &mut extraction_sql)?;
+    extraction_sql.sort();
+    println!(
+        "cargo:rustc-env=DEADLOCK_EXTRACTION_SQL_SHA256={}",
+        fingerprint_files(root, &extraction_sql)?
+    );
+    Ok(())
+}
+
+fn fingerprint_files(root: &Path, paths: &[PathBuf]) -> Result<String, Box<dyn Error>> {
     let mut digest = Sha256::new();
     for path in paths {
-        println!("cargo:rerun-if-changed={}", path.display());
         let name = path.strip_prefix(root)?.to_string_lossy();
-        let bytes = std::fs::read(&path)?;
+        let bytes = std::fs::read(path)?;
         digest.update(u64::try_from(name.len())?.to_le_bytes());
         digest.update(name.as_bytes());
         digest.update(u64::try_from(bytes.len())?.to_le_bytes());
         digest.update(bytes);
     }
-    println!("cargo:rerun-if-changed=src");
-    println!("cargo:rerun-if-changed=sql");
     let mut fingerprint = String::with_capacity(64);
     for byte in digest.finalize() {
         write!(&mut fingerprint, "{byte:02x}")?;
     }
-    println!("cargo:rustc-env=DEADLOCK_ANALYSIS_SOURCE_SHA256={fingerprint}");
-    Ok(())
+    Ok(fingerprint)
 }
 
 fn collect_sources(directory: &Path, output: &mut Vec<PathBuf>) -> Result<(), Box<dyn Error>> {

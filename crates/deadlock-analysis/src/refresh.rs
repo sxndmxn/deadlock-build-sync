@@ -3,18 +3,14 @@ use std::io::ErrorKind;
 use std::path::Path;
 use std::time::Duration;
 
-use deadlock_data::{
-    Error, Result, atomic_write_json, parse_timestamp, read_json, text, trace_operation,
-};
-use deadlock_guides::HERO_BUILD_METHOD;
+use deadlock_data::{Error, Result, parse_timestamp, read_json, trace_operation};
 use deadlock_input::parse_patch_feed;
-use serde_json::json;
 
 use crate::extraction::extract_cohort;
 use crate::refresh_configuration::{
-    Cohort, RANK_RESET_AT, RefreshRequest, RunPaths, cohort_ranks, implementation_record,
-    is_automatic_run_id,
+    Cohort, RANK_RESET_AT, RefreshRequest, RunPaths, is_automatic_run_id,
 };
+use crate::run_manifest::{EXTRACTION_SQL_SHA256, MANIFEST_SCHEMA_VERSION, RunManifest};
 use crate::sources::{capture_sources, validate_source_fingerprints};
 
 const RUN_LOCK_FILE: &str = ".refresh.lock";
@@ -134,36 +130,44 @@ pub fn extract_run(request: &RefreshRequest) -> Result<ExtractedRun> {
 }
 
 fn validate_resume(paths: &RunPaths, request: &RefreshRequest) -> Result<()> {
-    let manifest = read_json(&paths.run.join("manifest.json"))?;
-    if manifest["schema_version"] != 2
-        || manifest["test_usage"] != "reserved"
-        || manifest["extraction"]
-            .as_object()
-            .is_none_or(serde_json::Map::is_empty)
-        || !paths.raw.join("analysis.duckdb").is_file()
+    let manifest = RunManifest::read(paths)?;
+    if manifest.schema_version != MANIFEST_SCHEMA_VERSION
+        || manifest.extraction.is_none()
+        || !paths.database().is_file()
     {
         return Err(Error::new(
             "Resume requires a completed production source extraction",
         ));
     }
-    if cohort_ranks(&manifest["cohort"])? != request.ranks {
+    if manifest
+        .extraction_sql_sha256
+        .as_deref()
+        .is_some_and(|recorded| recorded != EXTRACTION_SQL_SHA256)
+    {
+        return Err(Error::new(
+            "Resume requires the extraction SQL of the run. Use a new --run-id",
+        ));
+    }
+    if manifest.cohort.ranks()? != request.ranks {
         return Err(Error::new("Resume requires matching source ranks"));
     }
-    for (name, requested) in [("since", request.since), ("as_of", request.as_of)] {
+    for (recorded, requested) in [
+        (&manifest.cohort.since, request.since),
+        (&manifest.cohort.as_of, request.as_of),
+    ] {
         if let Some(requested) = requested
-            && requested != parse_timestamp(text(&manifest["cohort"], name)?)?
+            && requested != parse_timestamp(recorded)?
         {
             return Err(Error::new(
                 "Resume timestamps must match the source snapshot",
             ));
         }
     }
-    validate_source_fingerprints(paths, &manifest["sources"])
+    validate_source_fingerprints(paths, &manifest.sources)
 }
 
 fn capture_run(paths: &RunPaths, request: &RefreshRequest) -> Result<()> {
-    let manifest_path = paths.run.join("manifest.json");
-    if manifest_path.exists() {
+    if paths.manifest().exists() {
         return Err(Error::new(
             "Use a new --run-id to preserve the previous source snapshot",
         ));
@@ -186,10 +190,18 @@ fn capture_run(paths: &RunPaths, request: &RefreshRequest) -> Result<()> {
         since,
         as_of,
     };
-    cohort.validate()?;
-    let mut manifest = json!({"schema_version":2,"cohort":cohort.to_document()?,"sources":sources,
-        "production_method":HERO_BUILD_METHOD,"implementation":implementation_record(),"test_usage":"reserved"});
-    atomic_write_json(&manifest_path, &manifest)?;
-    manifest["extraction"] = extract_cohort(paths, &cohort, request.extraction_resources)?;
-    atomic_write_json(&manifest_path, &manifest)
+    let mut manifest = RunManifest {
+        schema_version: MANIFEST_SCHEMA_VERSION,
+        cohort: cohort.record()?,
+        sources,
+        extraction: None,
+        extraction_sql_sha256: Some(EXTRACTION_SQL_SHA256.into()),
+    };
+    manifest.write(paths)?;
+    manifest.extraction = Some(extract_cohort(
+        paths,
+        &cohort,
+        request.extraction_resources,
+    )?);
+    manifest.write(paths)
 }

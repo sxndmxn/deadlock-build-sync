@@ -22,8 +22,9 @@ use crate::counter_items::{CounterGroups, estimate_counter_evidence, select_coun
 use crate::item_effects::{EffectTable, ItemCatalog, LandmarkState, estimate_item_effects};
 use crate::item_imbues::{ItemImbues, attach_item_imbues, load_item_imbues};
 use crate::item_statistics::{HeroItemStatistics, attach_item_statistics, load_item_statistics};
-use crate::refresh_configuration::{ExtractionResources, RunPaths, cohort_ranks};
+use crate::refresh_configuration::{ExtractionResources, RunPaths};
 use crate::run_inputs::{load_assembly_inputs, open_run_database};
+use crate::run_manifest::RunManifest;
 
 /// Produces a main build and distinct supported variants for each active hero.
 ///
@@ -37,12 +38,11 @@ pub fn produce_hero_builds(
     resources: ExtractionResources,
     api_base_url: &str,
 ) -> Result<HeroBuildCatalog> {
-    let manifest = read_json(&paths.run.join("manifest.json"))?;
-    let cohort = &manifest["cohort"];
-    let ranks = cohort_ranks(cohort)?;
-    let as_of = parse_timestamp(text(cohort, "as_of")?)?;
+    let manifest = RunManifest::read(paths)?;
+    let ranks = manifest.cohort.ranks()?;
+    let as_of = parse_timestamp(&manifest.cohort.as_of)?;
     let patch = parse_patch_feed(&read_json(&paths.raw.join("patches.json"))?, Some(as_of))?;
-    let client_version = integer(&manifest["sources"], "client_version")?;
+    let client_version = manifest.sources.client_version;
     let heroes = read_hero_names(&paths.raw.join("heroes.json"))?;
     let mut api = build_api(api_base_url, ranks, client_version, as_of)?;
     let mut api_inputs = ApiInputs::load(paths)?;
@@ -107,9 +107,9 @@ pub fn produce_hero_builds(
         cohort: BuildCohort {
             minimum_badge: ranks.minimum.badge(),
             maximum_badge: ranks.maximum.badge(),
-            since: text(cohort, "since")?.into(),
-            as_of: text(cohort, "as_of")?.into(),
-            player_matches: integer(&manifest["extraction"], "player_matches")?,
+            since: manifest.cohort.since.clone(),
+            as_of: manifest.cohort.as_of.clone(),
+            player_matches: manifest.extraction()?.player_matches,
         },
         counter_evidence: local.counter_evidence,
         heroes: builds,

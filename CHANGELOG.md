@@ -23,6 +23,8 @@ Installed builds need a new `sync`.
 Store the item slot in the extracted item assets. Runs from 0.2.0 cannot be resumed with `--resume`.
 Trim the patch title. The Steam description showed the leading space of the feed title.
 Validate the patch identity and the cohort timestamps of a catalog. A patch post needs a title, a date, a source, and a GUID.
+Record the fingerprint of the extraction SQL in the run manifest. `--resume` rejects a run that other extraction SQL made.
+The run manifest no longer records the production method, the implementation fingerprint, or the extracted minimum badge.
 
 ### Added
 

@@ -1,7 +1,8 @@
 use std::path::{Path, PathBuf};
 
-use deadlock_data::{Error, RankRange, Result, format_timestamp};
-use serde_json::{Value, json};
+use deadlock_data::{Error, Rank, RankRange, Result, format_timestamp, parse_timestamp};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 pub const DUCKLAKE_URL: &str = "https://data.deadlock-api.com/v1/catalog.ducklake";
 pub const RANK_RESET_AT: &str = "2026-07-30T19:14:37Z";
@@ -37,6 +38,10 @@ impl ExtractionResources {
     }
 }
 
+/// The match mode and game mode of every run.
+pub const MATCH_MODE: &str = "Ranked";
+pub const GAME_MODE: &str = "Normal";
+
 #[derive(Clone, Debug)]
 pub struct Cohort {
     pub ranks: RankRange,
@@ -55,12 +60,69 @@ impl Cohort {
         Ok(())
     }
 
-    pub fn to_document(&self) -> Result<Value> {
+    /// Returns the manifest record of the cohort.
+    ///
+    /// # Errors
+    /// Returns an error when the cohort is invalid.
+    pub fn record(&self) -> Result<CohortRecord> {
         self.validate()?;
-        Ok(
-            json!({"minimum_badge":self.ranks.minimum.badge(),"maximum_badge":self.ranks.maximum.badge(),
-            "since":format_timestamp(self.since)?,"as_of":format_timestamp(self.as_of)?,"match_mode":"Ranked","game_mode":"Normal"}),
-        )
+        Ok(CohortRecord {
+            minimum_badge: self.ranks.minimum.badge(),
+            maximum_badge: self.ranks.maximum.badge(),
+            since: format_timestamp(self.since)?,
+            as_of: format_timestamp(self.as_of)?,
+            match_mode: MATCH_MODE.into(),
+            game_mode: GAME_MODE.into(),
+        })
+    }
+
+    /// Returns the filters that select the cached rows: the record without its cutoff.
+    ///
+    /// The filters are part of the cache file name, so their keys must not change.
+    ///
+    /// # Errors
+    /// Returns an error when the cohort is invalid.
+    pub fn cache_filters(&self) -> Result<Value> {
+        let mut filters = serde_json::to_value(self.record()?)?;
+        if let Some(filters) = filters.as_object_mut() {
+            filters.remove("as_of");
+        }
+        Ok(filters)
+    }
+}
+
+/// The match filters of a run in its manifest, with timestamps as RFC 3339 text.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CohortRecord {
+    pub minimum_badge: u16,
+    pub maximum_badge: u16,
+    pub since: String,
+    pub as_of: String,
+    pub match_mode: String,
+    pub game_mode: String,
+}
+
+impl CohortRecord {
+    /// # Errors
+    /// Returns an error when a badge is not a rank or the range is inverted.
+    pub fn ranks(&self) -> Result<RankRange> {
+        RankRange {
+            minimum: Rank::try_from(self.minimum_badge)?,
+            maximum: Rank::try_from(self.maximum_badge)?,
+        }
+        .validate()
+    }
+
+    /// # Errors
+    /// Returns an error when a badge or a timestamp is invalid.
+    pub fn cohort(&self) -> Result<Cohort> {
+        let cohort = Cohort {
+            ranks: self.ranks()?,
+            since: parse_timestamp(&self.since)?,
+            as_of: parse_timestamp(&self.as_of)?,
+        };
+        cohort.validate()?;
+        Ok(cohort)
     }
 }
 
@@ -85,7 +147,7 @@ impl RunPaths {
     /// # Errors
     /// Returns an error when the directory has no `manifest.json` file.
     pub fn open(run: &Path) -> Result<Self> {
-        if !run.join("manifest.json").is_file() {
+        if !run.join(MANIFEST_FILE).is_file() {
             return Err(Error::new(format!(
                 "Run directory has no manifest.json: {}",
                 run.display()
@@ -135,22 +197,19 @@ impl RunPaths {
         std::fs::create_dir_all(&paths.raw)?;
         Ok(paths)
     }
-}
 
-pub fn cohort_ranks(value: &Value) -> Result<RankRange> {
-    RankRange {
-        minimum: deadlock_data::Rank::try_from(u16::try_from(deadlock_data::integer(
-            value,
-            "minimum_badge",
-        )?)?)?,
-        maximum: deadlock_data::Rank::try_from(u16::try_from(deadlock_data::integer(
-            value,
-            "maximum_badge",
-        )?)?)?,
+    /// The manifest file of the run.
+    #[must_use]
+    pub fn manifest(&self) -> PathBuf {
+        self.run.join(MANIFEST_FILE)
     }
-    .validate()
+
+    /// The extracted `DuckDB` database of the run.
+    #[must_use]
+    pub fn database(&self) -> PathBuf {
+        self.raw.join(DATABASE_FILE)
+    }
 }
 
-pub fn implementation_record() -> Value {
-    json!({"language":"rust","source_sha256":env!("DEADLOCK_ANALYSIS_SOURCE_SHA256")})
-}
+const MANIFEST_FILE: &str = "manifest.json";
+const DATABASE_FILE: &str = "analysis.duckdb";
