@@ -112,3 +112,19 @@ Checks that only repeat the implementation or cannot fail are removed or rewritt
 - Process guard matching any argument named "deadlock" (user did not select).
 - DuckDB float nondeterminism in parallel sums (6 fields).
 - Behavior of status after a title change (documented: titles ignored).
+
+## Status on 2026-11-08
+
+Done on branch `refactor/untangle`, one commit for each fix: 1, 2, 3, 4, 5 (layout only), 6, 7, 8, 9, 10, 11, 12, the comment pass, and the test pass.
+Behavior test: `build --resume --extraction-threads 1` on one named run reproduces the catalog of the previous commit, and `dump_presentations` shows the same Steam text. The first eleven fixes were tested on run `20261108T013049Z`. A named run then removed that automatic run, as documented, so the later fixes were tested on `refactor-fresh-check` and `refactor-check-2`, two extractions of the same cohort with the same counts.
+Steam text changed in one place: the patch title lost its leading space (Fix 2).
+
+Not done, with the reason:
+
+- Fix 5 restore selection: the owner did not select it.
+- Fix 12 `required_flex_slots` and `sell_priority`: they are Steam schema fields, so they stay.
+- Fix 12 `compare_managed_heroes.rs` and `dump_category_sizes.rs`: untracked owner files.
+- `measure_counter_placebo` tests the model without hero terms while production uses hero terms. A change alters a documented experiment (E29), so it waits for a research-log entry.
+- `layout_checks` has no sizes for 3, 7 to 9, 11, or more than 14 items. The sizes come from the game and cannot be invented.
+- The `#[path]` includes in `check_imbues`, `check_item_statistics`, `check_variants`, `imbue_checks`, and `artifact_checks` compile private modules. They stay until the checks move behind public interfaces.
+- The examples `compare_key_item_signal`, `compare_situational_signal`, and `compare_variant_agreement` differ only by the function they call.
