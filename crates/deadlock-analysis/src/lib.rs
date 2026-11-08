@@ -8,7 +8,7 @@ mod build_variants;
 mod counter_items;
 mod experiments;
 
-pub use counter_items::GroupInteraction;
+pub use ridge_logistic::CoefficientEstimate;
 mod database;
 mod extraction;
 mod hero_assembly;

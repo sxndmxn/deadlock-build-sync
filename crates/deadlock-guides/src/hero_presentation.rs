@@ -1,7 +1,7 @@
 use deadlock_data::{Error, Rank, RankRange, Result};
 
 use crate::build_title::format_build_name;
-use crate::hero_build::{BuildItem, CounterPanel, HeroBuild, HeroBuildCatalog};
+use crate::hero_build::{BuildItem, HeroBuild, HeroBuildCatalog};
 use crate::presentation::{
     BuildPresentation, ManagedTrailer, PresentationAbilities, PresentationCategory,
     PresentationContent, PresentationItem,
@@ -35,15 +35,15 @@ pub fn build_hero_presentation(
         &build.core,
         "Buy from left to right.",
         false,
-        describe_item,
     )?];
     for panel in &build.counters {
+        // A narrow panel shows only a short text without covering its items.
+        // The panel name states the condition, and the Markdown export states the evidence.
         categories.push(build_category(
             panel.target.panel_name(),
             &panel.items,
-            &describe_counter_panel(panel, catalog)?,
+            COUNTER_PANEL_TEXT,
             true,
-            describe_item,
         )?);
     }
     for tier in 1..=4 {
@@ -53,13 +53,7 @@ pub fn build_hero_presentation(
             .filter(|item| item.tier == tier)
             .cloned()
             .collect::<Vec<_>>();
-        categories.push(build_category(
-            &format!("TIER {tier}"),
-            &items,
-            "",
-            true,
-            describe_item,
-        )?);
+        categories.push(build_category(&format!("TIER {tier}"), &items, "", true)?);
     }
     let abilities = (!build.ability_ids.is_empty()).then(|| PresentationAbilities {
         ability_ids: build.ability_ids.clone(),
@@ -90,7 +84,6 @@ fn build_category(
     items: &[BuildItem],
     description: &str,
     optional: bool,
-    annotate: fn(&BuildItem) -> Result<String>,
 ) -> Result<PresentationCategory> {
     let (width, height) = compact_category_size(items.len())?;
     Ok(PresentationCategory {
@@ -105,7 +98,7 @@ fn build_category(
                 Ok(PresentationItem {
                     item_id: item.item_id,
                     name: item.name.clone(),
-                    annotation: annotate(item)?,
+                    annotation: describe_item(item)?,
                     required_flex_slots: None,
                     sell_priority: None,
                     imbue_target_ability_id: item
@@ -145,22 +138,8 @@ fn describe_item(item: &BuildItem) -> Result<String> {
     ))
 }
 
-/// Returns the short description of a counter panel after a check of its run evidence.
-fn describe_counter_panel(panel: &CounterPanel, catalog: &HeroBuildCatalog) -> Result<String> {
-    let evidence = catalog
-        .counter_evidence
-        .iter()
-        .find(|evidence| evidence.target == panel.target)
-        .ok_or_else(|| Error::new("Counter panel has no run evidence"))?;
-    if evidence.phases.is_empty() {
-        return Err(Error::new("Counter panel evidence has no tested phase"));
-    }
-    // A narrow panel shows only a short text without covering its items.
-    // The panel name states the condition, and the Markdown export states the evidence.
-    Ok(COUNTER_PANEL_TEXT.into())
-}
-
 /// The description of each counter panel. The tests confirmed the effects from 20 minutes.
+/// Catalog validation checks that each panel has tested run evidence.
 const COUNTER_PANEL_TEXT: &str = "From midgame";
 
 /// Rounds the soul window to whole thousands. The window always spans at least 1k.

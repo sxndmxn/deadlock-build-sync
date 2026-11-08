@@ -24,7 +24,7 @@ pub fn array(value: &Value) -> Result<&[Value]> {
 
 /// # Errors
 /// Returns an error if the field is absent.
-pub fn field<'a>(value: &'a Value, name: &str) -> Result<&'a Value> {
+fn field<'a>(value: &'a Value, name: &str) -> Result<&'a Value> {
     object(value)?
         .get(name)
         .ok_or_else(|| Error::new(format!("Missing field: {name}")))
@@ -65,7 +65,7 @@ pub fn sha256(bytes: &[u8]) -> String {
     format_sha256(&Sha256::digest(bytes))
 }
 
-pub fn format_sha256(bytes: &[u8]) -> String {
+fn format_sha256(bytes: &[u8]) -> String {
     const DIGITS: &[u8; 16] = b"0123456789abcdef";
     let mut output = String::with_capacity(64);
     for &byte in bytes {

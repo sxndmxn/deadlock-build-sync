@@ -12,9 +12,9 @@ mod time;
 
 pub use artifact::{atomic_write, atomic_write_json, read_json, state_directory};
 pub use error::{Error, Result};
-pub use execution_trace::{TraceSession, trace_operation};
+pub use execution_trace::{MAXIMUM_TRACE_BYTES, TraceSession, trace_operation};
 pub use json::{
-    array, canonical_json, field, fingerprint, integer, object, sha256, text, validate_sha256,
+    array, canonical_json, fingerprint, integer, object, sha256, text, validate_sha256,
 };
 pub use patch::{Patch, PatchPost};
 pub use rank::{Rank, RankRange};

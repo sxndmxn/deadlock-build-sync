@@ -1,9 +1,12 @@
 use duckdb::types::Value as SqlValue;
 use serde::Deserialize;
 
-use deadlock_data::{RankRange, Result};
+use std::collections::BTreeSet;
+
+use deadlock_data::{Error, RankRange, Result};
 
 use crate::build_assembly::{PurchaseMedian, PurchaseMedians};
+use crate::build_evaluation::EVALUATION_LANDMARKS;
 use crate::database::{AnalysisDatabase, Parameters};
 use crate::item_effects::{ItemCatalog, LandmarkState};
 use crate::refresh_configuration::{ExtractionResources, RunPaths};
@@ -57,7 +60,21 @@ pub fn load_assembly_inputs(
     parameters: &Parameters,
 ) -> Result<AssemblyInputs> {
     eprintln!("Loading landmark states");
-    let states = database.query_rows(sql!("builds/select_landmark_states"), parameters)?;
+    let states: Vec<LandmarkState> =
+        database.query_rows(sql!("builds/select_landmark_states"), parameters)?;
+    // The SQL landmark list must cover the evaluation landmarks, which cover the phases.
+    let landmarks = states
+        .iter()
+        .map(|state| state.landmark_s)
+        .collect::<BTreeSet<_>>();
+    if let Some(missing) = EVALUATION_LANDMARKS
+        .iter()
+        .find(|landmark| !landmarks.contains(landmark))
+    {
+        return Err(Error::new(format!(
+            "The extracted landmark states have no rows at {missing} s. The run has too few matches, or select_landmark_states.sql dropped a landmark"
+        )));
+    }
     let catalog = ItemCatalog::new(
         database.query_rows(sql!("builds/select_item_assets"), &Parameters::new())?,
     )?;

@@ -4,7 +4,7 @@ SELECT
     CASE
         WHEN epoch(min(p.start_time)) <= b.train_end THEN 'train'
         WHEN epoch(min(p.start_time)) <= b.validation_end THEN 'validation'
-        ELSE 'test'
+        ELSE $test_fold
     END AS fold
 FROM player_matches AS p
 CROSS JOIN split_boundaries AS b

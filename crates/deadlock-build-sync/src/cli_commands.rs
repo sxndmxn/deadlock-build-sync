@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use deadlock_analysis::{ExtractionResources, RefreshRequest};
-use deadlock_data::{Error, RankRange, Result, parse_timestamp, state_directory};
+use deadlock_data::{RankRange, Result, parse_timestamp, state_directory};
 use deadlock_guides::{BuildRules, HeroBuildCatalog};
 use deadlock_steam::{InstallResult, LinuxProcesses, require_deadlock_stopped, restore_latest};
 use serde_json::json;
@@ -134,11 +134,7 @@ pub fn run_status(arguments: &StatusArguments, base_url: &str) -> Result<u8> {
 }
 
 pub fn run_restore(arguments: &RestoreArguments) -> Result<u8> {
-    if !arguments.latest {
-        return Err(Error::new(
-            "Supply --latest to select the latest complete backup",
-        ));
-    }
+    // The command line requires --latest, so the arguments cannot select another backup.
     let location = cache_location(&arguments.location)?;
     let result = restore_latest(&location, &state_directory()?, &LinuxProcesses)?;
     print_json(

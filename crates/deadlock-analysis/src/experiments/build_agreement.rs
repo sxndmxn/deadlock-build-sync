@@ -3,17 +3,16 @@ use std::collections::{BTreeMap, BTreeSet};
 use deadlock_data::{Result, count_as_f64};
 use deadlock_guides::{BuildEvaluation, Confidence};
 
+use crate::build_assembly::LATE_PHASES;
 use crate::build_assembly::{ItemScoring, PHASES, assemble_build, assemble_build_with_scoring};
 use crate::build_evaluation::{
     EVALUATION_LANDMARKS, evaluate_agreements, evaluate_build, evaluate_pooled_builds,
     measure_agreement,
 };
 use crate::build_variants::{VariantSelection, select_item_variants_with_rule};
-use crate::counter_items::GroupInteraction;
-use crate::item_effects::{
-    EffectTable, LandmarkState, estimate_item_effects, relative_net_worth, standardized_rank,
-};
+use crate::item_effects::{EffectTable, LandmarkState, covariate_features, estimate_item_effects};
 use crate::refresh_configuration::{ExtractionResources, RunPaths};
+use crate::ridge_logistic::CoefficientEstimate;
 use crate::ridge_logistic::{FeatureRow, fit_ridge_logistic};
 use crate::run_study::RunStudy;
 
@@ -114,8 +113,8 @@ fn test_item_scoring(
 /// The held-out association of two build agreements with the match result in one model.
 #[derive(Debug)]
 pub struct AgreementPair {
-    pub base: GroupInteraction,
-    pub alternative: GroupInteraction,
+    pub base: CoefficientEstimate,
+    pub alternative: CoefficientEstimate,
     pub heroes: usize,
     pub observations: usize,
 }
@@ -301,14 +300,8 @@ fn fit_agreement_pair(samples: &[AgreementSample<'_>], heroes: usize) -> Result<
     let rows = samples
         .iter()
         .map(|(state, base, alternative)| {
-            let mut features = vec![
-                (0, 1.0),
-                (1, relative_net_worth(state.net_worth, state.landmark_s)),
-                (2, state.team_lead),
-                (3, standardized_rank(state.average_badge)),
-                (4, *base),
-                (5, *alternative),
-            ];
+            let mut features = covariate_features(state).to_vec();
+            features.extend([(4, *base), (5, *alternative)]);
             if let Some(position) = EVALUATION_LANDMARKS
                 .iter()
                 .position(|landmark| *landmark == state.landmark_s)
@@ -332,8 +325,8 @@ fn fit_agreement_pair(samples: &[AgreementSample<'_>], heroes: usize) -> Result<
     let width = 5 + EVALUATION_LANDMARKS.len() + hero_columns.len();
     let references = rows.iter().collect::<Vec<_>>();
     let fit = fit_ridge_logistic(&references, &vec![0.0; width], &vec![1.0; width])?;
-    let interaction = |index| -> Result<GroupInteraction> {
-        Ok(GroupInteraction {
+    let interaction = |index| -> Result<CoefficientEstimate> {
+        Ok(CoefficientEstimate {
             coefficient: fit.coefficients[index],
             standard_error: fit.clustered_standard_error(index, &references, &matches)?,
         })
@@ -741,7 +734,7 @@ pub fn compare_key_item_signal(
         for state in test
             .iter()
             .copied()
-            .filter(|state| state.hero_id == hero_id && state.landmark_s >= 1200)
+            .filter(|state| state.hero_id == hero_id && state.landmark_s >= LATE_PHASES[0])
         {
             let Some(core) = measure_agreement(state, &build.phase_sets, catalog) else {
                 continue;

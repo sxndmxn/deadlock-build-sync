@@ -2,10 +2,34 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use deadlock_guides::BuildItem;
 
-use crate::item_effects::{ALL_HEROES, EffectTable, HeroLandmarkEffects, ItemCatalog};
+use crate::item_effects::{
+    ALL_HEROES, EXPENSIVE_TIER, EffectTable, HeroLandmarkEffects, ItemCatalog,
+};
 
 /// Phase landmarks: lane (9 minutes), mid game (20 minutes), and late game (30 minutes).
 pub const PHASES: [u32; 3] = [540, 1200, 1800];
+/// The mid game and late game phases, after most players can afford an expensive item.
+pub const LATE_PHASES: [u32; 2] = [1200, 1800];
+const _: () = assert!(contains_all(&PHASES, &LATE_PHASES));
+
+/// Returns true when every item is in the set. The landmark lists use it at compile time.
+#[must_use]
+pub const fn contains_all(set: &[u32], items: &[u32]) -> bool {
+    let mut index = 0;
+    while index < items.len() {
+        let mut found = false;
+        let mut position = 0;
+        while position < set.len() {
+            found |= set[position] == items[index];
+            position += 1;
+        }
+        if !found {
+            return false;
+        }
+        index += 1;
+    }
+    true
+}
 /// The smallest share of hero players who own an item at a phase before CORE can use it.
 const MINIMUM_ADOPTION: f64 = 0.03;
 /// One effect step of this size equals a factor of e in adoption in the item score.
@@ -262,7 +286,7 @@ pub fn describe_item(
 fn select_key_item(core: &[BuildItem], table: &EffectTable, catalog: &ItemCatalog) -> Option<u64> {
     let late = core
         .iter()
-        .filter(|item| item.tier >= 3)
+        .filter(|item| item.tier >= EXPENSIVE_TIER)
         .collect::<Vec<_>>();
     let pool = if late.is_empty() {
         core.iter().collect()

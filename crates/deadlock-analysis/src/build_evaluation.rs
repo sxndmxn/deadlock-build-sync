@@ -4,11 +4,13 @@ use deadlock_data::Result;
 use deadlock_guides::{BuildEvaluation, Confidence, HeroEstimate};
 
 use crate::build_assembly::PhaseSets;
-use crate::item_effects::{ItemCatalog, LandmarkState, relative_net_worth, standardized_rank};
+use crate::build_assembly::{PHASES, contains_all};
+use crate::item_effects::{ItemCatalog, LandmarkState, covariate_features};
 use crate::ridge_logistic::{FeatureRow, fit_ridge_logistic};
 
 /// Test landmarks. Each one compares owned items with the latest phase set at or before it.
 pub const EVALUATION_LANDMARKS: [u32; 5] = [540, 900, 1200, 1500, 1800];
+const _: () = assert!(contains_all(&EVALUATION_LANDMARKS, &PHASES));
 const AGREEMENT_COLUMN: usize = 4;
 const WIDTH: usize = 5 + EVALUATION_LANDMARKS.len() - 1;
 const MINIMUM_OBSERVATIONS: usize = 200;
@@ -146,13 +148,8 @@ fn agreement_row(state: &LandmarkState, agreement: f64) -> Option<FeatureRow> {
     let position = EVALUATION_LANDMARKS
         .iter()
         .position(|landmark| *landmark == state.landmark_s)?;
-    let mut features = vec![
-        (0, 1.0),
-        (1, relative_net_worth(state.net_worth, state.landmark_s)),
-        (2, state.team_lead),
-        (3, standardized_rank(state.average_badge)),
-        (AGREEMENT_COLUMN, agreement),
-    ];
+    let mut features = covariate_features(state).to_vec();
+    features.push((AGREEMENT_COLUMN, agreement));
     if position > 0 {
         features.push((AGREEMENT_COLUMN + position, 1.0));
     }

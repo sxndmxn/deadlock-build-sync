@@ -3,11 +3,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use deadlock_data::{Error, Result, integer, text};
 use serde_json::Value;
 
-pub const AXIS_CLASSES: [&str; 3] = [
+const AXIS_CLASSES: [&str; 3] = [
     "citadel_build_tag_weapon",
     "citadel_build_tag_spirit",
     "citadel_build_tag_vitality",
 ];
+/// The function tags, in the order of `classify_function` in `build_tags.rs`.
 pub const FUNCTION_CLASSES: [&str; 8] = [
     "citadel_build_tag_damage",
     "citadel_build_tag_utility",
@@ -18,22 +19,16 @@ pub const FUNCTION_CLASSES: [&str; 8] = [
     "citadel_build_tag_headshots",
     "citadel_build_tag_debuff",
 ];
-pub const COMPLEXITY_CLASSES: [&str; 3] = [
+const COMPLEXITY_CLASSES: [&str; 3] = [
     "citadel_build_tag_complexity_1",
     "citadel_build_tag_complexity_2",
     "citadel_build_tag_complexity_3",
 ];
 
-#[derive(Clone, Debug)]
-pub struct BuildTag {
-    pub class_name: String,
-    pub label: String,
-    pub tag_id: u64,
-}
-
+/// The build tag identifier of each tag class, from the API build tag assets.
 #[derive(Clone, Debug)]
 pub struct BuildTagCatalog {
-    tags: BTreeMap<String, BuildTag>,
+    tags: BTreeMap<String, u64>,
 }
 
 impl BuildTagCatalog {
@@ -49,12 +44,7 @@ impl BuildTagCatalog {
             if class_name.is_empty() || label.is_empty() || tag_id == 0 {
                 return Err(Error::new("Build tag catalog contains a malformed tag"));
             }
-            let tag = BuildTag {
-                class_name: class_name.into(),
-                label: label.into(),
-                tag_id,
-            };
-            if tags.insert(class_name.into(), tag).is_some() || !ids.insert(tag_id) {
+            if tags.insert(class_name.to_owned(), tag_id).is_some() || !ids.insert(tag_id) {
                 return Err(Error::new(
                     "Build tag catalog repeats a class or identifier",
                 ));
@@ -74,11 +64,14 @@ impl BuildTagCatalog {
         Ok(Self { tags })
     }
 
+    /// Returns the tag identifier of a class.
+    ///
     /// # Errors
     /// Returns an error when the catalog does not contain the specified class.
-    pub fn require(&self, class_name: &str) -> Result<&BuildTag> {
+    pub fn require(&self, class_name: &str) -> Result<u64> {
         self.tags
             .get(class_name)
+            .copied()
             .ok_or_else(|| Error::new(format!("Missing build tag: {class_name}")))
     }
 }

@@ -5,10 +5,11 @@ use deadlock_guides::CounterEvidence;
 
 use crate::build_assembly::PHASES;
 use crate::counter_items::{
-    COUNTER_PHASES, CounterGroups, GroupInteraction, enemy_item_conditions, fit_group_interactions,
+    COUNTER_PHASES, CounterGroups, enemy_item_conditions, fit_group_interactions,
     mean_enemy_spirit_share, measure_counter_groups, spirit_conditions,
 };
 use crate::refresh_configuration::{ExtractionResources, RunPaths};
+use crate::ridge_logistic::CoefficientEstimate;
 use crate::run_study::RunStudy;
 
 use super::mix;
@@ -141,7 +142,7 @@ pub fn measure_counter_windows(
 #[derive(Debug)]
 pub struct ConditionResult {
     pub phase_s: u32,
-    pub interactions: Vec<GroupInteraction>,
+    pub interactions: Vec<CoefficientEstimate>,
     pub observations: usize,
 }
 

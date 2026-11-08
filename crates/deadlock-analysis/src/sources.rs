@@ -4,7 +4,7 @@ use std::time::Duration;
 use deadlock_data::{
     Error, Result, array, atomic_write_json, fingerprint, integer, read_json, validate_sha256,
 };
-use deadlock_input::JsonHttpClient;
+use deadlock_input::{JsonHttpClient, REQUEST_INTERVAL};
 use serde_json::Value;
 
 use crate::refresh_configuration::RunPaths;
@@ -46,7 +46,7 @@ pub fn validate_source_fingerprints(paths: &RunPaths, sources: &SourceRecord) ->
 
 pub fn capture_sources(paths: &RunPaths, base_url: &str) -> Result<SourceRecord> {
     let client = JsonHttpClient::new(base_url, Duration::from_secs(120), 5)?;
-    client.set_request_interval(Duration::from_millis(310))?;
+    client.set_request_interval(REQUEST_INTERVAL)?;
     let versions = client.get_json("/v1/assets/client-versions", &BTreeMap::new())?;
     let version = array(&versions)?
         .iter()

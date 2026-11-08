@@ -41,7 +41,7 @@ pub use cache_status::{ManagedBuildComparison, compare_managed_builds};
 pub use cache_transaction::{InstallResult, install_cache_update};
 pub use kv3_encode::encode_kv3;
 pub use kv3_read::decode_kv3;
-pub use kv3_value::{Kv3Document, Kv3Flag, Kv3Kind, Kv3Value};
+pub use kv3_value::{Kv3Document, Kv3Kind, Kv3Value};
 pub use process_check::{LinuxProcesses, ProcessInspection, require_deadlock_stopped};
 pub use protobuf_encode::{encode_hero_build, wrap_hero_build};
 pub use steam_identity::local_steam_persona;

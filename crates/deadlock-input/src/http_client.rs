@@ -160,7 +160,10 @@ impl JsonHttpClient {
                     .map(|(key, value)| (key.as_str(), value.as_str())),
             )
             .header("Accept", "application/json")
-            .header("User-Agent", "deadlock-build-sync/0.1")
+            .header(
+                "User-Agent",
+                concat!("deadlock-build-sync/", env!("CARGO_PKG_VERSION")),
+            )
             .call();
         let mut response = match response {
             Ok(response) => response,

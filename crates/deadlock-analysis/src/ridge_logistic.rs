@@ -12,6 +12,13 @@ pub struct FeatureRow {
     pub label: f64,
 }
 
+/// One fitted coefficient with its match-clustered standard error.
+#[derive(Clone, Copy, Debug)]
+pub struct CoefficientEstimate {
+    pub coefficient: f64,
+    pub standard_error: f64,
+}
+
 /// Coefficients and the penalized Hessian at the solution.
 #[derive(Clone, Debug)]
 pub struct RidgeFit {

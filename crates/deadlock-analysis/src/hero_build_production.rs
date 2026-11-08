@@ -5,12 +5,10 @@ use deadlock_data::{
     Error, RankRange, Result, integer, parse_timestamp, read_json, text, trace_operation,
 };
 use deadlock_guides::{
-    BuildCohort, BuildEvaluation, BuildRules, CounterEvidence, HERO_BUILD_METHOD,
-    HERO_BUILD_SCHEMA_VERSION, HeroBuild, HeroBuildCatalog, TagItem, assign_build_focus,
-    select_ability_path, select_build_tags,
+    BuildCohort, BuildEvaluation, BuildRules, BuildTagCatalog, CounterEvidence, HERO_BUILD_METHOD,
+    HERO_BUILD_SCHEMA_VERSION, HeroBuild, HeroBuildCatalog, assign_build_focus, assign_build_tags,
 };
-use deadlock_input::{ApiOptions, BuildTagCatalog, DeadlockApi, parse_patch_feed};
-use serde_json::Value;
+use deadlock_input::{ApiOptions, DeadlockApi, parse_patch_feed};
 
 use crate::api_inputs::{AbilityRequest, ApiInputs, request_inputs};
 use crate::build_assembly::{AssembledBuild, PHASES, PurchaseMedians};
@@ -94,7 +92,8 @@ pub fn produce_hero_builds(
         .into_iter()
         .map(|build| {
             let rows = api_inputs.ability_rows(&ability_request(&build));
-            let mut build = attach_ability_and_tags(build, rows, assets, &tags)?;
+            let mut build = build;
+            assign_build_tags(&mut build, rows, assets, &tags)?;
             attach_item_imbues(&mut build, &local.imbues, assets);
             attach_item_statistics(&mut build, &local.statistics)?;
             assign_build_focus(&mut build, assets)?;
@@ -335,58 +334,7 @@ fn build_api(
         rank_range: ranks,
         client_version: Some(client_version),
         as_of_timestamp: as_of,
-        ..ApiOptions::default()
     })
-}
-
-/// Adds the most supported complete ability order and the three build icons.
-///
-/// The icons are the first maxed ability, the key item, and the dominant build function.
-/// Without a complete ability order, the icons use CORE items instead of the ability.
-fn attach_ability_and_tags(
-    mut build: HeroBuild,
-    rows: &[Value],
-    assets: &[Value],
-    tags: &BuildTagCatalog,
-) -> Result<HeroBuild> {
-    if let Some(path) = select_ability_path(rows)? {
-        build.ability_ids = path.ability_ids;
-        build.ability_matches = path.matches;
-    }
-    let mut core = build
-        .core
-        .iter()
-        .map(|item| TagItem {
-            item_id: item.item_id,
-            tier: if item.item_id == build.key_item_id {
-                3
-            } else {
-                item.tier.min(2)
-            },
-        })
-        .collect::<Vec<_>>();
-    core.sort_by_key(|item| std::cmp::Reverse(item.tier));
-    match select_build_tags(&build.ability_ids, &core, assets, tags) {
-        Ok(selection) => {
-            build.tag_ids = selection.tag_ids;
-            build.key_ability_name = Some(selection.ability_name);
-        }
-        Err(_) => build.tag_ids = select_fallback_tags(&build)?,
-    }
-    Ok(build)
-}
-
-fn select_fallback_tags(build: &HeroBuild) -> Result<[u64; 3]> {
-    let mut ids = vec![build.key_item_id];
-    let mut others = build
-        .core
-        .iter()
-        .filter(|item| item.item_id != build.key_item_id)
-        .collect::<Vec<_>>();
-    others.sort_by_key(|item| (std::cmp::Reverse(item.cost), item.item_id));
-    ids.extend(others.iter().take(2).map(|item| item.item_id));
-    ids.try_into()
-        .map_err(|_| Error::new("Build needs three CORE items for its icons"))
 }
 
 fn read_hero_names(path: &Path) -> Result<BTreeMap<u64, String>> {

@@ -3,16 +3,15 @@ use std::collections::{BTreeMap, BTreeSet};
 use deadlock_data::Result;
 use deadlock_guides::BuildRules;
 
-use crate::build_assembly::{AssembledBuild, PHASES, PurchaseMedians, assemble_build};
+use crate::build_assembly::{AssembledBuild, LATE_PHASES, PHASES, PurchaseMedians, assemble_build};
 use crate::item_effects::{
-    ALL_HEROES, EffectTable, HeroLandmarkEffects, ItemCatalog, LandmarkState, build_feature_row,
-    summarize_hero,
+    ALL_HEROES, EXPENSIVE_TIER, EffectTable, HeroLandmarkEffects, ItemCatalog, LandmarkState,
+    MINIMUM_OBSERVATIONS, build_feature_row, summarize_hero,
 };
 
-const MINIMUM_OWNERS: usize = 100;
-const MAXIMUM_ADDITIONAL_BUILDS: usize = 2;
 /// The mid game and late game phases at which players must own a variant key item.
-const KEY_ITEM_PHASES: [u32; 2] = [1200, 1800];
+const KEY_ITEM_PHASES: [u32; 2] = LATE_PHASES;
+const MAXIMUM_ADDITIONAL_BUILDS: usize = 2;
 /// The hero adoption range of a variant key item at one of its phases.
 const KEY_ITEM_ADOPTION: std::ops::RangeInclusive<f64> = 0.05..=0.70;
 
@@ -178,7 +177,7 @@ fn evaluate_item_variants(
     let mut candidates = Vec::new();
     let mut builds = BTreeMap::new();
     for item in &catalog.items {
-        if item.tier < 3 {
+        if item.tier < EXPENSIVE_TIER {
             continue;
         }
         let (mut candidate, variant) =
@@ -320,7 +319,7 @@ pub fn describe_item_variant(
     if !supported {
         candidate.gate = VariantGate::UnsupportedItem;
     }
-    if owners.len() < MINIMUM_OWNERS {
+    if owners.len() < MINIMUM_OBSERVATIONS {
         candidate.reject(VariantGate::FewOwners);
         return Ok((candidate, None));
     }
@@ -366,7 +365,7 @@ fn condition_item_adoption(
             .copied()
             .filter(|state| state.landmark_s == phase)
             .collect::<Vec<_>>();
-        if rows.len() < MINIMUM_OWNERS {
+        if rows.len() < MINIMUM_OBSERVATIONS {
             continue;
         }
         conditioned.insert((hero_id, phase), summarize_owners(&rows, effects, catalog)?);
@@ -409,7 +408,7 @@ pub fn build_separation(
         build
             .core
             .iter()
-            .filter(|item| item.tier >= 3)
+            .filter(|item| item.tier >= EXPENSIVE_TIER)
             .map(|item| item.item_id)
             .collect::<BTreeSet<_>>()
     };

@@ -12,7 +12,11 @@ const GLOBAL_ITEM_PENALTY: f64 = 200.0;
 const GLOBAL_COVARIATE_PENALTY: f64 = 1e-4;
 const HERO_ITEM_PENALTY: f64 = 300.0;
 const HERO_COVARIATE_PENALTY: f64 = 1.0;
-const MINIMUM_HERO_ROWS: usize = 100;
+/// The smallest number of landmark rows that supports a hero model, and the smallest number
+/// of owner matches that supports an additional build.
+pub const MINIMUM_OBSERVATIONS: usize = 100;
+/// Items of this shop tier and above are the expensive items that define a build.
+pub const EXPENSIVE_TIER: u8 = 3;
 
 /// One player at one landmark time, with the items that the player owns.
 #[derive(Clone, Debug, Deserialize)]
@@ -33,7 +37,7 @@ pub struct LandmarkState {
 }
 
 /// The fold of the held-out test matches.
-const TEST_FOLD: &str = "test";
+pub const TEST_FOLD: &str = "test";
 
 impl LandmarkState {
     /// Returns true when the state belongs to the held-out test fold.
@@ -127,17 +131,25 @@ pub type EffectTable = BTreeMap<(u64, u32), HeroLandmarkEffects>;
 /// The effect table key for the values of all heroes together. Hero IDs start at 1.
 pub const ALL_HEROES: u64 = 0;
 
+/// The covariate features of a state: intercept, relative net worth, team lead, and rank.
+///
+/// Every model of the crate starts its feature row with these columns.
+#[must_use]
+pub fn covariate_features(state: &LandmarkState) -> [(usize, f64); COVARIATES] {
+    [
+        (0, 1.0),
+        (1, relative_net_worth(state.net_worth, state.landmark_s)),
+        (2, state.team_lead),
+        (3, standardized_rank(state.average_badge)),
+    ]
+}
+
 /// Converts a landmark state to model features.
 ///
 /// Relative net worth is the logarithm of net worth divided by 20 souls per second.
 #[must_use]
 pub fn build_feature_row(state: &LandmarkState, catalog: &ItemCatalog) -> FeatureRow {
-    let mut features = vec![
-        (0, 1.0),
-        (1, relative_net_worth(state.net_worth, state.landmark_s)),
-        (2, state.team_lead),
-        (3, standardized_rank(state.average_badge)),
-    ];
+    let mut features = covariate_features(state).to_vec();
     features.extend(
         state
             .item_ids
@@ -208,7 +220,7 @@ pub fn fit_landmark_models(
             .filter(|(owner, _)| *owner == hero)
             .map(|(_, row)| row)
             .collect::<Vec<_>>();
-        if hero_rows.len() < MINIMUM_HERO_ROWS {
+        if hero_rows.len() < MINIMUM_OBSERVATIONS {
             continue;
         }
         let fit = fit_ridge_logistic(

@@ -30,6 +30,11 @@ An active hero is a hero that a player can select. The source capture and the bu
 The installer and `status` classify the private builds with one scan. A build that the tool cannot parse stays in place in both, with a warning.
 The backup manifest no longer records `out_of_scope_sha256`. Nothing read it.
 The next local build ID is above the selected build in `LastUsedBuilds`.
+Stop a run whose match window has no ranked matches, before the fold split. The fold boundaries are the 60% and 80% quantiles of the match start times, as before, without the unused time-share fallback.
+Stop a build when the extracted landmark states lack an evaluation landmark, which a changed `select_landmark_states.sql` would cause.
+Send the workspace version in the HTTP `User-Agent` header.
+Move the build tag catalog, the tag assignment, and the mechanics text cleanup to `deadlock-guides`. `deadlock-guides` no longer depends on `deadlock-input`.
+Remove unread code: the `observed_players` column, the implementation fingerprint of all sources, the trace reader branches for events that no writer makes, and API options that never changed.
 Trim the patch title. The Steam description showed the leading space of the feed title.
 Validate the patch identity and the cohort timestamps of a catalog. A patch post needs a title, a date, a source, and a GUID.
 Record the fingerprint of the extraction SQL in the run manifest. `--resume` rejects a run that other extraction SQL made.

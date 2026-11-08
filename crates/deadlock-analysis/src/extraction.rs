@@ -9,7 +9,10 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::database::{AnalysisDatabase, Parameters};
-use crate::refresh_configuration::{Cohort, DUCKLAKE_URL, ExtractionResources, RunPaths};
+use crate::item_effects::TEST_FOLD;
+use crate::refresh_configuration::{
+    Cohort, DUCKLAKE_URL, ExtractionResources, GAME_MODE, MATCH_MODE, RunPaths,
+};
 use crate::run_manifest::ExtractionRecord;
 use crate::sql_resources::sql;
 
@@ -224,8 +227,8 @@ fn set_threads(database: &AnalysisDatabase, threads: u16) -> Result<()> {
 
 fn build_cohort_parameters(cohort: &Cohort) -> Parameters {
     Parameters::from([
-        ("match_mode".into(), SqlValue::Text("Ranked".into())),
-        ("game_mode".into(), SqlValue::Text("Normal".into())),
+        ("match_mode".into(), SqlValue::Text(MATCH_MODE.into())),
+        ("game_mode".into(), SqlValue::Text(GAME_MODE.into())),
         (
             "since".into(),
             SqlValue::Timestamp(TimeUnit::Second, cohort.since),
@@ -290,23 +293,20 @@ fn create_match_folds(database: &AnalysisDatabase, cohort: &Cohort) -> Result<()
             ),
         ]),
     )?;
-    let start = deadlock_data::count_as_f64(u64::try_from(cohort.since)?)?;
-    let end = deadlock_data::count_as_f64(u64::try_from(cohort.as_of)?)?;
-    let parameters = [
-        ("discovery_end", 0.45),
-        ("train_end", 0.6),
-        ("validation_end", 0.8),
-    ]
-    .into_iter()
-    .map(|(name, share)| {
-        (
-            name.into(),
-            SqlValue::Double((end - start).mul_add(share, start)),
-        )
-    })
-    .collect();
-    database.execute(sql!("extract/fill_split_boundaries"), &parameters)?;
-    database.execute(sql!("extract/create_match_folds"), &Parameters::new())
+    // The boundaries are quantiles of the match start times. An empty cohort has none.
+    let matches = database.count(
+        sql!("extract/count_table_rows"),
+        &Parameters::from([("table".into(), SqlValue::Text("player_matches".into()))]),
+    )?;
+    if matches == 0 {
+        return Err(Error::new(
+            "The match window has no ranked matches. Sync again later in the patch",
+        ));
+    }
+    database.execute(
+        sql!("extract/create_match_folds"),
+        &Parameters::from([("test_fold".into(), SqlValue::Text(TEST_FOLD.into()))]),
+    )
 }
 
 fn collect_extraction_counts(database: &AnalysisDatabase) -> Result<ExtractionRecord> {
