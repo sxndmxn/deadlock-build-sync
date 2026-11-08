@@ -16,3 +16,4 @@ pub use artifact_transaction::CATALOG_FILE;
 pub use build_workflow::{install_catalog, write_build_artifacts};
 pub use cli::run_cli;
 pub use cli_arguments::Cli;
+pub use freshness::build_freshness_report;

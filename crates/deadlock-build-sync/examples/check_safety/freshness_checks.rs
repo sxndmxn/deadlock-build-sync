@@ -4,7 +4,7 @@ use std::net::{TcpListener, TcpStream};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use deadlock_build_sync::install_catalog;
+use deadlock_build_sync::{build_freshness_report, install_catalog};
 use deadlock_data::{Error, Result};
 use deadlock_guides::HeroBuildCatalog;
 use deadlock_input::parse_patch_feed;
@@ -13,6 +13,7 @@ use serde_json::{Value, json};
 
 pub fn check_installation_freshness() -> Result<()> {
     check_hero_release_feed()?;
+    check_status_exit_codes()?;
     let root = tempfile::tempdir()?;
     let location = CacheLocation {
         account_id: 7,
@@ -192,6 +193,58 @@ fn check_hero_release_feed() -> Result<()> {
     if parse_patch_feed(&json!([release]), None)?.title != "Fairfax Industries Employee Spotlight" {
         return Err(Error::new(
             "A feed without updates did not use its latest post",
+        ));
+    }
+    Ok(())
+}
+
+/// Exit code 1 means that a stage is malformed or unavailable. Exit code 2 means that a sync
+/// is necessary. A missing catalog needs no API request.
+fn check_status_exit_codes() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let artifacts = root.path().join("artifacts");
+    let location = CacheLocation {
+        account_id: 7,
+        cache_path: root.path().join("cached_hero_builds.kv3"),
+        app_directory: root.path().into(),
+    };
+    let (code, report) = build_freshness_report(
+        &artifacts,
+        "http://127.0.0.1:1",
+        Err(Error::new("No Steam cache")),
+    )?;
+    let states = |report: &Value| {
+        report["stages"]
+            .as_array()
+            .map(|stages| {
+                stages
+                    .iter()
+                    .map(|stage| stage["state"].as_str().unwrap_or_default().to_owned())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default()
+    };
+    if code != 1 || states(&report) != ["missing", "unavailable"] {
+        return Err(Error::new(
+            "Status did not report an unavailable cache with exit code 1",
+        ));
+    }
+    let (code, report) = build_freshness_report(&artifacts, "http://127.0.0.1:1", Ok(location))?;
+    if code != 2 || states(&report) != ["missing", "missing"] {
+        return Err(Error::new(
+            "Status did not report missing builds with exit code 2",
+        ));
+    }
+    fs::create_dir(&artifacts)?;
+    fs::write(artifacts.join("hero-builds.json"), b"not a catalog")?;
+    let (code, report) = build_freshness_report(
+        &artifacts,
+        "http://127.0.0.1:1",
+        Err(Error::new("No Steam cache")),
+    )?;
+    if code != 1 || states(&report)[0] != "malformed" {
+        return Err(Error::new(
+            "Status did not report a malformed catalog with exit code 1",
         ));
     }
     Ok(())

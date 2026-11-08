@@ -103,7 +103,6 @@ impl RunStudy {
         if self.development_effects.get().is_none() {
             eprintln!("Estimating item effects from development matches");
             let effects = estimate_item_effects(&self.development(), self.catalog(), &PHASES)?;
-            // A failed set means another caller filled the cell first with the same value.
             drop(self.development_effects.set(effects));
         }
         self.development_effects

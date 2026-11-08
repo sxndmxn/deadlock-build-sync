@@ -150,12 +150,26 @@ fn check_write_guards() -> Result<()> {
             reject_at: Some(reject_at),
             ..ReferenceProcesses::default()
         };
-        if install_cache_update(&location, &update, &root.path().join("state"), &processes).is_ok()
+        let state = root.path().join("state");
+        if install_cache_update(&location, &update, &state, &processes).is_ok()
             || read_cache(&location.cache_path)?.bytes() != original.bytes()
         {
             return Err(Error::new(
                 "Process rejection failed to preserve the original cache",
             ));
+        }
+        // A rejection before the write leaves no backup. A rejection at the write leaves the
+        // backup of the original only: no recovery backup, so the write did not happen.
+        let backups = backup_directory(&state, &location);
+        let backup_count = if backups.is_dir() {
+            fs::read_dir(&backups)?.count()
+        } else {
+            0
+        };
+        if backup_count != reject_at - 1 {
+            return Err(Error::new(format!(
+                "Process rejection {reject_at} left {backup_count} backups, so a write happened"
+            )));
         }
         let concurrent = encode_kv3(&deadlock_steam::Kv3Document::generic(
             deadlock_steam::Kv3Value::new(deadlock_steam::Kv3Kind::Object(vec![(
