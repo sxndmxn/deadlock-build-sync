@@ -116,7 +116,7 @@ Checks that only repeat the implementation or cannot fail are removed or rewritt
 ## Status on 2026-11-08
 
 Done on branch `refactor/untangle`, one commit for each fix: 1, 2, 3, 4, 5 (layout only), 6, 7, 8, 9, 10, 11, 12, the comment pass, and the test pass.
-Behavior test: `build --resume --extraction-threads 1` on one named run reproduces the catalog of the previous commit, and `dump_presentations` shows the same Steam text. The first eleven fixes were tested on run `20261108T013049Z`. A named run then removed that automatic run, as documented, so the later fixes were tested on `refactor-fresh-check` and `refactor-check-2`, two extractions of the same cohort with the same counts.
+Behavior test: `build --resume --extraction-threads 1` on one named run reproduces the catalog of the previous commit, and `dump_presentations` shows the same Steam text. The first eleven fixes were tested on run `20261108T013049Z`. A named run then removed that automatic run, as documented, so the later fixes were tested on `refactor-fresh-check`, `refactor-check-2`, and `refactor-check-3`, three extractions of the same cohort with the same counts. The final SQL was verified on the third.
 Steam text changed in one place: the patch title lost its leading space (Fix 2).
 
 Not done, with the reason:
