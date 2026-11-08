@@ -5,8 +5,8 @@ use std::fs;
 use base64::Engine as _;
 use deadlock_data::{Error, Result, atomic_write_json};
 use deadlock_steam::{
-    CacheLocation, CacheUpdateRequest, ProcessInspection, SteamCache, decode_kv3, encode_kv3,
-    install_cache_update, prepare_cache_update, read_cache, restore_latest,
+    CacheLocation, CacheUpdateRequest, ProcessInspection, SteamCache, backup_directory, decode_kv3,
+    encode_kv3, install_cache_update, prepare_cache_update, read_cache, restore_latest,
 };
 use serde_json::{Value, json};
 
@@ -186,7 +186,7 @@ fn check_invalid_backup(fingerprint: Option<Value>) -> Result<()> {
     let location = create_location(root.path())?;
     let original = fs::read(&location.cache_path)?;
     let state = root.path().join("state");
-    let backup = state.join("backups/7/reference");
+    let backup = backup_directory(&state, &location).join("reference");
     fs::create_dir_all(&backup)?;
     fs::write(backup.join("cached_hero_builds.kv3"), &original)?;
     let mut manifest = json!({"account_id":7,"cache_path":location.cache_path,"created_at":"2026-01-01T00:00:00Z"});
@@ -196,7 +196,7 @@ fn check_invalid_backup(fingerprint: Option<Value>) -> Result<()> {
     atomic_write_json(&backup.join("manifest.json"), &manifest)?;
     if restore_latest(&location, &state, &ReferenceProcesses::default()).is_ok()
         || fs::read(&location.cache_path)? != original
-        || fs::read_dir(state.join("backups/7"))?.count() != 1
+        || fs::read_dir(backup_directory(&state, &location))?.count() != 1
     {
         return Err(Error::new("Restore accepted an invalid backup fingerprint"));
     }

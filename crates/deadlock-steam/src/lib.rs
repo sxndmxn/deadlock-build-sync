@@ -29,6 +29,7 @@ mod protobuf_schema;
 mod steam_identity;
 
 pub use build_metadata::{HeroBuildMetadata, parse_hero_build_metadata};
+pub use cache_backup::{BackupManifest, backup_directory};
 pub use cache_discovery::{discover_cache, steam_roots};
 pub use cache_location::{CacheLocation, CacheSearch};
 pub use cache_plan::{CacheUpdate, prepare_cache_update};
