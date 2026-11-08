@@ -1,5 +1,9 @@
-use deadlock_data::{Error, Rank, RankRange, Result};
+use deadlock_data::Result;
 
+use crate::build_text::{
+    MAIN_CORE_PANEL, RATES_NOTE, ability_order, evidence, format_soul_window, guide, phase_label,
+    play_around, tier_panel_name, variant_note,
+};
 use crate::build_title::format_build_name;
 use crate::hero_build::{BuildItem, HeroBuild, HeroBuildCatalog};
 use crate::presentation::{
@@ -31,7 +35,7 @@ pub fn build_hero_presentation(
     persona: &str,
 ) -> Result<BuildPresentation> {
     let mut categories = vec![build_category(
-        "MAIN CORE",
+        MAIN_CORE_PANEL,
         &build.core,
         "Buy from left to right.",
         false,
@@ -53,7 +57,7 @@ pub fn build_hero_presentation(
             .filter(|item| item.tier == tier)
             .cloned()
             .collect::<Vec<_>>();
-        categories.push(build_category(&format!("TIER {tier}"), &items, "", true)?);
+        categories.push(build_category(&tier_panel_name(tier), &items, "", true)?);
     }
     let abilities = (!build.ability_ids.is_empty()).then(|| PresentationAbilities {
         ability_ids: build.ability_ids.clone(),
@@ -143,87 +147,25 @@ fn describe_item(item: &BuildItem) -> Result<String> {
 const COUNTER_PANEL_TEXT: &str = "From midgame";
 
 /// Rounds the soul window to whole thousands. The window always spans at least 1k.
-fn format_soul_window([lower, upper]: [u32; 2]) -> String {
-    let lower = (lower + 500) / 1000;
-    let upper = ((upper + 500) / 1000).max(lower + 1);
-    format!("{lower}k-{upper}k")
-}
-
 fn describe_build(
     build: &HeroBuild,
     catalog: &HeroBuildCatalog,
     snapshot_id: &str,
 ) -> Result<String> {
-    let key_item = build
-        .key_item()
-        .ok_or_else(|| Error::new("Build key item is not in CORE"))?;
-    let focus = build.ability_focus.as_ref().map_or_else(
-        || key_item.name.clone(),
-        |focus| format!("{} with {}", focus.name, key_item.name),
-    );
-    let ranks = RankRange {
-        minimum: Rank::try_from(catalog.cohort.minimum_badge)?,
-        maximum: Rank::try_from(catalog.cohort.maximum_badge)?,
-    };
-    let patch_title = &catalog.patch.title;
-    let [since, as_of] = catalog.cohort.dates()?;
-    let mut lines = vec![format!(
-        "Play around: {focus} at about {} net worth.",
-        format_souls(build.power_spike_net_worth)
-    )];
-    if let Some(ability) = &build.key_ability_name {
-        lines.push(format!("Ability order: max {ability} first."));
-    }
-    if build.variant_id.is_some() {
-        lines.push(format!(
-            "Item choices use {} player matches with {} at 20 or 30 minutes.",
-            build.observations, key_item.name
-        ));
-    }
-    let guide = if build.counters.is_empty() {
-        "Buy MAIN CORE from left to right. TIER items are situational choices."
-    } else {
-        "Buy MAIN CORE from left to right. VS panels answer the enemy team. TIER items are situational choices."
-    };
+    let mut lines = vec![play_around(build)?];
+    lines.extend(ability_order(build));
+    lines.extend(variant_note(build)?);
     lines.extend([
-        guide.into(),
-        "Item rates count each buyer once per match across this hero's ranked matches. They do not measure the complete build.".into(),
-        format!(
-            "Evidence: {} ({}, n={}). Ranked • {} • {} to {}.",
-            build.evaluation.confidence.label(),
-            if build.evaluation.hero_estimate.is_some() {
-                "held-out test pooled with all heroes"
-            } else {
-                "held-out test"
-            },
-            build.evaluation.observations,
-            ranks.label(),
-            since,
-            as_of
-        ),
+        guide(!build.counters.is_empty()).into(),
+        RATES_NOTE.into(),
+        evidence(build, catalog)?,
         String::new(),
         ManagedTrailer {
             path_id: build.path_id(),
-            patch_title: patch_title.clone(),
+            patch_title: catalog.patch.title.clone(),
             snapshot_id: snapshot_id.into(),
         }
         .render(),
     ]);
     Ok(lines.join("\n"))
-}
-
-const fn phase_label(phase_s: u32) -> &'static str {
-    match phase_s {
-        0..=600 => "EARLY GAME",
-        601..=1500 => "MID GAME",
-        _ => "LATE GAME",
-    }
-}
-
-fn format_souls(value: u32) -> String {
-    if value >= 1000 {
-        format!("{}k", (value + 500) / 1000)
-    } else {
-        value.to_string()
-    }
 }

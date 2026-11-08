@@ -34,6 +34,7 @@ Stop a run whose match window has no ranked matches, before the fold split. The 
 Stop a build when the extracted landmark states lack an evaluation landmark, which a changed `select_landmark_states.sql` would cause.
 Send the workspace version in the HTTP `User-Agent` header.
 Move the build tag catalog, the tag assignment, and the mechanics text cleanup to `deadlock-guides`. `deadlock-guides` no longer depends on `deadlock-input`.
+The Markdown export uses the sentences of the Steam description, with the same phase labels and soul window format in its tables.
 Remove unread code: the `observed_players` column, the implementation fingerprint of all sources, the trace reader branches for events that no writer makes, and API options that never changed.
 Trim the patch title. The Steam description showed the leading space of the feed title.
 Validate the patch identity and the cohort timestamps of a catalog. A patch post needs a title, a date, a source, and a GUID.

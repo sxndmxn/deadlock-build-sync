@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use deadlock_data::{Error, Result};
 use serde_json::Value;
 
-use crate::ability_order::select_ability_path;
+use crate::ability_order::{UPGRADES_PER_ABILITY, is_complete_ability_order, select_ability_path};
 use crate::build_tag_catalog::{BuildTagCatalog, FUNCTION_CLASSES};
 use crate::hero_build::HeroBuild;
 use crate::mechanics_text::clean_mechanical_text;
@@ -132,24 +132,16 @@ fn select_asset_name(asset: &Value) -> Result<String> {
 }
 
 pub fn first_fully_upgraded_ability(path: &[u64]) -> Result<u64> {
-    let mut counts = BTreeMap::<u64, usize>::new();
-    for id in path {
-        *counts.entry(*id).or_default() += 1;
-    }
-    if path.len() != 16
-        || counts.len() != 4
-        || counts.contains_key(&0)
-        || counts.values().any(|count| *count != 4)
-    {
+    if !is_complete_ability_order(path) {
         return Err(Error::new(
             "Ability path is not a complete four-ability path",
         ));
     }
-    counts.clear();
+    let mut counts = BTreeMap::<u64, usize>::new();
     for id in path {
         let count = counts.entry(*id).or_default();
         *count += 1;
-        if *count == 4 {
+        if *count == usize::from(UPGRADES_PER_ABILITY) {
             return Ok(*id);
         }
     }

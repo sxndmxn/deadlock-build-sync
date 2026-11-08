@@ -4,6 +4,27 @@ use std::collections::BTreeMap;
 use deadlock_data::{ObservationCounts, Result};
 use serde_json::Value;
 
+/// A hero has four abilities, and each one takes four upgrades.
+pub const ABILITY_COUNT: u8 = 4;
+pub const UPGRADES_PER_ABILITY: u8 = 4;
+/// A complete ability order has sixteen upgrades.
+pub const ABILITY_ORDER_LENGTH: u8 = ABILITY_COUNT * UPGRADES_PER_ABILITY;
+
+/// Returns true when the order upgrades four distinct positive abilities four times each.
+#[must_use]
+pub fn is_complete_ability_order(ability_ids: &[u64]) -> bool {
+    let mut counts = BTreeMap::<u64, usize>::new();
+    for ability in ability_ids {
+        *counts.entry(*ability).or_default() += 1;
+    }
+    ability_ids.len() == usize::from(ABILITY_ORDER_LENGTH)
+        && counts.len() == usize::from(ABILITY_COUNT)
+        && !counts.contains_key(&0)
+        && counts
+            .values()
+            .all(|count| *count == usize::from(UPGRADES_PER_ABILITY))
+}
+
 /// A complete ability order and the matches that follow it to the end.
 #[derive(Clone, Debug)]
 pub struct AbilityPath {
@@ -53,7 +74,7 @@ pub fn select_ability_path(rows: &[Value]) -> Result<Option<AbilityPath>> {
 
 fn parse_observation(row: &Value) -> Option<Observation> {
     let values = row["abilities"].as_array()?;
-    if values.is_empty() || values.len() > 16 {
+    if values.is_empty() || values.len() > usize::from(ABILITY_ORDER_LENGTH) {
         return None;
     }
     let path = values
@@ -113,14 +134,20 @@ fn select_continuation(
     state: &DecisionState,
     cache: &mut Continuations,
 ) -> Option<Continuation> {
-    if state.position == 16 {
-        return (state.ranks.len() == 4 && state.ranks.values().all(|count| *count == 4))
-            .then(Continuation::default);
+    if state.position == ABILITY_ORDER_LENGTH {
+        return (state.ranks.len() == usize::from(ABILITY_COUNT)
+            && state
+                .ranks
+                .values()
+                .all(|count| *count == UPGRADES_PER_ABILITY))
+        .then(Continuation::default);
     }
     let mut candidates = decisions
         .get(state)?
         .iter()
-        .filter(|(ability, _)| state.ranks.get(ability).copied().unwrap_or(0) < 4)
+        .filter(|(ability, _)| {
+            state.ranks.get(ability).copied().unwrap_or(0) < UPGRADES_PER_ABILITY
+        })
         .collect::<Vec<_>>();
     candidates.sort_by_key(|(ability, counts)| (Reverse(counts.matches), **ability));
     for (ability, counts) in candidates {

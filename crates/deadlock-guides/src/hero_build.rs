@@ -358,11 +358,12 @@ impl AbilityFocus {
                 ));
             }
         }
-        if !self.supporting_item_ids.contains(&build.key_item_id)
-            && items.len() < 2
-            && crate::build_tags::first_fully_upgraded_ability(&build.ability_ids).ok()
-                != Some(self.ability_id)
-        {
+        if !crate::ability_focus::is_supported_focus(
+            self.ability_id,
+            &self.supporting_item_ids,
+            build.key_item_id,
+            &build.ability_ids,
+        ) {
             return Err(Error::new(
                 "Ability focus lacks key item, CORE item, or ability order support",
             ));
