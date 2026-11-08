@@ -11,6 +11,7 @@ mod experiments;
 pub use counter_items::GroupInteraction;
 mod database;
 mod extraction;
+mod hero_assembly;
 mod hero_build_production;
 mod item_effects;
 mod item_imbues;
@@ -20,6 +21,7 @@ mod refresh_configuration;
 mod ridge_logistic;
 mod run_inputs;
 mod run_manifest;
+mod run_study;
 mod sources;
 mod sql_resources;
 
@@ -36,6 +38,7 @@ pub use experiments::{
     measure_counter_placebo, measure_counter_windows, measure_label_halves, measure_label_placebo,
     measure_pair_placebo,
 };
+pub use hero_assembly::{AssemblyContext, HeroAssembly, HeroVariant};
 pub use hero_build_production::produce_hero_builds;
 pub use item_effects::{DEFAULT_PENALTIES, EffectPenalties};
 pub use refresh::{ExtractedRun, extract_run};
@@ -43,4 +46,5 @@ pub use refresh_configuration::{CohortRecord, ExtractionResources, RefreshReques
 pub use run_manifest::{
     EXTRACTION_SQL_SHA256, ExtractionRecord, MANIFEST_SCHEMA_VERSION, RunManifest, SourceRecord,
 };
+pub use run_study::RunStudy;
 pub use sources::SOURCE_FILES;

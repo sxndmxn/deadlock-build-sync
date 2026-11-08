@@ -1,11 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use deadlock_data::{Result, count_as_f64};
+use deadlock_data::Result;
 use deadlock_guides::BuildRules;
 
 use crate::build_assembly::{AssembledBuild, PHASES, PurchaseMedians, assemble_build};
 use crate::item_effects::{
-    ALL_HEROES, EffectTable, HeroLandmarkEffects, ItemCatalog, LandmarkState,
+    ALL_HEROES, EffectTable, HeroLandmarkEffects, ItemCatalog, LandmarkState, build_feature_row,
+    summarize_hero,
 };
 
 const MINIMUM_OWNERS: usize = 100;
@@ -130,28 +131,9 @@ impl VariantCandidate {
 
 /// Selects distinct variants from development matches without using test outcomes.
 ///
-/// Each variant needs 100 distinct player matches and two different expensive items in each direction.
-/// A hero can retain only its main build when the candidates are similar or lack support.
-pub fn select_item_variants(
-    hero_id: u64,
-    states: &[&LandmarkState],
-    table: &EffectTable,
-    catalog: &ItemCatalog,
-    medians: &PurchaseMedians,
-    main: &AssembledBuild,
-) -> Result<Vec<ItemVariant>> {
-    select_item_variants_with_rule(
-        hero_id,
-        states,
-        table,
-        catalog,
-        medians,
-        main,
-        VariantSelection::default(),
-    )
-}
-
-/// Selects distinct variants with a specified separation rule.
+/// Each variant needs 100 distinct player matches and the distinct items of the rule in each
+/// direction. A hero can retain only its main build when the candidates are similar or lack
+/// support.
 pub fn select_item_variants_with_rule(
     hero_id: u64,
     states: &[&LandmarkState],
@@ -395,40 +377,21 @@ fn condition_item_adoption(
     Ok(conditioned)
 }
 
+/// Summarizes the owner states with the hero item effects, as the hero models are summarized.
 fn summarize_owners(
     states: &[&LandmarkState],
     effects: &HeroLandmarkEffects,
     catalog: &ItemCatalog,
 ) -> Result<HeroLandmarkEffects> {
-    let mut owners = vec![0_u64; catalog.items.len()];
-    let mut winners = vec![0_u64; catalog.items.len()];
-    let mut spends = Vec::new();
-    for state in states {
-        let items = state.item_ids.iter().copied().collect::<BTreeSet<_>>();
-        spends.push(catalog.cost(&items));
-        for item in items {
-            if let Some(column) = catalog.column(item) {
-                owners[column] += 1;
-                winners[column] += u64::from(state.won);
-            }
-        }
-    }
-    spends.sort_unstable();
-    let total = count_as_f64(u64::try_from(states.len())?)?;
-    Ok(HeroLandmarkEffects {
-        effects: effects.effects.clone(),
-        adoption: owners
-            .iter()
-            .map(|count| Ok(count_as_f64(*count)? / total))
-            .collect::<Result<_>>()?,
-        owner_win_rates: owners
-            .iter()
-            .zip(winners)
-            .map(|(owners, winners)| Ok(count_as_f64(winners)? / count_as_f64((*owners).max(1))?))
-            .collect::<Result<_>>()?,
-        median_spend: spends[spends.len() / 2],
-        observations: states.len(),
-    })
+    let rows = states
+        .iter()
+        .map(|state| build_feature_row(state, catalog))
+        .collect::<Vec<_>>();
+    summarize_hero(
+        &rows.iter().collect::<Vec<_>>(),
+        effects.effects.clone(),
+        catalog,
+    )
 }
 
 /// Returns the cost share that differs between the expensive CORE items of two builds.

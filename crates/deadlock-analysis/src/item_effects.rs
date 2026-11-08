@@ -284,7 +284,7 @@ fn estimate_landmark_effects(
     let all_rows = selected.iter().map(|(_, row)| row).collect::<Vec<_>>();
     table.insert(
         (ALL_HEROES, landmark),
-        summarize_hero(&all_rows, &models.global, catalog)?,
+        summarize_hero(&all_rows, models.global[COVARIATES..].to_vec(), catalog)?,
     );
     for (hero, coefficients) in &models.heroes {
         let rows = selected
@@ -294,7 +294,7 @@ fn estimate_landmark_effects(
             .collect::<Vec<_>>();
         table.insert(
             (*hero, landmark),
-            summarize_hero(&rows, coefficients, catalog)?,
+            summarize_hero(&rows, coefficients[COVARIATES..].to_vec(), catalog)?,
         );
     }
     Ok(table)
@@ -320,9 +320,14 @@ fn build_penalty(width: usize, covariate: f64, item: f64) -> Vec<f64> {
         .collect()
 }
 
-fn summarize_hero(
+/// Summarizes the item adoption, owner win rates, and median spend of the rows, with the given
+/// item effects.
+///
+/// # Errors
+/// Returns an error when the rows are empty.
+pub fn summarize_hero(
     rows: &[&FeatureRow],
-    coefficients: &[f64],
+    effects: Vec<f64>,
     catalog: &ItemCatalog,
 ) -> Result<HeroLandmarkEffects> {
     let count = catalog.items.len();
@@ -350,7 +355,7 @@ fn summarize_hero(
         .ok_or_else(|| Error::new("Hero landmark has no observations"))?;
     let total = count_as_f64(u64::try_from(rows.len())?)?;
     Ok(HeroLandmarkEffects {
-        effects: coefficients[COVARIATES..].to_vec(),
+        effects,
         adoption: owners
             .iter()
             .map(|owners| Ok(count_as_f64(u64::try_from(*owners)?)? / total))

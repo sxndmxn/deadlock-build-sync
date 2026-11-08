@@ -21,6 +21,7 @@ struct PurchaseMedianRow {
 }
 
 /// Landmark states, shop items, and purchase medians for build assembly.
+#[derive(Debug)]
 pub struct AssemblyInputs {
     pub states: Vec<LandmarkState>,
     pub catalog: ItemCatalog,

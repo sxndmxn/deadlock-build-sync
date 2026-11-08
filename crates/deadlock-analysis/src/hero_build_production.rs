@@ -13,15 +13,12 @@ use deadlock_input::{ApiOptions, BuildTagCatalog, DeadlockApi, parse_patch_feed}
 use serde_json::Value;
 
 use crate::api_inputs::{AbilityRequest, ApiInputs, request_inputs};
-use crate::build_assembly::{
-    AssembledBuild, PHASES, PurchaseMedians, assemble_build, assemble_fallback_build,
-};
+use crate::build_assembly::{AssembledBuild, PHASES, PurchaseMedians};
 use crate::build_evaluation::{evaluate_build, shrink_evaluations};
-use crate::build_variants::{
-    VariantSelection, assemble_item_variant, select_item_variants_with_rule,
-};
+use crate::build_variants::VariantSelection;
 use crate::counter_items::{CounterGroups, estimate_counter_evidence, select_counter_panels};
-use crate::item_effects::{EffectTable, ItemCatalog, LandmarkState, estimate_item_effects};
+use crate::hero_assembly::{AssemblyContext, HeroAssembly};
+use crate::item_effects::{ItemCatalog, LandmarkState, estimate_item_effects};
 use crate::item_imbues::{ItemImbues, attach_item_imbues, load_item_imbues};
 use crate::item_statistics::{HeroItemStatistics, attach_item_statistics, load_item_statistics};
 use crate::refresh_configuration::{ExtractionResources, RunPaths};
@@ -201,18 +198,16 @@ fn assemble_hero_builds(
     eprintln!("Estimating item effects from all matches");
     let all = states.iter().collect::<Vec<_>>();
     let effects = estimate_item_effects(&all, catalog, &PHASES)?;
+    let context = AssemblyContext {
+        effects: &effects,
+        development_effects: &development_effects,
+        catalog,
+        medians,
+        selection,
+    };
     let mut builds = Vec::new();
     for (hero_id, hero_name) in heroes {
-        builds.extend(assemble_hero(
-            *hero_id,
-            hero_name,
-            states,
-            &effects,
-            &development_effects,
-            catalog,
-            medians,
-            selection,
-        )?);
+        builds.extend(assemble_hero(*hero_id, hero_name, states, &context)?);
     }
     for variants in [false, true] {
         let mut pool = builds
@@ -232,110 +227,69 @@ fn assemble_hero_builds(
     Ok((builds, evidence))
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "Fix 6 of the decision log replaces these arguments with one assembly context."
-)]
+/// Assembles the builds of one hero and tests each one on the held-out fold.
 fn assemble_hero(
     hero_id: u64,
     hero_name: &str,
     states: &[LandmarkState],
-    effects: &EffectTable,
-    development_effects: &EffectTable,
-    catalog: &ItemCatalog,
-    medians: &PurchaseMedians,
-    selection: VariantSelection,
+    context: &AssemblyContext<'_>,
 ) -> Result<Vec<HeroBuild>> {
     let all = states
         .iter()
         .filter(|state| state.hero_id == hero_id)
         .collect::<Vec<_>>();
-    let (test, development): (Vec<_>, Vec<_>) =
-        all.iter().copied().partition(|state| state.is_test());
-    let main = select_main_build(hero_id, hero_name, effects, catalog, medians)?;
-    let development_main = assemble_build(hero_id, development_effects, catalog, medians);
-    let evaluation = match &development_main {
+    let test = all
+        .iter()
+        .copied()
+        .filter(|state| state.is_test())
+        .collect::<Vec<_>>();
+    let assembly = HeroAssembly::assemble(hero_id, &all, context)
+        .map_err(|error| error.context(format!("Cannot build {hero_name}")))?;
+    if assembly.generic {
+        eprintln!(
+            "Warning: {hero_name} has too few matches in the run. Its build uses the item effects of all heroes"
+        );
+    }
+    for (item_id, gate) in &assembly.dropped {
+        eprintln!(
+            "Dropped an additional build for {hero_name}: item {item_id} ({})",
+            gate.name()
+        );
+    }
+    let catalog = context.catalog;
+    // The held-out test uses the development build, because the installed build saw the test fold.
+    let evaluation = match &assembly.development_main {
         Some(build) => evaluate_build(&test, &build.phase_sets, catalog)?,
-        None => evaluate_build(&[], &main.phase_sets, catalog)?,
+        None => evaluate_build(&[], &assembly.main.phase_sets, catalog)?,
     };
     let observations = PHASES
         .iter()
-        .filter_map(|phase| effects.get(&(hero_id, *phase)))
+        .filter_map(|phase| context.effects.get(&(hero_id, *phase)))
         .map(|phase| phase.observations)
         .max()
         .unwrap_or(0);
-    let mut installed = vec![main.clone()];
     let mut builds = vec![create_hero_build(
         hero_id,
         hero_name,
-        main,
+        assembly.main,
         evaluation,
         observations,
         None,
     )?];
-    if let Some(development_main) = development_main {
-        for variant in select_item_variants_with_rule(
+    for variant in assembly.variants {
+        let item_id = variant.build.key_item_id;
+        let evaluation = evaluate_build(&test, &variant.development_build.phase_sets, catalog)?;
+        builds.push(create_hero_build(
             hero_id,
-            &development,
-            development_effects,
-            catalog,
-            medians,
-            &development_main,
-            selection,
-        )? {
-            let item_id = variant.build.key_item_id;
-            let Some(production) =
-                assemble_item_variant(hero_id, item_id, &all, effects, catalog, medians)?
-            else {
-                eprintln!(
-                    "Dropped an additional build for {hero_name}: item {item_id} has no build from all matches"
-                );
-                continue;
-            };
-            if installed
-                .iter()
-                .any(|build| !selection.is_distinct(build, &production.build, catalog))
-            {
-                eprintln!(
-                    "Dropped an additional build for {hero_name}: item {item_id} is similar to an installed build"
-                );
-                continue;
-            }
-            let evaluation = evaluate_build(&test, &variant.build.phase_sets, catalog)?;
-            installed.push(production.build.clone());
-            builds.push(create_hero_build(
-                hero_id,
-                hero_name,
-                production.build,
-                evaluation,
-                production.owners,
-                Some(format!("item-{item_id}")),
-            )?);
-        }
+            hero_name,
+            variant.build,
+            evaluation,
+            variant.owners,
+            Some(format!("item-{item_id}")),
+        )?);
     }
     eprintln!("Selected {} builds for {hero_name}", builds.len());
     Ok(builds)
-}
-
-/// Every active hero gets a build. A hero without its own item effects gets a generic one.
-fn select_main_build(
-    hero_id: u64,
-    hero_name: &str,
-    effects: &EffectTable,
-    catalog: &ItemCatalog,
-    medians: &PurchaseMedians,
-) -> Result<AssembledBuild> {
-    if let Some(main) = assemble_build(hero_id, effects, catalog, medians) {
-        return Ok(main);
-    }
-    eprintln!(
-        "Warning: {hero_name} has too few matches in the run. Its build uses the item effects of all heroes"
-    );
-    assemble_fallback_build(hero_id, effects, catalog, medians).ok_or_else(|| {
-        Error::new(format!(
-            "Cannot build {hero_name}: the run has no item effects"
-        ))
-    })
 }
 
 fn create_hero_build(

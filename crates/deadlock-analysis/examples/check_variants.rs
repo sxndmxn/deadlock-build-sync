@@ -24,7 +24,7 @@ mod ridge_logistic;
 use deadlock_data::{Error, Result};
 
 use build_assembly::{PHASES, PurchaseMedians, assemble_build, assemble_fallback_build};
-use build_variants::{assemble_item_variant, select_item_variants};
+use build_variants::{VariantSelection, assemble_item_variant, select_item_variants_with_rule};
 use item_effects::{
     ALL_HEROES, EffectTable, HeroLandmarkEffects, ItemAsset, ItemCatalog, LandmarkState,
 };
@@ -38,7 +38,15 @@ fn main() -> Result<()> {
         .ok_or_else(|| Error::new("Reference main build is missing"))?;
     let states = create_states(120);
     let references = states.iter().collect::<Vec<_>>();
-    let variants = select_item_variants(1, &references, &effects, &catalog, &medians, &main)?;
+    let variants = select_item_variants_with_rule(
+        1,
+        &references,
+        &effects,
+        &catalog,
+        &medians,
+        &main,
+        VariantSelection::default(),
+    )?;
     let keys = variants
         .iter()
         .map(|variant| variant.build.key_item_id)
@@ -55,7 +63,15 @@ fn main() -> Result<()> {
     }
     let mut reversed = references.clone();
     reversed.reverse();
-    let repeated = select_item_variants(1, &reversed, &effects, &catalog, &medians, &main)?;
+    let repeated = select_item_variants_with_rule(
+        1,
+        &reversed,
+        &effects,
+        &catalog,
+        &medians,
+        &main,
+        VariantSelection::default(),
+    )?;
     if repeated
         .iter()
         .map(|variant| variant.build.key_item_id)
@@ -77,7 +93,17 @@ fn main() -> Result<()> {
         .copied()
         .filter(|state| state.match_id < 120)
         .collect::<Vec<_>>();
-    if !select_item_variants(1, &single, &effects, &catalog, &medians, &main)?.is_empty() {
+    if !select_item_variants_with_rule(
+        1,
+        &single,
+        &effects,
+        &catalog,
+        &medians,
+        &main,
+        VariantSelection::default(),
+    )?
+    .is_empty()
+    {
         return Err(Error::new(
             "Variant selection forced alternatives for one observed strategy",
         ));
