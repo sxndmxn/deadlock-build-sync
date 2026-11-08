@@ -110,6 +110,15 @@ pub struct VariantCandidate {
     pub gate: VariantGate,
 }
 
+impl VariantCandidate {
+    /// Records a gate when no earlier gate rejected the item.
+    fn reject(&mut self, gate: VariantGate) {
+        if self.gate == VariantGate::Selected {
+            self.gate = gate;
+        }
+    }
+}
+
 /// Selects distinct variants from development matches without using test outcomes.
 ///
 /// Each variant needs 100 distinct player matches and two different expensive items in each direction.
@@ -185,7 +194,7 @@ fn evaluate_item_variants(
             describe_item_variant(hero_id, item.item_id, states, table, catalog, medians)?;
         if item.item_id == main.key_item_id {
             candidate.gate = VariantGate::MainKeyItem;
-        } else if let Some(variant) = variant {
+        } else if let Some(variant) = variant.filter(|_| candidate.gate == VariantGate::Selected) {
             candidate.separation_main = Some(build_separation(
                 main,
                 &variant.build,
@@ -253,7 +262,10 @@ fn owner_weight(owners: usize) -> f64 {
     u32::try_from(owners).map_or(f64::MAX, |owners| f64::from(owners).sqrt())
 }
 
-/// Assembles an item variant with the same selection rule in development and production.
+/// Assembles the build of the players who own an item, with the owner and assembly gates only.
+///
+/// Development selection also applies the support gate. Production re-assembles a selected
+/// item from all folds without it, so the all-fold effects cannot drop a selected strategy.
 pub fn assemble_item_variant(
     hero_id: u64,
     item_id: u64,
@@ -262,15 +274,14 @@ pub fn assemble_item_variant(
     catalog: &ItemCatalog,
     medians: &PurchaseMedians,
 ) -> Result<Option<ItemVariant>> {
-    let (candidate, variant) =
-        describe_item_variant(hero_id, item_id, states, table, catalog, medians)?;
-    Ok(variant.filter(|_| candidate.gate != VariantGate::UnsupportedItem))
+    let (_, variant) = describe_item_variant(hero_id, item_id, states, table, catalog, medians)?;
+    Ok(variant)
 }
 
 /// Applies the support, owner, and assembly gates to one item and returns the result.
 ///
-/// The variant is `Some` when the item passes the owner and assembly gates. The support gate
-/// only sets the gate value, so a report can show the owners of an unsupported item.
+/// The variant is `Some` when the item passes the owner and assembly gates. The gate names
+/// the first gate that rejected the item, so an unsupported item can still have a variant.
 pub fn describe_item_variant(
     hero_id: u64,
     item_id: u64,
@@ -317,10 +328,9 @@ pub fn describe_item_variant(
     candidate.owners = owners.len();
     if !supported {
         candidate.gate = VariantGate::UnsupportedItem;
-        return Ok((candidate, None));
     }
     if owners.len() < MINIMUM_OWNERS {
-        candidate.gate = VariantGate::FewOwners;
+        candidate.reject(VariantGate::FewOwners);
         return Ok((candidate, None));
     }
     let selected = states
@@ -332,11 +342,11 @@ pub fn describe_item_variant(
         .collect::<Vec<_>>();
     let conditioned = condition_item_adoption(hero_id, &selected, table, catalog)?;
     let Some(mut build) = assemble_build(hero_id, &conditioned, catalog, medians) else {
-        candidate.gate = VariantGate::NoBuild;
+        candidate.reject(VariantGate::NoBuild);
         return Ok((candidate, None));
     };
     if !build.core.iter().any(|item| item.item_id == item_id) {
-        candidate.gate = VariantGate::KeyItemOutsideCore;
+        candidate.reject(VariantGate::KeyItemOutsideCore);
         return Ok((candidate, None));
     }
     build.key_item_id = item_id;
