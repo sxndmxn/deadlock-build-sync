@@ -10,6 +10,7 @@ use deadlock_guides::{
 use deadlock_input::{ApiOptions, BuildTagCatalog, DeadlockApi, parse_patch_feed};
 use serde_json::Value;
 
+use crate::api_inputs::{AbilityRequest, ApiInputs, request_inputs};
 use crate::build_assembly::{AssembledBuild, PHASES, PurchaseMedians, assemble_build};
 use crate::build_evaluation::{evaluate_build, shrink_evaluations};
 use crate::build_variants::{
@@ -21,9 +22,6 @@ use crate::item_imbues::{ItemImbues, attach_item_imbues, load_item_imbues};
 use crate::item_statistics::{HeroItemStatistics, attach_item_statistics, load_item_statistics};
 use crate::refresh_configuration::{ExtractionResources, RunPaths, cohort_ranks, parse_timestamp};
 use crate::run_inputs::{load_assembly_inputs, open_run_database};
-
-const ABILITY_MINIMUM_MATCHES: u32 = 10;
-const ABILITY_REQUEST_THREADS: usize = 4;
 
 /// Produces a main build and distinct supported variants for each active hero.
 ///
@@ -45,9 +43,17 @@ pub fn produce_hero_builds(
     let client_version = integer(&manifest["sources"], "client_version")?;
     let heroes = read_hero_names(&paths.raw.join("heroes.json"))?;
     let mut api = build_api(api_base_url, ranks, client_version, as_of)?;
+    let mut api_inputs = ApiInputs::load(paths)?;
+    let main_requests = heroes
+        .keys()
+        .map(|hero_id| (*hero_id, Vec::new()))
+        .collect::<Vec<_>>();
+    let missing = api_inputs.missing_requests(&main_requests);
+    let needs_tags = !api_inputs.has_build_tags();
     // The API requests wait on a fixed request interval, so they run during the local work.
-    let (local, mut api_inputs) = std::thread::scope(|scope| {
-        let requests = scope.spawn(|| request_api_inputs(&mut api, &heroes, patch.start_timestamp));
+    let (local, requested) = std::thread::scope(|scope| {
+        let requests =
+            scope.spawn(|| request_inputs(&mut api, needs_tags, &missing, patch.start_timestamp));
         let local = assemble_from_database(paths, resources, ranks, &heroes);
         let remote = trace_operation("analysis.wait_for_api", Some("wait_for_api"), || {
             requests
@@ -56,6 +62,7 @@ pub fn produce_hero_builds(
         });
         Ok::<_, Error>((local?, remote?))
     })?;
+    api_inputs.record(requested);
     // A variant build needs the ability orders of the players who own its key item.
     let variant_requests = local
         .builds
@@ -63,30 +70,26 @@ pub fn produce_hero_builds(
         .map(ability_request)
         .filter(|(_, items)| !items.is_empty())
         .collect::<Vec<_>>();
-    if !variant_requests.is_empty() {
-        eprintln!(
-            "Requesting ability orders for {} variant builds",
-            variant_requests.len()
-        );
-        api_inputs.ability_rows.extend(request_ability_orders(
-            &api,
-            &variant_requests,
+    let missing = api_inputs.missing_requests(&variant_requests);
+    if !missing.is_empty() {
+        api_inputs.record(request_inputs(
+            &mut api,
+            false,
+            &missing,
             patch.start_timestamp,
         )?);
     }
+    api_inputs.save(paths)?;
     let assets = read_json(&paths.raw.join("items-all.json"))?;
     let assets = assets
         .as_array()
         .ok_or_else(|| Error::new("Item assets must be an array"))?;
-    let tags = BuildTagCatalog::from_assets(&api_inputs.tag_assets)?;
+    let tags = BuildTagCatalog::from_assets(api_inputs.build_tags()?)?;
     let builds = local
         .builds
         .into_iter()
         .map(|build| {
-            let rows = api_inputs
-                .ability_rows
-                .get(&ability_request(&build))
-                .map_or(&[][..], Vec::as_slice);
+            let rows = api_inputs.ability_rows(&ability_request(&build));
             let mut build = attach_ability_and_tags(build, rows, assets, &tags)?;
             attach_item_imbues(&mut build, &local.imbues, assets);
             attach_item_statistics(&mut build, &local.statistics)?;
@@ -113,9 +116,6 @@ pub fn produce_hero_builds(
     Ok(catalog)
 }
 
-/// One ability order request: the hero and the items that its players must own.
-type AbilityRequest = (u64, Vec<u64>);
-
 /// Returns the ability order request of a build. Only a variant build filters by its key item.
 fn ability_request(build: &HeroBuild) -> AbilityRequest {
     let items = build
@@ -123,76 +123,6 @@ fn ability_request(build: &HeroBuild) -> AbilityRequest {
         .as_ref()
         .map_or_else(Vec::new, |_| vec![build.key_item_id]);
     (build.hero_id, items)
-}
-
-/// The build tag assets and the ability order statistics of each request.
-struct ApiInputs {
-    tag_assets: Vec<Value>,
-    ability_rows: BTreeMap<AbilityRequest, Vec<Value>>,
-}
-
-/// Requests the build tags and the ability orders of the main build of each hero.
-fn request_api_inputs(
-    api: &mut DeadlockApi,
-    heroes: &BTreeMap<u64, String>,
-    since: i64,
-) -> Result<ApiInputs> {
-    eprintln!("Requesting ability orders for {} heroes", heroes.len());
-    let tag_assets = api.build_tags()?;
-    let requests = heroes
-        .keys()
-        .map(|hero_id| (*hero_id, Vec::new()))
-        .collect::<Vec<_>>();
-    Ok(ApiInputs {
-        tag_assets,
-        ability_rows: request_ability_orders(api, &requests, since)?,
-    })
-}
-
-/// Requests the ability orders from several threads.
-///
-/// An uncached request takes about 1 s. The client still starts at most one request
-/// in each request interval, so the threads do not increase the request rate.
-fn request_ability_orders(
-    api: &DeadlockApi,
-    requests: &[AbilityRequest],
-    since: i64,
-) -> Result<BTreeMap<AbilityRequest, Vec<Value>>> {
-    std::thread::scope(|scope| {
-        let threads = (0..ABILITY_REQUEST_THREADS)
-            .map(|first| {
-                let assigned = requests
-                    .iter()
-                    .skip(first)
-                    .step_by(ABILITY_REQUEST_THREADS)
-                    .cloned()
-                    .collect::<Vec<_>>();
-                scope.spawn(move || {
-                    assigned
-                        .into_iter()
-                        .map(|(hero_id, items)| {
-                            let rows = api.ability_order_stats(
-                                hero_id,
-                                since,
-                                ABILITY_MINIMUM_MATCHES,
-                                &items,
-                            )?;
-                            Ok(((hero_id, items), rows))
-                        })
-                        .collect::<Result<Vec<_>>>()
-                })
-            })
-            .collect::<Vec<_>>();
-        let mut rows = BTreeMap::new();
-        for thread in threads {
-            rows.extend(
-                thread
-                    .join()
-                    .map_err(|_| Error::new("Ability order requests stopped unexpectedly"))??,
-            );
-        }
-        Ok(rows)
-    })
 }
 
 /// The builds, the counter evidence, and the item data from the extracted matches.

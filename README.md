@@ -136,6 +136,8 @@ DuckDB downloads ICU, DuckLake, and HTTPFS extensions if they are missing.
 Before reuse, `--resume` verifies all seven source JSON files against the fingerprints in the run manifest.
 Missing files, changed contents, and incomplete or malformed fingerprints stop the run.
 JSON spacing and object key order do not affect these fingerprints.
+The first build of a run records the build tags and ability orders from the API in `raw/api-inputs.json`.
+A resumed run reads this record, so it produces the same catalog as the first build.
 
 ## Files
 

@@ -24,6 +24,8 @@ Store the item slot in the extracted item assets. Runs from 0.2.0 cannot be resu
 
 ### Added
 
+Record the build tags and ability orders of a run in `raw/api-inputs.json`, so a resumed run produces the same catalog.
+Add `explain_variant_candidates`, which reports the gate that rejects each alternate build candidate.
 Record 36 experiments of the build method in `docs/research-log.md`.
 Add experiment examples in `crates/deadlock-analysis/examples`, with a placebo test for each test model.
 Add the isolated `check_variants` and `check_item_statistics` executables to `scripts/check_repository.sh`.

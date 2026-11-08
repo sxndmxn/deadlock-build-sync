@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 #![deny(warnings)]
 
+mod api_inputs;
 mod build_assembly;
 mod build_evaluation;
 mod build_variants;
