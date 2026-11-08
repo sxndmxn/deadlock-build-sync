@@ -13,8 +13,9 @@ pub use ability_focus::assign_build_focus;
 pub use ability_order::{AbilityPath, select_ability_path};
 pub use build_tags::{BuildTagSelection, TagItem, select_build_tags};
 pub use hero_build::{
-    AbilityFocus, BuildCohort, BuildEvaluation, BuildItem, Confidence, HERO_BUILD_METHOD,
-    HERO_BUILD_SCHEMA_VERSION, HeroBuild, HeroBuildCatalog, ImbueTarget,
+    AbilityFocus, BuildCohort, BuildEvaluation, BuildItem, Confidence, CounterEvidence,
+    CounterPanel, CounterPhase, CounterTarget, HERO_BUILD_METHOD, HERO_BUILD_SCHEMA_VERSION,
+    HeroBuild, HeroBuildCatalog, HeroEstimate, ImbueTarget, ItemStatistics, MAXIMUM_COUNTER_ITEMS,
 };
 pub use hero_presentation::build_hero_presentation;
 pub use presentation::{

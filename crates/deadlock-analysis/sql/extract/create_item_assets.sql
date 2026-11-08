@@ -4,5 +4,6 @@ CREATE OR REPLACE TABLE item_assets (
     class_name VARCHAR,
     tier INTEGER,
     "cost" INTEGER,
+    slot VARCHAR,
     component_items_json VARCHAR
 );

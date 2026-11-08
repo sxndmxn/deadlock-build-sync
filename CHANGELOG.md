@@ -6,6 +6,28 @@ The project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+Make up to two additional builds for each hero from distinct item combinations with sufficient match support.
+Each additional build has the variant identifier `item-ITEM_ID` and its own held-out test.
+Its ability order uses the matches of players who own its key item.
+Add the VS WEAPON, VS SPIRIT, and VS SUSTAIN counter panels from the mid game.
+Each run repeats the counter test and removes a panel when the run contradicts it.
+Use ridge penalties of 200 and 300 instead of 5 and 100. Held-out log loss selected them on three patches.
+Score items with an effect scale of 0.025 and a 3% adoption floor.
+Pool the confidence test with comparable builds of all heroes, with errors clustered by match.
+Show the item win rate and the pick rate of first purchases, with their counts.
+Estimate item effects only at the three phase times: 9, 20, and 30 minutes.
+Use catalog schema 8 with method `item-effect-counters-v1`. Schema 7 and earlier catalogs remain readable.
+Installed builds need a new `sync`.
+Store the item slot in the extracted item assets. Runs from 0.2.0 cannot be resumed with `--resume`.
+
+### Added
+
+Record 36 experiments of the build method in `docs/research-log.md`.
+Add experiment examples in `crates/deadlock-analysis/examples`, with a placebo test for each test model.
+Add the isolated `check_variants` and `check_item_statistics` executables to `scripts/check_repository.sh`.
+
 ## [0.2.0] - 2026-11-02
 
 ### Changed

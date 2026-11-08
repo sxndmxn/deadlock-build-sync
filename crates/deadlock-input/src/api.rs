@@ -39,6 +39,9 @@ impl DeadlockApi {
         api_patch::current_patch(&self.session)
     }
 
+    /// Returns ability order statistics. A non-empty `item_ids` limits them to players who own
+    /// these items.
+    ///
     /// # Errors
     /// Returns an error for invalid query boundaries or unavailable statistics.
     pub fn ability_order_stats(
@@ -46,12 +49,14 @@ impl DeadlockApi {
         hero_id: u64,
         minimum_timestamp: i64,
         minimum_matches: u32,
+        item_ids: &[u64],
     ) -> Result<Vec<Value>> {
         api_analytics::ability_order_stats(
             &self.session,
             hero_id,
             minimum_timestamp,
             minimum_matches,
+            item_ids,
         )
     }
 }

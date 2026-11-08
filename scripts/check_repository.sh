@@ -75,6 +75,8 @@ cargo doc --workspace --all-features --no-deps --locked
 cargo build --workspace --bins --examples --locked
 debug_directory=${CARGO_TARGET_DIR:-target}/debug
 "$debug_directory/examples/check_imbues"
+"$debug_directory/examples/check_variants"
+"$debug_directory/examples/check_item_statistics"
 "$debug_directory/examples/check_safety"
 
 cli_path="$debug_directory/deadlock-build-sync"
