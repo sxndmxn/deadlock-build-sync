@@ -19,6 +19,7 @@ pub use hero_build::{
 };
 pub use hero_presentation::build_hero_presentation;
 pub use presentation::{
-    BuildPresentation, LEGACY_MANAGED_MARKER, MANAGED_MARKER, PresentationAbilities,
-    PresentationCategory, PresentationContent, PresentationItem,
+    BuildPresentation, LEGACY_MANAGED_MARKER, MANAGED_MARKER, ManagedTrailer,
+    PresentationAbilities, PresentationCategory, PresentationContent, PresentationItem,
+    is_build_path,
 };

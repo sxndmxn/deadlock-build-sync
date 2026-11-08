@@ -1,10 +1,8 @@
 use std::collections::BTreeSet;
 
-use deadlock_data::{Error, Result};
-use deadlock_guides::BuildPresentation;
+use deadlock_data::{Error, Result, validate_sha256};
+use deadlock_guides::{BuildPresentation, ManagedTrailer};
 use serde_json::Value;
-
-use crate::build_metadata::HeroBuildMetadata;
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub struct BuildKey {
@@ -26,23 +24,6 @@ pub struct BuildIdentity {
     pub build_fingerprint: String,
 }
 
-impl BuildIdentity {
-    fn validate(&self) -> Result<()> {
-        for value in [&self.snapshot_id, &self.build_fingerprint] {
-            if value.len() != 64
-                || !value
-                    .bytes()
-                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-            {
-                return Err(Error::new(
-                    "Build identity requires lowercase SHA-256 values",
-                ));
-            }
-        }
-        Ok(())
-    }
-}
-
 #[derive(Clone, Debug)]
 pub struct ManagedBuild {
     pub(super) key: BuildKey,
@@ -54,40 +35,24 @@ impl ManagedBuild {
     /// # Errors
     /// Returns an error when the description does not name the build snapshot.
     pub fn new(presentation: BuildPresentation, identity: BuildIdentity) -> Result<Self> {
-        identity.validate()?;
+        validate_sha256(&identity.snapshot_id, "snapshot")?;
+        validate_sha256(&identity.build_fingerprint, "build")?;
         let content = presentation.content();
-        let metadata = HeroBuildMetadata {
-            description: Some(content.description.clone()),
-            ..HeroBuildMetadata::default()
-        };
-        let path_id = metadata
-            .managed_path()
-            .ok_or_else(|| Error::new("Build description has no valid managed build path"))?
-            .to_owned();
-        let line = format!("Snapshot: {}.", identity.snapshot_id);
-        if !content
-            .description
-            .split('\n')
-            .any(|candidate| candidate == line)
-        {
+        let trailer = ManagedTrailer::parse(&content.description)
+            .ok_or_else(|| Error::new("Build description has no valid managed build path"))?;
+        if trailer.snapshot_id != identity.snapshot_id {
             return Err(Error::new(
                 "Build description does not match the build snapshot",
             ));
         }
-        let key = BuildKey {
-            hero_id: content.hero_id,
-            path_id,
-        };
         Ok(Self {
-            key,
+            key: BuildKey {
+                hero_id: content.hero_id,
+                path_id: trailer.path_id,
+            },
             presentation,
             identity,
         })
-    }
-
-    #[must_use]
-    pub const fn key(&self) -> &BuildKey {
-        &self.key
     }
 }
 

@@ -5,6 +5,64 @@ use deadlock_data::{Error, Result};
 pub const MANAGED_MARKER: &str = "[deadlock-build-sync:v2]";
 pub const LEGACY_MANAGED_MARKER: &str = "[deadlock-build-sync:v1]";
 
+/// The lines at the end of a managed build description that identify the build to this tool.
+///
+/// Production renders them, and the Steam installer parses them to find the builds that it
+/// manages. One definition keeps the two sides equal.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ManagedTrailer {
+    /// The build path `HERO_ID-VARIANT`, the stable identity of the build in Steam.
+    pub path_id: String,
+    pub patch_title: String,
+    pub snapshot_id: String,
+}
+
+impl ManagedTrailer {
+    #[must_use]
+    pub fn render(&self) -> String {
+        format!(
+            "{MANAGED_MARKER}\nBuild path: {}.\nPatch: {}.\nSnapshot: {}.",
+            self.path_id, self.patch_title, self.snapshot_id
+        )
+    }
+
+    /// Parses the trailer of a description with the current marker.
+    ///
+    /// A description with the legacy marker, or without a valid build path, gives `None`.
+    #[must_use]
+    pub fn parse(description: &str) -> Option<Self> {
+        if !description.contains(MANAGED_MARKER) {
+            return None;
+        }
+        let line = |prefix: &str| {
+            description
+                .split('\n')
+                .find_map(|line| line.strip_prefix(prefix)?.strip_suffix('.'))
+        };
+        let path_id = line("Build path: ").filter(|path| is_build_path(path))?;
+        Some(Self {
+            path_id: path_id.into(),
+            patch_title: line("Patch: ").unwrap_or_default().into(),
+            snapshot_id: line("Snapshot: ").unwrap_or_default().into(),
+        })
+    }
+
+    /// Returns true when the description has the current or the legacy marker.
+    #[must_use]
+    pub fn is_marked(description: &str) -> bool {
+        description.contains(MANAGED_MARKER) || description.contains(LEGACY_MANAGED_MARKER)
+    }
+}
+
+/// A build path or variant has lowercase letters, digits, and hyphens.
+#[must_use]
+pub fn is_build_path(path: &str) -> bool {
+    !path.is_empty()
+        && path
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+}
+
 #[derive(Clone, Debug)]
 pub struct PresentationItem {
     pub item_id: u64,
@@ -60,8 +118,10 @@ impl BuildPresentation {
         if tags.contains(&0) || tags[0] == tags[1] || tags[0] == tags[2] || tags[1] == tags[2] {
             return Err(Error::new("Build requires three distinct positive tags"));
         }
-        if !content.description.contains(MANAGED_MARKER) {
-            return Err(Error::new("Build description has no managed marker"));
+        if ManagedTrailer::parse(&content.description).is_none() {
+            return Err(Error::new(
+                "Build description has no managed marker with a valid build path",
+            ));
         }
         validate_panel_order(&content.categories)?;
         for category in &content.categories {

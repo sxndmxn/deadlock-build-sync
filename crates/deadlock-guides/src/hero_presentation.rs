@@ -3,7 +3,7 @@ use deadlock_data::{Error, Rank, RankRange, Result};
 use crate::build_title::format_build_name;
 use crate::hero_build::{BuildItem, CounterPanel, HeroBuild, HeroBuildCatalog};
 use crate::presentation::{
-    BuildPresentation, MANAGED_MARKER, PresentationAbilities, PresentationCategory,
+    BuildPresentation, ManagedTrailer, PresentationAbilities, PresentationCategory,
     PresentationContent, PresentationItem,
 };
 
@@ -223,10 +223,12 @@ fn describe_build(
             as_of
         ),
         String::new(),
-        MANAGED_MARKER.into(),
-        format!("Build path: {}.", build.path_id()),
-        format!("Patch: {patch_title}."),
-        format!("Snapshot: {snapshot_id}."),
+        ManagedTrailer {
+            path_id: build.path_id(),
+            patch_title: patch_title.clone(),
+            snapshot_id: snapshot_id.into(),
+        }
+        .render(),
     ]);
     Ok(lines.join("\n"))
 }

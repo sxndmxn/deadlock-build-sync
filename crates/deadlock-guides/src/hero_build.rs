@@ -4,6 +4,8 @@ use std::path::Path;
 use deadlock_data::{Error, Patch, Result, atomic_write_json, count_as_f64, date_text, read_json};
 use serde::{Deserialize, Serialize};
 
+use crate::presentation::is_build_path;
+
 pub const HERO_BUILD_SCHEMA_VERSION: u32 = 9;
 pub const HERO_BUILD_METHOD: &str = "item-effect-counters-v1";
 /// The largest number of items in one counter panel.
@@ -656,11 +658,7 @@ fn validate_counters(hero: &HeroBuild, targets: &BTreeSet<CounterTarget>) -> Res
 
 fn validate_variant_id(variant: Option<&str>) -> Result<()> {
     if let Some(variant) = variant
-        && (variant.is_empty()
-            || variant.len() > 80
-            || !variant
-                .bytes()
-                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-'))
+        && (variant.len() > 80 || !is_build_path(variant))
     {
         return Err(Error::new(
             "Build variant requires 1 to 80 lowercase letters, digits, or hyphens",

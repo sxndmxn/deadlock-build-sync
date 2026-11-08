@@ -26,6 +26,10 @@ Make a build for every active hero. A hero with fewer than 100 matches at every 
 Reject a catalog without builds. A run with zero matches replaced the artifacts with an empty catalog.
 Keep the builds when one ability order request fails. The build then has no ability order. The run stops when every request fails.
 An active hero is a hero that a player can select. The source capture and the build production use one rule.
+`status` reports a managed build with the legacy `v1` marker as stale. `sync` replaced such builds, but `status` ignored them.
+The installer and `status` classify the private builds with one scan. A build that the tool cannot parse stays in place in both, with a warning.
+The backup manifest no longer records `out_of_scope_sha256`. Nothing read it.
+The next local build ID is above the selected build in `LastUsedBuilds`.
 Trim the patch title. The Steam description showed the leading space of the feed title.
 Validate the patch identity and the cohort timestamps of a catalog. A patch post needs a title, a date, a source, and a GUID.
 Record the fingerprint of the extraction SQL in the run manifest. `--resume` rejects a run that other extraction SQL made.

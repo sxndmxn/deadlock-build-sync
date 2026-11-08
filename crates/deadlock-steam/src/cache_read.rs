@@ -51,15 +51,16 @@ pub fn read_cache(path: &Path) -> Result<SteamCache> {
         .map_err(|error| error.context(format!("Cannot read Steam cache {}", path.display())))
 }
 
+/// The sections of the hero build cache. `Unpublished` holds the private builds.
+pub const UNPUBLISHED: &str = "Unpublished";
+pub const FAVORITES: &str = "Favorites";
+pub const SAVED_LAST_USED: &str = "SavedLastUsed";
+pub const LAST_USED_BUILDS: &str = "LastUsedBuilds";
+
 pub fn validate_sections(document: &Kv3Document) -> Result<()> {
-    for name in [
-        "LastUsedBuilds",
-        "Favorites",
-        "Unpublished",
-        "SavedLastUsed",
-    ] {
+    for name in [LAST_USED_BUILDS, FAVORITES, UNPUBLISHED, SAVED_LAST_USED] {
         document.root.field(name)?;
     }
-    document.root.field("Unpublished")?.array()?;
+    document.root.field(UNPUBLISHED)?.array()?;
     Ok(())
 }
