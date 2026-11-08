@@ -77,6 +77,7 @@ These examples read one run directory and write tab-separated text:
 | `compare_training_fractions` | Held-out agreement of builds from fewer development matches |
 | `measure_label_halves` | Per-hero test results on two halves of the test matches |
 | `measure_build_stability` | CORE overlap of builds from two match samples |
+| `explain_variant_candidates` | The gate that rejects each additional build candidate, with optional rule values |
 | `measure_counter_placebo` | z values of the counter test after random moves of team conditions |
 | `measure_pair_placebo` | z values of the paired test after random moves of agreements |
 | `measure_label_placebo` | z values of the per-hero test after random moves of agreements |

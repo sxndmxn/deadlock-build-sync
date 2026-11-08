@@ -11,8 +11,7 @@
 use std::path::Path;
 
 use deadlock_analysis::{
-    DEFAULT_VARIANT_SELECTION, ExtractionResources, RunPaths, VariantGate,
-    explain_variant_candidates,
+    ExtractionResources, RunPaths, VariantGate, VariantSelection, explain_variant_candidates,
 };
 use deadlock_data::{Error, Result};
 
@@ -21,7 +20,7 @@ fn main() -> Result<()> {
     let run = arguments.next().ok_or_else(|| {
         Error::new("Usage: explain_variant_candidates RUN_DIRECTORY [SEPARATION [DISTINCT_ITEMS]]")
     })?;
-    let mut rule = DEFAULT_VARIANT_SELECTION;
+    let mut rule = VariantSelection::default();
     if let Some(text) = arguments.next() {
         rule.minimum_separation = text
             .parse::<f64>()
@@ -37,10 +36,7 @@ fn main() -> Result<()> {
             .ok_or_else(|| Error::new("Distinct items must be a positive integer"))?;
     }
     let paths = RunPaths::open(Path::new(&run))?;
-    let resources = ExtractionResources {
-        memory_limit_mb: 12_000,
-        threads: 8,
-    };
+    let resources = ExtractionResources::default();
     println!(
         "hero_id\titem_id\titem_name\ttier\tcost\tadoption_20\tadoption_30\teffect_20\teffect_30\towners\tseparation_main\tseparation_minimum\tgate\tproduction_gate"
     );

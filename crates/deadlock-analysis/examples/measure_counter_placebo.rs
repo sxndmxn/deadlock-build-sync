@@ -22,10 +22,7 @@ fn main() -> Result<()> {
     let repetitions = repetitions.parse::<u64>().map_err(|_| Error::new(USAGE))?;
     let seeds = (1..=repetitions).collect::<Vec<_>>();
     let paths = RunPaths::open(Path::new(run))?;
-    let resources = ExtractionResources {
-        memory_limit_mb: 12_000,
-        threads: 8,
-    };
+    let resources = ExtractionResources::default();
     println!("seed\tphase_s\tterm\tz");
     for result in measure_counter_placebo(&paths, resources, &seeds)? {
         for (term, z) in result.z_values.iter().enumerate() {

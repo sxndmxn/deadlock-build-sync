@@ -34,10 +34,7 @@ fn main() -> Result<()> {
             })
             .collect();
     }
-    let resources = ExtractionResources {
-        memory_limit_mb: 12_000,
-        threads: 8,
-    };
+    let resources = ExtractionResources::default();
     println!(
         "rule\tdefault\tagreement_coefficient\tstandard_error\tobservations\theroes\tstrong\tmoderate\tlimited\tmedian_core_adoption\trare_core_share"
     );

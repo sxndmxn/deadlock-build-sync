@@ -24,9 +24,7 @@ mod sources;
 mod sql_resources;
 
 pub use build_assembly::{DEFAULT_SCORING, ItemScoring};
-pub use build_variants::{
-    DEFAULT_VARIANT_SELECTION, VariantCandidate, VariantGate, VariantSelection,
-};
+pub use build_variants::{VariantCandidate, VariantGate, VariantSelection};
 pub use experiments::{
     AgreementPair, BuildStability, ConditionResult, CounterResult, EffectModel, FractionResult,
     Interaction, ItemEffectRow, LabelHalves, LandmarkAgreement, ModelResult, PlaceboResult,

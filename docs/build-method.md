@@ -131,6 +131,9 @@ Purchase net worth windows and imbue selections still use the complete hero coho
 The selector compares Tier 3 and Tier 4 CORE items to reject similar builds.
 Each build must have at least two items that the other build does not contain.
 Different items must account for at least 30% of the combined unique item cost.
+The options `--variant-distinct-items` and `--variant-separation` change these two values. The catalog records them in `rules` when they differ from the defaults.
+On run `20261108T013049Z`, no candidate had a separation between 0 and 0.30, so the item count decided every rejection.
+With one distinct item, 31 heroes had an additional build instead of 12. `explain_variant_candidates` reports the gate of each candidate.
 Selection maximizes that cost difference multiplied by the square root of the distinct owner count.
 The selector repeats this comparison against the main build and each selected additional build.
 

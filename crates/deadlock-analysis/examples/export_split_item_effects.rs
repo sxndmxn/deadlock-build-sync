@@ -18,10 +18,7 @@ fn main() -> Result<()> {
         .nth(1)
         .ok_or_else(|| Error::new("Usage: export_split_item_effects RUN_DIRECTORY"))?;
     let paths = RunPaths::open(Path::new(&run))?;
-    let resources = ExtractionResources {
-        memory_limit_mb: 12_000,
-        threads: 8,
-    };
+    let resources = ExtractionResources::default();
     let rows = estimate_split_item_effects(&paths, resources)?;
     let mut output = BufWriter::new(std::io::stdout().lock());
     writeln!(

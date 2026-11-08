@@ -28,6 +28,8 @@ The run manifest no longer records the production method, the implementation fin
 
 ### Added
 
+Add `--variant-distinct-items` and `--variant-separation` to `build` and `sync`. The defaults are the tested rules.
+Use catalog schema 9, which records the selection rules in `rules` when they differ from the defaults. Schema 8 and earlier catalogs remain readable.
 Record the build tags and ability orders of a run in `raw/api-inputs.json`, so a resumed run produces the same catalog.
 Add `explain_variant_candidates`, which reports the gate that rejects each alternate build candidate.
 Record 36 experiments of the build method in `docs/research-log.md`.

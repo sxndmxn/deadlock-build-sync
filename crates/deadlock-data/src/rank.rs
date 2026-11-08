@@ -136,9 +136,10 @@ pub struct RankRange {
 }
 
 impl Default for RankRange {
+    /// Ritualist I to Eternus V: the rank range of the command line and the API session.
     fn default() -> Self {
         Self {
-            minimum: Rank(71),
+            minimum: Rank(61),
             maximum: Rank(115),
         }
     }

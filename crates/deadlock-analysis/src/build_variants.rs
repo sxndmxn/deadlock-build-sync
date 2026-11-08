@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use deadlock_data::{Result, count_as_f64};
+use deadlock_guides::BuildRules;
 
 use crate::build_assembly::{AssembledBuild, PHASES, PurchaseMedians, assemble_build};
 use crate::item_effects::{
@@ -8,8 +9,6 @@ use crate::item_effects::{
 };
 
 const MINIMUM_OWNERS: usize = 100;
-const MINIMUM_DISTINCT_ITEMS: usize = 2;
-const MINIMUM_SEPARATION: f64 = 0.30;
 const MAXIMUM_ADDITIONAL_BUILDS: usize = 2;
 /// The mid game and late game phases at which players must own a variant key item.
 const KEY_ITEM_PHASES: [u32; 2] = [1200, 1800];
@@ -28,14 +27,24 @@ pub struct VariantSelection {
     pub maximum_additional_builds: usize,
 }
 
-/// The rule of installed builds. See `docs/build-method.md`.
-pub const DEFAULT_VARIANT_SELECTION: VariantSelection = VariantSelection {
-    minimum_distinct_items: MINIMUM_DISTINCT_ITEMS,
-    minimum_separation: MINIMUM_SEPARATION,
-    maximum_additional_builds: MAXIMUM_ADDITIONAL_BUILDS,
-};
+impl Default for VariantSelection {
+    /// The rule of installed builds. See `docs/build-method.md`.
+    fn default() -> Self {
+        Self::from_rules(&BuildRules::default())
+    }
+}
 
 impl VariantSelection {
+    /// Returns the selection rule of a catalog's build rules.
+    #[must_use]
+    pub const fn from_rules(rules: &BuildRules) -> Self {
+        Self {
+            minimum_distinct_items: rules.variant_distinct_items,
+            minimum_separation: rules.variant_separation,
+            maximum_additional_builds: MAXIMUM_ADDITIONAL_BUILDS,
+        }
+    }
+
     /// Returns true when the two builds are distinct under this rule.
     #[must_use]
     pub fn is_distinct(
@@ -138,7 +147,7 @@ pub fn select_item_variants(
         catalog,
         medians,
         main,
-        DEFAULT_VARIANT_SELECTION,
+        VariantSelection::default(),
     )
 }
 

@@ -22,10 +22,7 @@ fn main() -> Result<()> {
     let repetitions = repetitions.parse::<u64>().map_err(|_| Error::new(USAGE))?;
     let seeds = (1..=repetitions).collect::<Vec<_>>();
     let paths = RunPaths::open(Path::new(run))?;
-    let resources = ExtractionResources {
-        memory_limit_mb: 12_000,
-        threads: 8,
-    };
+    let resources = ExtractionResources::default();
     println!("z");
     for z in measure_label_placebo(&paths, resources, &seeds)? {
         println!("{z:.3}");

@@ -16,10 +16,7 @@ fn main() -> Result<()> {
         .nth(1)
         .ok_or_else(|| Error::new("Usage: measure_label_halves RUN_DIRECTORY"))?;
     let paths = RunPaths::open(Path::new(&run))?;
-    let resources = ExtractionResources {
-        memory_limit_mb: 12_000,
-        threads: 8,
-    };
+    let resources = ExtractionResources::default();
     println!(
         "hero_id\teven_coefficient\teven_standard_error\teven_label\todd_coefficient\todd_standard_error\todd_label"
     );

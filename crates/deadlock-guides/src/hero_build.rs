@@ -4,7 +4,7 @@ use std::path::Path;
 use deadlock_data::{Error, Patch, Result, atomic_write_json, count_as_f64, date_text, read_json};
 use serde::{Deserialize, Serialize};
 
-pub const HERO_BUILD_SCHEMA_VERSION: u32 = 8;
+pub const HERO_BUILD_SCHEMA_VERSION: u32 = 9;
 pub const HERO_BUILD_METHOD: &str = "item-effect-counters-v1";
 /// The largest number of items in one counter panel.
 pub const MAXIMUM_COUNTER_ITEMS: usize = 4;
@@ -17,6 +17,9 @@ pub const COUNTER_CONTRADICTION_Z: f64 = -2.0;
 pub struct HeroBuildCatalog {
     pub schema_version: u32,
     pub method: String,
+    /// The selection rules of this catalog, when they differ from the defaults.
+    #[serde(default, skip_serializing_if = "BuildRules::is_default")]
+    pub rules: BuildRules,
     pub client_version: u64,
     pub patch: Patch,
     pub cohort: BuildCohort,
@@ -24,6 +27,54 @@ pub struct HeroBuildCatalog {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub counter_evidence: Vec<CounterEvidence>,
     pub heroes: Vec<HeroBuild>,
+}
+
+/// The selection rules that production can change from the command line.
+///
+/// The defaults are the tested rules of `docs/build-method.md`. A change of a default needs a
+/// research-log entry on a second patch.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BuildRules {
+    /// The expensive CORE items that an additional build and each installed build must each
+    /// have without the other.
+    pub variant_distinct_items: usize,
+    /// The smallest share of the combined unique expensive item cost that must differ between
+    /// an additional build and each installed build.
+    pub variant_separation: f64,
+}
+
+impl Default for BuildRules {
+    fn default() -> Self {
+        Self {
+            variant_distinct_items: 2,
+            variant_separation: 0.30,
+        }
+    }
+}
+
+impl BuildRules {
+    /// Returns true for the tested rules, which the catalog does not record.
+    #[must_use]
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+
+    /// # Errors
+    /// Returns an error when a rule is outside its range.
+    pub fn validate(&self) -> Result<()> {
+        if self.variant_distinct_items == 0 {
+            return Err(Error::new(
+                "Additional builds need at least one distinct item",
+            ));
+        }
+        if !(0.0..=1.0).contains(&self.variant_separation) {
+            return Err(Error::new(
+                "The variant separation must be a share from 0 to 1",
+            ));
+        }
+        Ok(())
+    }
 }
 
 /// The enemy team property that a counter panel answers.
@@ -447,9 +498,12 @@ impl HeroBuildCatalog {
             (5, "item-effect-ridge-v1") => {
                 self.heroes.iter().all(|build| build.variant_id.is_none())
             }
-            (6, "item-effect-variants-v1") | (7, "item-effect-variants-v2") => true,
+            (6, "item-effect-variants-v1")
+            | (7, "item-effect-variants-v2")
+            | (8, "item-effect-counters-v1") => true,
             _ => false,
         };
+        self.rules.validate()?;
         let mut targets = BTreeSet::new();
         for evidence in &self.counter_evidence {
             evidence.validate()?;

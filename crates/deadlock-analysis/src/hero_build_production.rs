@@ -5,9 +5,9 @@ use deadlock_data::{
     Error, RankRange, Result, integer, parse_timestamp, read_json, text, trace_operation,
 };
 use deadlock_guides::{
-    BuildCohort, BuildEvaluation, CounterEvidence, HERO_BUILD_METHOD, HERO_BUILD_SCHEMA_VERSION,
-    HeroBuild, HeroBuildCatalog, TagItem, assign_build_focus, select_ability_path,
-    select_build_tags,
+    BuildCohort, BuildEvaluation, BuildRules, CounterEvidence, HERO_BUILD_METHOD,
+    HERO_BUILD_SCHEMA_VERSION, HeroBuild, HeroBuildCatalog, TagItem, assign_build_focus,
+    select_ability_path, select_build_tags,
 };
 use deadlock_input::{ApiOptions, BuildTagCatalog, DeadlockApi, parse_patch_feed};
 use serde_json::Value;
@@ -16,7 +16,7 @@ use crate::api_inputs::{AbilityRequest, ApiInputs, request_inputs};
 use crate::build_assembly::{AssembledBuild, PHASES, PurchaseMedians, assemble_build};
 use crate::build_evaluation::{evaluate_build, shrink_evaluations};
 use crate::build_variants::{
-    DEFAULT_VARIANT_SELECTION, assemble_item_variant, select_item_variants,
+    VariantSelection, assemble_item_variant, select_item_variants_with_rule,
 };
 use crate::counter_items::{CounterGroups, estimate_counter_evidence, select_counter_panels};
 use crate::item_effects::{EffectTable, ItemCatalog, LandmarkState, estimate_item_effects};
@@ -37,7 +37,10 @@ pub fn produce_hero_builds(
     paths: &RunPaths,
     resources: ExtractionResources,
     api_base_url: &str,
+    rules: &BuildRules,
 ) -> Result<HeroBuildCatalog> {
+    rules.validate()?;
+    let selection = VariantSelection::from_rules(rules);
     let manifest = RunManifest::read(paths)?;
     let ranks = manifest.cohort.ranks()?;
     let as_of = parse_timestamp(&manifest.cohort.as_of)?;
@@ -56,7 +59,7 @@ pub fn produce_hero_builds(
     let (local, requested) = std::thread::scope(|scope| {
         let requests =
             scope.spawn(|| request_inputs(&mut api, needs_tags, &missing, patch.start_timestamp));
-        let local = assemble_from_database(paths, resources, ranks, &heroes);
+        let local = assemble_from_database(paths, resources, ranks, &heroes, selection);
         let remote = trace_operation("analysis.wait_for_api", Some("wait_for_api"), || {
             requests
                 .join()
@@ -102,6 +105,7 @@ pub fn produce_hero_builds(
     let catalog = HeroBuildCatalog {
         schema_version: HERO_BUILD_SCHEMA_VERSION,
         method: HERO_BUILD_METHOD.into(),
+        rules: *rules,
         client_version,
         patch,
         cohort: BuildCohort {
@@ -141,14 +145,20 @@ fn assemble_from_database(
     resources: ExtractionResources,
     ranks: RankRange,
     heroes: &BTreeMap<u64, String>,
+    selection: VariantSelection,
 ) -> Result<LocalBuilds> {
     let (database, parameters) = open_run_database(paths, resources, ranks)?;
     let inputs = load_assembly_inputs(&database, &parameters)?;
     let imbues = load_item_imbues(&database, &parameters)?;
     let statistics = load_item_statistics(&database, &parameters)?;
     drop(database);
-    let (builds, counter_evidence) =
-        assemble_hero_builds(&inputs.states, &inputs.catalog, &inputs.medians, heroes)?;
+    let (builds, counter_evidence) = assemble_hero_builds(
+        &inputs.states,
+        &inputs.catalog,
+        &inputs.medians,
+        heroes,
+        selection,
+    )?;
     Ok(LocalBuilds {
         builds,
         counter_evidence,
@@ -163,6 +173,7 @@ fn assemble_hero_builds(
     catalog: &ItemCatalog,
     medians: &PurchaseMedians,
     heroes: &BTreeMap<u64, String>,
+    selection: VariantSelection,
 ) -> Result<(Vec<HeroBuild>, Vec<CounterEvidence>)> {
     let development = states
         .iter()
@@ -183,6 +194,7 @@ fn assemble_hero_builds(
             &development_effects,
             catalog,
             medians,
+            selection,
         )?);
     }
     for variants in [false, true] {
@@ -203,6 +215,10 @@ fn assemble_hero_builds(
     Ok((builds, evidence))
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Fix 6 of the decision log replaces these arguments with one assembly context."
+)]
 fn assemble_hero(
     hero_id: u64,
     hero_name: &str,
@@ -211,6 +227,7 @@ fn assemble_hero(
     development_effects: &EffectTable,
     catalog: &ItemCatalog,
     medians: &PurchaseMedians,
+    selection: VariantSelection,
 ) -> Result<Vec<HeroBuild>> {
     let all = states
         .iter()
@@ -247,13 +264,14 @@ fn assemble_hero(
         None,
     )?];
     if let Some(development_main) = development_main {
-        for variant in select_item_variants(
+        for variant in select_item_variants_with_rule(
             hero_id,
             &development,
             development_effects,
             catalog,
             medians,
             &development_main,
+            selection,
         )? {
             let item_id = variant.build.key_item_id;
             let Some(production) =
@@ -264,9 +282,10 @@ fn assemble_hero(
                 );
                 continue;
             };
-            if installed.iter().any(|build| {
-                !DEFAULT_VARIANT_SELECTION.is_distinct(build, &production.build, catalog)
-            }) {
+            if installed
+                .iter()
+                .any(|build| !selection.is_distinct(build, &production.build, catalog))
+            {
                 eprintln!(
                     "Dropped an additional build for {hero_name}: item {item_id} is similar to an installed build"
                 );

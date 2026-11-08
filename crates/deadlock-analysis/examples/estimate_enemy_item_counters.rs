@@ -31,10 +31,7 @@ fn main() -> Result<()> {
         return Err(Error::new(USAGE));
     }
     let paths = RunPaths::open(Path::new(run))?;
-    let resources = ExtractionResources {
-        memory_limit_mb: 12_000,
-        threads: 8,
-    };
+    let resources = ExtractionResources::default();
     let condition = condition.split(',').collect::<Vec<_>>();
     let groups = groups
         .iter()

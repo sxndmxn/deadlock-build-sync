@@ -16,10 +16,7 @@ fn main() -> Result<()> {
         .nth(1)
         .ok_or_else(|| Error::new("Usage: compare_key_item_signal RUN_DIRECTORY"))?;
     let paths = RunPaths::open(Path::new(&run))?;
-    let resources = ExtractionResources {
-        memory_limit_mb: 12_000,
-        threads: 8,
-    };
+    let resources = ExtractionResources::default();
     let result = compare_key_item_signal(&paths, resources)?;
     println!("value\tcoefficient\tstandard_error\tz\theroes\tobservations");
     for (name, value) in [("core", result.base), ("key_item", result.alternative)] {

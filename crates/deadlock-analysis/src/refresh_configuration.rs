@@ -25,6 +25,16 @@ pub struct ExtractionResources {
     pub threads: u16,
 }
 
+impl Default for ExtractionResources {
+    /// The limits of the command line and the experiments: 12 GB and 8 threads.
+    fn default() -> Self {
+        Self {
+            memory_limit_mb: 12_000,
+            threads: 8,
+        }
+    }
+}
+
 impl ExtractionResources {
     /// # Errors
     /// Returns an error when the memory limit or thread count is zero.

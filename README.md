@@ -130,6 +130,11 @@ The data is observational. It does not prove that an item causes a win.
 | `--extraction-threads` | 8 | Database threads. The match download uses at least 64 |
 | `--run-id` | Current time | Name of the analysis run |
 | `--resume` | Off | Reuse the extracted matches of `--run-id` |
+| `--variant-distinct-items` | 2 | Expensive CORE items that an additional build and each installed build must each have without the other |
+| `--variant-separation` | 0.3 | Smallest cost share of the different expensive items between an additional build and each installed build |
+
+The two variant options control how different an additional build must be. Smaller values accept more similar additional builds.
+`hero-builds.json` records the values in `rules` when they differ from the defaults. The defaults are the tested rules. See [Build method](docs/build-method.md#additional-builds).
 
 
 DuckDB downloads ICU, DuckLake, and HTTPFS extensions if they are missing.
