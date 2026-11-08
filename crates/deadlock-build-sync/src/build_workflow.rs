@@ -1,11 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use deadlock_analysis::{
-    ExtractionResources, RefreshRequest, extract_run, parse_timestamp, produce_hero_builds,
-};
+use deadlock_analysis::{ExtractionResources, RefreshRequest, extract_run, produce_hero_builds};
 use deadlock_data::{
-    Error, RankRange, Result, atomic_write, fingerprint, state_directory, trace_operation,
+    Error, RankRange, Result, atomic_write, fingerprint, parse_timestamp, state_directory,
+    trace_operation,
 };
 use deadlock_guides::{HeroBuild, HeroBuildCatalog, build_hero_presentation};
 use deadlock_input::{ApiOptions, DeadlockApi};
@@ -124,7 +123,7 @@ pub fn describe_staleness(catalog: &HeroBuildCatalog, base_url: &str) -> Result<
     let patch = api.current_patch()?;
     Ok(if catalog.client_version != client {
         Some("Hero builds use another client version".into())
-    } else if catalog.patch.get("identity") != Some(&patch.identity()?.into()) {
+    } else if catalog.patch.identity != patch.identity {
         Some("Hero builds use another patch".into())
     } else {
         None

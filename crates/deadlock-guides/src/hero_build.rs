@@ -1,9 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use deadlock_data::{Error, Result, atomic_write_json, count_as_f64, read_json};
+use deadlock_data::{Error, Patch, Result, atomic_write_json, count_as_f64, date_text, read_json};
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
 
 pub const HERO_BUILD_SCHEMA_VERSION: u32 = 8;
 pub const HERO_BUILD_METHOD: &str = "item-effect-counters-v1";
@@ -19,7 +18,7 @@ pub struct HeroBuildCatalog {
     pub schema_version: u32,
     pub method: String,
     pub client_version: u64,
-    pub patch: Map<String, Value>,
+    pub patch: Patch,
     pub cohort: BuildCohort,
     /// Run evidence for each counter item group that passed its test.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -144,9 +143,30 @@ impl CounterEvidence {
 pub struct BuildCohort {
     pub minimum_badge: u16,
     pub maximum_badge: u16,
+    /// The first match start time, as an RFC 3339 timestamp in UTC.
     pub since: String,
+    /// The last match end time, as an RFC 3339 timestamp in UTC.
     pub as_of: String,
     pub player_matches: u64,
+}
+
+impl BuildCohort {
+    /// Returns the UTC dates of the first and last match, as `YYYY-MM-DD`.
+    ///
+    /// # Errors
+    /// Returns an error when a timestamp is malformed.
+    pub fn dates(&self) -> Result<[String; 2]> {
+        Ok([date_text(&self.since)?, date_text(&self.as_of)?])
+    }
+
+    fn validate(&self) -> Result<()> {
+        if self.minimum_badge > self.maximum_badge {
+            return Err(Error::new("Hero build cohort has an invalid rank range"));
+        }
+        self.dates()
+            .map(|_| ())
+            .map_err(|error| error.context("Hero build cohort has an invalid timestamp"))
+    }
 }
 
 /// One hero build: the CORE purchase order and situational items for each tier.
@@ -442,9 +462,8 @@ impl HeroBuildCatalog {
                 "Hero builds use another schema or method. Run deadlock-build-sync sync",
             ));
         }
-        if self.cohort.minimum_badge > self.cohort.maximum_badge {
-            return Err(Error::new("Hero build cohort has an invalid rank range"));
-        }
+        self.patch.validate()?;
+        self.cohort.validate()?;
         let mut paths = BTreeSet::new();
         let mut names = BTreeMap::new();
         for hero in &self.heroes {

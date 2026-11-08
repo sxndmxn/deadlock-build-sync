@@ -186,7 +186,8 @@ fn describe_build(
         minimum: Rank::try_from(catalog.cohort.minimum_badge)?,
         maximum: Rank::try_from(catalog.cohort.maximum_badge)?,
     };
-    let patch_title = text_field(catalog, "title");
+    let patch_title = &catalog.patch.title;
+    let [since, as_of] = catalog.cohort.dates()?;
     let mut lines = vec![format!(
         "Play around: {focus} at about {} net worth.",
         format_souls(build.power_spike_net_worth)
@@ -218,8 +219,8 @@ fn describe_build(
             },
             build.evaluation.observations,
             ranks.label(),
-            catalog.cohort.since.get(..10).unwrap_or_default(),
-            catalog.cohort.as_of.get(..10).unwrap_or_default()
+            since,
+            as_of
         ),
         String::new(),
         MANAGED_MARKER.into(),
@@ -228,14 +229,6 @@ fn describe_build(
         format!("Snapshot: {snapshot_id}."),
     ]);
     Ok(lines.join("\n"))
-}
-
-fn text_field<'catalog>(catalog: &'catalog HeroBuildCatalog, name: &str) -> &'catalog str {
-    catalog
-        .patch
-        .get(name)
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or_default()
 }
 
 const fn phase_label(phase_s: u32) -> &'static str {

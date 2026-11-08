@@ -27,12 +27,21 @@ pub fn check_installation_freshness() -> Result<()> {
     let patches = json!([{
         "title":"Reference patch",
         "pub_date":"2026-10-10T00:00:00Z",
+        "source":"steam",
+        "guid":"reference-patch",
         "content":"Reference changes",
+    }]);
+    let obsolete = json!([{
+        "title":"Reference patch",
+        "pub_date":"2026-10-09T00:00:00Z",
+        "source":"steam",
+        "guid":"obsolete-patch",
+        "content":"Older changes",
     }]);
     let mut catalog: HeroBuildCatalog = serde_json::from_str(include_str!(
         "../../../../tests/fixtures/imbue-catalog.json"
     ))?;
-    catalog.patch = parse_patch_feed(&patches, None)?.to_document()?;
+    catalog.patch = parse_patch_feed(&patches, None)?;
     for (case, expected) in [
         ("current", cache_error.as_str()),
         ("client", "Hero builds use another client version"),
@@ -43,7 +52,7 @@ pub fn check_installation_freshness() -> Result<()> {
         if case == "client" {
             selected.client_version += 1;
         } else if case == "patch" {
-            selected.patch.insert("identity".into(), "obsolete".into());
+            selected.patch = parse_patch_feed(&obsolete, None)?;
         }
         check_rejected_installation(
             &location,
@@ -164,15 +173,20 @@ fn check_hero_release_feed() -> Result<()> {
     let update = json!({
         "title":" Minor Update - 10-05-2026",
         "pub_date":"2026-10-05T23:05:32Z",
+        "source":"steam",
+        "guid":"update-post",
         "content":"- Rat King: Scrap Grenade - Damage increased from 65 to 70",
     });
     let release = json!({
         "title":"Fairfax Industries Employee Spotlight",
         "pub_date":"2026-10-13T20:59:55Z",
+        "source":"steam",
+        "guid":"release-post",
         "content":"Today, Fairfax Industries is proud to introduce their most valuable salesman.",
     });
     let both = json!([release, update]);
-    if parse_patch_feed(&both, None)?.title != " Minor Update - 10-05-2026" {
+    // The feed title has a leading space. The patch title is trimmed.
+    if parse_patch_feed(&both, None)?.title != "Minor Update - 10-05-2026" {
         return Err(Error::new("A hero release post replaced the current patch"));
     }
     if parse_patch_feed(&json!([release]), None)?.title != "Fairfax Industries Employee Spotlight" {

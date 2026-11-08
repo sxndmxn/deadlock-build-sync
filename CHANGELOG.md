@@ -21,6 +21,8 @@ Estimate item effects only at the three phase times: 9, 20, and 30 minutes.
 Use catalog schema 8 with method `item-effect-counters-v1`. Schema 7 and earlier catalogs remain readable.
 Installed builds need a new `sync`.
 Store the item slot in the extracted item assets. Runs from 0.2.0 cannot be resumed with `--resume`.
+Trim the patch title. The Steam description showed the leading space of the feed title.
+Validate the patch identity and the cohort timestamps of a catalog. A patch post needs a title, a date, a source, and a GUID.
 
 ### Added
 

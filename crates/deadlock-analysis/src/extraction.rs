@@ -7,10 +7,9 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::database::{AnalysisDatabase, Parameters};
-use crate::refresh_configuration::{
-    Cohort, DUCKLAKE_URL, ExtractionResources, RunPaths, format_timestamp,
-};
+use crate::refresh_configuration::{Cohort, DUCKLAKE_URL, ExtractionResources, RunPaths};
 use crate::sql_resources::sql;
+use deadlock_data::format_timestamp;
 
 /// 64 threads read one day of remote rows 3.8 times faster than 8 threads, at equal bytes.
 const REMOTE_READ_THREADS: u16 = 64;

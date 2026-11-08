@@ -1,7 +1,9 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use deadlock_data::{Error, RankRange, Result, integer, read_json, text, trace_operation};
+use deadlock_data::{
+    Error, RankRange, Result, integer, parse_timestamp, read_json, text, trace_operation,
+};
 use deadlock_guides::{
     BuildCohort, BuildEvaluation, CounterEvidence, HERO_BUILD_METHOD, HERO_BUILD_SCHEMA_VERSION,
     HeroBuild, HeroBuildCatalog, TagItem, assign_build_focus, select_ability_path,
@@ -20,7 +22,7 @@ use crate::counter_items::{CounterGroups, estimate_counter_evidence, select_coun
 use crate::item_effects::{EffectTable, ItemCatalog, LandmarkState, estimate_item_effects};
 use crate::item_imbues::{ItemImbues, attach_item_imbues, load_item_imbues};
 use crate::item_statistics::{HeroItemStatistics, attach_item_statistics, load_item_statistics};
-use crate::refresh_configuration::{ExtractionResources, RunPaths, cohort_ranks, parse_timestamp};
+use crate::refresh_configuration::{ExtractionResources, RunPaths, cohort_ranks};
 use crate::run_inputs::{load_assembly_inputs, open_run_database};
 
 /// Produces a main build and distinct supported variants for each active hero.
@@ -101,7 +103,7 @@ pub fn produce_hero_builds(
         schema_version: HERO_BUILD_SCHEMA_VERSION,
         method: HERO_BUILD_METHOD.into(),
         client_version,
-        patch: patch.to_document()?,
+        patch,
         cohort: BuildCohort {
             minimum_badge: ranks.minimum.badge(),
             maximum_badge: ranks.maximum.badge(),

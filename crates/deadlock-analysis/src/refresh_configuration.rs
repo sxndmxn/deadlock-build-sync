@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use deadlock_data::{Error, RankRange, Result};
+use deadlock_data::{Error, RankRange, Result, format_timestamp};
 use serde_json::{Value, json};
 
 pub const DUCKLAKE_URL: &str = "https://data.deadlock-api.com/v1/catalog.ducklake";
@@ -135,34 +135,6 @@ impl RunPaths {
         std::fs::create_dir_all(&paths.raw)?;
         Ok(paths)
     }
-}
-
-/// # Errors
-/// Returns an error when an ISO 8601 timestamp is invalid or precedes the Unix epoch.
-pub fn parse_timestamp(value: &str) -> Result<i64> {
-    let timestamp = if let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(value) {
-        parsed.timestamp()
-    } else if let Ok(parsed) = chrono::NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M:%S%.f")
-    {
-        parsed.and_utc().timestamp()
-    } else {
-        chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d")
-            .ok()
-            .and_then(|date| date.and_hms_opt(0, 0, 0))
-            .ok_or_else(|| Error::new("Invalid ISO 8601 timestamp"))?
-            .and_utc()
-            .timestamp()
-    };
-    if timestamp < 0 {
-        return Err(Error::new("Analysis timestamp precedes the Unix epoch"));
-    }
-    Ok(timestamp)
-}
-
-pub fn format_timestamp(value: i64) -> Result<String> {
-    chrono::DateTime::from_timestamp(value, 0)
-        .map(|date| date.to_rfc3339())
-        .ok_or_else(|| Error::new("Analysis timestamp is outside the supported range"))
 }
 
 pub fn cohort_ranks(value: &Value) -> Result<RankRange> {

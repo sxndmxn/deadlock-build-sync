@@ -2,7 +2,16 @@
   "schema_version": 5,
   "method": "item-effect-ridge-v1",
   "client_version": 1,
-  "patch": {"title": "Reference patch"},
+  "patch": {
+    "identity": "7b4da19b60cfbbef9de087e84737c6a2d7fb27df873728c178f12c338b873c61",
+    "title": "Reference patch",
+    "start_timestamp": 1791590400,
+    "published_at": "2026-10-10T00:00:00Z",
+    "source": "steam",
+    "guid": "reference-patch",
+    "link": "",
+    "content_sha256": "f4ce78108452e4b56559376210ef7db0d4e4235fcbe7702cd4038f6a67c69184"
+  },
   "cohort": {
     "minimum_badge": 61,
     "maximum_badge": 115,

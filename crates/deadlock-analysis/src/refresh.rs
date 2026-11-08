@@ -3,7 +3,9 @@ use std::io::ErrorKind;
 use std::path::Path;
 use std::time::Duration;
 
-use deadlock_data::{Error, Result, atomic_write_json, read_json, text, trace_operation};
+use deadlock_data::{
+    Error, Result, atomic_write_json, parse_timestamp, read_json, text, trace_operation,
+};
 use deadlock_guides::HERO_BUILD_METHOD;
 use deadlock_input::parse_patch_feed;
 use serde_json::json;
@@ -11,7 +13,7 @@ use serde_json::json;
 use crate::extraction::extract_cohort;
 use crate::refresh_configuration::{
     Cohort, RANK_RESET_AT, RefreshRequest, RunPaths, cohort_ranks, implementation_record,
-    is_automatic_run_id, parse_timestamp,
+    is_automatic_run_id,
 };
 use crate::sources::{capture_sources, validate_source_fingerprints};
 
