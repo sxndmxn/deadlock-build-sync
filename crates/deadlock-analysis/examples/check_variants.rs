@@ -2,6 +2,10 @@
 
 #[path = "../src/build_assembly.rs"]
 mod build_assembly;
+#[expect(
+    dead_code,
+    reason = "The reference check uses the default rule and does not report gates."
+)]
 #[path = "../src/build_variants.rs"]
 mod build_variants;
 #[expect(

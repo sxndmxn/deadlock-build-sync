@@ -13,7 +13,7 @@ use serde_json::Value;
 use crate::build_assembly::{AssembledBuild, PHASES, PurchaseMedians, assemble_build};
 use crate::build_evaluation::{evaluate_build, shrink_evaluations};
 use crate::build_variants::{
-    MINIMUM_SEPARATION, assemble_item_variant, build_separation, select_item_variants,
+    DEFAULT_VARIANT_SELECTION, assemble_item_variant, select_item_variants,
 };
 use crate::counter_items::{CounterGroups, estimate_counter_evidence, select_counter_panels};
 use crate::item_effects::{EffectTable, ItemCatalog, LandmarkState, estimate_item_effects};
@@ -327,11 +327,17 @@ fn assemble_hero(
             let Some(production) =
                 assemble_item_variant(hero_id, item_id, &all, effects, catalog, medians)?
             else {
+                eprintln!(
+                    "Dropped an additional build for {hero_name}: item {item_id} has no build from all matches"
+                );
                 continue;
             };
             if installed.iter().any(|build| {
-                build_separation(build, &production.build, catalog) < MINIMUM_SEPARATION
+                !DEFAULT_VARIANT_SELECTION.is_distinct(build, &production.build, catalog)
             }) {
+                eprintln!(
+                    "Dropped an additional build for {hero_name}: item {item_id} is similar to an installed build"
+                );
                 continue;
             }
             let evaluation = evaluate_build(&test, &variant.build.phase_sets, catalog)?;

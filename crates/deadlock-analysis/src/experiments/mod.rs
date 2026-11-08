@@ -3,6 +3,7 @@
 mod build_agreement;
 mod counter_tests;
 mod effect_models;
+mod variant_candidates;
 
 pub use build_agreement::{
     AgreementPair, BuildStability, FractionResult, LabelHalves, LandmarkAgreement, ScoringResult,
@@ -19,6 +20,7 @@ pub use effect_models::{
     EffectModel, Interaction, ItemEffectRow, ModelResult, compare_effect_models,
     estimate_split_item_effects,
 };
+pub use variant_candidates::{VariantCandidateReport, explain_variant_candidates};
 
 /// Mixes the bits of a number for a fixed pseudo-random order in placebo tests.
 const fn mix(value: u64) -> u64 {
