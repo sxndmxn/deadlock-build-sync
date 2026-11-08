@@ -23,14 +23,17 @@ mod ridge_logistic;
 
 use deadlock_data::{Error, Result};
 
-use build_assembly::{PHASES, PurchaseMedians, assemble_build};
+use build_assembly::{PHASES, PurchaseMedians, assemble_build, assemble_fallback_build};
 use build_variants::{assemble_item_variant, select_item_variants};
-use item_effects::{EffectTable, HeroLandmarkEffects, ItemAsset, ItemCatalog, LandmarkState};
+use item_effects::{
+    ALL_HEROES, EffectTable, HeroLandmarkEffects, ItemAsset, ItemCatalog, LandmarkState,
+};
 
 fn main() -> Result<()> {
     let catalog = create_items()?;
     let effects = create_effects(&catalog);
     let medians = PurchaseMedians::new();
+    check_fallback_build(&effects, &catalog, &medians)?;
     let main = assemble_build(1, &effects, &catalog, &medians)
         .ok_or_else(|| Error::new("Reference main build is missing"))?;
     let states = create_states(120);
@@ -80,6 +83,39 @@ fn main() -> Result<()> {
         ));
     }
     println!("Isolated strategy selection checks passed.");
+    Ok(())
+}
+
+/// A hero without its own effects gets the generic build of all heroes, not no build.
+fn check_fallback_build(
+    effects: &EffectTable,
+    catalog: &ItemCatalog,
+    medians: &PurchaseMedians,
+) -> Result<()> {
+    let generic = effects
+        .iter()
+        .map(|((_, phase), value)| ((ALL_HEROES, *phase), value.clone()))
+        .collect::<EffectTable>();
+    if assemble_build(2, &generic, catalog, medians).is_some() {
+        return Err(Error::new(
+            "Build assembly used the effects of all heroes as a hero's own",
+        ));
+    }
+    let fallback = assemble_fallback_build(2, &generic, catalog, medians).ok_or_else(|| {
+        Error::new("Fallback assembly made no build from the effects of all heroes")
+    })?;
+    let reference = assemble_build(1, effects, catalog, medians)
+        .ok_or_else(|| Error::new("Reference main build is missing"))?;
+    if fallback.phase_sets != reference.phase_sets {
+        return Err(Error::new(
+            "Fallback assembly differs from the build of the same effects",
+        ));
+    }
+    if assemble_fallback_build(2, effects, catalog, medians).is_some() {
+        return Err(Error::new(
+            "Fallback assembly made a build without the effects of all heroes",
+        ));
+    }
     Ok(())
 }
 

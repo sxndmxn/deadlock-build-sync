@@ -22,6 +22,10 @@ Use catalog schema 8 with method `item-effect-counters-v1`. Schema 7 and earlier
 Installed builds need a new `sync`.
 Store the item slot in the extracted item assets. Runs from 0.2.0 cannot be resumed with `--resume`.
 Refuse an `--artifacts` directory that has other files and no `hero-builds.json`. Installation replaced such a directory.
+Make a build for every active hero. A hero with fewer than 100 matches at every phase gets a build from the item effects of all heroes, with the `limited` label. Earlier versions skipped the hero and kept its build from the previous patch.
+Reject a catalog without builds. A run with zero matches replaced the artifacts with an empty catalog.
+Keep the builds when one ability order request fails. The build then has no ability order. The run stops when every request fails.
+An active hero is a hero that a player can select. The source capture and the build production use one rule.
 Trim the patch title. The Steam description showed the leading space of the feed title.
 Validate the patch identity and the cohort timestamps of a catalog. A patch post needs a title, a date, a source, and a GUID.
 Record the fingerprint of the extraction SQL in the run manifest. `--resume` rejects a run that other extraction SQL made.

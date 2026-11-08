@@ -13,7 +13,9 @@ use deadlock_input::{ApiOptions, BuildTagCatalog, DeadlockApi, parse_patch_feed}
 use serde_json::Value;
 
 use crate::api_inputs::{AbilityRequest, ApiInputs, request_inputs};
-use crate::build_assembly::{AssembledBuild, PHASES, PurchaseMedians, assemble_build};
+use crate::build_assembly::{
+    AssembledBuild, PHASES, PurchaseMedians, assemble_build, assemble_fallback_build,
+};
 use crate::build_evaluation::{evaluate_build, shrink_evaluations};
 use crate::build_variants::{
     VariantSelection, assemble_item_variant, select_item_variants_with_rule,
@@ -102,6 +104,21 @@ pub fn produce_hero_builds(
             Ok(build)
         })
         .collect::<Result<Vec<_>>>()?;
+    let missing = heroes
+        .iter()
+        .filter(|(hero_id, _)| {
+            !builds
+                .iter()
+                .any(|build| build.hero_id == **hero_id && build.variant_id.is_none())
+        })
+        .map(|(_, name)| name.as_str())
+        .collect::<Vec<_>>();
+    if !missing.is_empty() {
+        return Err(Error::new(format!(
+            "The catalog has no main build for {}",
+            missing.join(", ")
+        )));
+    }
     let catalog = HeroBuildCatalog {
         schema_version: HERO_BUILD_SCHEMA_VERSION,
         method: HERO_BUILD_METHOD.into(),
@@ -233,16 +250,9 @@ fn assemble_hero(
         .iter()
         .filter(|state| state.hero_id == hero_id)
         .collect::<Vec<_>>();
-    if all.is_empty() {
-        eprintln!("Skipping {hero_name}: the run has no matches of this hero");
-        return Ok(Vec::new());
-    }
     let (test, development): (Vec<_>, Vec<_>) =
         all.iter().copied().partition(|state| state.is_test());
-    let Some(main) = assemble_build(hero_id, effects, catalog, medians) else {
-        eprintln!("Warning: Skipping {hero_name}: no item has enough owners");
-        return Ok(Vec::new());
-    };
+    let main = select_main_build(hero_id, hero_name, effects, catalog, medians)?;
     let development_main = assemble_build(hero_id, development_effects, catalog, medians);
     let evaluation = match &development_main {
         Some(build) => evaluate_build(&test, &build.phase_sets, catalog)?,
@@ -305,6 +315,27 @@ fn assemble_hero(
     }
     eprintln!("Selected {} builds for {hero_name}", builds.len());
     Ok(builds)
+}
+
+/// Every active hero gets a build. A hero without its own item effects gets a generic one.
+fn select_main_build(
+    hero_id: u64,
+    hero_name: &str,
+    effects: &EffectTable,
+    catalog: &ItemCatalog,
+    medians: &PurchaseMedians,
+) -> Result<AssembledBuild> {
+    if let Some(main) = assemble_build(hero_id, effects, catalog, medians) {
+        return Ok(main);
+    }
+    eprintln!(
+        "Warning: {hero_name} has too few matches in the run. Its build uses the item effects of all heroes"
+    );
+    assemble_fallback_build(hero_id, effects, catalog, medians).ok_or_else(|| {
+        Error::new(format!(
+            "Cannot build {hero_name}: the run has no item effects"
+        ))
+    })
 }
 
 fn create_hero_build(
@@ -409,12 +440,10 @@ fn read_hero_names(path: &Path) -> Result<BTreeMap<u64, String>> {
     let rows = document
         .as_array()
         .ok_or_else(|| Error::new("Hero assets must be an array"))?;
+    // Source capture keeps only the active heroes, so every row is a hero to build.
     let mut heroes = BTreeMap::new();
     for row in rows {
-        let flag = |name: &str| row[name].as_bool().unwrap_or(false);
-        if flag("player_selectable") && !flag("disabled") && !flag("in_development") {
-            heroes.insert(integer(row, "id")?, text(row, "name")?.to_owned());
-        }
+        heroes.insert(integer(row, "id")?, text(row, "name")?.to_owned());
     }
     if heroes.is_empty() {
         return Err(Error::new("Hero assets contain no active heroes"));

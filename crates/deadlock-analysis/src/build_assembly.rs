@@ -110,6 +110,28 @@ pub fn assemble_build(
     assemble_build_with_scoring(hero_id, table, catalog, medians, DEFAULT_SCORING)
 }
 
+/// Assembles a generic build for a hero without its own item effects.
+///
+/// A hero with fewer than 100 rows at every phase has no hero model. The build then uses
+/// the effects and the adoption of all heroes, and its evidence label is `limited`.
+#[must_use]
+pub fn assemble_fallback_build(
+    hero_id: u64,
+    table: &EffectTable,
+    catalog: &ItemCatalog,
+    medians: &PurchaseMedians,
+) -> Option<AssembledBuild> {
+    let generic = PHASES
+        .iter()
+        .filter_map(|phase| {
+            table
+                .get(&(ALL_HEROES, *phase))
+                .map(|effects| ((hero_id, *phase), effects.clone()))
+        })
+        .collect::<EffectTable>();
+    assemble_build(hero_id, &generic, catalog, medians)
+}
+
 /// Assembles a build with a specified item score rule.
 #[must_use]
 pub fn assemble_build_with_scoring(

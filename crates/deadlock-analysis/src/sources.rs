@@ -104,8 +104,11 @@ fn select_asset_rows(document: &Value, predicate: fn(&Value) -> bool) -> Result<
     Ok(rows)
 }
 
+/// An active hero is one that a player can select in a normal match. Production builds one
+/// build for every hero that passes this test.
 fn is_active_hero(row: &Value) -> bool {
     row["id"].is_u64()
+        && row["player_selectable"].as_bool().unwrap_or(false)
         && !row["disabled"].as_bool().unwrap_or(false)
         && !row["in_development"].as_bool().unwrap_or(false)
         && row["game_mode"]

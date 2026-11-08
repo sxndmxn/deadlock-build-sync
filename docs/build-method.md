@@ -16,6 +16,7 @@ The [Research log](research-log.md) records the tests behind each value and each
 ## Decision
 
 Make a build for every active hero. Hero coverage does not limit each hero to one build.
+A hero with fewer than 100 matches at every phase has no hero model. Its build uses the item effects and the adoption of all heroes, with the `limited` label.
 Choose each CORE item from two values: how many players at this rank own the item, and how much the item adds to the win probability in similar game states.
 Test each build on held-out matches and show the result as a confidence label.
 Do not skip a hero because its evidence is weak. Show weak evidence as `limited` confidence.

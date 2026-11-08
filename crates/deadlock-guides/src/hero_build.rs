@@ -504,6 +504,9 @@ impl HeroBuildCatalog {
             _ => false,
         };
         self.rules.validate()?;
+        if self.heroes.is_empty() {
+            return Err(Error::new("Hero build catalog has no builds"));
+        }
         let mut targets = BTreeSet::new();
         for evidence in &self.counter_evidence {
             evidence.validate()?;

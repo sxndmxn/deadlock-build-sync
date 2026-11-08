@@ -167,12 +167,16 @@ pub fn request_inputs(
 ///
 /// An uncached request takes about 1 s. The client still starts at most one request
 /// in each request interval, so the threads do not increase the request rate.
+///
+/// A failed request leaves the ability order of its build unset and prints a warning.
+/// The build keeps its items. When every request fails, the API is unavailable and the
+/// run stops.
 fn request_ability_orders(
     api: &DeadlockApi,
     requests: &[AbilityRequest],
     since: i64,
 ) -> Result<BTreeMap<AbilityRequest, Vec<Value>>> {
-    std::thread::scope(|scope| {
+    let outcomes = std::thread::scope(|scope| {
         let threads = (0..ABILITY_REQUEST_THREADS)
             .map(|first| {
                 let assigned = requests
@@ -190,21 +194,43 @@ fn request_ability_orders(
                                 since,
                                 ABILITY_MINIMUM_MATCHES,
                                 &items,
-                            )?;
-                            Ok(((hero_id, items), rows))
+                            );
+                            ((hero_id, items), rows)
                         })
-                        .collect::<Result<Vec<_>>>()
+                        .collect::<Vec<_>>()
                 })
             })
             .collect::<Vec<_>>();
-        let mut rows = BTreeMap::new();
+        let mut outcomes = Vec::with_capacity(requests.len());
         for thread in threads {
-            rows.extend(
+            outcomes.extend(
                 thread
                     .join()
-                    .map_err(|_| Error::new("Ability order requests stopped unexpectedly"))??,
+                    .map_err(|_| Error::new("Ability order requests stopped unexpectedly"))?,
             );
         }
-        Ok(rows)
-    })
+        Ok::<_, Error>(outcomes)
+    })?;
+    let mut rows = BTreeMap::new();
+    let mut failures = 0_usize;
+    for (request, outcome) in outcomes {
+        match outcome {
+            Ok(value) => {
+                rows.insert(request, value);
+            }
+            Err(error) => {
+                failures += 1;
+                eprintln!(
+                    "Warning: no ability order for hero {} with items {:?}: {error}",
+                    request.0, request.1
+                );
+            }
+        }
+    }
+    if failures > 0 && rows.is_empty() {
+        return Err(Error::new(format!(
+            "All {failures} ability order requests failed"
+        )));
+    }
+    Ok(rows)
 }
