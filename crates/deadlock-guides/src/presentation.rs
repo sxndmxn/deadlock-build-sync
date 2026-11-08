@@ -79,26 +79,33 @@ impl BuildPresentation {
     }
 }
 
+/// The optional counter panels between MAIN CORE and the tiers, in their required order.
+const COUNTER_PANELS: [&str; 3] = ["VS WEAPON", "VS SPIRIT", "VS SUSTAIN"];
+
 fn validate_panel_order(categories: &[PresentationCategory]) -> Result<()> {
-    let variants = categories.len().saturating_sub(6);
-    let mut names = vec!["MAIN CORE".to_owned()];
-    if variants > 0 {
-        names.push("ALT CORE".into());
-        names.extend((1..=variants).map(|index| format!("VARIANT {index}")));
-    }
-    names.extend((1..=4).map(|tier| format!("TIER {tier}")));
-    if !categories
+    let counters = categories.len().saturating_sub(5);
+    let mut counter_names = COUNTER_PANELS.iter();
+    let counters_in_order = categories
         .iter()
-        .map(|category| &category.name)
-        .eq(names.iter())
+        .skip(1)
+        .take(counters)
+        .all(|category| counter_names.any(|name| category.name == *name));
+    let tiers_in_order = categories
+        .iter()
+        .skip(1 + counters)
+        .map(|category| category.name.clone())
+        .eq((1..=4).map(|tier| format!("TIER {tier}")));
+    if categories.len() < 5
+        || categories.len() > 5 + COUNTER_PANELS.len()
+        || categories[0].name != "MAIN CORE"
+        || !counters_in_order
+        || !tiers_in_order
         || categories.iter().enumerate().any(|(index, category)| {
-            category.optional != (index > 0)
-                || (index < categories.len() - 4 && category.items.is_empty())
-                || (index > 0 && index < categories.len() - 4 && !category.description.is_empty())
+            category.optional != (index > 0) || (index <= counters && category.items.is_empty())
         })
     {
         return Err(Error::new(
-            "Build requires MAIN CORE, separate alternative panels, and four optional tiers",
+            "Build requires MAIN CORE, optional VS WEAPON, VS SPIRIT, and VS SUSTAIN panels in this order, and four optional tiers",
         ));
     }
     Ok(())

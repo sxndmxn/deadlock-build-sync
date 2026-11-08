@@ -265,6 +265,11 @@ fn build_item_asset_row(item: &Value) -> Result<Vec<SqlValue>> {
         SqlValue::Text(item["class_name"].as_str().unwrap_or_default().into()),
         SqlValue::UBigInt(integer(item, "item_tier")?),
         SqlValue::UBigInt(item["cost"].as_u64().unwrap_or(0)),
+        item["item_slot_type"]
+            .as_str()
+            .unwrap_or("unknown")
+            .to_lowercase()
+            .into(),
         serde_json::to_string(
             item.get("component_items")
                 .filter(|value| value.is_array())

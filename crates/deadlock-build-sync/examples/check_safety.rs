@@ -2,6 +2,8 @@
 
 #[path = "check_safety/artifact_checks.rs"]
 mod artifact_checks;
+#[path = "check_safety/counter_checks.rs"]
+mod counter_checks;
 #[path = "check_safety/focus_checks.rs"]
 mod focus_checks;
 #[path = "check_safety/freshness_checks.rs"]
@@ -16,6 +18,8 @@ mod reference_data;
 mod resume_checks;
 #[path = "check_safety/steam_checks.rs"]
 mod steam_checks;
+#[path = "check_safety/variant_checks.rs"]
+mod variant_checks;
 
 fn main() -> deadlock_data::Result<()> {
     artifact_checks::check_artifact_recovery()?;
@@ -25,6 +29,8 @@ fn main() -> deadlock_data::Result<()> {
     focus_checks::check_build_focus()?;
     layout_checks::check_compact_layout()?;
     steam_checks::check_steam_safety()?;
+    variant_checks::check_build_variants()?;
+    counter_checks::check_counter_panels()?;
     println!("Isolated safety checks passed. The checks did not use live Steam files.");
     Ok(())
 }

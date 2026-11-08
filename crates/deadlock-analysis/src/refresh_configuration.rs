@@ -80,6 +80,29 @@ pub struct RunPaths {
 }
 
 impl RunPaths {
+    /// Opens the paths of an existing analysis run directory.
+    ///
+    /// # Errors
+    /// Returns an error when the directory has no `manifest.json` file.
+    pub fn open(run: &Path) -> Result<Self> {
+        if !run.join("manifest.json").is_file() {
+            return Err(Error::new(format!(
+                "Run directory has no manifest.json: {}",
+                run.display()
+            )));
+        }
+        // A run directory is ROOT/results/RUN_ID, and the shared cache is ROOT/cache.
+        let root = run
+            .parent()
+            .and_then(Path::parent)
+            .ok_or_else(|| Error::new("Run directory must be inside ROOT/results"))?;
+        Ok(Self {
+            raw: run.join("raw"),
+            run: run.to_path_buf(),
+            cache: root.join("cache"),
+        })
+    }
+
     /// Creates the directories of one analysis run.
     ///
     /// # Errors
