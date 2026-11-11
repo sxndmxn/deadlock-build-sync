@@ -473,7 +473,7 @@ name = "deadlock-guides"
 version = "0.2.0"
 dependencies = [
  "deadlock-data",
- "deadlock-input",
+ "htmlize",
  "serde",
  "serde_json",
 ]
@@ -484,7 +484,6 @@ version = "0.2.0"
 dependencies = [
  "chrono",
  "deadlock-data",
- "htmlize",
  "serde_json",
  "ureq",
 ]
@@ -500,6 +499,7 @@ dependencies = [
  "prost",
  "regex-lite",
  "ruzstd",
+ "serde",
  "serde_json",
  "tempfile",
 ]

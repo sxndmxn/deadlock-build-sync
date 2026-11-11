@@ -2,15 +2,16 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use deadlock_data::{
-    Error, Result, array, atomic_write_json, fingerprint, integer, object, read_json, text,
-    validate_sha256,
+    Error, Result, array, atomic_write_json, fingerprint, integer, read_json, validate_sha256,
 };
-use deadlock_input::JsonHttpClient;
-use serde_json::{Value, json};
+use deadlock_input::{JsonHttpClient, REQUEST_INTERVAL};
+use serde_json::Value;
 
 use crate::refresh_configuration::RunPaths;
+use crate::run_manifest::SourceRecord;
 
-const SOURCE_FILES: [&str; 7] = [
+/// The API responses that a run captures in its `raw` directory, in capture order.
+pub const SOURCE_FILES: [&str; 7] = [
     "client_versions.json",
     "heroes.json",
     "items-all.json",
@@ -20,19 +21,21 @@ const SOURCE_FILES: [&str; 7] = [
     "openapi.json",
 ];
 
-pub fn validate_source_fingerprints(paths: &RunPaths, sources: &Value) -> Result<()> {
-    let hashes = &sources["source_sha256"];
-    if object(hashes)?.len() != SOURCE_FILES.len() {
+pub fn validate_source_fingerprints(paths: &RunPaths, sources: &SourceRecord) -> Result<()> {
+    let hashes = &sources.source_sha256;
+    if hashes.len() != SOURCE_FILES.len() {
         return Err(Error::new(
             "Source snapshot requires all seven fingerprints",
         ));
     }
     for name in SOURCE_FILES {
-        let expected = text(hashes, name)?;
+        let expected = hashes
+            .get(name)
+            .ok_or_else(|| Error::new(format!("Source snapshot has no fingerprint for {name}")))?;
         validate_sha256(expected, name)?;
         let document = read_json(&paths.raw.join(name))
             .map_err(|error| error.context(format!("Cannot validate source {name}")))?;
-        if fingerprint(&document)? != expected {
+        if fingerprint(&document)? != *expected {
             return Err(Error::new(format!(
                 "Source fingerprint differs for {name}. Use a new --run-id"
             )));
@@ -41,9 +44,9 @@ pub fn validate_source_fingerprints(paths: &RunPaths, sources: &Value) -> Result
     Ok(())
 }
 
-pub fn capture_sources(paths: &RunPaths, base_url: &str) -> Result<Value> {
+pub fn capture_sources(paths: &RunPaths, base_url: &str) -> Result<SourceRecord> {
     let client = JsonHttpClient::new(base_url, Duration::from_secs(120), 5)?;
-    client.set_request_interval(Duration::from_millis(310))?;
+    client.set_request_interval(REQUEST_INTERVAL)?;
     let versions = client.get_json("/v1/assets/client-versions", &BTreeMap::new())?;
     let version = array(&versions)?
         .iter()
@@ -60,7 +63,8 @@ pub fn capture_sources(paths: &RunPaths, base_url: &str) -> Result<Value> {
     let openapi = client.get_json("/openapi.json", &BTreeMap::new())?;
     let heroes = select_asset_rows(&heroes, is_active_hero)?;
     let shop_items = select_asset_rows(&items, is_shop_item)?;
-    let result = json!({"client_version":version,"active_heroes":heroes.len(),"shop_items":shop_items.len()});
+    let active_heroes = u64::try_from(heroes.len())?;
+    let shop_item_count = u64::try_from(shop_items.len())?;
     let payloads = [
         versions,
         heroes.into(),
@@ -70,14 +74,17 @@ pub fn capture_sources(paths: &RunPaths, base_url: &str) -> Result<Value> {
         patches,
         openapi,
     ];
-    let mut hashes = BTreeMap::new();
+    let mut source_sha256 = BTreeMap::new();
     for (name, payload) in SOURCE_FILES.into_iter().zip(payloads) {
         atomic_write_json(&paths.raw.join(name), &payload)?;
-        hashes.insert(name, fingerprint(&payload)?);
+        source_sha256.insert(name.to_owned(), fingerprint(&payload)?);
     }
-    let mut result = result;
-    result["source_sha256"] = serde_json::to_value(hashes)?;
-    Ok(result)
+    Ok(SourceRecord {
+        client_version: version,
+        active_heroes,
+        shop_items: shop_item_count,
+        source_sha256,
+    })
 }
 
 fn select_asset_rows(document: &Value, predicate: fn(&Value) -> bool) -> Result<Vec<Value>> {
@@ -97,8 +104,11 @@ fn select_asset_rows(document: &Value, predicate: fn(&Value) -> bool) -> Result<
     Ok(rows)
 }
 
+/// An active hero is one that a player can select in a normal match. Production builds one
+/// build for every hero that passes this test.
 fn is_active_hero(row: &Value) -> bool {
     row["id"].is_u64()
+        && row["player_selectable"].as_bool().unwrap_or(false)
         && !row["disabled"].as_bool().unwrap_or(false)
         && !row["in_development"].as_bool().unwrap_or(false)
         && row["game_mode"]

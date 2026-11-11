@@ -23,10 +23,7 @@ fn main() -> Result<()> {
         .map(|value| value.parse::<f64>().map_err(|_| Error::new(USAGE)))
         .collect::<Result<Vec<_>>>()?;
     let paths = RunPaths::open(Path::new(run))?;
-    let resources = ExtractionResources {
-        memory_limit_mb: 12_000,
-        threads: 8,
-    };
+    let resources = ExtractionResources::default();
     println!("fraction\tdevelopment_matches\tagreement_coefficient\tstandard_error\tobservations");
     for result in compare_training_fractions(&paths, resources, &fractions)? {
         println!(

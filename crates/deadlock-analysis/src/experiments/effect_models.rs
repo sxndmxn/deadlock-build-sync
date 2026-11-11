@@ -10,7 +10,7 @@ use crate::item_effects::{
 };
 use crate::refresh_configuration::{ExtractionResources, RunPaths};
 use crate::ridge_logistic::{FeatureRow, logistic};
-use crate::run_inputs::load_run_inputs;
+use crate::run_study::RunStudy;
 
 /// One item effect estimate for one hero, phase, and match sample.
 #[derive(Debug)]
@@ -38,18 +38,18 @@ pub fn estimate_split_item_effects(
     paths: &RunPaths,
     resources: ExtractionResources,
 ) -> Result<Vec<ItemEffectRow>> {
-    let inputs = load_run_inputs(paths, resources)?;
-    let (even, odd): (Vec<_>, Vec<_>) = inputs
-        .states
+    let study = RunStudy::load(paths, resources)?;
+    let (even, odd): (Vec<_>, Vec<_>) = study
+        .states()
         .iter()
         .filter(|state| !state.is_test())
         .partition(|state| state.match_id % 2 == 0);
     let mut rows = Vec::new();
     for (sample, states) in [("even", even), ("odd", odd)] {
         eprintln!("Estimating item effects for sample {sample}");
-        let table = estimate_item_effects(&states, &inputs.catalog, &PHASES)?;
+        let table = estimate_item_effects(&states, study.catalog(), &PHASES)?;
         for ((hero_id, phase_s), effects) in &table {
-            for (column, item) in inputs.catalog.items.iter().enumerate() {
+            for (column, item) in study.catalog().items.iter().enumerate() {
                 rows.push(ItemEffectRow {
                     sample,
                     hero_id: *hero_id,
@@ -126,14 +126,14 @@ pub fn compare_effect_models(
     resources: ExtractionResources,
     designs: &[EffectModel],
 ) -> Result<Vec<ModelResult>> {
-    let inputs = load_run_inputs(paths, resources)?;
+    let study = RunStudy::load(paths, resources)?;
     let (test, development): (Vec<_>, Vec<_>) =
-        inputs.states.iter().partition(|state| state.is_test());
+        study.states().iter().partition(|state| state.is_test());
     let count = count_as_f64(u64::try_from(development.len().max(1))?)?;
     let context = ModelContext {
         development: &development,
         test: &test,
-        catalog: &inputs.catalog,
+        catalog: study.catalog(),
         spirit_mean: mean_enemy_spirit_share(&development)?,
         rank_mean: development
             .iter()

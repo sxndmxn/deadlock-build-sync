@@ -50,6 +50,7 @@ The test fold contains the last 20% of matches by start time.
 | E34 | Are the per-hero test errors correct? | Yes, after E30 | No change |
 | E35 | Do rejected counter groups work within each hero? | No | No change |
 | E36 | Does the key item add signal beyond CORE? | No | Keep it as a name only |
+| E37 | Which gate rejects the additional builds of Ivy, McGinnis, and Viscous? | The two-item count rule. The 30% cost share never decided | Options added, default unchanged |
 
 ## E0: effect scale of the item score
 
@@ -1084,3 +1085,23 @@ It then fits the per-hero test model of production. Five repetitions ran for eac
 The key item remains useful as a name and as a power spike in the description, but it is not a separate win claim.
 
 **Decision.** No code change. Do not describe the key item as a cause of wins.
+
+## E37: the gate that rejects additional builds
+
+**Hypothesis.** Heroes with several known play styles, such as Ivy, McGinnis, and Viscous, lose their additional builds at the separation rule, and a lower cost share would restore them.
+
+**Method.** `explain_variant_candidates` reports, for every Tier 3 or Tier 4 item of every hero, the first selection gate that rejects it, its separation from the main build, and the production re-check. The data is run `20261108T013049Z`: the patch of 2026-11-05, three days of matches, 341,148 player matches, 42 heroes. The example takes the cost share and the distinct item count as arguments.
+
+**Result.** Of 3961 candidates, 3457 failed the support gate, 167 did not keep their key item in CORE, 244 were similar, and 35 were selected in development. Among the assembled candidates, no separation fell between 0 and 0.30: 233 were exactly 0, which the count rule gives when a build has fewer than two expensive items that the other lacks, and 57 were at or above 0.30. The cost share decided no rejection. Ivy, McGinnis, and Viscous had one build each; their candidates all had separation 0.
+
+| Rule | Heroes with an additional build | Additional builds | Separations between 0 and 0.30 |
+| --- | --- | --- | --- |
+| 2 distinct items, 0.30 | 12 | 13 | 0 |
+| 1 distinct item, 0.30 | 31 | 37 | 39 |
+| 1 distinct item, 0.15 | 33 | 43 | 39 |
+
+With one distinct item, Ivy and McGinnis got Greater Expansion builds, and Viscous got Superior Duration and Mystic Reverb builds. The 37 additional builds spread over 20 key items, with Superior Duration and Stamina Mastery four times each.
+
+Steam backups show that the current rule gave McGinnis two builds, Ivy two, and Viscous three on 2026-10-21, with 12 days of matches. The later syncs, each two or three days into a patch, gave one build each. More matches give more distinct strategies (E19).
+
+**Decision.** Add `--variant-distinct-items` and `--variant-separation` with the tested defaults 2 and 0.30. The catalog records other values. A change of the defaults needs this test on a second patch.

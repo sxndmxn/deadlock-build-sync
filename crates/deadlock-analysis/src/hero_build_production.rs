@@ -1,29 +1,27 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use deadlock_data::{Error, RankRange, Result, integer, read_json, text, trace_operation};
+use deadlock_data::{
+    Error, RankRange, Result, integer, parse_timestamp, read_json, text, trace_operation,
+};
 use deadlock_guides::{
-    BuildCohort, BuildEvaluation, CounterEvidence, HERO_BUILD_METHOD, HERO_BUILD_SCHEMA_VERSION,
-    HeroBuild, HeroBuildCatalog, TagItem, assign_build_focus, select_ability_path,
-    select_build_tags,
+    BuildCohort, BuildEvaluation, BuildRules, BuildTagCatalog, CounterEvidence, HERO_BUILD_METHOD,
+    HERO_BUILD_SCHEMA_VERSION, HeroBuild, HeroBuildCatalog, assign_build_focus, assign_build_tags,
 };
-use deadlock_input::{ApiOptions, BuildTagCatalog, DeadlockApi, parse_patch_feed};
-use serde_json::Value;
+use deadlock_input::{ApiOptions, DeadlockApi, parse_patch_feed};
 
-use crate::build_assembly::{AssembledBuild, PHASES, PurchaseMedians, assemble_build};
+use crate::api_inputs::{AbilityRequest, ApiInputs, request_inputs};
+use crate::build_assembly::{AssembledBuild, PHASES, PurchaseMedians};
 use crate::build_evaluation::{evaluate_build, shrink_evaluations};
-use crate::build_variants::{
-    MINIMUM_SEPARATION, assemble_item_variant, build_separation, select_item_variants,
-};
+use crate::build_variants::VariantSelection;
 use crate::counter_items::{CounterGroups, estimate_counter_evidence, select_counter_panels};
-use crate::item_effects::{EffectTable, ItemCatalog, LandmarkState, estimate_item_effects};
+use crate::hero_assembly::{AssemblyContext, HeroAssembly};
+use crate::item_effects::{ItemCatalog, LandmarkState, estimate_item_effects};
 use crate::item_imbues::{ItemImbues, attach_item_imbues, load_item_imbues};
 use crate::item_statistics::{HeroItemStatistics, attach_item_statistics, load_item_statistics};
-use crate::refresh_configuration::{ExtractionResources, RunPaths, cohort_ranks, parse_timestamp};
+use crate::refresh_configuration::{ExtractionResources, RunPaths};
 use crate::run_inputs::{load_assembly_inputs, open_run_database};
-
-const ABILITY_MINIMUM_MATCHES: u32 = 10;
-const ABILITY_REQUEST_THREADS: usize = 4;
+use crate::run_manifest::RunManifest;
 
 /// Produces a main build and distinct supported variants for each active hero.
 ///
@@ -36,19 +34,29 @@ pub fn produce_hero_builds(
     paths: &RunPaths,
     resources: ExtractionResources,
     api_base_url: &str,
+    rules: &BuildRules,
 ) -> Result<HeroBuildCatalog> {
-    let manifest = read_json(&paths.run.join("manifest.json"))?;
-    let cohort = &manifest["cohort"];
-    let ranks = cohort_ranks(cohort)?;
-    let as_of = parse_timestamp(text(cohort, "as_of")?)?;
+    rules.validate()?;
+    let selection = VariantSelection::from_rules(rules);
+    let manifest = RunManifest::read(paths)?;
+    let ranks = manifest.cohort.ranks()?;
+    let as_of = parse_timestamp(&manifest.cohort.as_of)?;
     let patch = parse_patch_feed(&read_json(&paths.raw.join("patches.json"))?, Some(as_of))?;
-    let client_version = integer(&manifest["sources"], "client_version")?;
+    let client_version = manifest.sources.client_version;
     let heroes = read_hero_names(&paths.raw.join("heroes.json"))?;
     let mut api = build_api(api_base_url, ranks, client_version, as_of)?;
+    let mut api_inputs = ApiInputs::load(paths)?;
+    let main_requests = heroes
+        .keys()
+        .map(|hero_id| (*hero_id, Vec::new()))
+        .collect::<Vec<_>>();
+    let missing = api_inputs.missing_requests(&main_requests);
+    let needs_tags = !api_inputs.has_build_tags();
     // The API requests wait on a fixed request interval, so they run during the local work.
-    let (local, mut api_inputs) = std::thread::scope(|scope| {
-        let requests = scope.spawn(|| request_api_inputs(&mut api, &heroes, patch.start_timestamp));
-        let local = assemble_from_database(paths, resources, ranks, &heroes);
+    let (local, requested) = std::thread::scope(|scope| {
+        let requests =
+            scope.spawn(|| request_inputs(&mut api, needs_tags, &missing, patch.start_timestamp));
+        let local = assemble_from_database(paths, resources, ranks, &heroes, selection);
         let remote = trace_operation("analysis.wait_for_api", Some("wait_for_api"), || {
             requests
                 .join()
@@ -56,6 +64,7 @@ pub fn produce_hero_builds(
         });
         Ok::<_, Error>((local?, remote?))
     })?;
+    api_inputs.record(requested);
     // A variant build needs the ability orders of the players who own its key item.
     let variant_requests = local
         .builds
@@ -63,48 +72,61 @@ pub fn produce_hero_builds(
         .map(ability_request)
         .filter(|(_, items)| !items.is_empty())
         .collect::<Vec<_>>();
-    if !variant_requests.is_empty() {
-        eprintln!(
-            "Requesting ability orders for {} variant builds",
-            variant_requests.len()
-        );
-        api_inputs.ability_rows.extend(request_ability_orders(
-            &api,
-            &variant_requests,
+    let missing = api_inputs.missing_requests(&variant_requests);
+    if !missing.is_empty() {
+        api_inputs.record(request_inputs(
+            &mut api,
+            false,
+            &missing,
             patch.start_timestamp,
         )?);
     }
+    api_inputs.save(paths)?;
     let assets = read_json(&paths.raw.join("items-all.json"))?;
     let assets = assets
         .as_array()
         .ok_or_else(|| Error::new("Item assets must be an array"))?;
-    let tags = BuildTagCatalog::from_assets(&api_inputs.tag_assets)?;
+    let tags = BuildTagCatalog::from_assets(api_inputs.build_tags()?)?;
     let builds = local
         .builds
         .into_iter()
         .map(|build| {
-            let rows = api_inputs
-                .ability_rows
-                .get(&ability_request(&build))
-                .map_or(&[][..], Vec::as_slice);
-            let mut build = attach_ability_and_tags(build, rows, assets, &tags)?;
+            let rows = api_inputs.ability_rows(&ability_request(&build));
+            let mut build = build;
+            assign_build_tags(&mut build, rows, assets, &tags)?;
             attach_item_imbues(&mut build, &local.imbues, assets);
             attach_item_statistics(&mut build, &local.statistics)?;
             assign_build_focus(&mut build, assets)?;
             Ok(build)
         })
         .collect::<Result<Vec<_>>>()?;
+    let missing = heroes
+        .iter()
+        .filter(|(hero_id, _)| {
+            !builds
+                .iter()
+                .any(|build| build.hero_id == **hero_id && build.variant_id.is_none())
+        })
+        .map(|(_, name)| name.as_str())
+        .collect::<Vec<_>>();
+    if !missing.is_empty() {
+        return Err(Error::new(format!(
+            "The catalog has no main build for {}",
+            missing.join(", ")
+        )));
+    }
     let catalog = HeroBuildCatalog {
         schema_version: HERO_BUILD_SCHEMA_VERSION,
         method: HERO_BUILD_METHOD.into(),
+        rules: *rules,
         client_version,
-        patch: patch.to_document()?,
+        patch,
         cohort: BuildCohort {
             minimum_badge: ranks.minimum.badge(),
             maximum_badge: ranks.maximum.badge(),
-            since: text(cohort, "since")?.into(),
-            as_of: text(cohort, "as_of")?.into(),
-            player_matches: integer(&manifest["extraction"], "player_matches")?,
+            since: manifest.cohort.since.clone(),
+            as_of: manifest.cohort.as_of.clone(),
+            player_matches: manifest.extraction()?.player_matches,
         },
         counter_evidence: local.counter_evidence,
         heroes: builds,
@@ -113,9 +135,6 @@ pub fn produce_hero_builds(
     Ok(catalog)
 }
 
-/// One ability order request: the hero and the items that its players must own.
-type AbilityRequest = (u64, Vec<u64>);
-
 /// Returns the ability order request of a build. Only a variant build filters by its key item.
 fn ability_request(build: &HeroBuild) -> AbilityRequest {
     let items = build
@@ -123,76 +142,6 @@ fn ability_request(build: &HeroBuild) -> AbilityRequest {
         .as_ref()
         .map_or_else(Vec::new, |_| vec![build.key_item_id]);
     (build.hero_id, items)
-}
-
-/// The build tag assets and the ability order statistics of each request.
-struct ApiInputs {
-    tag_assets: Vec<Value>,
-    ability_rows: BTreeMap<AbilityRequest, Vec<Value>>,
-}
-
-/// Requests the build tags and the ability orders of the main build of each hero.
-fn request_api_inputs(
-    api: &mut DeadlockApi,
-    heroes: &BTreeMap<u64, String>,
-    since: i64,
-) -> Result<ApiInputs> {
-    eprintln!("Requesting ability orders for {} heroes", heroes.len());
-    let tag_assets = api.build_tags()?;
-    let requests = heroes
-        .keys()
-        .map(|hero_id| (*hero_id, Vec::new()))
-        .collect::<Vec<_>>();
-    Ok(ApiInputs {
-        tag_assets,
-        ability_rows: request_ability_orders(api, &requests, since)?,
-    })
-}
-
-/// Requests the ability orders from several threads.
-///
-/// An uncached request takes about 1 s. The client still starts at most one request
-/// in each request interval, so the threads do not increase the request rate.
-fn request_ability_orders(
-    api: &DeadlockApi,
-    requests: &[AbilityRequest],
-    since: i64,
-) -> Result<BTreeMap<AbilityRequest, Vec<Value>>> {
-    std::thread::scope(|scope| {
-        let threads = (0..ABILITY_REQUEST_THREADS)
-            .map(|first| {
-                let assigned = requests
-                    .iter()
-                    .skip(first)
-                    .step_by(ABILITY_REQUEST_THREADS)
-                    .cloned()
-                    .collect::<Vec<_>>();
-                scope.spawn(move || {
-                    assigned
-                        .into_iter()
-                        .map(|(hero_id, items)| {
-                            let rows = api.ability_order_stats(
-                                hero_id,
-                                since,
-                                ABILITY_MINIMUM_MATCHES,
-                                &items,
-                            )?;
-                            Ok(((hero_id, items), rows))
-                        })
-                        .collect::<Result<Vec<_>>>()
-                })
-            })
-            .collect::<Vec<_>>();
-        let mut rows = BTreeMap::new();
-        for thread in threads {
-            rows.extend(
-                thread
-                    .join()
-                    .map_err(|_| Error::new("Ability order requests stopped unexpectedly"))??,
-            );
-        }
-        Ok(rows)
-    })
 }
 
 /// The builds, the counter evidence, and the item data from the extracted matches.
@@ -209,14 +158,20 @@ fn assemble_from_database(
     resources: ExtractionResources,
     ranks: RankRange,
     heroes: &BTreeMap<u64, String>,
+    selection: VariantSelection,
 ) -> Result<LocalBuilds> {
     let (database, parameters) = open_run_database(paths, resources, ranks)?;
     let inputs = load_assembly_inputs(&database, &parameters)?;
     let imbues = load_item_imbues(&database, &parameters)?;
     let statistics = load_item_statistics(&database, &parameters)?;
     drop(database);
-    let (builds, counter_evidence) =
-        assemble_hero_builds(&inputs.states, &inputs.catalog, &inputs.medians, heroes)?;
+    let (builds, counter_evidence) = assemble_hero_builds(
+        &inputs.states,
+        &inputs.catalog,
+        &inputs.medians,
+        heroes,
+        selection,
+    )?;
     Ok(LocalBuilds {
         builds,
         counter_evidence,
@@ -231,6 +186,7 @@ fn assemble_hero_builds(
     catalog: &ItemCatalog,
     medians: &PurchaseMedians,
     heroes: &BTreeMap<u64, String>,
+    selection: VariantSelection,
 ) -> Result<(Vec<HeroBuild>, Vec<CounterEvidence>)> {
     let development = states
         .iter()
@@ -241,17 +197,16 @@ fn assemble_hero_builds(
     eprintln!("Estimating item effects from all matches");
     let all = states.iter().collect::<Vec<_>>();
     let effects = estimate_item_effects(&all, catalog, &PHASES)?;
+    let context = AssemblyContext {
+        effects: &effects,
+        development_effects: &development_effects,
+        catalog,
+        medians,
+        selection,
+    };
     let mut builds = Vec::new();
     for (hero_id, hero_name) in heroes {
-        builds.extend(assemble_hero(
-            *hero_id,
-            hero_name,
-            states,
-            &effects,
-            &development_effects,
-            catalog,
-            medians,
-        )?);
+        builds.extend(assemble_hero(*hero_id, hero_name, states, &context)?);
     }
     for variants in [false, true] {
         let mut pool = builds
@@ -271,80 +226,66 @@ fn assemble_hero_builds(
     Ok((builds, evidence))
 }
 
+/// Assembles the builds of one hero and tests each one on the held-out fold.
 fn assemble_hero(
     hero_id: u64,
     hero_name: &str,
     states: &[LandmarkState],
-    effects: &EffectTable,
-    development_effects: &EffectTable,
-    catalog: &ItemCatalog,
-    medians: &PurchaseMedians,
+    context: &AssemblyContext<'_>,
 ) -> Result<Vec<HeroBuild>> {
     let all = states
         .iter()
         .filter(|state| state.hero_id == hero_id)
         .collect::<Vec<_>>();
-    if all.is_empty() {
-        eprintln!("Skipping {hero_name}: the run has no matches of this hero");
-        return Ok(Vec::new());
+    let test = all
+        .iter()
+        .copied()
+        .filter(|state| state.is_test())
+        .collect::<Vec<_>>();
+    let assembly = HeroAssembly::assemble(hero_id, &all, context)
+        .map_err(|error| error.context(format!("Cannot build {hero_name}")))?;
+    if assembly.generic {
+        eprintln!(
+            "Warning: {hero_name} has too few matches in the run. Its build uses the item effects of all heroes"
+        );
     }
-    let (test, development): (Vec<_>, Vec<_>) =
-        all.iter().copied().partition(|state| state.is_test());
-    let Some(main) = assemble_build(hero_id, effects, catalog, medians) else {
-        eprintln!("Warning: Skipping {hero_name}: no item has enough owners");
-        return Ok(Vec::new());
-    };
-    let development_main = assemble_build(hero_id, development_effects, catalog, medians);
-    let evaluation = match &development_main {
+    for (item_id, gate) in &assembly.dropped {
+        eprintln!(
+            "Dropped an additional build for {hero_name}: item {item_id} ({})",
+            gate.name()
+        );
+    }
+    let catalog = context.catalog;
+    // The held-out test uses the development build, because the installed build saw the test fold.
+    let evaluation = match &assembly.development_main {
         Some(build) => evaluate_build(&test, &build.phase_sets, catalog)?,
-        None => evaluate_build(&[], &main.phase_sets, catalog)?,
+        None => evaluate_build(&[], &assembly.main.phase_sets, catalog)?,
     };
     let observations = PHASES
         .iter()
-        .filter_map(|phase| effects.get(&(hero_id, *phase)))
+        .filter_map(|phase| context.effects.get(&(hero_id, *phase)))
         .map(|phase| phase.observations)
         .max()
         .unwrap_or(0);
-    let mut installed = vec![main.clone()];
     let mut builds = vec![create_hero_build(
         hero_id,
         hero_name,
-        main,
+        assembly.main,
         evaluation,
         observations,
         None,
     )?];
-    if let Some(development_main) = development_main {
-        for variant in select_item_variants(
+    for variant in assembly.variants {
+        let item_id = variant.build.key_item_id;
+        let evaluation = evaluate_build(&test, &variant.development_build.phase_sets, catalog)?;
+        builds.push(create_hero_build(
             hero_id,
-            &development,
-            development_effects,
-            catalog,
-            medians,
-            &development_main,
-        )? {
-            let item_id = variant.build.key_item_id;
-            let Some(production) =
-                assemble_item_variant(hero_id, item_id, &all, effects, catalog, medians)?
-            else {
-                continue;
-            };
-            if installed.iter().any(|build| {
-                build_separation(build, &production.build, catalog) < MINIMUM_SEPARATION
-            }) {
-                continue;
-            }
-            let evaluation = evaluate_build(&test, &variant.build.phase_sets, catalog)?;
-            installed.push(production.build.clone());
-            builds.push(create_hero_build(
-                hero_id,
-                hero_name,
-                production.build,
-                evaluation,
-                production.owners,
-                Some(format!("item-{item_id}")),
-            )?);
-        }
+            hero_name,
+            variant.build,
+            evaluation,
+            variant.owners,
+            Some(format!("item-{item_id}")),
+        )?);
     }
     eprintln!("Selected {} builds for {hero_name}", builds.len());
     Ok(builds)
@@ -393,58 +334,7 @@ fn build_api(
         rank_range: ranks,
         client_version: Some(client_version),
         as_of_timestamp: as_of,
-        ..ApiOptions::default()
     })
-}
-
-/// Adds the most supported complete ability order and the three build icons.
-///
-/// The icons are the first maxed ability, the key item, and the dominant build function.
-/// Without a complete ability order, the icons use CORE items instead of the ability.
-fn attach_ability_and_tags(
-    mut build: HeroBuild,
-    rows: &[Value],
-    assets: &[Value],
-    tags: &BuildTagCatalog,
-) -> Result<HeroBuild> {
-    if let Some(path) = select_ability_path(rows)? {
-        build.ability_ids = path.ability_ids;
-        build.ability_matches = path.matches;
-    }
-    let mut core = build
-        .core
-        .iter()
-        .map(|item| TagItem {
-            item_id: item.item_id,
-            tier: if item.item_id == build.key_item_id {
-                3
-            } else {
-                item.tier.min(2)
-            },
-        })
-        .collect::<Vec<_>>();
-    core.sort_by_key(|item| std::cmp::Reverse(item.tier));
-    match select_build_tags(&build.ability_ids, &core, assets, tags) {
-        Ok(selection) => {
-            build.tag_ids = selection.tag_ids;
-            build.key_ability_name = Some(selection.ability_name);
-        }
-        Err(_) => build.tag_ids = select_fallback_tags(&build)?,
-    }
-    Ok(build)
-}
-
-fn select_fallback_tags(build: &HeroBuild) -> Result<[u64; 3]> {
-    let mut ids = vec![build.key_item_id];
-    let mut others = build
-        .core
-        .iter()
-        .filter(|item| item.item_id != build.key_item_id)
-        .collect::<Vec<_>>();
-    others.sort_by_key(|item| (std::cmp::Reverse(item.cost), item.item_id));
-    ids.extend(others.iter().take(2).map(|item| item.item_id));
-    ids.try_into()
-        .map_err(|_| Error::new("Build needs three CORE items for its icons"))
 }
 
 fn read_hero_names(path: &Path) -> Result<BTreeMap<u64, String>> {
@@ -452,12 +342,10 @@ fn read_hero_names(path: &Path) -> Result<BTreeMap<u64, String>> {
     let rows = document
         .as_array()
         .ok_or_else(|| Error::new("Hero assets must be an array"))?;
+    // Source capture keeps only the active heroes, so every row is a hero to build.
     let mut heroes = BTreeMap::new();
     for row in rows {
-        let flag = |name: &str| row[name].as_bool().unwrap_or(false);
-        if flag("player_selectable") && !flag("disabled") && !flag("in_development") {
-            heroes.insert(integer(row, "id")?, text(row, "name")?.to_owned());
-        }
+        heroes.insert(integer(row, "id")?, text(row, "name")?.to_owned());
     }
     if heroes.is_empty() {
         return Err(Error::new("Hero assets contain no active heroes"));

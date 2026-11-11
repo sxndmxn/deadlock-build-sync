@@ -3,19 +3,18 @@ use std::collections::{BTreeMap, BTreeSet};
 use deadlock_data::{Result, count_as_f64};
 use deadlock_guides::{BuildEvaluation, Confidence};
 
+use crate::build_assembly::LATE_PHASES;
 use crate::build_assembly::{ItemScoring, PHASES, assemble_build, assemble_build_with_scoring};
 use crate::build_evaluation::{
     EVALUATION_LANDMARKS, evaluate_agreements, evaluate_build, evaluate_pooled_builds,
     measure_agreement,
 };
-use crate::build_variants::select_item_variants;
-use crate::counter_items::GroupInteraction;
-use crate::item_effects::{
-    EffectTable, LandmarkState, estimate_item_effects, relative_net_worth, standardized_rank,
-};
+use crate::build_variants::{VariantSelection, select_item_variants_with_rule};
+use crate::item_effects::{EffectTable, LandmarkState, covariate_features, estimate_item_effects};
 use crate::refresh_configuration::{ExtractionResources, RunPaths};
+use crate::ridge_logistic::CoefficientEstimate;
 use crate::ridge_logistic::{FeatureRow, fit_ridge_logistic};
-use crate::run_inputs::{AssemblyInputs, load_run_inputs};
+use crate::run_study::RunStudy;
 
 use super::mix;
 
@@ -50,18 +49,16 @@ pub fn compare_item_scoring(
     resources: ExtractionResources,
     rules: &[ItemScoring],
 ) -> Result<Vec<ScoringResult>> {
-    let inputs = load_run_inputs(paths, resources)?;
-    let (test, development): (Vec<_>, Vec<_>) =
-        inputs.states.iter().partition(|state| state.is_test());
-    eprintln!("Estimating item effects from development matches");
-    let effects = estimate_item_effects(&development, &inputs.catalog, &PHASES)?;
+    let study = RunStudy::load(paths, resources)?;
+    let test = study.test();
+    let effects = study.development_effects()?;
     let mut test_by_hero = BTreeMap::<u64, Vec<&LandmarkState>>::new();
     for state in test {
         test_by_hero.entry(state.hero_id).or_default().push(state);
     }
     rules
         .iter()
-        .map(|scoring| test_item_scoring(*scoring, &test_by_hero, &effects, &inputs))
+        .map(|scoring| test_item_scoring(*scoring, &test_by_hero, effects, &study))
         .collect()
 }
 
@@ -69,7 +66,7 @@ fn test_item_scoring(
     scoring: ItemScoring,
     test_by_hero: &BTreeMap<u64, Vec<&LandmarkState>>,
     effects: &EffectTable,
-    inputs: &AssemblyInputs,
+    study: &RunStudy,
 ) -> Result<ScoringResult> {
     eprintln!("Testing effect scale {}", scoring.effect_scale);
     let mut adoptions = Vec::new();
@@ -79,8 +76,8 @@ fn test_item_scoring(
             let build = assemble_build_with_scoring(
                 *hero_id,
                 effects,
-                &inputs.catalog,
-                &inputs.medians,
+                study.catalog(),
+                study.medians(),
                 scoring,
             )?;
             adoptions.extend(build.core.iter().map(|item| item.adoption));
@@ -94,7 +91,7 @@ fn test_item_scoring(
         .count();
     let mut result = ScoringResult {
         scoring,
-        pooled: evaluate_pooled_builds(&builds, &inputs.catalog)?,
+        pooled: evaluate_pooled_builds(&builds, study.catalog())?,
         heroes: builds.len(),
         strong: 0,
         moderate: 0,
@@ -104,7 +101,7 @@ fn test_item_scoring(
             / count_as_f64(u64::try_from(adoptions.len().max(1))?)?,
     };
     for (states, phase_sets) in &builds {
-        match evaluate_build(states, phase_sets, &inputs.catalog)?.confidence {
+        match evaluate_build(states, phase_sets, study.catalog())?.confidence {
             Confidence::Strong => result.strong += 1,
             Confidence::Moderate => result.moderate += 1,
             Confidence::Limited => result.limited += 1,
@@ -116,8 +113,8 @@ fn test_item_scoring(
 /// The held-out association of two build agreements with the match result in one model.
 #[derive(Debug)]
 pub struct AgreementPair {
-    pub base: GroupInteraction,
-    pub alternative: GroupInteraction,
+    pub base: CoefficientEstimate,
+    pub alternative: CoefficientEstimate,
     pub heroes: usize,
     pub observations: usize,
 }
@@ -133,11 +130,10 @@ pub fn compare_variant_agreement(
     paths: &RunPaths,
     resources: ExtractionResources,
 ) -> Result<AgreementPair> {
-    let inputs = load_run_inputs(paths, resources)?;
-    let catalog = &inputs.catalog;
-    let (test, development): (Vec<_>, Vec<_>) =
-        inputs.states.iter().partition(|state| state.is_test());
-    let effects = estimate_item_effects(&development, catalog, &PHASES)?;
+    let study = RunStudy::load(paths, resources)?;
+    let catalog = study.catalog();
+    let (test, development) = study.folds();
+    let effects = study.development_effects()?;
     let mut samples = Vec::new();
     let mut heroes = 0;
     let hero_ids = test
@@ -145,7 +141,7 @@ pub fn compare_variant_agreement(
         .map(|state| state.hero_id)
         .collect::<BTreeSet<_>>();
     for hero_id in hero_ids {
-        let Some(main) = assemble_build(hero_id, &effects, catalog, &inputs.medians) else {
+        let Some(main) = assemble_build(hero_id, effects, catalog, study.medians()) else {
             continue;
         };
         let hero_development = development
@@ -153,13 +149,14 @@ pub fn compare_variant_agreement(
             .copied()
             .filter(|state| state.hero_id == hero_id)
             .collect::<Vec<_>>();
-        let variants = select_item_variants(
+        let variants = select_item_variants_with_rule(
             hero_id,
             &hero_development,
-            &effects,
+            effects,
             catalog,
-            &inputs.medians,
+            study.medians(),
             &main,
+            VariantSelection::default(),
         )?;
         if variants.is_empty() {
             continue;
@@ -196,8 +193,8 @@ pub fn compare_scoring_pair(
     base: ItemScoring,
     alternative: ItemScoring,
 ) -> Result<AgreementPair> {
-    let inputs = load_run_inputs(paths, resources)?;
-    let (samples, heroes) = build_scoring_samples(&inputs, base, alternative)?;
+    let study = RunStudy::load(paths, resources)?;
+    let (samples, heroes) = build_scoring_samples(&study, base, alternative)?;
     fit_agreement_pair(&samples, heroes)
 }
 
@@ -216,8 +213,8 @@ pub fn measure_pair_placebo(
     alternative: ItemScoring,
     seeds: &[u64],
 ) -> Result<Vec<f64>> {
-    let inputs = load_run_inputs(paths, resources)?;
-    let (samples, heroes) = build_scoring_samples(&inputs, base, alternative)?;
+    let study = RunStudy::load(paths, resources)?;
+    let (samples, heroes) = build_scoring_samples(&study, base, alternative)?;
     let mut groups = BTreeMap::<(u64, u32), Vec<usize>>::new();
     for (index, (state, _, _)) in samples.iter().enumerate() {
         groups
@@ -250,14 +247,13 @@ type AgreementSample<'a> = (&'a LandmarkState, f64, f64);
 
 /// Returns the test states with the agreements of two score rules, and the hero count.
 fn build_scoring_samples(
-    inputs: &AssemblyInputs,
+    study: &RunStudy,
     base: ItemScoring,
     alternative: ItemScoring,
 ) -> Result<(Vec<AgreementSample<'_>>, usize)> {
-    let catalog = &inputs.catalog;
-    let (test, development): (Vec<_>, Vec<_>) =
-        inputs.states.iter().partition(|state| state.is_test());
-    let effects = estimate_item_effects(&development, catalog, &PHASES)?;
+    let catalog = study.catalog();
+    let test = study.test();
+    let effects = study.development_effects()?;
     let mut samples = Vec::new();
     let mut heroes = 0;
     let hero_ids = test
@@ -266,7 +262,7 @@ fn build_scoring_samples(
         .collect::<BTreeSet<_>>();
     for hero_id in hero_ids {
         let assemble = |scoring| {
-            assemble_build_with_scoring(hero_id, &effects, catalog, &inputs.medians, scoring)
+            assemble_build_with_scoring(hero_id, effects, catalog, study.medians(), scoring)
         };
         let (Some(base_build), Some(alternative_build)) = (assemble(base), assemble(alternative))
         else {
@@ -304,14 +300,8 @@ fn fit_agreement_pair(samples: &[AgreementSample<'_>], heroes: usize) -> Result<
     let rows = samples
         .iter()
         .map(|(state, base, alternative)| {
-            let mut features = vec![
-                (0, 1.0),
-                (1, relative_net_worth(state.net_worth, state.landmark_s)),
-                (2, state.team_lead),
-                (3, standardized_rank(state.average_badge)),
-                (4, *base),
-                (5, *alternative),
-            ];
+            let mut features = covariate_features(state).to_vec();
+            features.extend([(4, *base), (5, *alternative)]);
             if let Some(position) = EVALUATION_LANDMARKS
                 .iter()
                 .position(|landmark| *landmark == state.landmark_s)
@@ -335,8 +325,8 @@ fn fit_agreement_pair(samples: &[AgreementSample<'_>], heroes: usize) -> Result<
     let width = 5 + EVALUATION_LANDMARKS.len() + hero_columns.len();
     let references = rows.iter().collect::<Vec<_>>();
     let fit = fit_ridge_logistic(&references, &vec![0.0; width], &vec![1.0; width])?;
-    let interaction = |index| -> Result<GroupInteraction> {
-        Ok(GroupInteraction {
+    let interaction = |index| -> Result<CoefficientEstimate> {
+        Ok(CoefficientEstimate {
             coefficient: fit.coefficients[index],
             standard_error: fit.clustered_standard_error(index, &references, &matches)?,
         })
@@ -368,18 +358,17 @@ pub fn measure_label_halves(
     paths: &RunPaths,
     resources: ExtractionResources,
 ) -> Result<Vec<LabelHalves>> {
-    let inputs = load_run_inputs(paths, resources)?;
-    let catalog = &inputs.catalog;
-    let (test, development): (Vec<_>, Vec<_>) =
-        inputs.states.iter().partition(|state| state.is_test());
-    let effects = estimate_item_effects(&development, catalog, &PHASES)?;
+    let study = RunStudy::load(paths, resources)?;
+    let catalog = study.catalog();
+    let test = study.test();
+    let effects = study.development_effects()?;
     let hero_ids = test
         .iter()
         .map(|state| state.hero_id)
         .collect::<BTreeSet<_>>();
     let mut results = Vec::new();
     for hero_id in hero_ids {
-        let Some(build) = assemble_build(hero_id, &effects, catalog, &inputs.medians) else {
+        let Some(build) = assemble_build(hero_id, effects, catalog, study.medians()) else {
             continue;
         };
         let (even, odd): (Vec<_>, Vec<_>) = test
@@ -413,11 +402,10 @@ pub fn compare_scoring_by_landmark(
     resources: ExtractionResources,
     rules: &[ItemScoring],
 ) -> Result<Vec<LandmarkAgreement>> {
-    let inputs = load_run_inputs(paths, resources)?;
-    let catalog = &inputs.catalog;
-    let (test, development): (Vec<_>, Vec<_>) =
-        inputs.states.iter().partition(|state| state.is_test());
-    let effects = estimate_item_effects(&development, catalog, &PHASES)?;
+    let study = RunStudy::load(paths, resources)?;
+    let catalog = study.catalog();
+    let test = study.test();
+    let effects = study.development_effects()?;
     let hero_ids = test
         .iter()
         .map(|state| state.hero_id)
@@ -427,7 +415,7 @@ pub fn compare_scoring_by_landmark(
         let builds = hero_ids
             .iter()
             .filter_map(|hero_id| {
-                assemble_build_with_scoring(*hero_id, &effects, catalog, &inputs.medians, *scoring)
+                assemble_build_with_scoring(*hero_id, effects, catalog, study.medians(), *scoring)
                     .map(|build| (*hero_id, build.phase_sets))
             })
             .collect::<Vec<_>>();
@@ -473,10 +461,9 @@ pub fn compare_training_fractions(
     resources: ExtractionResources,
     fractions: &[f64],
 ) -> Result<Vec<FractionResult>> {
-    let inputs = load_run_inputs(paths, resources)?;
-    let catalog = &inputs.catalog;
-    let (test, development): (Vec<_>, Vec<_>) =
-        inputs.states.iter().partition(|state| state.is_test());
+    let study = RunStudy::load(paths, resources)?;
+    let catalog = study.catalog();
+    let (test, development) = study.folds();
     let matches = development
         .iter()
         .map(|state| state.match_id)
@@ -514,7 +501,7 @@ pub fn compare_training_fractions(
         let builds = test_by_hero
             .iter()
             .filter_map(|(hero_id, states)| {
-                assemble_build(*hero_id, &effects, catalog, &inputs.medians)
+                assemble_build(*hero_id, &effects, catalog, study.medians())
                     .map(|build| (states.clone(), build.phase_sets))
             })
             .collect::<Vec<_>>();
@@ -539,11 +526,10 @@ pub fn compare_situational_signal(
     paths: &RunPaths,
     resources: ExtractionResources,
 ) -> Result<AgreementPair> {
-    let inputs = load_run_inputs(paths, resources)?;
-    let catalog = &inputs.catalog;
-    let (test, development): (Vec<_>, Vec<_>) =
-        inputs.states.iter().partition(|state| state.is_test());
-    let effects = estimate_item_effects(&development, catalog, &PHASES)?;
+    let study = RunStudy::load(paths, resources)?;
+    let catalog = study.catalog();
+    let test = study.test();
+    let effects = study.development_effects()?;
     let hero_ids = test
         .iter()
         .map(|state| state.hero_id)
@@ -551,7 +537,7 @@ pub fn compare_situational_signal(
     let mut samples = Vec::new();
     let mut heroes = 0;
     for hero_id in hero_ids {
-        let Some(build) = assemble_build(hero_id, &effects, catalog, &inputs.medians) else {
+        let Some(build) = assemble_build(hero_id, effects, catalog, study.medians()) else {
             continue;
         };
         let situational = build
@@ -605,13 +591,9 @@ pub fn measure_build_stability(
     scoring: ItemScoring,
     cumulative: bool,
 ) -> Result<Vec<BuildStability>> {
-    let inputs = load_run_inputs(paths, resources)?;
-    let catalog = &inputs.catalog;
-    let development = inputs
-        .states
-        .iter()
-        .filter(|state| !state.is_test())
-        .collect::<Vec<_>>();
+    let study = RunStudy::load(paths, resources)?;
+    let catalog = study.catalog();
+    let development = study.development();
     let matches = development
         .iter()
         .map(|state| state.match_id)
@@ -640,10 +622,10 @@ pub fn measure_build_stability(
                 hero_id,
                 &earlier_effects,
                 catalog,
-                &inputs.medians,
+                study.medians(),
                 scoring,
             ),
-            assemble_build_with_scoring(hero_id, &later_effects, catalog, &inputs.medians, scoring),
+            assemble_build_with_scoring(hero_id, &later_effects, catalog, study.medians(), scoring),
         ) else {
             continue;
         };
@@ -680,18 +662,17 @@ pub fn measure_label_placebo(
     resources: ExtractionResources,
     seeds: &[u64],
 ) -> Result<Vec<f64>> {
-    let inputs = load_run_inputs(paths, resources)?;
-    let catalog = &inputs.catalog;
-    let (test, development): (Vec<_>, Vec<_>) =
-        inputs.states.iter().partition(|state| state.is_test());
-    let effects = estimate_item_effects(&development, catalog, &PHASES)?;
+    let study = RunStudy::load(paths, resources)?;
+    let catalog = study.catalog();
+    let test = study.test();
+    let effects = study.development_effects()?;
     let hero_ids = test
         .iter()
         .map(|state| state.hero_id)
         .collect::<BTreeSet<_>>();
     let mut z_values = Vec::new();
     for hero_id in hero_ids {
-        let Some(build) = assemble_build(hero_id, &effects, catalog, &inputs.medians) else {
+        let Some(build) = assemble_build(hero_id, effects, catalog, study.medians()) else {
             continue;
         };
         let samples = test
@@ -735,11 +716,10 @@ pub fn compare_key_item_signal(
     paths: &RunPaths,
     resources: ExtractionResources,
 ) -> Result<AgreementPair> {
-    let inputs = load_run_inputs(paths, resources)?;
-    let catalog = &inputs.catalog;
-    let (test, development): (Vec<_>, Vec<_>) =
-        inputs.states.iter().partition(|state| state.is_test());
-    let effects = estimate_item_effects(&development, catalog, &PHASES)?;
+    let study = RunStudy::load(paths, resources)?;
+    let catalog = study.catalog();
+    let test = study.test();
+    let effects = study.development_effects()?;
     let hero_ids = test
         .iter()
         .map(|state| state.hero_id)
@@ -747,14 +727,14 @@ pub fn compare_key_item_signal(
     let mut samples = Vec::new();
     let mut heroes = 0;
     for hero_id in hero_ids {
-        let Some(build) = assemble_build(hero_id, &effects, catalog, &inputs.medians) else {
+        let Some(build) = assemble_build(hero_id, effects, catalog, study.medians()) else {
             continue;
         };
         heroes += 1;
         for state in test
             .iter()
             .copied()
-            .filter(|state| state.hero_id == hero_id && state.landmark_s >= 1200)
+            .filter(|state| state.hero_id == hero_id && state.landmark_s >= LATE_PHASES[0])
         {
             let Some(core) = measure_agreement(state, &build.phase_sets, catalog) else {
                 continue;

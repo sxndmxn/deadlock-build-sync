@@ -1,8 +1,14 @@
+use std::time::Duration;
+
 use deadlock_data::{Error, Result};
 use serde_json::{Map, Value};
 
-use crate::api_options::ApiOptions;
+use crate::api_options::{ApiOptions, REQUEST_INTERVAL};
 use crate::http_client::JsonHttpClient;
+
+/// An analytics request takes about one second. A hung request stops after this time.
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
+const REQUEST_ATTEMPTS: u32 = 3;
 
 #[derive(Debug)]
 pub struct ApiSession {
@@ -19,8 +25,8 @@ impl ApiSession {
                 "API client version must be positive and the cutoff must be nonnegative",
             ));
         }
-        let http = JsonHttpClient::new(&options.base_url, options.timeout, 3)?;
-        http.set_request_interval(options.request_interval)?;
+        let http = JsonHttpClient::new(&options.base_url, REQUEST_TIMEOUT, REQUEST_ATTEMPTS)?;
+        http.set_request_interval(REQUEST_INTERVAL)?;
         Ok(Self {
             options,
             http,

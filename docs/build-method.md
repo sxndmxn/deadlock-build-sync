@@ -16,6 +16,7 @@ The [Research log](research-log.md) records the tests behind each value and each
 ## Decision
 
 Make a build for every active hero. Hero coverage does not limit each hero to one build.
+A hero with fewer than 100 matches at every phase has no hero model. Its build uses the item effects and the adoption of all heroes, with the `limited` label.
 Choose each CORE item from two values: how many players at this rank own the item, and how much the item adds to the win probability in similar game states.
 Test each build on held-out matches and show the result as a confidence label.
 Do not skip a hero because its evidence is weak. Show weak evidence as `limited` confidence.
@@ -131,6 +132,9 @@ Purchase net worth windows and imbue selections still use the complete hero coho
 The selector compares Tier 3 and Tier 4 CORE items to reject similar builds.
 Each build must have at least two items that the other build does not contain.
 Different items must account for at least 30% of the combined unique item cost.
+The options `--variant-distinct-items` and `--variant-separation` change these two values. The catalog records them in `rules` when they differ from the defaults.
+On run `20261108T013049Z`, no candidate had a separation between 0 and 0.30, so the item count decided every rejection.
+With one distinct item, 31 heroes had an additional build instead of 12. `explain_variant_candidates` reports the gate of each candidate.
 Selection maximizes that cost difference multiplied by the square root of the distinct owner count.
 The selector repeats this comparison against the main build and each selected additional build.
 

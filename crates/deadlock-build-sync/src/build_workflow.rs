@@ -1,13 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use deadlock_analysis::{
-    ExtractionResources, RefreshRequest, extract_run, parse_timestamp, produce_hero_builds,
-};
-use deadlock_data::{
-    Error, RankRange, Result, atomic_write, fingerprint, state_directory, trace_operation,
-};
-use deadlock_guides::{HeroBuild, HeroBuildCatalog, build_hero_presentation};
+use deadlock_analysis::{RefreshRequest, extract_run, produce_hero_builds};
+use deadlock_data::{Error, Result, atomic_write, fingerprint, state_directory, trace_operation};
+use deadlock_guides::{BuildRules, HeroBuild, HeroBuildCatalog, build_hero_presentation};
 use deadlock_input::{ApiOptions, DeadlockApi};
 use deadlock_steam::{
     BuildIdentity, BuildSnapshot, CacheLocation, CacheUpdateRequest, InstallResult, LinuxProcesses,
@@ -16,55 +12,53 @@ use deadlock_steam::{
 };
 use serde_json::json;
 
-use crate::artifact_transaction::ArtifactTransaction;
+use crate::artifact_transaction::{ArtifactTransaction, CATALOG_FILE};
 use crate::build_markdown::render_build_markdown;
-use crate::cli_arguments::BuildArguments;
-use crate::cli_output::print_json;
-use crate::cli_paths::{artifact_directory, home_directory};
+use crate::cli_paths::home_directory;
 
-pub const CATALOG_FILE: &str = "hero-builds.json";
+/// One request to generate builds: the match extraction, the selection rules, and the output.
+#[derive(Clone, Debug)]
+pub struct BuildRequest {
+    pub refresh: RefreshRequest,
+    pub rules: BuildRules,
+    /// The artifact directory that receives `hero-builds.json` and the Markdown builds.
+    pub artifacts: PathBuf,
+}
+
+/// The result of a build request.
+#[derive(Debug)]
+pub struct GeneratedBuilds {
+    pub catalog: HeroBuildCatalog,
+    /// The analysis run directory.
+    pub run: PathBuf,
+    /// The number of other automatic runs that the request removed.
+    pub removed_runs: usize,
+}
 
 /// Extracts matches, produces a build for every hero, and replaces the artifact directory.
 ///
 /// # Errors
 /// Returns an error when extraction, production, validation, or the artifact write fails.
-pub fn generate_builds(
-    arguments: &BuildArguments,
-    base_url: &str,
-) -> Result<(PathBuf, HeroBuildCatalog)> {
-    let directory = artifact_directory(arguments.artifacts.as_deref())?;
-    ArtifactTransaction::recover(&directory)?;
-    let parse = |value: Option<&String>| value.map(|text| parse_timestamp(text)).transpose();
-    let resources = ExtractionResources {
-        memory_limit_mb: arguments.extraction_memory_mb,
-        threads: arguments.extraction_threads,
-    };
+pub fn generate_builds(request: &BuildRequest) -> Result<GeneratedBuilds> {
+    ArtifactTransaction::prepare(&request.artifacts)?;
     let run = trace_operation("analysis.extract_run", Some("extract_run"), || {
-        extract_run(&RefreshRequest {
-            root: state_directory()?.join("offline"),
-            run_id: arguments.run_id.clone(),
-            since: parse(arguments.since.as_ref())?,
-            as_of: parse(arguments.as_of.as_ref())?,
-            ranks: RankRange {
-                minimum: arguments.min_rank,
-                maximum: arguments.max_rank,
-            }
-            .validate()?,
-            extraction_resources: resources,
-            resume: arguments.resume,
-            api_base_url: base_url.into(),
-        })
+        extract_run(&request.refresh)
     })?;
     let catalog = trace_operation("analysis.produce_builds", Some("produce_builds"), || {
-        produce_hero_builds(&run.paths, resources, base_url)
+        produce_hero_builds(
+            &run.paths,
+            request.refresh.extraction_resources,
+            &request.refresh.api_base_url,
+            &request.rules,
+        )
     })?;
-    write_build_artifacts(&directory, &catalog)?;
-    eprintln!("Analysis run: {}", run.paths.run.display());
-    let removed = run.remove_other_automatic_runs();
-    if removed > 0 {
-        eprintln!("Removed {removed} other automatic analysis runs");
-    }
-    Ok((directory, catalog))
+    write_build_artifacts(&request.artifacts, &catalog)?;
+    let removed_runs = run.remove_other_automatic_runs();
+    Ok(GeneratedBuilds {
+        catalog,
+        run: run.paths.run,
+        removed_runs,
+    })
 }
 
 /// Writes the catalog and all builds in each hero's Markdown file, then replaces the directory.
@@ -124,7 +118,7 @@ pub fn describe_staleness(catalog: &HeroBuildCatalog, base_url: &str) -> Result<
     let patch = api.current_patch()?;
     Ok(if catalog.client_version != client {
         Some("Hero builds use another client version".into())
-    } else if catalog.patch.get("identity") != Some(&patch.identity()?.into()) {
+    } else if catalog.patch.identity != patch.identity {
         Some("Hero builds use another patch".into())
     } else {
         None
@@ -217,22 +211,4 @@ fn create_managed_build(
             build_fingerprint: fingerprint(&serde_json::to_value(build)?)?,
         },
     )
-}
-
-/// Prints the installation result with the information needed for recovery.
-///
-/// # Errors
-/// Returns an error when output fails.
-pub fn print_installation(
-    result: &InstallResult,
-    artifacts: &Path,
-    catalog: &HeroBuildCatalog,
-) -> Result<()> {
-    print_json(&json!({
-        "cache_path":result.cache_path,"backup_path":result.backup_directory,"artifacts":artifacts,
-        "created":result.created,"updated":result.updated,"removed":result.removed,"changed":result.changed,
-        "builds":catalog.heroes.iter().map(|build| json!({
-            "hero":build.hero_name,"title":build.title,"confidence":build.evaluation.confidence,
-        })).collect::<Vec<_>>(),
-    }))
 }

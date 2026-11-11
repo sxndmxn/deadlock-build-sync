@@ -1,6 +1,7 @@
 use deadlock_data::{Result, sha256};
 use deadlock_guides::{
-    BuildPresentation, MANAGED_MARKER, PresentationCategory, PresentationContent, PresentationItem,
+    BuildPresentation, MANAGED_MARKER, ManagedTrailer, PresentationCategory, PresentationContent,
+    PresentationItem,
 };
 use deadlock_steam::{
     BuildIdentity, BuildSnapshot, Kv3Document, Kv3Kind, Kv3Value, ManagedBuild, encode_hero_build,
@@ -44,10 +45,12 @@ pub fn create_presentation(hero: u64, snapshot: &BuildSnapshot) -> Result<BuildP
         name: "Reference build".into(),
         tag_ids: [1, 2, 3],
         categories,
-        description: format!(
-            "{MANAGED_MARKER}\nBuild path: reference.\nSnapshot: {}.",
-            snapshot.snapshot_id
-        ),
+        description: ManagedTrailer {
+            path_id: "reference".into(),
+            patch_title: "Reference patch".into(),
+            snapshot_id: snapshot.snapshot_id.clone(),
+        }
+        .render(),
         abilities: None,
     })
 }

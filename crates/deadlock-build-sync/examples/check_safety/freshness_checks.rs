@@ -4,7 +4,7 @@ use std::net::{TcpListener, TcpStream};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use deadlock_build_sync::install_catalog;
+use deadlock_build_sync::{build_freshness_report, install_catalog};
 use deadlock_data::{Error, Result};
 use deadlock_guides::HeroBuildCatalog;
 use deadlock_input::parse_patch_feed;
@@ -13,6 +13,7 @@ use serde_json::{Value, json};
 
 pub fn check_installation_freshness() -> Result<()> {
     check_hero_release_feed()?;
+    check_status_exit_codes()?;
     let root = tempfile::tempdir()?;
     let location = CacheLocation {
         account_id: 7,
@@ -27,12 +28,21 @@ pub fn check_installation_freshness() -> Result<()> {
     let patches = json!([{
         "title":"Reference patch",
         "pub_date":"2026-10-10T00:00:00Z",
+        "source":"steam",
+        "guid":"reference-patch",
         "content":"Reference changes",
+    }]);
+    let obsolete = json!([{
+        "title":"Reference patch",
+        "pub_date":"2026-10-09T00:00:00Z",
+        "source":"steam",
+        "guid":"obsolete-patch",
+        "content":"Older changes",
     }]);
     let mut catalog: HeroBuildCatalog = serde_json::from_str(include_str!(
         "../../../../tests/fixtures/imbue-catalog.json"
     ))?;
-    catalog.patch = parse_patch_feed(&patches, None)?.to_document()?;
+    catalog.patch = parse_patch_feed(&patches, None)?;
     for (case, expected) in [
         ("current", cache_error.as_str()),
         ("client", "Hero builds use another client version"),
@@ -43,7 +53,7 @@ pub fn check_installation_freshness() -> Result<()> {
         if case == "client" {
             selected.client_version += 1;
         } else if case == "patch" {
-            selected.patch.insert("identity".into(), "obsolete".into());
+            selected.patch = parse_patch_feed(&obsolete, None)?;
         }
         check_rejected_installation(
             &location,
@@ -164,20 +174,77 @@ fn check_hero_release_feed() -> Result<()> {
     let update = json!({
         "title":" Minor Update - 10-05-2026",
         "pub_date":"2026-10-05T23:05:32Z",
+        "source":"steam",
+        "guid":"update-post",
         "content":"- Rat King: Scrap Grenade - Damage increased from 65 to 70",
     });
     let release = json!({
         "title":"Fairfax Industries Employee Spotlight",
         "pub_date":"2026-10-13T20:59:55Z",
+        "source":"steam",
+        "guid":"release-post",
         "content":"Today, Fairfax Industries is proud to introduce their most valuable salesman.",
     });
     let both = json!([release, update]);
-    if parse_patch_feed(&both, None)?.title != " Minor Update - 10-05-2026" {
+    // The feed title has a leading space. The patch title is trimmed.
+    if parse_patch_feed(&both, None)?.title != "Minor Update - 10-05-2026" {
         return Err(Error::new("A hero release post replaced the current patch"));
     }
     if parse_patch_feed(&json!([release]), None)?.title != "Fairfax Industries Employee Spotlight" {
         return Err(Error::new(
             "A feed without updates did not use its latest post",
+        ));
+    }
+    Ok(())
+}
+
+/// Exit code 1 means that a stage is malformed or unavailable. Exit code 2 means that a sync
+/// is necessary. A missing catalog needs no API request.
+fn check_status_exit_codes() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let artifacts = root.path().join("artifacts");
+    let location = CacheLocation {
+        account_id: 7,
+        cache_path: root.path().join("cached_hero_builds.kv3"),
+        app_directory: root.path().into(),
+    };
+    let (code, report) = build_freshness_report(
+        &artifacts,
+        "http://127.0.0.1:1",
+        Err(Error::new("No Steam cache")),
+    )?;
+    let states = |report: &Value| {
+        report["stages"]
+            .as_array()
+            .map(|stages| {
+                stages
+                    .iter()
+                    .map(|stage| stage["state"].as_str().unwrap_or_default().to_owned())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default()
+    };
+    if code != 1 || states(&report) != ["missing", "unavailable"] {
+        return Err(Error::new(
+            "Status did not report an unavailable cache with exit code 1",
+        ));
+    }
+    let (code, report) = build_freshness_report(&artifacts, "http://127.0.0.1:1", Ok(location))?;
+    if code != 2 || states(&report) != ["missing", "missing"] {
+        return Err(Error::new(
+            "Status did not report missing builds with exit code 2",
+        ));
+    }
+    fs::create_dir(&artifacts)?;
+    fs::write(artifacts.join("hero-builds.json"), b"not a catalog")?;
+    let (code, report) = build_freshness_report(
+        &artifacts,
+        "http://127.0.0.1:1",
+        Err(Error::new("No Steam cache")),
+    )?;
+    if code != 1 || states(&report)[0] != "malformed" {
+        return Err(Error::new(
+            "Status did not report a malformed catalog with exit code 1",
         ));
     }
     Ok(())

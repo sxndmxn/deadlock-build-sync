@@ -5,6 +5,23 @@ use crate::build_tags::first_fully_upgraded_ability;
 use crate::build_title::format_build_title;
 use crate::hero_build::{AbilityFocus, BuildItem, HeroBuild};
 
+/// Returns true when the CORE items support an ability focus.
+///
+/// The focus is supported when the key item imbues the ability, when two CORE items imbue it,
+/// or when the ability order upgrades it to the maximum first. Production and validation use
+/// this one rule.
+#[must_use]
+pub fn is_supported_focus(
+    ability_id: u64,
+    supporting_items: &[u64],
+    key_item_id: u64,
+    ability_ids: &[u64],
+) -> bool {
+    supporting_items.contains(&key_item_id)
+        || supporting_items.len() >= 2
+        || first_fully_upgraded_ability(ability_ids).ok() == Some(ability_id)
+}
+
 /// Assigns an inferred ability focus, its icon, and a title without the hero name.
 ///
 /// # Errors
@@ -44,12 +61,13 @@ fn select_ability_focus(build: &HeroBuild, assets: &[Value]) -> Option<AbilityFo
     if supporters.iter().any(|(_, ability)| *ability != ability_id) {
         return None;
     }
-    let supports_key_item = supporters
-        .iter()
-        .any(|(item, _)| *item == build.key_item_id);
-    let supports_ability_order =
-        first_fully_upgraded_ability(&build.ability_ids).ok() == Some(ability_id);
-    if !supports_key_item && supporters.len() < 2 && !supports_ability_order {
+    let supporting_items = supporters.iter().map(|(item, _)| *item).collect::<Vec<_>>();
+    if !is_supported_focus(
+        ability_id,
+        &supporting_items,
+        build.key_item_id,
+        &build.ability_ids,
+    ) {
         return None;
     }
     let ability = assets

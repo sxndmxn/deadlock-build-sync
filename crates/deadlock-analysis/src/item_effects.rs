@@ -12,7 +12,11 @@ const GLOBAL_ITEM_PENALTY: f64 = 200.0;
 const GLOBAL_COVARIATE_PENALTY: f64 = 1e-4;
 const HERO_ITEM_PENALTY: f64 = 300.0;
 const HERO_COVARIATE_PENALTY: f64 = 1.0;
-const MINIMUM_HERO_ROWS: usize = 100;
+/// The smallest number of landmark rows that supports a hero model, and the smallest number
+/// of owner matches that supports an additional build.
+pub const MINIMUM_OBSERVATIONS: usize = 100;
+/// Items of this shop tier and above are the expensive items that define a build.
+pub const EXPENSIVE_TIER: u8 = 3;
 
 /// One player at one landmark time, with the items that the player owns.
 #[derive(Clone, Debug, Deserialize)]
@@ -33,7 +37,7 @@ pub struct LandmarkState {
 }
 
 /// The fold of the held-out test matches.
-const TEST_FOLD: &str = "test";
+pub const TEST_FOLD: &str = "test";
 
 impl LandmarkState {
     /// Returns true when the state belongs to the held-out test fold.
@@ -127,17 +131,25 @@ pub type EffectTable = BTreeMap<(u64, u32), HeroLandmarkEffects>;
 /// The effect table key for the values of all heroes together. Hero IDs start at 1.
 pub const ALL_HEROES: u64 = 0;
 
+/// The covariate features of a state: intercept, relative net worth, team lead, and rank.
+///
+/// Every model of the crate starts its feature row with these columns.
+#[must_use]
+pub fn covariate_features(state: &LandmarkState) -> [(usize, f64); COVARIATES] {
+    [
+        (0, 1.0),
+        (1, relative_net_worth(state.net_worth, state.landmark_s)),
+        (2, state.team_lead),
+        (3, standardized_rank(state.average_badge)),
+    ]
+}
+
 /// Converts a landmark state to model features.
 ///
 /// Relative net worth is the logarithm of net worth divided by 20 souls per second.
 #[must_use]
 pub fn build_feature_row(state: &LandmarkState, catalog: &ItemCatalog) -> FeatureRow {
-    let mut features = vec![
-        (0, 1.0),
-        (1, relative_net_worth(state.net_worth, state.landmark_s)),
-        (2, state.team_lead),
-        (3, standardized_rank(state.average_badge)),
-    ];
+    let mut features = covariate_features(state).to_vec();
     features.extend(
         state
             .item_ids
@@ -208,7 +220,7 @@ pub fn fit_landmark_models(
             .filter(|(owner, _)| *owner == hero)
             .map(|(_, row)| row)
             .collect::<Vec<_>>();
-        if hero_rows.len() < MINIMUM_HERO_ROWS {
+        if hero_rows.len() < MINIMUM_OBSERVATIONS {
             continue;
         }
         let fit = fit_ridge_logistic(
@@ -284,7 +296,7 @@ fn estimate_landmark_effects(
     let all_rows = selected.iter().map(|(_, row)| row).collect::<Vec<_>>();
     table.insert(
         (ALL_HEROES, landmark),
-        summarize_hero(&all_rows, &models.global, catalog)?,
+        summarize_hero(&all_rows, models.global[COVARIATES..].to_vec(), catalog)?,
     );
     for (hero, coefficients) in &models.heroes {
         let rows = selected
@@ -294,7 +306,7 @@ fn estimate_landmark_effects(
             .collect::<Vec<_>>();
         table.insert(
             (*hero, landmark),
-            summarize_hero(&rows, coefficients, catalog)?,
+            summarize_hero(&rows, coefficients[COVARIATES..].to_vec(), catalog)?,
         );
     }
     Ok(table)
@@ -320,9 +332,14 @@ fn build_penalty(width: usize, covariate: f64, item: f64) -> Vec<f64> {
         .collect()
 }
 
-fn summarize_hero(
+/// Summarizes the item adoption, owner win rates, and median spend of the rows, with the given
+/// item effects.
+///
+/// # Errors
+/// Returns an error when the rows are empty.
+pub fn summarize_hero(
     rows: &[&FeatureRow],
-    coefficients: &[f64],
+    effects: Vec<f64>,
     catalog: &ItemCatalog,
 ) -> Result<HeroLandmarkEffects> {
     let count = catalog.items.len();
@@ -350,7 +367,7 @@ fn summarize_hero(
         .ok_or_else(|| Error::new("Hero landmark has no observations"))?;
     let total = count_as_f64(u64::try_from(rows.len())?)?;
     Ok(HeroLandmarkEffects {
-        effects: coefficients[COVARIATES..].to_vec(),
+        effects,
         adoption: owners
             .iter()
             .map(|owners| Ok(count_as_f64(u64::try_from(*owners)?)? / total))

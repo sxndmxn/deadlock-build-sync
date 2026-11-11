@@ -22,10 +22,7 @@ fn main() -> Result<()> {
         .next()
         .map_or(Ok(DEFAULT_SCORING), |rule| rule.parse::<ItemScoring>())?;
     let paths = RunPaths::open(Path::new(&run))?;
-    let resources = ExtractionResources {
-        memory_limit_mb: 12_000,
-        threads: 8,
-    };
+    let resources = ExtractionResources::default();
     println!("hero_id\tcore_overlap\tsame_key_item");
     for result in measure_build_stability(
         &paths,

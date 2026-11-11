@@ -9,7 +9,6 @@ WITH matches AS (
 )
 
 SELECT
-    quantile_cont(epoch(started), 0.45) AS discovery_end,
     quantile_cont(epoch(started), 0.6) AS train_end,
     quantile_cont(epoch(started), 0.8) AS validation_end
 FROM matches;

@@ -13,6 +13,6 @@ workspace = true
 
 [dependencies]
 deadlock-data.workspace = true
-deadlock-input.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+htmlize.workspace = true

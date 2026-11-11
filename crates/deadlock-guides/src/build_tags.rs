@@ -1,26 +1,85 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use deadlock_data::{Error, Result};
-use deadlock_input::{BuildTagCatalog, FUNCTION_CLASSES, clean_mechanical_text};
 use serde_json::Value;
+
+use crate::ability_order::{UPGRADES_PER_ABILITY, is_complete_ability_order, select_ability_path};
+use crate::build_tag_catalog::{BuildTagCatalog, FUNCTION_CLASSES};
+use crate::hero_build::HeroBuild;
+use crate::mechanics_text::clean_mechanical_text;
 
 /// One CORE item for tag selection: the item ID and its shop tier.
 #[derive(Clone, Copy, Debug)]
-pub struct TagItem {
-    pub item_id: u64,
-    pub tier: u8,
+struct TagItem {
+    item_id: u64,
+    tier: u8,
 }
 
 #[derive(Clone, Debug)]
-pub struct BuildTagSelection {
-    pub tag_ids: [u64; 3],
+struct BuildTagSelection {
+    tag_ids: [u64; 3],
     /// The name of the first fully upgraded ability.
-    pub ability_name: String,
+    ability_name: String,
+}
+
+/// Sets the ability order, the key ability name, and the three build icons of a build.
+///
+/// The icons are the first maxed ability, the key item, and the dominant build function.
+/// Without a complete ability order, the icons use CORE items instead of the ability.
+///
+/// # Errors
+/// Returns an error when the ability rows are malformed or the build has fewer than three CORE items.
+pub fn assign_build_tags(
+    build: &mut HeroBuild,
+    rows: &[Value],
+    assets: &[Value],
+    catalog: &BuildTagCatalog,
+) -> Result<()> {
+    if let Some(path) = select_ability_path(rows)? {
+        build.ability_ids = path.ability_ids;
+        build.ability_matches = path.matches;
+    }
+    // The key item takes the Tier 3 icon slot. Other items compete below it.
+    let mut core = build
+        .core
+        .iter()
+        .map(|item| TagItem {
+            item_id: item.item_id,
+            tier: if item.item_id == build.key_item_id {
+                3
+            } else {
+                item.tier.min(2)
+            },
+        })
+        .collect::<Vec<_>>();
+    core.sort_by_key(|item| std::cmp::Reverse(item.tier));
+    match select_build_tags(&build.ability_ids, &core, assets, catalog) {
+        Ok(selection) => {
+            build.tag_ids = selection.tag_ids;
+            build.key_ability_name = Some(selection.ability_name);
+        }
+        Err(_) => build.tag_ids = select_fallback_tags(build)?,
+    }
+    Ok(())
+}
+
+/// The key item and the two most expensive other CORE items, for a build without an ability order.
+fn select_fallback_tags(build: &HeroBuild) -> Result<[u64; 3]> {
+    let mut ids = vec![build.key_item_id];
+    let mut others = build
+        .core
+        .iter()
+        .filter(|item| item.item_id != build.key_item_id)
+        .collect::<Vec<_>>();
+    others.sort_by_key(|item| (std::cmp::Reverse(item.cost), item.item_id));
+    ids.extend(others.iter().take(2).map(|item| item.item_id));
+    ids.try_into()
+        .map_err(|_| Error::new("Build needs three CORE items for its icons"))
 }
 
 /// # Errors
 /// Returns an error when the ability order, core icon, or pinned tag catalog has an invalid identity.
-pub fn select_build_tags(
+fn select_build_tags(
     ability_path: &[u64],
     core: &[TagItem],
     assets: &[Value],
@@ -52,7 +111,7 @@ pub fn select_build_tags(
     let ability_name = select_asset_name(ability)?;
     select_asset_name(assets[&icon.item_id])?;
     let function = catalog.require(classify_core(core, &assets)?)?;
-    let tag_ids = [ability_id, icon.item_id, function.tag_id];
+    let tag_ids = [ability_id, icon.item_id, function];
     if tag_ids.into_iter().collect::<BTreeSet<_>>().len() != 3 {
         return Err(Error::new("Selected build icons are not distinct"));
     }
@@ -73,24 +132,16 @@ fn select_asset_name(asset: &Value) -> Result<String> {
 }
 
 pub fn first_fully_upgraded_ability(path: &[u64]) -> Result<u64> {
-    let mut counts = BTreeMap::<u64, usize>::new();
-    for id in path {
-        *counts.entry(*id).or_default() += 1;
-    }
-    if path.len() != 16
-        || counts.len() != 4
-        || counts.contains_key(&0)
-        || counts.values().any(|count| *count != 4)
-    {
+    if !is_complete_ability_order(path) {
         return Err(Error::new(
             "Ability path is not a complete four-ability path",
         ));
     }
-    counts.clear();
+    let mut counts = BTreeMap::<u64, usize>::new();
     for id in path {
         let count = counts.entry(*id).or_default();
         *count += 1;
-        if *count == 4 {
+        if *count == usize::from(UPGRADES_PER_ABILITY) {
             return Ok(*id);
         }
     }

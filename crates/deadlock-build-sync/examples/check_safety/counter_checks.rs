@@ -30,13 +30,20 @@ fn create_counter_catalog() -> Result<HeroBuildCatalog> {
             buyer_wins: 21,
         });
     }
-    build.counters = [CounterTarget::Weapon, CounterTarget::Sustain]
-        .into_iter()
-        .map(|target| CounterPanel {
-            target,
+    // Each panel has its own item, so a swap of the panels changes the presentation.
+    let mut anti_heal = build.situational[0].clone();
+    anti_heal.item_id = 18;
+    anti_heal.name = "Reference anti-heal".into();
+    build.counters = vec![
+        CounterPanel {
+            target: CounterTarget::Weapon,
             items: vec![build.situational[0].clone()],
-        })
-        .collect();
+        },
+        CounterPanel {
+            target: CounterTarget::Sustain,
+            items: vec![anti_heal],
+        },
+    ];
     let weapon = CounterEvidence {
         target: CounterTarget::Weapon,
         phases: vec![
@@ -56,7 +63,12 @@ fn create_counter_catalog() -> Result<HeroBuildCatalog> {
     };
     let sustain = CounterEvidence {
         target: CounterTarget::Sustain,
-        ..weapon.clone()
+        phases: vec![CounterPhase {
+            phase_s: 1800,
+            coefficient: 0.041,
+            standard_error: 0.012,
+            observations: 800,
+        }],
     };
     catalog.counter_evidence = vec![weapon, sustain];
     catalog.validate()?;
@@ -109,7 +121,12 @@ fn check_counter_export(catalog: &HeroBuildCatalog) -> Result<()> {
     let directory = root.path().join("artifacts");
     write_build_artifacts(&directory, catalog)?;
     let markdown = fs::read_to_string(directory.join("builds/reference-hero.md"))?;
-    if !markdown.contains("## VS WEAPON") || !markdown.contains("Counter test at 30 min: +0.052") {
+    if !markdown.contains("## VS WEAPON")
+        || !markdown.contains("Counter test at 30 min: +0.052")
+        || !markdown.contains("## VS SUSTAIN")
+        || !markdown.contains("Counter test at 30 min: +0.041")
+        || !markdown.contains("Reference anti-heal")
+    {
         return Err(Error::new(
             "Markdown export omitted the counter panel or its evidence",
         ));
@@ -120,8 +137,12 @@ fn check_counter_export(catalog: &HeroBuildCatalog) -> Result<()> {
 fn check_invalid_counters(catalog: &HeroBuildCatalog) -> Result<()> {
     let mut no_evidence = catalog.clone();
     no_evidence.counter_evidence.clear();
+    // The limit is z = -2. A phase at z = -1.875 keeps the panel. A phase at z = -2.125 removes it.
+    let mut within_limit = catalog.clone();
+    within_limit.counter_evidence[0].phases[0].coefficient = -0.015;
+    within_limit.validate()?;
     let mut negative = catalog.clone();
-    negative.counter_evidence[0].phases[0].coefficient = -0.02;
+    negative.counter_evidence[0].phases[0].coefficient = -0.017;
     let mut core_item = catalog.clone();
     core_item.heroes[0].counters[0].items[0] = core_item.heroes[0].core[0].clone();
     let mut too_many = catalog.clone();

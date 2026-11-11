@@ -5,7 +5,7 @@ use serde_json::json;
 
 #[path = "../../src/artifact_transaction.rs"]
 mod artifact_transaction;
-use artifact_transaction::ArtifactTransaction;
+use artifact_transaction::{ArtifactTransaction, CATALOG_FILE};
 
 pub fn check_artifact_recovery() -> Result<()> {
     for phase in ["prepared", "previous_moved", "installed"] {
@@ -18,7 +18,28 @@ pub fn check_artifact_recovery() -> Result<()> {
     check_invalid_journal()?;
     check_destination_identity()?;
     check_previous_directory_state()?;
+    check_foreign_directory()?;
     check_complete_installation()
+}
+
+/// A directory with other files and no catalog is user data. Installation refuses it.
+fn check_foreign_directory() -> Result<()> {
+    let root = tempfile::tempdir()?;
+    let destination = root.path().join("documents");
+    fs::create_dir(&destination)?;
+    fs::write(destination.join("notes.txt"), b"user data")?;
+    if ArtifactTransaction::new(&destination).is_ok()
+        || ArtifactTransaction::prepare(&destination).is_ok()
+        || fs::read(destination.join("notes.txt"))? != b"user data"
+    {
+        return Err(Error::new(
+            "Artifact installation accepted a directory with user data",
+        ));
+    }
+    let empty = root.path().join("empty");
+    fs::create_dir(&empty)?;
+    drop(ArtifactTransaction::new(&empty)?);
+    Ok(())
 }
 
 fn check_interrupted_creation(installed: bool) -> Result<()> {
@@ -179,12 +200,12 @@ fn check_complete_installation() -> Result<()> {
     let root = tempfile::tempdir()?;
     let destination = root.path().join("artifacts");
     fs::create_dir(&destination)?;
-    fs::write(destination.join("marker"), b"previous")?;
+    fs::write(destination.join(CATALOG_FILE), b"previous")?;
     fs::write(destination.join("obsolete"), b"obsolete")?;
     let transaction = ArtifactTransaction::new(&destination)?;
-    fs::write(transaction.staged().join("marker"), b"replacement")?;
+    fs::write(transaction.staged().join(CATALOG_FILE), b"replacement")?;
     transaction.commit()?;
-    if fs::read(destination.join("marker"))? != b"replacement"
+    if fs::read(destination.join(CATALOG_FILE))? != b"replacement"
         || destination.join("obsolete").try_exists()?
     {
         return Err(Error::new(

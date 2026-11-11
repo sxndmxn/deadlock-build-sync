@@ -29,15 +29,15 @@ cargo install cargo-deny --version 0.20.2 --locked
 SQLFluff runs through `uvx` at version 4.3.0.
 The shared checks validate formatting, code metrics, Clippy, architecture, SQL, documentation, dependencies, and the default CLI.
 The safety executable checks temporary caches, backup validation, preservation, repeated installation, process guards, and artifact recovery.
-It checks source fingerprints through the resume workflow and rejects stale installations through a local reference API.
+It checks source fingerprints and the extraction SQL fingerprint through the resume workflow, rejects stale installations through a local reference API, and reads the status exit codes.
 It checks that run removal keeps the current run, named runs, locked runs, and new runs without a lock.
 It also checks native imbue targets through catalog serialization and Steam encoding.
 Focus checks cover supporting CORE items, conflicting targets, reload effects, descriptions, and title limits.
 Variant checks cover shared heroes, duplicate identities, complete Markdown exports, and separate Steam build IDs.
 They also check repeated installation, variant removal, and compatibility with schema 5 catalogs.
-Counter checks cover the panel order, the evidence text, the Markdown export, and catalogs with invalid counter panels.
+Counter checks cover the panel order, one item and one evidence record for each panel, both sides of the z limit, the Markdown export, and catalogs with invalid counter panels.
 The analysis executable checks imbue selection with an isolated purchase database and reference assets.
-The strategy executable checks distinct item combinations, unique player counts, stable selection, and heroes with only one observed strategy.
+The strategy executable checks distinct item combinations, unique player counts, stable selection, heroes with only one observed strategy, the distinct item count and cost share rules, the build limit, the generic build of a hero without effects, and the production re-assembly that drops a similar strategy.
 The item statistics executable checks purchase counts, rank filters, calibration exclusion, variant consistency, legacy display, and invalid counts.
 The checks do not read or write live Steam files.
 Fixture checks do not certify live builds.
@@ -77,6 +77,7 @@ These examples read one run directory and write tab-separated text:
 | `compare_training_fractions` | Held-out agreement of builds from fewer development matches |
 | `measure_label_halves` | Per-hero test results on two halves of the test matches |
 | `measure_build_stability` | CORE overlap of builds from two match samples |
+| `explain_variant_candidates` | The gate that rejects each additional build candidate, with optional rule values |
 | `measure_counter_placebo` | z values of the counter test after random moves of team conditions |
 | `measure_pair_placebo` | z values of the paired test after random moves of agreements |
 | `measure_label_placebo` | z values of the per-hero test after random moves of agreements |

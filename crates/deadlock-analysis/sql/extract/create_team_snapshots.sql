@@ -22,10 +22,7 @@ SELECT
             AND count(player_net_worth) = 6
             AND bool_and(snapshot_arrays_aligned IS TRUE)
             THEN sum(player_net_worth)
-    END AS team_net_worth,
-    count(DISTINCT player_slot) FILTER (
-        WHERE snapshot_arrays_aligned AND player_net_worth IS NOT NULL
-    ) AS observed_players
+    END AS team_net_worth
 FROM snapshots
 WHERE stat_time IS NOT NULL
 GROUP BY match_id, team_id, stat_time;

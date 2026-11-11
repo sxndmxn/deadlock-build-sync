@@ -21,10 +21,7 @@ fn main() -> Result<()> {
     };
     let scale = |text: &str| text.parse::<ItemScoring>();
     let paths = RunPaths::open(Path::new(run))?;
-    let resources = ExtractionResources {
-        memory_limit_mb: 12_000,
-        threads: 8,
-    };
+    let resources = ExtractionResources::default();
     let result = compare_scoring_pair(&paths, resources, scale(base)?, scale(alternative)?)?;
     println!("agreement\tcoefficient\tstandard_error\tz\theroes\tobservations");
     for (name, value) in [(base, result.base), (alternative, result.alternative)] {

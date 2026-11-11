@@ -4,10 +4,11 @@ use std::fs::File;
 use std::io::Read as _;
 use std::path::Path;
 
-use deadlock_data::{Error, Result, integer, object, text};
+use deadlock_data::{Error, MAXIMUM_TRACE_BYTES, Result, integer, object, text};
 use serde_json::Value;
 
-const MAXIMUM_TRACE_BYTES: u64 = 101 * 1024 * 1024;
+/// The writer stops at `MAXIMUM_TRACE_BYTES` and appends one marker line.
+const MAXIMUM_SUMMARY_BYTES: u64 = (MAXIMUM_TRACE_BYTES + 1024) as u64;
 
 #[derive(Debug)]
 struct SummarySpan {
@@ -20,7 +21,6 @@ struct SummarySpan {
 #[derive(Debug, Default)]
 struct Summary {
     metadata: Value,
-    functions: BTreeMap<u64, String>,
     spans: BTreeMap<u64, SummarySpan>,
     order: Vec<u64>,
     truncated: bool,
@@ -31,12 +31,6 @@ impl Summary {
         object(event)?;
         match event["event"].as_str() {
             Some("trace_start") => self.metadata = event.clone(),
-            Some("function_definition") => {
-                self.functions.insert(
-                    integer(event, "function_id")?,
-                    format!("{}.{}", text(event, "module")?, text(event, "function")?),
-                );
-            }
             Some("call" | "stage_start") => self.add_span(event)?,
             Some("return" | "stage_end") => {
                 if let Some(id) = event["call_id"]
@@ -64,16 +58,7 @@ impl Summary {
     fn add_span(&mut self, event: &Value) -> Result<()> {
         let calls = event["event"] == "call";
         let identifier = integer(event, if calls { "call_id" } else { "stage_id" })?;
-        let label = if !calls {
-            text(event, "stage")?.into()
-        } else if let Some(id) = event["function_id"].as_u64() {
-            self.functions
-                .get(&id)
-                .cloned()
-                .ok_or_else(|| Error::new("Trace call references an unknown function"))?
-        } else {
-            format!("{}.{}", text(event, "module")?, text(event, "function")?)
-        };
+        let label = text(event, if calls { "function" } else { "stage" })?.into();
         let parent = event["parent_call_id"]
             .as_u64()
             .or_else(|| event["parent_stage_id"].as_u64());
@@ -106,9 +91,6 @@ impl Summary {
 }
 
 pub fn render_trace_summary(path: &Path, maximum_nodes: u32) -> Result<String> {
-    if maximum_nodes == 0 {
-        return Err(Error::new("Trace summary requires a positive node limit"));
-    }
     let path = if path.is_dir() {
         path.join("trace.jsonl")
     } else {
@@ -116,9 +98,9 @@ pub fn render_trace_summary(path: &Path, maximum_nodes: u32) -> Result<String> {
     };
     let mut bytes = Vec::new();
     File::open(&path)?
-        .take(MAXIMUM_TRACE_BYTES + 1)
+        .take(MAXIMUM_SUMMARY_BYTES + 1)
         .read_to_end(&mut bytes)?;
-    if u64::try_from(bytes.len())? > MAXIMUM_TRACE_BYTES {
+    if u64::try_from(bytes.len())? > MAXIMUM_SUMMARY_BYTES {
         return Err(Error::new("Execution trace exceeds the size limit"));
     }
     let mut summary = Summary::default();

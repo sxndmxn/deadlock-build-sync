@@ -6,11 +6,11 @@ use deadlock_guides::{
     MAXIMUM_COUNTER_ITEMS,
 };
 
-use crate::build_assembly::{PurchaseMedians, describe_item};
+use crate::build_assembly::{LATE_PHASES, PurchaseMedians, describe_item};
 use crate::item_effects::{
     COVARIATES, DEFAULT_PENALTIES, EffectTable, ItemCatalog, LandmarkState, build_feature_row,
 };
-use crate::ridge_logistic::fit_ridge_logistic;
+use crate::ridge_logistic::{CoefficientEstimate, fit_ridge_logistic};
 
 /// The item class names of each counter group.
 ///
@@ -61,7 +61,7 @@ const SUSTAIN_ITEMS: [&str; 14] = [
     "upgrade_endurance",
 ];
 /// The mid game and late game landmarks. The counter effect did not replicate in the lane phase.
-pub const COUNTER_PHASES: [u32; 2] = [1200, 1800];
+pub const COUNTER_PHASES: [u32; 2] = LATE_PHASES;
 /// The standard deviation of the enemy spirit share is near 0.06.
 /// This factor gives the condition a standard deviation near 1.
 pub const CONDITION_SCALE: f64 = 16.0;
@@ -119,13 +119,6 @@ fn find_classes(catalog: &ItemCatalog, class_names: &[&str]) -> BTreeSet<u64> {
         .collect()
 }
 
-/// The coefficient and match-clustered standard error of one item group interaction.
-#[derive(Clone, Copy, Debug)]
-pub struct GroupInteraction {
-    pub coefficient: f64,
-    pub standard_error: f64,
-}
-
 /// Returns the standardized enemy spirit share of each state.
 #[must_use]
 pub fn spirit_conditions(states: &[&LandmarkState], spirit_mean: f64) -> Vec<f64> {
@@ -150,7 +143,7 @@ pub fn fit_group_interactions(
     groups: &[&BTreeSet<u64>],
     conditions: &[&[f64]],
     hero_terms: bool,
-) -> Result<Vec<GroupInteraction>> {
+) -> Result<Vec<CoefficientEstimate>> {
     if conditions.iter().any(|values| values.len() != states.len()) {
         return Err(Error::new(
             "Each condition requires one value for each state",
@@ -235,7 +228,7 @@ pub fn fit_group_interactions(
                 .map(move |offset| COVARIATES + items + condition_index * block + 1 + offset)
         })
         .map(|index| {
-            Ok(GroupInteraction {
+            Ok(CoefficientEstimate {
                 coefficient: fit.coefficients[index],
                 standard_error: fit.clustered_standard_error(index, &references, &matches)?,
             })

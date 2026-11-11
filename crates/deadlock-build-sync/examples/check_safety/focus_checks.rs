@@ -184,6 +184,16 @@ fn check_title_limits(catalog: &HeroBuildCatalog, assets: &[Value]) -> Result<()
             return Err(Error::new("Build title does not apply the character limit"));
         }
     }
+    // A long persona drops out of the name. The build name stands alone within the limit.
+    let build = &catalog.heroes[0];
+    let presentation =
+        build_hero_presentation(build, catalog, &sha256(b"title reference"), &"P".repeat(45))?;
+    let name = &presentation.content().name;
+    if name.chars().count() > 50 || name.contains('|') || name != &build.title {
+        return Err(Error::new(
+            "A long persona did not leave the build name alone within the limit",
+        ));
+    }
     Ok(())
 }
 

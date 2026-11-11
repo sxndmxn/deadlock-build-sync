@@ -96,6 +96,11 @@ fn check_duplicate_paths(catalog: &HeroBuildCatalog) -> Result<()> {
     if old_schema.validate().is_ok() {
         return Err(Error::new("Schema 5 accepted variant identifiers"));
     }
+    let mut empty = catalog.clone();
+    empty.heroes.clear();
+    if empty.validate().is_ok() {
+        return Err(Error::new("Catalog accepted an empty hero list"));
+    }
     let mut other_hero = catalog.clone();
     let mut build = catalog.heroes[1].clone();
     build.hero_id = 2;

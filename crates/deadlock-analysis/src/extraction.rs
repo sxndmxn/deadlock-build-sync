@@ -1,15 +1,19 @@
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use deadlock_data::{Error, Result, array, fingerprint, integer, read_json, trace_operation};
+use deadlock_data::{
+    Error, Result, array, fingerprint, format_timestamp, integer, read_json, trace_operation,
+};
 use duckdb::types::{TimeUnit, Value as SqlValue};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::database::{AnalysisDatabase, Parameters};
+use crate::item_effects::TEST_FOLD;
 use crate::refresh_configuration::{
-    Cohort, DUCKLAKE_URL, ExtractionResources, RunPaths, format_timestamp,
+    Cohort, DUCKLAKE_URL, ExtractionResources, GAME_MODE, MATCH_MODE, RunPaths,
 };
+use crate::run_manifest::ExtractionRecord;
 use crate::sql_resources::sql;
 
 /// 64 threads read one day of remote rows 3.8 times faster than 8 threads, at equal bytes.
@@ -26,7 +30,7 @@ pub fn extract_cohort(
     paths: &RunPaths,
     cohort: &Cohort,
     resources: ExtractionResources,
-) -> Result<Value> {
+) -> Result<ExtractionRecord> {
     trace_operation("analysis.extract_cohort", Some("extract_cohort"), || {
         cohort.validate()?;
         let database = connect_database(paths, resources)?;
@@ -49,7 +53,7 @@ pub fn extract_cohort(
         ] {
             database.execute(query, &Parameters::new())?;
         }
-        let counts = collect_extraction_counts(&database, cohort)?;
+        let counts = collect_extraction_counts(&database)?;
         drop(database);
         let temporary = paths.raw.join("duckdb-tmp");
         if temporary.is_dir() {
@@ -60,7 +64,7 @@ pub fn extract_cohort(
 }
 
 fn connect_database(paths: &RunPaths, resources: ExtractionResources) -> Result<AnalysisDatabase> {
-    let database = AnalysisDatabase::open(&paths.raw.join("analysis.duckdb"), resources)?;
+    let database = AnalysisDatabase::open(&paths.database(), resources)?;
     database.execute(
         sql!("extract/set_temp_directory"),
         &Parameters::from([(
@@ -141,12 +145,8 @@ fn extract_source_players(
 /// The file name contains a fingerprint of the cohort filters and of the cache SQL,
 /// so a change of either one starts a new cache.
 fn attach_cache(database: &AnalysisDatabase, directory: &Path, cohort: &Cohort) -> Result<()> {
-    let mut filters = cohort.to_document()?;
-    if let Some(filters) = filters.as_object_mut() {
-        filters.remove("as_of");
-    }
     let key = fingerprint(&json!({
-        "filters": filters,
+        "filters": cohort.cache_filters()?,
         "sql": [sql!("extract/create_cache_tables"), sql!("extract/insert_cache_players")],
     }))?;
     let name = format!("remote-players-{key}.duckdb");
@@ -227,8 +227,8 @@ fn set_threads(database: &AnalysisDatabase, threads: u16) -> Result<()> {
 
 fn build_cohort_parameters(cohort: &Cohort) -> Parameters {
     Parameters::from([
-        ("match_mode".into(), SqlValue::Text("Ranked".into())),
-        ("game_mode".into(), SqlValue::Text("Normal".into())),
+        ("match_mode".into(), SqlValue::Text(MATCH_MODE.into())),
+        ("game_mode".into(), SqlValue::Text(GAME_MODE.into())),
         (
             "since".into(),
             SqlValue::Timestamp(TimeUnit::Second, cohort.since),
@@ -293,49 +293,35 @@ fn create_match_folds(database: &AnalysisDatabase, cohort: &Cohort) -> Result<()
             ),
         ]),
     )?;
-    let start = deadlock_data::count_as_f64(u64::try_from(cohort.since)?)?;
-    let end = deadlock_data::count_as_f64(u64::try_from(cohort.as_of)?)?;
-    let parameters = [
-        ("discovery_end", 0.45),
-        ("train_end", 0.6),
-        ("validation_end", 0.8),
-    ]
-    .into_iter()
-    .map(|(name, share)| {
-        (
-            name.into(),
-            SqlValue::Double((end - start).mul_add(share, start)),
-        )
-    })
-    .collect();
-    database.execute(sql!("extract/fill_split_boundaries"), &parameters)?;
-    database.execute(sql!("extract/create_match_folds"), &Parameters::new())
+    // The boundaries are quantiles of the match start times. An empty cohort has none.
+    let matches = database.count(
+        sql!("extract/count_table_rows"),
+        &Parameters::from([("table".into(), SqlValue::Text("player_matches".into()))]),
+    )?;
+    if matches == 0 {
+        return Err(Error::new(
+            "The match window has no ranked matches. Sync again later in the patch",
+        ));
+    }
+    database.execute(
+        sql!("extract/create_match_folds"),
+        &Parameters::from([("test_fold".into(), SqlValue::Text(TEST_FOLD.into()))]),
+    )
 }
 
-fn collect_extraction_counts(database: &AnalysisDatabase, cohort: &Cohort) -> Result<Value> {
-    let mut counts = serde_json::Map::new();
-    for table in ["player_matches", "match_folds", "purchases"] {
-        let count = database.count(
+fn collect_extraction_counts(database: &AnalysisDatabase) -> Result<ExtractionRecord> {
+    let count_rows = |table: &str| {
+        database.count(
             sql!("extract/count_table_rows"),
             &Parameters::from([("table".into(), SqlValue::Text(table.into()))]),
-        )?;
-        counts.insert(table.into(), count.into());
-    }
-    for (name, query) in [
-        (
-            "source_snapshot_version",
-            sql!("extract/select_source_snapshot"),
-        ),
-        ("heroes", sql!("extract/count_heroes")),
-    ] {
-        counts.insert(
-            name.into(),
-            database.count(query, &Parameters::new())?.into(),
-        );
-    }
-    counts.insert(
-        "extracted_minimum_badge".into(),
-        cohort.ranks.minimum.badge().into(),
-    );
-    Ok(counts.into())
+        )
+    };
+    Ok(ExtractionRecord {
+        player_matches: count_rows("player_matches")?,
+        match_folds: count_rows("match_folds")?,
+        purchases: count_rows("purchases")?,
+        heroes: database.count(sql!("extract/count_heroes"), &Parameters::new())?,
+        source_snapshot_version: database
+            .count(sql!("extract/select_source_snapshot"), &Parameters::new())?,
+    })
 }

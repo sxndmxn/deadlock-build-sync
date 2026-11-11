@@ -1,11 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use deadlock_data::{Error, Result, atomic_write_json, count_as_f64, read_json};
+use deadlock_data::{Error, Patch, Result, atomic_write_json, count_as_f64, date_text, read_json};
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
 
-pub const HERO_BUILD_SCHEMA_VERSION: u32 = 8;
+use crate::presentation::is_build_path;
+
+pub const HERO_BUILD_SCHEMA_VERSION: u32 = 9;
 pub const HERO_BUILD_METHOD: &str = "item-effect-counters-v1";
 /// The largest number of items in one counter panel.
 pub const MAXIMUM_COUNTER_ITEMS: usize = 4;
@@ -18,13 +19,64 @@ pub const COUNTER_CONTRADICTION_Z: f64 = -2.0;
 pub struct HeroBuildCatalog {
     pub schema_version: u32,
     pub method: String,
+    /// The selection rules of this catalog, when they differ from the defaults.
+    #[serde(default, skip_serializing_if = "BuildRules::is_default")]
+    pub rules: BuildRules,
     pub client_version: u64,
-    pub patch: Map<String, Value>,
+    pub patch: Patch,
     pub cohort: BuildCohort,
     /// Run evidence for each counter item group that passed its test.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub counter_evidence: Vec<CounterEvidence>,
     pub heroes: Vec<HeroBuild>,
+}
+
+/// The selection rules that production can change from the command line.
+///
+/// The defaults are the tested rules of `docs/build-method.md`. A change of a default needs a
+/// research-log entry on a second patch.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BuildRules {
+    /// The expensive CORE items that an additional build and each installed build must each
+    /// have without the other.
+    pub variant_distinct_items: usize,
+    /// The smallest share of the combined unique expensive item cost that must differ between
+    /// an additional build and each installed build.
+    pub variant_separation: f64,
+}
+
+impl Default for BuildRules {
+    fn default() -> Self {
+        Self {
+            variant_distinct_items: 2,
+            variant_separation: 0.30,
+        }
+    }
+}
+
+impl BuildRules {
+    /// Returns true for the tested rules, which the catalog does not record.
+    #[must_use]
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+
+    /// # Errors
+    /// Returns an error when a rule is outside its range.
+    pub fn validate(&self) -> Result<()> {
+        if self.variant_distinct_items == 0 {
+            return Err(Error::new(
+                "Additional builds need at least one distinct item",
+            ));
+        }
+        if !(0.0..=1.0).contains(&self.variant_separation) {
+            return Err(Error::new(
+                "The variant separation must be a share from 0 to 1",
+            ));
+        }
+        Ok(())
+    }
 }
 
 /// The enemy team property that a counter panel answers.
@@ -144,9 +196,30 @@ impl CounterEvidence {
 pub struct BuildCohort {
     pub minimum_badge: u16,
     pub maximum_badge: u16,
+    /// The first match start time, as an RFC 3339 timestamp in UTC.
     pub since: String,
+    /// The last match end time, as an RFC 3339 timestamp in UTC.
     pub as_of: String,
     pub player_matches: u64,
+}
+
+impl BuildCohort {
+    /// Returns the UTC dates of the first and last match, as `YYYY-MM-DD`.
+    ///
+    /// # Errors
+    /// Returns an error when a timestamp is malformed.
+    pub fn dates(&self) -> Result<[String; 2]> {
+        Ok([date_text(&self.since)?, date_text(&self.as_of)?])
+    }
+
+    fn validate(&self) -> Result<()> {
+        if self.minimum_badge > self.maximum_badge {
+            return Err(Error::new("Hero build cohort has an invalid rank range"));
+        }
+        self.dates()
+            .map(|_| ())
+            .map_err(|error| error.context("Hero build cohort has an invalid timestamp"))
+    }
 }
 
 /// One hero build: the CORE purchase order and situational items for each tier.
@@ -285,11 +358,12 @@ impl AbilityFocus {
                 ));
             }
         }
-        if !self.supporting_item_ids.contains(&build.key_item_id)
-            && items.len() < 2
-            && crate::build_tags::first_fully_upgraded_ability(&build.ability_ids).ok()
-                != Some(self.ability_id)
-        {
+        if !crate::ability_focus::is_supported_focus(
+            self.ability_id,
+            &self.supporting_item_ids,
+            build.key_item_id,
+            &build.ability_ids,
+        ) {
             return Err(Error::new(
                 "Ability focus lacks key item, CORE item, or ability order support",
             ));
@@ -427,9 +501,15 @@ impl HeroBuildCatalog {
             (5, "item-effect-ridge-v1") => {
                 self.heroes.iter().all(|build| build.variant_id.is_none())
             }
-            (6, "item-effect-variants-v1") | (7, "item-effect-variants-v2") => true,
+            (6, "item-effect-variants-v1")
+            | (7, "item-effect-variants-v2")
+            | (8, "item-effect-counters-v1") => true,
             _ => false,
         };
+        self.rules.validate()?;
+        if self.heroes.is_empty() {
+            return Err(Error::new("Hero build catalog has no builds"));
+        }
         let mut targets = BTreeSet::new();
         for evidence in &self.counter_evidence {
             evidence.validate()?;
@@ -442,9 +522,8 @@ impl HeroBuildCatalog {
                 "Hero builds use another schema or method. Run deadlock-build-sync sync",
             ));
         }
-        if self.cohort.minimum_badge > self.cohort.maximum_badge {
-            return Err(Error::new("Hero build cohort has an invalid rank range"));
-        }
+        self.patch.validate()?;
+        self.cohort.validate()?;
         let mut paths = BTreeSet::new();
         let mut names = BTreeMap::new();
         for hero in &self.heroes {
@@ -580,11 +659,7 @@ fn validate_counters(hero: &HeroBuild, targets: &BTreeSet<CounterTarget>) -> Res
 
 fn validate_variant_id(variant: Option<&str>) -> Result<()> {
     if let Some(variant) = variant
-        && (variant.is_empty()
-            || variant.len() > 80
-            || !variant
-                .bytes()
-                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-'))
+        && (variant.len() > 80 || !is_build_path(variant))
     {
         return Err(Error::new(
             "Build variant requires 1 to 80 lowercase letters, digits, or hyphens",

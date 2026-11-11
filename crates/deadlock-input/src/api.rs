@@ -1,10 +1,10 @@
-use deadlock_data::Result;
+use deadlock_data::{Patch, Result};
 use serde_json::Value;
 
 use crate::api_analytics;
 use crate::api_assets;
 use crate::api_options::ApiOptions;
-use crate::api_patch::{self, Patch};
+use crate::api_patch;
 use crate::api_session::ApiSession;
 
 #[derive(Debug)]

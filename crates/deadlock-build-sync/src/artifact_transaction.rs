@@ -4,6 +4,9 @@ use std::path::{Path, PathBuf};
 use deadlock_data::{Error, Result, atomic_write_json, read_json, text};
 use serde_json::json;
 
+/// The catalog file that identifies an artifact directory.
+pub const CATALOG_FILE: &str = "hero-builds.json";
+
 #[derive(Debug)]
 pub struct ArtifactTransaction {
     destination: PathBuf,
@@ -18,14 +21,12 @@ impl ArtifactTransaction {
         fs::create_dir_all(parent)?;
         let lock = lock_artifact_directory(parent, name)?;
         recover_pending_artifacts(destination)?;
+        require_artifact_directory(destination)?;
         let temporary = tempfile::Builder::new()
             .prefix(".deadlock-artifacts.")
             .tempdir_in(parent)?;
         let staged = temporary.path().join("new");
         fs::create_dir(&staged)?;
-        if file_type(destination)?.is_some_and(|kind| !kind.is_dir()) {
-            return Err(Error::new("The artifact destination must be a directory"));
-        }
         Ok(Self {
             destination: destination.into(),
             temporary,
@@ -38,6 +39,8 @@ impl ArtifactTransaction {
         &self.staged
     }
 
+    /// Completes an interrupted installation.
+    ///
     /// # Errors
     /// Returns an error when recovery files are invalid or the artifact lock is unavailable.
     pub fn recover(destination: &Path) -> Result<()> {
@@ -47,6 +50,16 @@ impl ArtifactTransaction {
         }
         let _lock = lock_artifact_directory(parent, name)?;
         recover_pending_artifacts(destination)
+    }
+
+    /// Completes an interrupted installation and checks that a new installation can replace
+    /// the destination. Call it before a long generation, so a refusal comes first.
+    ///
+    /// # Errors
+    /// Returns an error when recovery fails or the destination holds other files.
+    pub fn prepare(destination: &Path) -> Result<()> {
+        Self::recover(destination)?;
+        require_artifact_directory(destination)
     }
 
     pub fn commit(self) -> Result<()> {
@@ -92,6 +105,23 @@ impl ArtifactTransaction {
         self.lock.unlock()?;
         Ok(())
     }
+}
+
+/// Installation replaces the complete destination, so it must be absent, empty, or an
+/// artifact directory with a catalog. Other directories are user data.
+fn require_artifact_directory(destination: &Path) -> Result<()> {
+    match file_type(destination)? {
+        None => return Ok(()),
+        Some(kind) if kind.is_dir() => (),
+        Some(_) => return Err(Error::new("The artifact destination must be a directory")),
+    }
+    if destination.join(CATALOG_FILE).is_file() || fs::read_dir(destination)?.next().is_none() {
+        return Ok(());
+    }
+    Err(Error::new(format!(
+        "The artifact directory {} has other files and no {CATALOG_FILE}. Use an empty directory or an earlier artifact directory",
+        destination.display()
+    )))
 }
 
 fn artifact_location(destination: &Path) -> Result<(&Path, &str)> {

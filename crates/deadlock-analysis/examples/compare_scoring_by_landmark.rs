@@ -26,10 +26,7 @@ fn main() -> Result<()> {
         .map(|rule| rule.parse::<ItemScoring>())
         .collect::<Result<Vec<_>>>()?;
     let paths = RunPaths::open(Path::new(run))?;
-    let resources = ExtractionResources {
-        memory_limit_mb: 12_000,
-        threads: 8,
-    };
+    let resources = ExtractionResources::default();
     println!("rule\tlandmark_s\tagreement_coefficient\tstandard_error\tobservations");
     for result in compare_scoring_by_landmark(&paths, resources, &rules)? {
         println!(

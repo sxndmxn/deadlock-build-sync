@@ -50,10 +50,7 @@ fn main() -> Result<()> {
             }
         }
     }
-    let resources = ExtractionResources {
-        memory_limit_mb: 12_000,
-        threads: 8,
-    };
+    let resources = ExtractionResources::default();
     println!(
         "global_item\thero_item\tinteraction\tdefault\tlog_loss\tdifference_from_first\tstandard_error\tobservations"
     );

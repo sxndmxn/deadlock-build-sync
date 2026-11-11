@@ -21,9 +21,32 @@ Estimate item effects only at the three phase times: 9, 20, and 30 minutes.
 Use catalog schema 8 with method `item-effect-counters-v1`. Schema 7 and earlier catalogs remain readable.
 Installed builds need a new `sync`.
 Store the item slot in the extracted item assets. Runs from 0.2.0 cannot be resumed with `--resume`.
+Refuse an `--artifacts` directory that has other files and no `hero-builds.json`. Installation replaced such a directory.
+Make a build for every active hero. A hero with fewer than 100 matches at every phase gets a build from the item effects of all heroes, with the `limited` label. Earlier versions skipped the hero and kept its build from the previous patch.
+Reject a catalog without builds. A run with zero matches replaced the artifacts with an empty catalog.
+Keep the builds when one ability order request fails. The build then has no ability order. The run stops when every request fails.
+An active hero is a hero that a player can select. The source capture and the build production use one rule.
+`status` reports a managed build with the legacy `v1` marker as stale. `sync` replaced such builds, but `status` ignored them.
+The installer and `status` classify the private builds with one scan. A build that the tool cannot parse stays in place in both, with a warning.
+The backup manifest no longer records `out_of_scope_sha256`. Nothing read it.
+The next local build ID is above the selected build in `LastUsedBuilds`.
+Stop a run whose match window has no ranked matches, before the fold split. The fold boundaries are the 60% and 80% quantiles of the match start times, as before, without the unused time-share fallback.
+Stop a build when the extracted landmark states lack an evaluation landmark, which a changed `select_landmark_states.sql` would cause.
+Send the workspace version in the HTTP `User-Agent` header.
+Move the build tag catalog, the tag assignment, and the mechanics text cleanup to `deadlock-guides`. `deadlock-guides` no longer depends on `deadlock-input`.
+The Markdown export uses the sentences of the Steam description, with the same phase labels and soul window format in its tables.
+Remove unread code: the `observed_players` column, the implementation fingerprint of all sources, the trace reader branches for events that no writer makes, and API options that never changed.
+Trim the patch title. The Steam description showed the leading space of the feed title.
+Validate the patch identity and the cohort timestamps of a catalog. A patch post needs a title, a date, a source, and a GUID.
+Record the fingerprint of the extraction SQL in the run manifest. `--resume` rejects a run that other extraction SQL made.
+The run manifest no longer records the production method, the implementation fingerprint, or the extracted minimum badge.
 
 ### Added
 
+Add `--variant-distinct-items` and `--variant-separation` to `build` and `sync`. The defaults are the tested rules.
+Use catalog schema 9, which records the selection rules in `rules` when they differ from the defaults. Schema 8 and earlier catalogs remain readable.
+Record the build tags and ability orders of a run in `raw/api-inputs.json`, so a resumed run produces the same catalog.
+Add `explain_variant_candidates`, which reports the gate that rejects each alternate build candidate.
 Record 36 experiments of the build method in `docs/research-log.md`.
 Add experiment examples in `crates/deadlock-analysis/examples`, with a placebo test for each test model.
 Add the isolated `check_variants` and `check_item_statistics` executables to `scripts/check_repository.sh`.

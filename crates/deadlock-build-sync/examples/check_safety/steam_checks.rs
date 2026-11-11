@@ -5,8 +5,8 @@ use std::fs;
 use base64::Engine as _;
 use deadlock_data::{Error, Result, atomic_write_json};
 use deadlock_steam::{
-    CacheLocation, CacheUpdateRequest, ProcessInspection, SteamCache, decode_kv3, encode_kv3,
-    install_cache_update, prepare_cache_update, read_cache, restore_latest,
+    CacheLocation, CacheUpdateRequest, ProcessInspection, SteamCache, backup_directory, decode_kv3,
+    encode_kv3, install_cache_update, prepare_cache_update, read_cache, restore_latest,
 };
 use serde_json::{Value, json};
 
@@ -150,12 +150,26 @@ fn check_write_guards() -> Result<()> {
             reject_at: Some(reject_at),
             ..ReferenceProcesses::default()
         };
-        if install_cache_update(&location, &update, &root.path().join("state"), &processes).is_ok()
+        let state = root.path().join("state");
+        if install_cache_update(&location, &update, &state, &processes).is_ok()
             || read_cache(&location.cache_path)?.bytes() != original.bytes()
         {
             return Err(Error::new(
                 "Process rejection failed to preserve the original cache",
             ));
+        }
+        // A rejection before the write leaves no backup. A rejection at the write leaves the
+        // backup of the original only: no recovery backup, so the write did not happen.
+        let backups = backup_directory(&state, &location);
+        let backup_count = if backups.is_dir() {
+            fs::read_dir(&backups)?.count()
+        } else {
+            0
+        };
+        if backup_count != reject_at - 1 {
+            return Err(Error::new(format!(
+                "Process rejection {reject_at} left {backup_count} backups, so a write happened"
+            )));
         }
         let concurrent = encode_kv3(&deadlock_steam::Kv3Document::generic(
             deadlock_steam::Kv3Value::new(deadlock_steam::Kv3Kind::Object(vec![(
@@ -186,7 +200,7 @@ fn check_invalid_backup(fingerprint: Option<Value>) -> Result<()> {
     let location = create_location(root.path())?;
     let original = fs::read(&location.cache_path)?;
     let state = root.path().join("state");
-    let backup = state.join("backups/7/reference");
+    let backup = backup_directory(&state, &location).join("reference");
     fs::create_dir_all(&backup)?;
     fs::write(backup.join("cached_hero_builds.kv3"), &original)?;
     let mut manifest = json!({"account_id":7,"cache_path":location.cache_path,"created_at":"2026-01-01T00:00:00Z"});
@@ -196,7 +210,7 @@ fn check_invalid_backup(fingerprint: Option<Value>) -> Result<()> {
     atomic_write_json(&backup.join("manifest.json"), &manifest)?;
     if restore_latest(&location, &state, &ReferenceProcesses::default()).is_ok()
         || fs::read(&location.cache_path)? != original
-        || fs::read_dir(state.join("backups/7"))?.count() != 1
+        || fs::read_dir(backup_directory(&state, &location))?.count() != 1
     {
         return Err(Error::new("Restore accepted an invalid backup fingerprint"));
     }

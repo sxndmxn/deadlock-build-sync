@@ -5,11 +5,12 @@ use deadlock_guides::CounterEvidence;
 
 use crate::build_assembly::PHASES;
 use crate::counter_items::{
-    COUNTER_PHASES, CounterGroups, GroupInteraction, enemy_item_conditions, fit_group_interactions,
+    COUNTER_PHASES, CounterGroups, enemy_item_conditions, fit_group_interactions,
     mean_enemy_spirit_share, measure_counter_groups, spirit_conditions,
 };
 use crate::refresh_configuration::{ExtractionResources, RunPaths};
-use crate::run_inputs::load_run_inputs;
+use crate::ridge_logistic::CoefficientEstimate;
+use crate::run_study::RunStudy;
 
 use super::mix;
 
@@ -40,8 +41,8 @@ pub fn estimate_counter_interactions(
     spirit_defense: &[&str],
     weapon_defense: &[&str],
 ) -> Result<Vec<CounterResult>> {
-    let inputs = load_run_inputs(paths, resources)?;
-    let catalog = &inputs.catalog;
+    let study = RunStudy::load(paths, resources)?;
+    let catalog = study.catalog();
     let find = |names: &[&str]| {
         names
             .iter()
@@ -56,7 +57,7 @@ pub fn estimate_counter_interactions(
             .collect::<Result<BTreeSet<_>>>()
     };
     let groups = [find(spirit_defense)?, find(weapon_defense)?];
-    let states = inputs.states.iter().collect::<Vec<_>>();
+    let states = study.states().iter().collect::<Vec<_>>();
     let spirit_mean = mean_enemy_spirit_share(&states)?;
     let mut results = Vec::new();
     for phase_s in PHASES {
@@ -107,10 +108,10 @@ pub fn measure_counter_windows(
     if windows == 0 {
         return Err(Error::new("The window count must be positive"));
     }
-    let inputs = load_run_inputs(paths, resources)?;
-    let groups = CounterGroups::from_catalog(&inputs.catalog);
-    let matches = inputs
-        .states
+    let study = RunStudy::load(paths, resources)?;
+    let groups = CounterGroups::from_catalog(study.catalog());
+    let matches = study
+        .states()
         .iter()
         .map(|state| state.match_id)
         .collect::<BTreeSet<_>>()
@@ -122,8 +123,8 @@ pub fn measure_counter_windows(
         .enumerate()
         .map(|(window, chunk)| {
             let ids = chunk.iter().copied().collect::<BTreeSet<_>>();
-            let states = inputs
-                .states
+            let states = study
+                .states()
                 .iter()
                 .filter(|state| ids.contains(&state.match_id))
                 .collect::<Vec<_>>();
@@ -131,7 +132,7 @@ pub fn measure_counter_windows(
             Ok(WindowEvidence {
                 window,
                 matches: chunk.len(),
-                evidence: measure_counter_groups(&states, &inputs.catalog, &groups, hero_terms)?,
+                evidence: measure_counter_groups(&states, study.catalog(), &groups, hero_terms)?,
             })
         })
         .collect()
@@ -141,7 +142,7 @@ pub fn measure_counter_windows(
 #[derive(Debug)]
 pub struct ConditionResult {
     pub phase_s: u32,
-    pub interactions: Vec<GroupInteraction>,
+    pub interactions: Vec<CoefficientEstimate>,
     pub observations: usize,
 }
 
@@ -159,8 +160,8 @@ pub fn estimate_enemy_item_counters(
     groups: &[Vec<&str>],
     hero_terms: bool,
 ) -> Result<Vec<ConditionResult>> {
-    let inputs = load_run_inputs(paths, resources)?;
-    let catalog = &inputs.catalog;
+    let study = RunStudy::load(paths, resources)?;
+    let catalog = study.catalog();
     let find = |names: &[&str]| {
         names
             .iter()
@@ -180,12 +181,12 @@ pub fn estimate_enemy_item_counters(
         .map(|names| find(names))
         .collect::<Result<Vec<_>>>()?;
     let group_references = item_groups.iter().collect::<Vec<_>>();
-    let all_states = inputs.states.iter().collect::<Vec<_>>();
+    let all_states = study.states().iter().collect::<Vec<_>>();
     let spirit_mean = mean_enemy_spirit_share(&all_states)?;
     let mut results = Vec::new();
     for phase_s in PHASES {
-        let phase_states = inputs
-            .states
+        let phase_states = study
+            .states()
             .iter()
             .filter(|state| state.landmark_s == phase_s)
             .collect::<Vec<_>>();
@@ -229,11 +230,11 @@ pub fn measure_counter_placebo(
     resources: ExtractionResources,
     seeds: &[u64],
 ) -> Result<Vec<PlaceboResult>> {
-    let inputs = load_run_inputs(paths, resources)?;
-    let catalog = &inputs.catalog;
+    let study = RunStudy::load(paths, resources)?;
+    let catalog = study.catalog();
     let groups = CounterGroups::from_catalog(catalog);
     let item_groups = groups.item_groups();
-    let states = inputs.states.iter().collect::<Vec<_>>();
+    let states = study.states().iter().collect::<Vec<_>>();
     let spirit_mean = mean_enemy_spirit_share(&states)?;
     let mut results = Vec::new();
     for phase_s in COUNTER_PHASES {

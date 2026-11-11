@@ -1,7 +1,9 @@
 use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use deadlock_data::Rank;
+use deadlock_analysis::ExtractionResources;
+use deadlock_data::{Rank, RankRange};
+use deadlock_guides::BuildRules;
 use deadlock_input::DEFAULT_API_BASE_URL;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
@@ -73,10 +75,10 @@ pub struct BuildArguments {
     #[arg(long)]
     pub artifacts: Option<PathBuf>,
     /// Lowest average match rank, for example ritualist-i.
-    #[arg(long, default_value = "ritualist-i")]
+    #[arg(long, default_value_t = RankRange::default().minimum)]
     pub min_rank: Rank,
     /// Highest average match rank, for example eternus-v.
-    #[arg(long, default_value = "eternus-v")]
+    #[arg(long, default_value_t = RankRange::default().maximum)]
     pub max_rank: Rank,
     /// Name of the analysis run. Use with --resume to reuse its extracted matches.
     #[arg(long)]
@@ -91,11 +93,31 @@ pub struct BuildArguments {
     #[arg(long)]
     pub as_of: Option<String>,
     /// Extraction memory limit in decimal megabytes.
-    #[arg(long, default_value = "12000", value_parser = clap::value_parser!(u32).range(1..))]
+    #[arg(
+        long,
+        default_value_t = ExtractionResources::default().memory_limit_mb,
+        value_parser = clap::value_parser!(u32).range(1..)
+    )]
     pub extraction_memory_mb: u32,
     /// Database threads. The match download uses at least 64.
-    #[arg(long, default_value = "8", value_parser = clap::value_parser!(u16).range(1..))]
+    #[arg(
+        long,
+        default_value_t = ExtractionResources::default().threads,
+        value_parser = clap::value_parser!(u16).range(1..)
+    )]
     pub extraction_threads: u16,
+    /// Expensive CORE items that an additional build and each installed build must each have
+    /// without the other. A smaller count accepts more similar additional builds.
+    #[arg(
+        long,
+        default_value_t = BuildRules::default().variant_distinct_items,
+        value_parser = clap::value_parser!(usize)
+    )]
+    pub variant_distinct_items: usize,
+    /// Smallest cost share of the different expensive items between an additional build and
+    /// each installed build, from 0 to 1.
+    #[arg(long, default_value_t = BuildRules::default().variant_separation)]
+    pub variant_separation: f64,
 }
 
 #[derive(Debug, Args)]

@@ -1,22 +1,26 @@
 use std::fmt::Write as _;
 
 use deadlock_data::Result;
-use deadlock_guides::{BuildItem, HeroBuild, HeroBuildCatalog};
+use deadlock_guides::{
+    BuildItem, HeroBuild, HeroBuildCatalog, MAIN_CORE_PANEL, ability_order, evidence,
+    format_soul_window, phase_label, play_around, rank_label, variant_note,
+};
 
 /// Renders one hero build as Markdown with the values behind each item.
+///
+/// The sentences are the sentences of the Steam description. The tables add the numbers
+/// behind them.
 ///
 /// # Errors
 /// Returns an error when item purchase counts are invalid.
 pub fn render_build_markdown(build: &HeroBuild, catalog: &HeroBuildCatalog) -> Result<String> {
     let mut text = format!("# {}\n\n", build.title);
     let evaluation = &build.evaluation;
+    let _ = writeln!(text, "{}", evidence(build, catalog)?);
     let _ = writeln!(
         text,
-        "Evidence: {} (agreement coefficient {:+.2} ± {:.2}, held-out observations {}).",
-        evaluation.confidence.label(),
-        evaluation.agreement_coefficient,
-        evaluation.standard_error,
-        evaluation.observations
+        "Agreement coefficient {:+.2} ± {:.2} on {} held-out observations.",
+        evaluation.agreement_coefficient, evaluation.standard_error, evaluation.observations
     );
     if let Some(hero) = &evaluation.hero_estimate {
         let _ = writeln!(
@@ -27,39 +31,28 @@ pub fn render_build_markdown(build: &HeroBuild, catalog: &HeroBuildCatalog) -> R
     }
     let _ = writeln!(
         text,
-        "Matches: {} to {}, badges {}–{}, client {}.\n",
+        "Matches: {} to {}, {}, client {}.\n",
         catalog.cohort.since,
         catalog.cohort.as_of,
-        catalog.cohort.minimum_badge,
-        catalog.cohort.maximum_badge,
+        rank_label(catalog)?,
         catalog.client_version
     );
+    let _ = writeln!(text, "{}", play_around(build)?);
     if let Some(focus) = &build.ability_focus {
         let _ = writeln!(text, "Ability focus: {}.", focus.name);
     }
-    if let Some(ability) = &build.key_ability_name {
-        let _ = writeln!(text, "Ability order: max {ability} first.");
+    if let Some(sentence) = ability_order(build) {
+        let _ = writeln!(text, "{sentence}");
     }
-    if let Some(item) = build.key_item() {
-        let _ = writeln!(
-            text,
-            "Key item: {} at about {} net worth.\n",
-            item.name, build.power_spike_net_worth
-        );
-        if build.variant_id.is_some() {
-            let _ = writeln!(
-                text,
-                "Item choices use {} player matches with {} at 20 or 30 minutes.\n",
-                build.observations, item.name
-            );
-        }
+    if let Some(sentence) = variant_note(build)? {
+        let _ = writeln!(text, "{sentence}");
     }
-    text.push_str("Item rates use all selected ranked matches for this hero, regardless of build or purchase time.\n");
+    text.push_str("\nItem rates use all selected ranked matches for this hero, regardless of build or purchase time.\n");
     text.push_str(
         "Win rate shows wins / buyer matches. Pick rate shows buyer matches / hero matches.\n",
     );
     text.push_str("Each player match counts once per item. These rates do not measure the complete build or prove an item causes wins.\n\n");
-    text.push_str("## MAIN CORE (buy from left to right)\n\n");
+    let _ = writeln!(text, "## {MAIN_CORE_PANEL} (buy from left to right)\n");
     write_items(&mut text, &build.core)?;
     for panel in &build.counters {
         let label = panel.target.label();
@@ -102,13 +95,12 @@ fn write_items(text: &mut String, items: &[BuildItem]) -> Result<()> {
         let [win_rate, pick_rate] = item.describe_rates()?;
         let _ = writeln!(
             text,
-            "| {} | {} | {} | {} min | {win_rate} | {pick_rate} | {}–{} | {:+.3} | {} |",
+            "| {} | {} | {} | {} | {win_rate} | {pick_rate} | {} | {:+.3} | {} |",
             item.name,
             item.tier,
             item.cost,
-            item.phase_s / 60,
-            item.soul_window[0],
-            item.soul_window[1],
+            phase_label(item.phase_s),
+            format_soul_window(item.soul_window),
             item.effect,
             item.median_net_worth
         );

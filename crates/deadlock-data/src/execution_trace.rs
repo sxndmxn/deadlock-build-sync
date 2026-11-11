@@ -8,7 +8,8 @@ use serde_json::{Value, json};
 
 use crate::error::{Error, Result};
 
-const MAXIMUM_TRACE_BYTES: usize = 100 * 1024 * 1024;
+/// A trace file stops at this size. The reader accepts files up to this size plus the marker.
+pub const MAXIMUM_TRACE_BYTES: usize = 100 * 1024 * 1024;
 thread_local! { static ACTIVE_TRACE: RefCell<Option<TraceWriter>> = const { RefCell::new(None) }; }
 
 #[derive(Debug)]
@@ -32,9 +33,10 @@ impl TraceWriter {
         };
         bytes.push(b'\n');
         if self.bytes + bytes.len() + 128 > MAXIMUM_TRACE_BYTES {
-            let marker =
-                b"{\"event\":\"trace_truncated\",\"schema_version\":1,\"max_bytes\":104857600}\n";
-            let _result = self.output.write_all(marker);
+            let marker = format!(
+                "{{\"event\":\"trace_truncated\",\"schema_version\":1,\"max_bytes\":{MAXIMUM_TRACE_BYTES}}}\n"
+            );
+            let _result = self.output.write_all(marker.as_bytes());
             self.stopped = true;
             return;
         }
@@ -52,7 +54,7 @@ impl TraceWriter {
         self.next_identifier += 1;
         let parent = self.parents.last().copied();
         let event = if self.calls {
-            json!({"event":"call","call_id":id,"module":"deadlock_build_sync","function":function,"parent_call_id":parent})
+            json!({"event":"call","call_id":id,"function":function,"parent_call_id":parent})
         } else {
             json!({"event":"stage_start","schema_version":1,"stage_id":id,"stage":stage,
                 "parent_stage_id":parent,"depth":self.parents.len()})

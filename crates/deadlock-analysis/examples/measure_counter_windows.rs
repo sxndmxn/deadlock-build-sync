@@ -23,10 +23,7 @@ fn main() -> Result<()> {
     };
     let windows = windows.parse::<usize>().map_err(|_| Error::new(USAGE))?;
     let paths = RunPaths::open(Path::new(run))?;
-    let resources = ExtractionResources {
-        memory_limit_mb: 12_000,
-        threads: 8,
-    };
+    let resources = ExtractionResources::default();
     println!("window\tmatches\ttarget\tphase_s\tcoefficient\tstandard_error\tobservations");
     for window in measure_counter_windows(&paths, resources, windows, hero_terms)? {
         for evidence in &window.evidence {

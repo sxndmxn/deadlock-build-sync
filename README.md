@@ -130,12 +130,19 @@ The data is observational. It does not prove that an item causes a win.
 | `--extraction-threads` | 8 | Database threads. The match download uses at least 64 |
 | `--run-id` | Current time | Name of the analysis run |
 | `--resume` | Off | Reuse the extracted matches of `--run-id` |
+| `--variant-distinct-items` | 2 | Expensive CORE items that an additional build and each installed build must each have without the other |
+| `--variant-separation` | 0.3 | Smallest cost share of the different expensive items between an additional build and each installed build |
+
+The two variant options control how different an additional build must be. Smaller values accept more similar additional builds.
+`hero-builds.json` records the values in `rules` when they differ from the defaults. The defaults are the tested rules. See [Build method](docs/build-method.md#additional-builds).
 
 
 DuckDB downloads ICU, DuckLake, and HTTPFS extensions if they are missing.
 Before reuse, `--resume` verifies all seven source JSON files against the fingerprints in the run manifest.
 Missing files, changed contents, and incomplete or malformed fingerprints stop the run.
 JSON spacing and object key order do not affect these fingerprints.
+The first build of a run records the build tags and ability orders from the API in `raw/api-inputs.json`.
+A resumed run reads this record, so it produces the same catalog as the first build.
 
 ## Files
 
@@ -148,6 +155,7 @@ The analysis selects a main build and up to two additional builds with distinct 
 It evaluates each build separately. Similar candidates do not create additional entries.
 Additional builds are play style options. Held-out tests found a small win signal for them beyond the main build.
 Each new run replaces the complete directory.
+The directory must be absent, empty, or an earlier artifact directory with `hero-builds.json`. The CLI refuses a directory with other files.
 
 The CLI keeps the downloaded match rows in `$XDG_STATE_HOME/deadlock-build-sync/offline/cache`, with one entry for each remote file.
 Remote files do not change, so a run downloads only the files that are new since the last run.

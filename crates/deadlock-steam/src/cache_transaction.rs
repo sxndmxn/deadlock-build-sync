@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -12,14 +11,12 @@ use crate::cache_files::{read_limited, sync_directory};
 use crate::cache_location::CacheLocation;
 use crate::cache_plan::CacheUpdate;
 use crate::cache_read::read_cache;
-use crate::cache_request::BuildKey;
 use crate::process_check::ProcessInspection;
 
 #[derive(Debug)]
 pub struct InstallResult {
     pub cache_path: PathBuf,
     pub backup_directory: Option<PathBuf>,
-    pub build_ids: BTreeMap<BuildKey, u64>,
     pub created: usize,
     pub updated: usize,
     pub removed: usize,
@@ -75,7 +72,6 @@ pub fn install_cache_update(
     Ok(InstallResult {
         cache_path: location.cache_path.clone(),
         backup_directory,
-        build_ids: update.build_ids.clone(),
         created: update.created,
         updated: update.updated,
         removed: update.removed,

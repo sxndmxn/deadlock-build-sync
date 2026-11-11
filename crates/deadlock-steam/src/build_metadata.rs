@@ -1,9 +1,10 @@
 use deadlock_data::{Error, Result};
-use deadlock_guides::{LEGACY_MANAGED_MARKER, MANAGED_MARKER};
+use deadlock_guides::ManagedTrailer;
 
-use crate::binary_reader::{BinaryCursor, check_count};
+use crate::binary_reader::BinaryCursor;
 use crate::protobuf_fields::{Field, FieldValue, Fields, varint};
 
+/// The fields of a stored hero build that the installer reads.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct HeroBuildMetadata {
     pub build_id: Option<u64>,
@@ -11,35 +12,44 @@ pub struct HeroBuildMetadata {
     pub author_account_id: Option<u64>,
     pub name: Option<String>,
     pub description: Option<String>,
-    pub version: Option<u64>,
     pub publish_timestamp: Option<u64>,
-    pub tag_ids: Vec<u64>,
 }
 
 impl HeroBuildMetadata {
+    /// Returns the managed trailer of a build with the current marker and a valid build path.
     #[must_use]
-    pub fn managed_path(&self) -> Option<&str> {
-        let description = self.description.as_deref()?;
-        if !description.contains(MANAGED_MARKER) {
-            return None;
-        }
-        description.split('\n').find_map(|line| {
-            let path = line.strip_prefix("Build path: ")?.strip_suffix('.')?;
-            (!path.is_empty()
-                && path
-                    .bytes()
-                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-'))
-            .then_some(path)
-        })
+    pub fn trailer(&self) -> Option<ManagedTrailer> {
+        ManagedTrailer::parse(self.description.as_deref()?)
     }
 
+    /// Returns true for a build of this hero that this tool wrote for this account.
+    ///
+    /// A build with the legacy marker is managed. It has no build path, so an installation
+    /// replaces it and `status` reports it as stale.
     #[must_use]
     pub fn is_managed(&self, hero_id: u64, account_id: u32) -> bool {
         self.hero_id == Some(hero_id)
             && self.author_account_id == Some(u64::from(account_id))
-            && self.description.as_ref().is_some_and(|description| {
-                description.contains(MANAGED_MARKER) || description.contains(LEGACY_MANAGED_MARKER)
-            })
+            && self
+                .description
+                .as_deref()
+                .is_some_and(ManagedTrailer::is_marked)
+    }
+
+    /// Returns the local build ID of a private build of the account.
+    ///
+    /// Published builds have a publish timestamp and server identifiers. Local identifiers
+    /// stay below 1000.
+    #[must_use]
+    pub fn private_build_id(&self, account_id: u32) -> Option<u64> {
+        if self.author_account_id != Some(u64::from(account_id))
+            || self
+                .publish_timestamp
+                .is_some_and(|timestamp| timestamp != 0)
+        {
+            return None;
+        }
+        self.build_id.filter(|identifier| *identifier < 1000)
     }
 }
 
@@ -94,11 +104,9 @@ fn record_field(metadata: &mut HeroBuildMetadata, field: Field<'_>) -> Result<()
         (6, FieldValue::Bytes(value)) => {
             metadata.description = Some(std::str::from_utf8(value)?.to_owned());
         }
-        (8, FieldValue::Integer(value)) => metadata.version = Some(value),
         (13, FieldValue::Integer(value)) => metadata.publish_timestamp = Some(value),
-        (11, FieldValue::Integer(value)) => metadata.tag_ids.push(value),
-        (11, FieldValue::Bytes(value)) => read_packed_tags(metadata, value)?,
-        (1 | 2 | 3 | 5 | 6 | 8 | 11 | 13, _) => {
+        (11, FieldValue::Bytes(value)) => validate_packed_tags(value)?,
+        (1 | 2 | 3 | 5 | 6 | 13, _) => {
             return Err(Error::new(
                 "Hero build metadata has an incorrect protobuf wire type",
             ));
@@ -108,11 +116,11 @@ fn record_field(metadata: &mut HeroBuildMetadata, field: Field<'_>) -> Result<()
     Ok(())
 }
 
-fn read_packed_tags(metadata: &mut HeroBuildMetadata, bytes: &[u8]) -> Result<()> {
+/// Packed tags must decode, so a malformed build is rejected before an installation.
+fn validate_packed_tags(bytes: &[u8]) -> Result<()> {
     let mut input = BinaryCursor::new(bytes);
     while input.remaining() > 0 {
-        check_count(metadata.tag_ids.len() + 1)?;
-        metadata.tag_ids.push(varint(&mut input)?);
+        varint(&mut input)?;
     }
     Ok(())
 }
