@@ -1159,11 +1159,13 @@ The screen tested each enemy hero alone, with a raw count condition, on all matc
 | Control (anti-heal) | 88 | 1.31 | 12 | 6 |
 
 For a standard normal distribution, about 4 of 88 values are beyond ±2.
+The correlation of the even and odd match halves over the 88 coefficients of each group was −0.17 for melee, 0.28 for close range, and 0.28 for anti-heal. The standard error of a correlation of 88 pairs is about 0.11.
 In the screen, anti-heal won more against Victor (z = 4.3), Yamato (4.0), Kelvin (3.6), Billy (3.4), and Abrams (3.0) at 20 minutes. Close range won more against Abrams (3.6) and Venator (3.6).
 
 **Analysis.** Melee items did not win less against the four heroes, in all matches, in each half, or for Viscous alone. The 95% interval of the melee coefficient at 30 minutes is −0.015 to +0.008 log-odds per item, which is very small.
 The first condition of the decision rule failed, so the placebo did not run.
-The screen found no enemy hero against which melee items win less or more. The data has enough matches to find matchup effects: the anti-heal and close range groups had more large z values than chance gives.
+The close range prediction held weakly: the coefficient was negative in all six cells of the stated test, but z reached −2 only once (−2.1 at 20 minutes, all matches). The decision rule did not use this group.
+The screen found no enemy hero against which melee items win less or more, and the melee halves did not correlate. The data has enough matches to find matchup effects: the anti-heal and close range groups had more large z values than chance gives, and their halves correlated.
 The anti-heal result agrees with the kits of these heroes, which heal themselves. The screen is information only, with many tests, so a new test with a stated prediction must confirm it.
 
 **Decision.** No matchup note. A melee build is not weaker against Vindicta, Grey Talon, Lash, and Celeste in this data.
@@ -1238,8 +1240,11 @@ Otherwise, keep the default. The next patch must repeat this test in both cases.
 The weighted mean contrast of E39 with one item was −0.007 ± 0.017 (z = −0.4) and +0.015 ± 0.010 (z = 1.5).
 
 **Analysis.** With one distinct item, the additional builds of more heroes added a positive signal beyond the main build on both runs, and more than with two items. Both conditions of the decision rule are true.
+The sum of the main and variant coefficients is almost the same for both rules: 0.036 + 0.150 and 0.114 + 0.049 on `fresh-20261123`. Thus, much of the z of 8.4 comes from two similar agreements that share their weight differently.
+The better support is the mean contrast of E39 and E41, which is near zero: −0.007, +0.015, and −0.022 ± 0.012 on the 12-day run of E41. On average, the additional builds of the one-item rule are as good as the main build.
 
-**Decision.** Change the default of `--variant-distinct-items` to 1. On `fresh-20261123`, the installed builds increase from 54 to 76, for 42 heroes. The next patch must repeat this test.
+**Decision.** Change the default of `--variant-distinct-items` to 1. On `fresh-20261123`, the installed builds increase from 54 to 76, for 42 heroes.
+E37 required a second patch, and both runs are one patch. The owner asked for more build varieties, so the default changes on one patch. The next patch must repeat this test, and the owner can restore the earlier default.
 
 ## E41: the contrast of additional builds on a third run
 

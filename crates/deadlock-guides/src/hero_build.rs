@@ -41,7 +41,8 @@ pub struct HeroBuildCatalog {
 /// The selection rules that production can change from the command line.
 ///
 /// The defaults are the tested rules of `docs/build-method.md`. A change of a default needs a
-/// research-log entry. E40 changed the distinct item count from 2 to 1.
+/// research-log entry on a second patch. E40 changed the distinct item count from 2 to 1 on one
+/// patch, at the owner's request for more build varieties. The next patch must repeat E40.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BuildRules {

@@ -140,6 +140,7 @@ The options `--variant-distinct-items` and `--variant-separation` change these t
 On run `20261108T013049Z`, no candidate had a separation between 0 and 0.30, so the item count decided every rejection.
 With one distinct item, 31 heroes had an additional build instead of 12. `explain_variant_candidates` reports the gate of each candidate.
 Until E40, the default was two distinct items. With one item, the additional builds added a positive signal beyond the main build on two runs (z = 3.1 and 8.4), more than with two items (E40).
+The two runs are one patch. E37 required a second patch, and the owner asked for more build varieties. The next patch must repeat E40.
 Selection maximizes that cost difference multiplied by the square root of the distinct owner count.
 The selector repeats this comparison against the main build and each selected additional build.
 
@@ -166,7 +167,9 @@ The standard error treats each match as one cluster. A test with fewer than 200 
 
 The BEST build of a hero with several builds is the additional build with the largest contrast z of 2 or more. Without such a build, the main build is the BEST build.
 Its Steam title starts with `BEST`, and its description states the result. A hero with one build has no BEST mark.
-A removed build does not get a replacement, because the test fold must not select builds.
+A removed build does not get a replacement, because a replacement would need more candidates tested on the test fold.
+The confidence labels pool all tested additional builds before the removal, so the removal does not raise the pooled estimate of the other builds.
+On a short run, almost every BEST mark is the default main build. Few contrasts reach z = 2 there, and about as many as a placebo gives (E39, 6 days).
 
 A placebo moved the contrast values between test states. Its z values had a standard deviation of 0.97 to 1.02 on three runs, so about 2.3% of builds without a real difference are removed.
 The contrasts replicated between match halves on 18 days (correlation 0.41) and 12 days (0.33), but not on 6 days (0.08). A short run has large standard errors, so the gate removes few builds and marks few builds as better.
@@ -299,9 +302,9 @@ Thus, the label uses a hierarchical estimate. Each coefficient moves toward the 
 The size of the move depends on the variance between builds beyond their noise. A build keeps more of its own result when that variance is large or its own error is small.
 The catalog keeps the result of the build alone, and the Markdown file shows both values. See [Research log](research-log.md), entry E17.
 
-The description states the label estimate as an approximate win rate change: the coefficient multiplied by 25 gives percentage points.
+The description states the label estimate as an approximate win rate difference: the coefficient multiplied by 25 gives percentage points.
 The slope of the logistic curve is at most one quarter, at a win probability of one half, and the mean win probability of all players is one half.
-The value compares full agreement with no agreement at equal net worth, team lead, and rank. It is not the win rate of the players who follow the build.
+The value compares full agreement with no agreement at equal net worth, team lead, and rank. It is an association, not a cause, and not the win rate of the players who follow the build.
 
 The installed build uses all folds.
 

@@ -214,6 +214,21 @@ fn assemble_hero_builds(
             .collect::<Vec<_>>();
         shrink_evaluations(&mut pool);
     }
+    // The pool includes the builds that test worse, so their removal cannot raise the pooled
+    // estimate of the other additional builds.
+    builds.retain(|build| {
+        let Some(contrast) = build.main_contrast.as_ref().filter(|contrast| contrast.is_worse())
+        else {
+            return true;
+        };
+        eprintln!(
+            "Removed an additional build for {}: item {} (tests worse than the main build, z={:.1})",
+            build.hero_name,
+            build.key_item_id,
+            contrast.z()
+        );
+        false
+    });
     eprintln!("Testing counter item groups");
     let groups = CounterGroups::from_catalog(catalog);
     let evidence = estimate_counter_evidence(&all, catalog, &groups)?;
@@ -343,13 +358,6 @@ fn assemble_hero(
             )?,
             None => None,
         };
-        if let Some(contrast) = contrast.as_ref().filter(|contrast| contrast.is_worse()) {
-            messages.push(format!(
-                "Dropped an additional build for {hero_name}: item {item_id} (tests worse than the main build, z={:.1})",
-                contrast.z()
-            ));
-            continue;
-        }
         let evaluation = evaluate_build(&test, &variant.development_build.phase_sets, catalog)?;
         let mut build = create_hero_build(
             hero_id,

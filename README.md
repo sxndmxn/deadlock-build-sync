@@ -73,7 +73,7 @@ Each build has these parts:
 2. **VS WEAPON, VS SPIRIT, and VS SUSTAIN**: counter items from the mid game, for the main damage type of the enemy team and for enemy healing. Each run repeats the counter test and removes a panel when the run contradicts it.
 3. **TIER 1 to TIER 4**: situational items for the matching shop tier. Buy one instead of a CORE item when the match makes it a better choice.
 4. **Ability order**: the most common complete ability order at this rank.
-5. **Description**: the inferred ability focus, when supported, the key item, its power spike, the result against the main build, an approximate win rate change, and the build confidence.
+5. **Description**: the inferred ability focus, when supported, the key item, its power spike, the result against the main build, an approximate win rate difference, and the build confidence.
 
 A hero can have a main build and up to two additional builds. Each additional build is tested against the main build on held-out matches.
 A build that tests worse than the main build is removed. When a hero has several builds, the title of its BEST build starts with `BEST`.
@@ -90,15 +90,16 @@ Example description:
 ```text
 Play around: Alchemical Fire at about 15k net worth.
 BEST: tested better than the main build: about +6.4 percentage points (z=3.8).
-Win rate when followed: about +6.0 percentage points at equal net worth.
+Win rate of players with this build against players without it, at equal net worth: about +6.0 percentage points.
 Ability order: max Stone Form first.
 Item choices use 6306 player matches with Alchemical Fire at 20 or 30 minutes.
 Buy MAIN CORE from left to right. VS panels answer the enemy team. TIER items are situational choices.
 Evidence: strong (held-out test pooled with all heroes, n=62480). Ranked • Ritualist I–Eternus V • 2026-11-05 to 2026-11-23.
 ```
 
-The win rate change compares a player who owns all CORE items of the phase with a player who owns none, at equal net worth.
-It is an approximation from the held-out test: 25 percentage points for each log-odds unit. It is not the win rate of the players who follow the build.
+The win rate difference compares players who own all CORE items of the phase with players who own none, at equal net worth.
+It is an approximation from the held-out test: 25 percentage points for each log-odds unit. It is an association, not a cause, and not the win rate of the players who follow the build.
+On a short run, almost every BEST mark is the default main build, because the test finds few clear differences.
 
 Each item shows four lines:
 

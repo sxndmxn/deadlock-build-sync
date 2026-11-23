@@ -124,14 +124,15 @@ pub fn main_comparison(build: &HeroBuild, catalog: &HeroBuildCatalog) -> Option<
     })
 }
 
-/// The sentence that states the approximate win rate change when a player follows the build.
+/// The sentence that states the approximate win rate difference of players with the build.
 ///
-/// The value uses the label estimate of the held-out test. An untested build has no sentence.
+/// The value uses the label estimate of the held-out test. It is an association, not a cause.
+/// An untested build has no sentence.
 #[must_use]
 pub fn win_rate(build: &HeroBuild) -> Option<String> {
     (build.evaluation.standard_error > 0.0).then(|| {
         format!(
-            "Win rate when followed: about {:+.1} percentage points at equal net worth.",
+            "Win rate of players with this build against players without it, at equal net worth: about {:+.1} percentage points.",
             log_odds_to_win_points(build.evaluation.agreement_coefficient)
         )
     })
