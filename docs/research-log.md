@@ -1173,3 +1173,27 @@ This is a confirmation on new matches, as in E15 and E25, not a second patch.
 2. The precision-weighted mean contrast of E39 for the one-item rule is not below zero by two standard errors or more on either run.
 
 Otherwise, keep the default. The next patch must repeat this test in both cases.
+
+## E41: the contrast of additional builds on a third run
+
+**Hypothesis.** E39 found that the contrasts of additional builds replicate on 18 days of matches (halves correlation 0.41), but not on 6 days (0.08).
+Thus, the contrast measures a real difference between builds when the run has enough matches.
+
+**Method.** Run `mid-20261117` uses the patch of 2026-11-05 with matches to 2026-11-17T15:22:11Z, which is 12 days.
+Its test fold contains matches from about days 10 to 12. No contrast test of E39 used these matches.
+`compare_variant_contrasts` uses the rule with one distinct item, which E40 selects, and 20 placebo repetitions.
+
+**Decision rule.** The contrast is a valid build test when all of these conditions are true:
+
+1. The correlation of the halves is above 0.3.
+2. The placebo z values have a standard deviation from 0.8 to 1.2.
+3. The contrast z values have a standard deviation above 1.2.
+
+If the contrast is valid, production makes these changes:
+
+1. It removes an additional build with a contrast z of −2 or less. This build tests worse than the main build.
+2. It labels an additional build with a contrast z of 2 or more as better than the main build.
+3. The description of each additional build states the result of its contrast test.
+
+The z threshold of the placebo gives about 2.3% false removals for each build without a real difference. A short run has large standard errors, so the gate removes few builds.
+If the contrast is not valid, the Markdown file shows the contrast as information only.
