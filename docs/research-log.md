@@ -1105,3 +1105,71 @@ With one distinct item, Ivy and McGinnis got Greater Expansion builds, and Visco
 Steam backups show that the current rule gave McGinnis two builds, Ivy two, and Viscous three on 2026-10-21, with 12 days of matches. The later syncs, each two or three days into a patch, gave one build each. More matches give more distinct strategies (E19).
 
 **Decision.** Add `--variant-distinct-items` and `--variant-separation` with the tested defaults 2 and 0.30. The catalog records other values. A change of the defaults needs this test on a second patch.
+
+## E38: melee items against airborne enemy heroes
+
+**Hypothesis (owner).** Melee items win less against enemy teams with Vindicta, Grey Talon, Lash, and Celeste.
+These heroes fight from the air or from long range, so melee hits are more difficult.
+If true, a build with melee items in CORE needs a note for these matchups.
+
+**Method.** `estimate_enemy_hero_counters` fits the counter model of E31 at 20 and 30 minutes with all matches and hero terms.
+The condition is the number of the four heroes in the enemy team, standardized within the phase. The model also adjusts for the enemy spirit share.
+The groups were fixed before the test:
+
+1. Melee: Melee Lifesteal, Melee Charge, Lifestrike, Crushing Fists, and Spirit Strike.
+2. Close range: Close Quarters and Point Blank.
+3. Control: the anti-heal group of E9.
+
+The data is run `fresh-20261123`: the patch of 2026-11-05 with 18 days of matches.
+The even and odd match identifiers give two independent halves. A placebo moves the enemy teams to other teams at random, as in E29.
+
+**Prediction.** The melee and close range coefficients are negative at both phases. The control is within ±2 standard errors.
+
+**Decision rule.** A matchup note is added to builds with two or more melee items in CORE only when all of these conditions are true:
+
+1. The melee coefficient is negative at both phases, with z ≤ −2 at one phase or more.
+2. The melee coefficient is negative at both phases in each match half.
+3. The control has |z| < 2 at both phases.
+4. The placebo z values have a standard deviation from 0.8 to 1.2.
+
+Otherwise, no note is added.
+Two analyses give information only and cannot change the builds: the test on Viscous players alone, and a screen of each enemy hero alone with the correlation of the match halves.
+
+## E39: the contrast of each additional build with the main build
+
+**Question.** Does a hero have a best build that the data can find? The owner reports that some additional builds are weak.
+
+**Method.** `compare_variant_contrasts` selects the additional builds from development matches, as production does.
+At each test state, the items of the two phase sets are shared, main-only, or variant-only.
+The model uses the owned cost share of each part. Its contrast coefficient is the log-odds change when the player owns the variant-only items instead of the main-only items.
+The model has the covariates and the landmark terms of the build test. The standard errors treat each match as one cluster.
+The test uses run `patch-20261105` (6 days) and run `fresh-20261123` (18 days). Their test folds do not share matches.
+The rule with one distinct item gives more additional builds, and thus more power. The rule with two distinct items is the installed rule.
+A placebo moves the contrast values between test states of the same landmark.
+
+**Prediction.** E17 found that per-build results do not repeat between match halves. Thus, the contrasts of the even and odd halves do not correlate.
+
+**Decision rule.**
+
+1. The contrasts replicate when the correlation of the halves is above 0.3 on both runs and the placebo z values have a standard deviation from 0.8 to 1.2.
+2. If they replicate, order the builds of each hero by the contrast, and remove an additional build with a contrast z ≤ −2.
+3. If they do not replicate, keep the main build first and do not rank or remove builds by their own test.
+
+The main build uses all players of the hero, and an additional build uses only the players who own its key item. The description can state this fact without a test.
+
+## E40: the quality of more additional builds
+
+**Hypothesis.** With one distinct item instead of two (E37), the additional builds still add a positive signal beyond the main build, as E30 found for the installed rule.
+
+**Method.** `compare_variant_agreement` with the rule as an argument repeats the corrected test of E11 and E30 on runs `patch-20261105` and `fresh-20261123`.
+The test fold of `fresh-20261123` contains matches from days 14 to 18 of the patch. E37 did not have these matches.
+This is a confirmation on new matches, as in E15 and E25, not a second patch.
+
+**Prediction.** The variant coefficient is positive on both runs with the one-item rule.
+
+**Decision rule.** Change the default of `--variant-distinct-items` to 1 only when all of these conditions are true:
+
+1. The variant coefficient with the one-item rule is positive on both runs, with z ≥ 2 on one run or more.
+2. The precision-weighted mean contrast of E39 for the one-item rule is not below zero by two standard errors or more on either run.
+
+Otherwise, keep the default. The next patch must repeat this test in both cases.
