@@ -3,14 +3,15 @@
 mod build_agreement;
 mod counter_tests;
 mod effect_models;
+mod matchup_tests;
 mod variant_candidates;
 
 pub use build_agreement::{
     AgreementPair, BuildStability, FractionResult, LabelHalves, LandmarkAgreement, ScoringResult,
-    compare_item_scoring, compare_key_item_signal, compare_scoring_by_landmark,
+    VariantContrast, compare_item_scoring, compare_key_item_signal, compare_scoring_by_landmark,
     compare_scoring_pair, compare_situational_signal, compare_training_fractions,
-    compare_variant_agreement, measure_build_stability, measure_label_halves,
-    measure_label_placebo, measure_pair_placebo,
+    compare_variant_agreement, compare_variant_contrasts, measure_build_stability,
+    measure_label_halves, measure_label_placebo, measure_pair_placebo,
 };
 pub use counter_tests::{
     ConditionResult, CounterResult, PlaceboResult, WindowEvidence, estimate_counter_interactions,
@@ -20,6 +21,7 @@ pub use effect_models::{
     EffectModel, Interaction, ItemEffectRow, ModelResult, compare_effect_models,
     estimate_split_item_effects,
 };
+pub use matchup_tests::{EnemyHeroResult, EnemyHeroStudy, EnemyHeroTest};
 pub use variant_candidates::{VariantCandidateReport, explain_variant_candidates};
 
 /// Mixes the bits of a number for a fixed pseudo-random order in placebo tests.

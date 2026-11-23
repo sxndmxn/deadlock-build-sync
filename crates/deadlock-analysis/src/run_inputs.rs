@@ -1,7 +1,7 @@
 use duckdb::types::Value as SqlValue;
 use serde::Deserialize;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use deadlock_data::{Error, RankRange, Result};
 
@@ -97,6 +97,33 @@ pub fn load_assembly_inputs(
         catalog,
         medians,
     })
+}
+
+#[derive(Debug, Deserialize)]
+struct TeamHeroRow {
+    match_id: u64,
+    team_id: i32,
+    hero_ids: Vec<u64>,
+}
+
+/// The heroes of each team of each match, by match identifier and team identifier.
+pub type TeamHeroes = BTreeMap<(u64, i32), Vec<u64>>;
+
+/// Loads the heroes of each team in the extracted matches of a run.
+///
+/// The query reads all players of each match, also calibration players and players outside
+/// the rank range, because the enemy team includes them.
+///
+/// # Errors
+/// Returns an error when the manifest, the analysis database, or the query fails.
+pub fn load_team_heroes(paths: &RunPaths, resources: ExtractionResources) -> Result<TeamHeroes> {
+    let ranks = RunManifest::read(paths)?.cohort.ranks()?;
+    let (database, _) = open_run_database(paths, resources, ranks)?;
+    Ok(database
+        .query_rows::<TeamHeroRow>(sql!("builds/select_team_heroes"), &Parameters::new())?
+        .into_iter()
+        .map(|row| ((row.match_id, row.team_id), row.hero_ids))
+        .collect())
 }
 
 /// Loads the assembly inputs of a run with the rank range of its manifest.
