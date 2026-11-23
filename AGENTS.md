@@ -68,6 +68,7 @@ It makes private builds for every active hero from public ranked match data.
 Distinct build variants for the same hero are permitted. Reject duplicate hero and variant identities.
 The player buys MAIN CORE items from left to right. VS WEAPON, VS SPIRIT, and VS SUSTAIN hold tested counter items. TIER 1 to TIER 4 hold situational items.
 Each build states a short idea of what to play around and the confidence of its evidence.
+Each additional build is tested against the main build. A build that tests worse is removed, and the BEST build of each hero with several builds has a `BEST` title.
 It installs the builds under Steam's **My Builds**.
 [docs/build-method.md](docs/build-method.md) describes the build method.
 The main command is:

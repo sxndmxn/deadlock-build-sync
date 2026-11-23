@@ -5,7 +5,8 @@
 
 use deadlock_data::{Error, Rank, RankRange, Result};
 
-use crate::hero_build::{HeroBuild, HeroBuildCatalog};
+use crate::build_title::MAX_BUILD_NAME_CHARACTERS;
+use crate::hero_build::{HeroBuild, HeroBuildCatalog, log_odds_to_win_points};
 
 /// The first panel of every build.
 pub const MAIN_CORE_PANEL: &str = "MAIN CORE";
@@ -61,6 +62,79 @@ pub fn variant_note(build: &HeroBuild) -> Result<Option<String>> {
         "Item choices use {} player matches with {} at 20 or 30 minutes.",
         build.observations, key_item.name
     )))
+}
+
+/// The start of the title of the BEST build of a hero with several builds.
+pub const BEST_TITLE_PREFIX: &str = "BEST ";
+
+/// Returns the build title, with the BEST mark when the build is the BEST build of its hero.
+///
+/// When the mark and the title exceed the title limit, the marked title names the key item only.
+#[must_use]
+pub fn display_title(build: &HeroBuild, catalog: &HeroBuildCatalog) -> String {
+    if !build.is_best(catalog) {
+        return build.title.clone();
+    }
+    std::iter::once(build.title.as_str())
+        .chain(build.key_item().map(|item| item.name.as_str()))
+        .map(|title| format!("{BEST_TITLE_PREFIX}{title}"))
+        .find(|title| title.chars().count() <= MAX_BUILD_NAME_CHARACTERS)
+        .unwrap_or_else(|| build.title.clone())
+}
+
+/// The sentence that states the result of the held-out test against the main build of the hero.
+///
+/// A hero with one build has no sentence.
+#[must_use]
+pub fn main_comparison(build: &HeroBuild, catalog: &HeroBuildCatalog) -> Option<String> {
+    let several = catalog
+        .heroes
+        .iter()
+        .filter(|other| other.hero_id == build.hero_id)
+        .nth(1)
+        .is_some();
+    if build.variant_id.is_none() {
+        return several.then(|| {
+            if build.is_best(catalog) {
+                "BEST: no additional build of this hero tested better than this main build.".into()
+            } else {
+                "An additional build of this hero tested better than this main build.".into()
+            }
+        });
+    }
+    let Some(contrast) = &build.main_contrast else {
+        return Some("Not tested against the main build: too few test matches.".into());
+    };
+    let points = log_odds_to_win_points(contrast.coefficient);
+    Some(if contrast.is_better() {
+        let result = format!(
+            "better than the main build: about {points:+.1} percentage points (z={:.1}).",
+            contrast.z()
+        );
+        if build.is_best(catalog) {
+            format!("BEST: tested {result}")
+        } else {
+            format!("Tested {result}")
+        }
+    } else {
+        format!(
+            "Tested against the main build: no clear difference ({points:+.1} percentage points, z={:.1}).",
+            contrast.z()
+        )
+    })
+}
+
+/// The sentence that states the approximate win rate change when a player follows the build.
+///
+/// The value uses the label estimate of the held-out test. An untested build has no sentence.
+#[must_use]
+pub fn win_rate(build: &HeroBuild) -> Option<String> {
+    (build.evaluation.standard_error > 0.0).then(|| {
+        format!(
+            "Win rate when followed: about {:+.1} percentage points at equal net worth.",
+            log_odds_to_win_points(build.evaluation.agreement_coefficient)
+        )
+    })
 }
 
 /// The instruction that tells the player how to read the panels.

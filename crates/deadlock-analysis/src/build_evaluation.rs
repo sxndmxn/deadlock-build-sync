@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use deadlock_data::Result;
-use deadlock_guides::{BuildEvaluation, Confidence, HeroEstimate};
+use deadlock_guides::{BuildContrast, BuildEvaluation, Confidence, HeroEstimate};
 
 use crate::build_assembly::PhaseSets;
 use crate::build_assembly::{PHASES, contains_all};
@@ -157,6 +157,125 @@ fn agreement_row(state: &LandmarkState, agreement: f64) -> Option<FeatureRow> {
         features,
         label: if state.won { 1.0 } else { 0.0 },
     })
+}
+
+/// One test state with the owned cost share of the shared items, the mean of the main-only and
+/// variant-only shares, and half of the variant-only share minus the main-only share.
+pub type ContrastSample<'a> = (&'a LandmarkState, [f64; 3]);
+
+const CONTRAST_COLUMN: usize = 6;
+const CONTRAST_WIDTH: usize = CONTRAST_COLUMN + EVALUATION_LANDMARKS.len();
+
+/// Tests an additional build against the main build of its hero on held-out states (E39, E41).
+///
+/// At each test state, the items of the two latest phase sets are shared, main-only, or
+/// variant-only. The model uses the owned cost share of each part with the covariates and the
+/// landmark terms of the build test. The coefficient of half the difference is the contrast:
+/// the log-odds change when the player owns the variant-only items instead of the main-only
+/// items. The standard error treats each match as one cluster. The result is missing when the
+/// test has fewer than 200 states.
+///
+/// # Errors
+/// Returns an error when the model cannot be fitted.
+pub fn evaluate_contrast(
+    states: &[&LandmarkState],
+    main: &PhaseSets,
+    variant: &PhaseSets,
+    catalog: &ItemCatalog,
+) -> Result<Option<BuildContrast>> {
+    fit_contrast(&measure_contrast_samples(states, main, variant, catalog))
+}
+
+/// Returns the contrast values of each state at a test landmark where both builds have own items.
+#[must_use]
+pub fn measure_contrast_samples<'a>(
+    states: &[&'a LandmarkState],
+    main: &PhaseSets,
+    variant: &PhaseSets,
+    catalog: &ItemCatalog,
+) -> Vec<ContrastSample<'a>> {
+    states
+        .iter()
+        .filter_map(|state| {
+            measure_contrast(state, main, variant, catalog).map(|values| (*state, values))
+        })
+        .collect()
+}
+
+fn measure_contrast(
+    state: &LandmarkState,
+    main: &PhaseSets,
+    variant: &PhaseSets,
+    catalog: &ItemCatalog,
+) -> Option<[f64; 3]> {
+    if !EVALUATION_LANDMARKS.contains(&state.landmark_s) {
+        return None;
+    }
+    let (_, main) = main.range(..=state.landmark_s).next_back()?;
+    let (_, variant) = variant.range(..=state.landmark_s).next_back()?;
+    let owned = state.item_ids.iter().copied().collect::<BTreeSet<_>>();
+    let share = |items: BTreeSet<u64>| {
+        let cost = catalog.cost(&items);
+        (cost > 0).then(|| {
+            f64::from(catalog.cost(&items.intersection(&owned).copied().collect()))
+                / f64::from(cost)
+        })
+    };
+    let main_only = share(main.difference(variant).copied().collect())?;
+    let variant_only = share(variant.difference(main).copied().collect())?;
+    let shared = share(main.intersection(variant).copied().collect()).unwrap_or(0.0);
+    Some([
+        shared,
+        f64::midpoint(main_only, variant_only),
+        (variant_only - main_only) / 2.0,
+    ])
+}
+
+/// Fits the contrast model, or returns nothing when the states are too few.
+///
+/// # Errors
+/// Returns an error when the model cannot be fitted.
+pub fn fit_contrast(samples: &[ContrastSample<'_>]) -> Result<Option<BuildContrast>> {
+    if samples.len() < MINIMUM_OBSERVATIONS {
+        return Ok(None);
+    }
+    let rows = samples
+        .iter()
+        .map(|(state, [shared, mean, difference])| {
+            let mut features = covariate_features(state).to_vec();
+            features.extend([
+                (AGREEMENT_COLUMN, *shared),
+                (AGREEMENT_COLUMN + 1, *mean),
+                (CONTRAST_COLUMN, *difference),
+            ]);
+            if let Some(position) = EVALUATION_LANDMARKS
+                .iter()
+                .position(|landmark| *landmark == state.landmark_s)
+                .filter(|position| *position > 0)
+            {
+                features.push((CONTRAST_COLUMN + position, 1.0));
+            }
+            FeatureRow {
+                features,
+                label: if state.won { 1.0 } else { 0.0 },
+            }
+        })
+        .collect::<Vec<_>>();
+    let matches = samples
+        .iter()
+        .map(|(state, _)| state.match_id)
+        .collect::<Vec<_>>();
+    let references = rows.iter().collect::<Vec<_>>();
+    let fit = fit_ridge_logistic(
+        &references,
+        &[0.0; CONTRAST_WIDTH],
+        &[PENALTY; CONTRAST_WIDTH],
+    )?;
+    Ok(Some(BuildContrast {
+        coefficient: fit.coefficients[CONTRAST_COLUMN],
+        standard_error: fit.clustered_standard_error(CONTRAST_COLUMN, &references, &matches)?,
+        observations: u64::try_from(samples.len())?,
+    }))
 }
 
 /// Pulls the held-out coefficient of each tested build toward the mean of comparable builds.

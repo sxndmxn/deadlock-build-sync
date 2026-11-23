@@ -1,8 +1,8 @@
 use deadlock_data::Result;
 
 use crate::build_text::{
-    MAIN_CORE_PANEL, RATES_NOTE, ability_order, evidence, format_soul_window, guide, phase_label,
-    play_around, tier_panel_name, variant_note,
+    MAIN_CORE_PANEL, RATES_NOTE, ability_order, display_title, evidence, format_soul_window, guide,
+    main_comparison, phase_label, play_around, tier_panel_name, variant_note, win_rate,
 };
 use crate::build_title::format_build_name;
 use crate::hero_build::{BuildItem, HeroBuild, HeroBuildCatalog};
@@ -75,7 +75,7 @@ pub fn build_hero_presentation(
     });
     BuildPresentation::new(PresentationContent {
         hero_id: build.hero_id,
-        name: format_build_name(persona, &build.title)?,
+        name: format_build_name(persona, &display_title(build, catalog))?,
         tag_ids: build.tag_ids,
         description: describe_build(build, catalog, snapshot_id)?,
         categories,
@@ -153,6 +153,8 @@ fn describe_build(
     snapshot_id: &str,
 ) -> Result<String> {
     let mut lines = vec![play_around(build)?];
+    lines.extend(main_comparison(build, catalog));
+    lines.extend(win_rate(build));
     lines.extend(ability_order(build));
     lines.extend(variant_note(build)?);
     lines.extend([

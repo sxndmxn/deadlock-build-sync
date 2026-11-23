@@ -12,8 +12,7 @@
 use std::path::Path;
 
 use deadlock_analysis::{
-    CoefficientEstimate, ExtractionResources, RunPaths, VariantSelection,
-    compare_variant_contrasts,
+    CoefficientEstimate, ExtractionResources, RunPaths, VariantSelection, compare_variant_contrasts,
 };
 use deadlock_data::{Error, Result, count_as_f64};
 
@@ -90,7 +89,12 @@ fn count(values: usize) -> Result<f64> {
 fn report(name: &str, values: &[f64]) -> Result<()> {
     let count = count(values.len().max(1))?;
     let mean = values.iter().sum::<f64>() / count;
-    let deviation = (values.iter().map(|value| (value - mean).powi(2)).sum::<f64>() / count).sqrt();
+    let deviation = (values
+        .iter()
+        .map(|value| (value - mean).powi(2))
+        .sum::<f64>()
+        / count)
+        .sqrt();
     let beyond = |limit: f64| values.iter().filter(|value| value.abs() > limit).count();
     let below = values.iter().filter(|value| **value < -2.0).count();
     println!(
@@ -104,22 +108,31 @@ fn report(name: &str, values: &[f64]) -> Result<()> {
 
 fn correlate(pairs: &[(f64, f64)]) -> Result<f64> {
     let count = count(pairs.len().max(1))?;
-    let (first_mean, second_mean) = pairs
-        .iter()
-        .fold((0.0, 0.0), |(first, second), (a, b)| (first + a / count, second + b / count));
+    let (first_mean, second_mean) = pairs.iter().fold((0.0, 0.0), |(first, second), (a, b)| {
+        (first + a / count, second + b / count)
+    });
     let covariance = pairs
         .iter()
         .map(|(a, b)| (a - first_mean) * (b - second_mean))
         .sum::<f64>();
-    let first = pairs.iter().map(|(a, _)| (a - first_mean).powi(2)).sum::<f64>();
-    let second = pairs.iter().map(|(_, b)| (b - second_mean).powi(2)).sum::<f64>();
+    let first = pairs
+        .iter()
+        .map(|(a, _)| (a - first_mean).powi(2))
+        .sum::<f64>();
+    let second = pairs
+        .iter()
+        .map(|(_, b)| (b - second_mean).powi(2))
+        .sum::<f64>();
     Ok(covariance / (first * second).sqrt().max(f64::MIN_POSITIVE))
 }
 
 /// Returns the precision-weighted mean and the variance between builds beyond their noise.
 fn estimate_between_variance(estimates: &[(f64, f64)]) -> Result<(f64, f64)> {
     let count = count(estimates.len().max(2))?;
-    let weights = estimates.iter().map(|(_, error)| error.powi(-2)).sum::<f64>();
+    let weights = estimates
+        .iter()
+        .map(|(_, error)| error.powi(-2))
+        .sum::<f64>();
     let pooled = estimates
         .iter()
         .map(|(value, error)| value * error.powi(-2))
@@ -131,6 +144,10 @@ fn estimate_between_variance(estimates: &[(f64, f64)]) -> Result<(f64, f64)> {
         .map(|(value, _)| (value - mean).powi(2))
         .sum::<f64>()
         / (count - 1.0);
-    let noise = estimates.iter().map(|(_, error)| error.powi(2)).sum::<f64>() / count;
+    let noise = estimates
+        .iter()
+        .map(|(_, error)| error.powi(2))
+        .sum::<f64>()
+        / count;
     Ok((pooled, (spread - noise).max(0.0)))
 }

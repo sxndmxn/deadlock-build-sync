@@ -8,6 +8,13 @@ The project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+Test each additional build against the main build of its hero on held-out matches. Remove an additional build that tests worse, with a contrast z of −2 or less (E39, E41).
+Mark the BEST build of a hero with several builds. Its Steam title starts with `BEST`, and each description states the result against the main build.
+State an approximate win rate change in each build description and Markdown file.
+Use one distinct expensive item as the default of `--variant-distinct-items` (E40). On 18 days of matches, the builds increased from 54 to 76 for 42 heroes.
+Use catalog schema 10 with method `item-effect-contrasts-v1`. It always records `rules` and adds `main_contrast` to tested additional builds. Schema 9 and earlier catalogs remain readable. Installed builds need a new `sync`.
+Assemble the heroes and fit the two counter phases on several threads. A resumed build of 18 days of matches took about 40 seconds instead of 60 seconds.
+
 Make up to two additional builds for each hero from distinct item combinations with sufficient match support.
 Each additional build has the variant identifier `item-ITEM_ID` and its own held-out test.
 Its ability order uses the matches of players who own its key item.
@@ -41,8 +48,14 @@ Validate the patch identity and the cohort timestamps of a catalog. A patch post
 Record the fingerprint of the extraction SQL in the run manifest. `--resume` rejects a run that other extraction SQL made.
 The run manifest no longer records the production method, the implementation fingerprint, or the extracted minimum badge.
 
+### Fixed
+
+Retry a remote file alone after a parallel download fails. The first build of an 18-day patch stopped with `Out of Memory Error`, because the 16 largest files downloaded at the same time.
+
 ### Added
 
+Add the experiments `estimate_enemy_hero_counters` and `compare_variant_contrasts`. `compare_variant_agreement` takes the variant rule as an argument.
+Record experiments E38 to E41 in `docs/research-log.md`. Melee items do not win less against Vindicta, Grey Talon, Lash, and Celeste (E38).
 Add `--variant-distinct-items` and `--variant-separation` to `build` and `sync`. The defaults are the tested rules.
 Use catalog schema 9, which records the selection rules in `rules` when they differ from the defaults. Schema 8 and earlier catalogs remain readable.
 Record the build tags and ability orders of a run in `raw/api-inputs.json`, so a resumed run produces the same catalog.

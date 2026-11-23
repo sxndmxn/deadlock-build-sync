@@ -17,13 +17,15 @@ pub use ability_order::{AbilityPath, select_ability_path};
 pub use build_tag_catalog::BuildTagCatalog;
 pub use build_tags::assign_build_tags;
 pub use build_text::{
-    MAIN_CORE_PANEL, ability_order, evidence, format_soul_window, format_souls, phase_label,
-    play_around, rank_label, tier_panel_name, variant_note,
+    BEST_TITLE_PREFIX, MAIN_CORE_PANEL, ability_order, display_title, evidence, format_soul_window,
+    format_souls, main_comparison, phase_label, play_around, rank_label, tier_panel_name,
+    variant_note, win_rate,
 };
 pub use hero_build::{
-    AbilityFocus, BuildCohort, BuildEvaluation, BuildItem, BuildRules, Confidence, CounterEvidence,
-    CounterPanel, CounterPhase, CounterTarget, HERO_BUILD_METHOD, HERO_BUILD_SCHEMA_VERSION,
-    HeroBuild, HeroBuildCatalog, HeroEstimate, ImbueTarget, ItemStatistics, MAXIMUM_COUNTER_ITEMS,
+    AbilityFocus, BuildCohort, BuildContrast, BuildEvaluation, BuildItem, BuildRules,
+    CONTRAST_BETTER_Z, CONTRAST_REMOVAL_Z, Confidence, CounterEvidence, CounterPanel, CounterPhase,
+    CounterTarget, HERO_BUILD_METHOD, HERO_BUILD_SCHEMA_VERSION, HeroBuild, HeroBuildCatalog,
+    HeroEstimate, ImbueTarget, ItemStatistics, MAXIMUM_COUNTER_ITEMS, log_odds_to_win_points,
 };
 pub use hero_presentation::build_hero_presentation;
 pub use presentation::{

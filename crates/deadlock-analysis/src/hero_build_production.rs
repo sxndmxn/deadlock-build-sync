@@ -13,7 +13,7 @@ use deadlock_input::{ApiOptions, DeadlockApi, parse_patch_feed};
 
 use crate::api_inputs::{AbilityRequest, ApiInputs, request_inputs};
 use crate::build_assembly::{AssembledBuild, PHASES, PurchaseMedians};
-use crate::build_evaluation::{evaluate_build, shrink_evaluations};
+use crate::build_evaluation::{evaluate_build, evaluate_contrast, shrink_evaluations};
 use crate::build_variants::VariantSelection;
 use crate::counter_items::{CounterGroups, estimate_counter_evidence, select_counter_panels};
 use crate::hero_assembly::{AssemblyContext, HeroAssembly};
@@ -119,7 +119,7 @@ pub fn produce_hero_builds(
     let catalog = HeroBuildCatalog {
         schema_version: HERO_BUILD_SCHEMA_VERSION,
         method: HERO_BUILD_METHOD.into(),
-        rules: *rules,
+        rules: Some(*rules),
         client_version,
         patch,
         cohort: BuildCohort {
@@ -333,15 +333,34 @@ fn assemble_hero(
     )?];
     for variant in assembly.variants {
         let item_id = variant.build.key_item_id;
+        // The development main build exists, because the selector needs it.
+        let contrast = match &assembly.development_main {
+            Some(main) => evaluate_contrast(
+                &test,
+                &main.phase_sets,
+                &variant.development_build.phase_sets,
+                catalog,
+            )?,
+            None => None,
+        };
+        if let Some(contrast) = contrast.as_ref().filter(|contrast| contrast.is_worse()) {
+            messages.push(format!(
+                "Dropped an additional build for {hero_name}: item {item_id} (tests worse than the main build, z={:.1})",
+                contrast.z()
+            ));
+            continue;
+        }
         let evaluation = evaluate_build(&test, &variant.development_build.phase_sets, catalog)?;
-        builds.push(create_hero_build(
+        let mut build = create_hero_build(
             hero_id,
             hero_name,
             variant.build,
             evaluation,
             variant.owners,
             Some(format!("item-{item_id}")),
-        )?);
+        )?;
+        build.main_contrast = contrast;
+        builds.push(build);
     }
     messages.push(format!("Selected {} builds for {hero_name}", builds.len()));
     Ok((builds, messages))
@@ -376,6 +395,7 @@ fn create_hero_build(
         evaluation,
         observations: u64::try_from(observations)?,
         counters: Vec::new(),
+        main_contrast: None,
     })
 }
 

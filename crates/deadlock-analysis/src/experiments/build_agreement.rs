@@ -1,20 +1,16 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use deadlock_data::{Result, count_as_f64};
-use deadlock_guides::{BuildEvaluation, Confidence};
+use deadlock_guides::{BuildContrast, BuildEvaluation, Confidence};
 
 use crate::build_assembly::LATE_PHASES;
-use crate::build_assembly::{
-    ItemScoring, PHASES, PhaseSets, assemble_build, assemble_build_with_scoring,
-};
+use crate::build_assembly::{ItemScoring, PHASES, assemble_build, assemble_build_with_scoring};
 use crate::build_evaluation::{
-    EVALUATION_LANDMARKS, evaluate_agreements, evaluate_build, evaluate_pooled_builds,
-    measure_agreement,
+    ContrastSample, EVALUATION_LANDMARKS, evaluate_agreements, evaluate_build,
+    evaluate_pooled_builds, fit_contrast, measure_agreement, measure_contrast_samples,
 };
 use crate::build_variants::{VariantSelection, select_item_variants_with_rule};
-use crate::item_effects::{
-    EffectTable, ItemCatalog, LandmarkState, covariate_features, estimate_item_effects,
-};
+use crate::item_effects::{EffectTable, LandmarkState, covariate_features, estimate_item_effects};
 use crate::refresh_configuration::{ExtractionResources, RunPaths};
 use crate::ridge_logistic::CoefficientEstimate;
 use crate::ridge_logistic::{FeatureRow, fit_ridge_logistic};
@@ -772,13 +768,6 @@ pub struct VariantContrast {
     pub observations: usize,
 }
 
-/// One test state with the agreement of the shared items, their mean, and half their difference.
-type ContrastSample<'a> = (&'a LandmarkState, [f64; 3]);
-
-const CONTRAST_COLUMN: usize = 6;
-const CONTRAST_WIDTH: usize = 7 + EVALUATION_LANDMARKS.len() - 1;
-const MINIMUM_CONTRAST_OBSERVATIONS: usize = 200;
-
 /// Tests each additional build against the main build of its hero on the held-out test fold.
 ///
 /// The builds come from development matches, as in production. At each test state, the items of
@@ -819,15 +808,17 @@ pub fn compare_variant_contrasts(
             selection,
         )?;
         for variant in variants {
-            let samples = test
+            let hero_test = test
                 .iter()
                 .copied()
                 .filter(|state| state.hero_id == hero_id)
-                .filter_map(|state| {
-                    measure_contrast(state, &main.phase_sets, &variant.build.phase_sets, catalog)
-                        .map(|values| (state, values))
-                })
                 .collect::<Vec<_>>();
+            let samples = measure_contrast_samples(
+                &hero_test,
+                &main.phase_sets,
+                &variant.build.phase_sets,
+                catalog,
+            );
             let half = |parity: u64| {
                 samples
                     .iter()
@@ -839,15 +830,15 @@ pub fn compare_variant_contrasts(
                 .iter()
                 .map(|seed| move_contrasts(&samples, *seed))
                 .filter_map(|moved| fit_contrast(&moved).transpose())
-                .map(|estimate| estimate.map(|value| value.coefficient / value.standard_error))
+                .map(|contrast| contrast.map(|value| value.z()))
                 .collect::<Result<Vec<_>>>()?;
             contrasts.push(VariantContrast {
                 hero_id,
                 key_item_id: variant.build.key_item_id,
                 estimates: [
-                    fit_contrast(&samples)?,
-                    fit_contrast(&half(0))?,
-                    fit_contrast(&half(1))?,
+                    fit_contrast(&samples)?.as_ref().map(estimate_of),
+                    fit_contrast(&half(0))?.as_ref().map(estimate_of),
+                    fit_contrast(&half(1))?.as_ref().map(estimate_of),
                 ],
                 placebo_z,
                 observations: samples.len(),
@@ -857,37 +848,11 @@ pub fn compare_variant_contrasts(
     Ok(contrasts)
 }
 
-/// Returns the shared share, the mean of the main-only and variant-only shares, and half of
-/// the variant-only share minus the main-only share.
-///
-/// The value is missing when one of the two builds has no own items at the landmark.
-fn measure_contrast(
-    state: &LandmarkState,
-    main: &PhaseSets,
-    variant: &PhaseSets,
-    catalog: &ItemCatalog,
-) -> Option<[f64; 3]> {
-    if !EVALUATION_LANDMARKS.contains(&state.landmark_s) {
-        return None;
+const fn estimate_of(contrast: &BuildContrast) -> CoefficientEstimate {
+    CoefficientEstimate {
+        coefficient: contrast.coefficient,
+        standard_error: contrast.standard_error,
     }
-    let (_, main) = main.range(..=state.landmark_s).next_back()?;
-    let (_, variant) = variant.range(..=state.landmark_s).next_back()?;
-    let owned = state.item_ids.iter().copied().collect::<BTreeSet<_>>();
-    let share = |items: BTreeSet<u64>| {
-        let cost = catalog.cost(&items);
-        (cost > 0).then(|| {
-            f64::from(catalog.cost(&items.intersection(&owned).copied().collect()))
-                / f64::from(cost)
-        })
-    };
-    let main_only = share(main.difference(variant).copied().collect())?;
-    let variant_only = share(variant.difference(main).copied().collect())?;
-    let shared = share(main.intersection(variant).copied().collect()).unwrap_or(0.0);
-    Some([
-        shared,
-        f64::midpoint(main_only, variant_only),
-        (variant_only - main_only) / 2.0,
-    ])
 }
 
 /// Moves the differences between states of the same landmark in a fixed pseudo-random order.
@@ -907,43 +872,4 @@ fn move_contrasts<'a>(samples: &[ContrastSample<'a>], seed: u64) -> Vec<Contrast
         }
     }
     moved
-}
-
-/// Fits the contrast model, or returns nothing when the states are too few.
-fn fit_contrast(samples: &[ContrastSample<'_>]) -> Result<Option<CoefficientEstimate>> {
-    if samples.len() < MINIMUM_CONTRAST_OBSERVATIONS {
-        return Ok(None);
-    }
-    let rows = samples
-        .iter()
-        .map(|(state, [shared, mean, difference])| {
-            let mut features = covariate_features(state).to_vec();
-            features.extend([(4, *shared), (5, *mean), (CONTRAST_COLUMN, *difference)]);
-            if let Some(position) = EVALUATION_LANDMARKS
-                .iter()
-                .position(|landmark| *landmark == state.landmark_s)
-                .filter(|position| *position > 0)
-            {
-                features.push((CONTRAST_COLUMN + position, 1.0));
-            }
-            FeatureRow {
-                features,
-                label: if state.won { 1.0 } else { 0.0 },
-            }
-        })
-        .collect::<Vec<_>>();
-    let matches = samples
-        .iter()
-        .map(|(state, _)| state.match_id)
-        .collect::<Vec<_>>();
-    let references = rows.iter().collect::<Vec<_>>();
-    let fit = fit_ridge_logistic(
-        &references,
-        &[0.0; CONTRAST_WIDTH],
-        &[1.0; CONTRAST_WIDTH],
-    )?;
-    Ok(Some(CoefficientEstimate {
-        coefficient: fit.coefficients[CONTRAST_COLUMN],
-        standard_error: fit.clustered_standard_error(CONTRAST_COLUMN, &references, &matches)?,
-    }))
 }

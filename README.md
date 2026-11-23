@@ -73,7 +73,11 @@ Each build has these parts:
 2. **VS WEAPON, VS SPIRIT, and VS SUSTAIN**: counter items from the mid game, for the main damage type of the enemy team and for enemy healing. Each run repeats the counter test and removes a panel when the run contradicts it.
 3. **TIER 1 to TIER 4**: situational items for the matching shop tier. Buy one instead of a CORE item when the match makes it a better choice.
 4. **Ability order**: the most common complete ability order at this rank.
-5. **Description**: the inferred ability focus, when supported, the key item, its power spike, and the build confidence.
+5. **Description**: the inferred ability focus, when supported, the key item, its power spike, the result against the main build, an approximate win rate change, and the build confidence.
+
+A hero can have a main build and up to two additional builds. Each additional build is tested against the main build on held-out matches.
+A build that tests worse than the main build is removed. When a hero has several builds, the title of its BEST build starts with `BEST`.
+The BEST build is the additional build that tests best and clearly better than the main build. Without such a build, it is the main build.
 
 Build titles use `Steam name | ability + key item` when CORE items support a clear ability focus.
 Otherwise, titles name the first fully upgraded ability from the selected ability order.
@@ -84,11 +88,17 @@ The description states the ability upgrade order separately from the inferred fo
 Example description:
 
 ```text
-Play around: Essence Bomb with Mystic Reverb at about 18k net worth.
-Ability order: max Life Drain first.
-Buy MAIN CORE from left to right. TIER items are situational choices.
-Evidence: moderate (held-out test, n=2599). Ranked • Ritualist I–Eternus V • 2026-10-09 to 2026-10-12.
+Play around: Alchemical Fire at about 15k net worth.
+BEST: tested better than the main build: about +6.4 percentage points (z=3.8).
+Win rate when followed: about +6.0 percentage points at equal net worth.
+Ability order: max Stone Form first.
+Item choices use 6306 player matches with Alchemical Fire at 20 or 30 minutes.
+Buy MAIN CORE from left to right. VS panels answer the enemy team. TIER items are situational choices.
+Evidence: strong (held-out test pooled with all heroes, n=62480). Ranked • Ritualist I–Eternus V • 2026-11-05 to 2026-11-23.
 ```
+
+The win rate change compares a player who owns all CORE items of the phase with a player who owns none, at equal net worth.
+It is an approximation from the held-out test: 25 percentage points for each log-odds unit. It is not the win rate of the players who follow the build.
 
 Each item shows four lines:
 
@@ -116,6 +126,8 @@ It then assembles a build from items that players at this rank use, tilted towar
 A test on held-out matches gives each build a confidence label: `strong`, `moderate`, or `limited`. The label pools the test with comparable builds of all heroes, because the test of one hero alone is mostly noise.
 See [Build method](docs/build-method.md) for the method, the test, and the limits.
 
+The builds do not change with the enemy heroes. A test found that melee items do not win less against Vindicta, Grey Talon, Lash, and Celeste.
+
 The data is observational. It does not prove that an item causes a win.
 
 ## Options
@@ -130,11 +142,11 @@ The data is observational. It does not prove that an item causes a win.
 | `--extraction-threads` | 8 | Database threads. The match download uses at least 64 |
 | `--run-id` | Current time | Name of the analysis run |
 | `--resume` | Off | Reuse the extracted matches of `--run-id` |
-| `--variant-distinct-items` | 2 | Expensive CORE items that an additional build and each installed build must each have without the other |
+| `--variant-distinct-items` | 1 | Expensive CORE items that an additional build and each installed build must each have without the other |
 | `--variant-separation` | 0.3 | Smallest cost share of the different expensive items between an additional build and each installed build |
 
 The two variant options control how different an additional build must be. Smaller values accept more similar additional builds.
-`hero-builds.json` records the values in `rules` when they differ from the defaults. The defaults are the tested rules. See [Build method](docs/build-method.md#additional-builds).
+`hero-builds.json` records the values in `rules`. The defaults are the tested rules. See [Build method](docs/build-method.md#additional-builds).
 
 
 DuckDB downloads ICU, DuckLake, and HTTPFS extensions if they are missing.
@@ -153,7 +165,8 @@ Each Markdown file includes every catalog build for that hero.
 The catalog and installer support distinct variants for the same hero.
 The analysis selects a main build and up to two additional builds with distinct item combinations and sufficient match support.
 It evaluates each build separately. Similar candidates do not create additional entries.
-Additional builds are play style options. Held-out tests found a small win signal for them beyond the main build.
+Additional builds are play style options. Held-out tests found a win signal for them beyond the main build.
+Each additional build is tested against the main build, and a build that tests worse is removed.
 Each new run replaces the complete directory.
 The directory must be absent, empty, or an earlier artifact directory with `hero-builds.json`. The CLI refuses a directory with other files.
 
