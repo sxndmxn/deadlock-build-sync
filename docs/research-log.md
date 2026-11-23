@@ -51,6 +51,10 @@ The test fold contains the last 20% of matches by start time.
 | E35 | Do rejected counter groups work within each hero? | No | No change |
 | E36 | Does the key item add signal beyond CORE? | No | Keep it as a name only |
 | E37 | Which gate rejects the additional builds of Ivy, McGinnis, and Viscous? | The two-item count rule. The 30% cost share never decided | Options added, default unchanged |
+| E38 | Do melee items win less against Vindicta, Grey Talon, Lash, and Celeste? | No, also not for Viscous alone | No matchup note |
+| E39 | Does the test of an additional build against the main build replicate? | Yes on 18 days, no on 6 days | Test again on new matches (E41) |
+| E40 | Do additional builds with one distinct item add signal? | Yes, on two runs | Default changed to 1 |
+| E41 | Does the contrast replicate on new matches? | Yes | Remove builds that test worse. Mark the BEST build |
 
 ## E0: effect scale of the item score
 
@@ -1135,6 +1139,36 @@ The even and odd match identifiers give two independent halves. A placebo moves 
 Otherwise, no note is added.
 Two analyses give information only and cannot change the builds: the test on Viscous players alone, and a screen of each enemy hero alone with the correlation of the match halves.
 
+**Result.** Each cell gives the coefficient per owned item and standard deviation of the condition, with z.
+
+| Matches | Group | 20 minutes | 30 minutes |
+| --- | --- | --- | --- |
+| All (2,390,169 and 1,889,843 states) | Melee | +0.003 ± 0.004, z = 0.7 | −0.004 ± 0.006, z = −0.6 |
+| All | Close range | −0.013 ± 0.006, z = −2.1 | −0.011 ± 0.008, z = −1.4 |
+| All | Control | +0.006 ± 0.004, z = 1.8 | +0.004 ± 0.004, z = 1.0 |
+| Even half | Melee | z = 0.4 | z = −0.9 |
+| Odd half | Melee | z = 0.6 | z = 0.0 |
+| Viscous only (29,853 and 23,988 states) | Melee | −0.002 ± 0.016, z = −0.1 | −0.023 ± 0.024, z = −1.0 |
+
+The screen tested each enemy hero alone, with a raw count condition, on all matches: 44 enemy heroes, 3 groups, and 2 phases.
+
+| Group | z values | Standard deviation | Beyond ±2 | Beyond ±3 |
+| --- | --- | --- | --- | --- |
+| Melee | 88 | 0.96 | 4 | 1 |
+| Close range | 88 | 1.16 | 14 | 3 |
+| Control (anti-heal) | 88 | 1.31 | 12 | 6 |
+
+For a standard normal distribution, about 4 of 88 values are beyond ±2.
+In the screen, anti-heal won more against Victor (z = 4.3), Yamato (4.0), Kelvin (3.6), Billy (3.4), and Abrams (3.0) at 20 minutes. Close range won more against Abrams (3.6) and Venator (3.6).
+
+**Analysis.** Melee items did not win less against the four heroes, in all matches, in each half, or for Viscous alone. The 95% interval of the melee coefficient at 30 minutes is −0.015 to +0.008 log-odds per item, which is very small.
+The first condition of the decision rule failed, so the placebo did not run.
+The screen found no enemy hero against which melee items win less or more. The data has enough matches to find matchup effects: the anti-heal and close range groups had more large z values than chance gives.
+The anti-heal result agrees with the kits of these heroes, which heal themselves. The screen is information only, with many tests, so a new test with a stated prediction must confirm it.
+
+**Decision.** No matchup note. A melee build is not weaker against Vindicta, Grey Talon, Lash, and Celeste in this data.
+A later entry can test the anti-heal group against an enemy condition from hero kits, with a stated hero list.
+
 ## E39: the contrast of each additional build with the main build
 
 **Question.** Does a hero have a best build that the data can find? The owner reports that some additional builds are weak.
@@ -1157,6 +1191,24 @@ A placebo moves the contrast values between test states of the same landmark.
 
 The main build uses all players of the hero, and an additional build uses only the players who own its key item. The description can state this fact without a test.
 
+**Result.**
+
+| Run | Rule | Builds | Contrast z standard deviation | Placebo z standard deviation | Correlation of halves | Weighted mean contrast |
+| --- | --- | --- | --- | --- | --- | --- |
+| `patch-20261105` | 1 item | 68 | 1.05 | 0.99 | 0.08 | −0.007 ± 0.017 |
+| `patch-20261105` | 2 items | 34 | 1.14 | 1.02 | 0.11 | −0.006 ± 0.023 |
+| `fresh-20261123` | 1 item | 67 | 1.72 | 0.97 | 0.41 | +0.015 ± 0.010 |
+| `fresh-20261123` | 2 items | 26 | 1.79 | 0.99 | 0.33 | +0.013 ± 0.018 |
+
+On `fresh-20261123` with one item, 9 contrasts had z below −2 and 8 had z above 2. The placebo gives about 1.5 of each.
+
+**Analysis.** The placebo z values are standard normal on both runs, so the standard errors are correct.
+On 6 days of matches, the contrasts did not correlate between the halves. On 18 days, they did, and their spread was much larger than the placebo spread.
+Thus, real differences exist between the additional builds of a hero and its main build, but the test finds them only with enough matches.
+
+**Decision.** The rule required a correlation above 0.3 on both runs. The 6-day run failed, so this entry does not change production.
+E41 tests the new hypothesis that the contrast replicates with enough matches, on matches that no contrast test used.
+
 ## E40: the quality of more additional builds
 
 **Hypothesis.** With one distinct item instead of two (E37), the additional builds still add a positive signal beyond the main build, as E30 found for the installed rule.
@@ -1173,6 +1225,21 @@ This is a confirmation on new matches, as in E15 and E25, not a second patch.
 2. The precision-weighted mean contrast of E39 for the one-item rule is not below zero by two standard errors or more on either run.
 
 Otherwise, keep the default. The next patch must repeat this test in both cases.
+
+**Result.**
+
+| Run | Rule | Heroes with additional builds | Main agreement | Variant agreement | z |
+| --- | --- | --- | --- | --- | --- |
+| `patch-20261105` | 1 item | 39 | +0.127 ± 0.034 | +0.107 ± 0.035 | 3.1 |
+| `patch-20261105` | 2 items | 24 | +0.145 ± 0.036 | +0.076 ± 0.039 | 2.0 |
+| `fresh-20261123` | 1 item | 38 | +0.036 ± 0.017 | +0.150 ± 0.018 | 8.4 |
+| `fresh-20261123` | 2 items | 18 | +0.114 ± 0.020 | +0.049 ± 0.022 | 2.2 |
+
+The weighted mean contrast of E39 with one item was −0.007 ± 0.017 (z = −0.4) and +0.015 ± 0.010 (z = 1.5).
+
+**Analysis.** With one distinct item, the additional builds of more heroes added a positive signal beyond the main build on both runs, and more than with two items. Both conditions of the decision rule are true.
+
+**Decision.** Change the default of `--variant-distinct-items` to 1. On `fresh-20261123`, the installed builds increase from 54 to 76, for 42 heroes. The next patch must repeat this test.
 
 ## E41: the contrast of additional builds on a third run
 
@@ -1197,3 +1264,17 @@ If the contrast is valid, production makes these changes:
 
 The z threshold of the placebo gives about 2.3% false removals for each build without a real difference. A short run has large standard errors, so the gate removes few builds.
 If the contrast is not valid, the Markdown file shows the contrast as information only.
+
+**Result.** Run `mid-20261117` has 1,754,868 player matches.
+
+| Contrast z values | Standard deviation | Beyond ±2 | Below −2 | Placebo z values | Placebo standard deviation | Correlation of halves |
+| --- | --- | --- | --- | --- | --- | --- |
+| 66 | 1.57 | 16 | 11 | 1320 | 0.98 | 0.33 |
+
+The weighted mean contrast was −0.022 ± 0.012.
+
+**Analysis.** All three conditions are true. The contrast replicated on matches that no earlier contrast test used.
+
+**Decision.** Production tests each additional build against the main build with this contrast.
+It removes an additional build with a contrast z of −2 or less and labels one with a contrast z of 2 or more as better.
+On `fresh-20261123`, the gate removed 3 of 37 selected additional builds: McGinnis (z = −3.6), Lash (−3.1), and Warden (−2.7). Five additional builds of Bebop, Ivy, and Kelvin tested better than their main build.
