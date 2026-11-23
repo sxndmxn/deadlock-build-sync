@@ -3,8 +3,8 @@ use std::fmt::Write as _;
 use deadlock_data::Result;
 use deadlock_guides::{
     BuildItem, HeroBuild, HeroBuildCatalog, MAIN_CORE_PANEL, ability_order, display_title,
-    evidence, format_soul_window, main_comparison, phase_label, play_around, rank_label,
-    variant_note, win_rate,
+    evidence, format_soul_window, log_odds_to_win_points, main_comparison, phase_label,
+    play_around, rank_label, variant_note, win_rate,
 };
 
 /// Renders one hero build as Markdown with the values behind each item.
@@ -45,12 +45,20 @@ pub fn render_build_markdown(build: &HeroBuild, catalog: &HeroBuildCatalog) -> R
     if let Some(contrast) = &build.main_contrast {
         let _ = writeln!(
             text,
-            "Contrast with the main build: {:+.2} ± {:.2} log-odds on {} held-out observations.",
-            contrast.coefficient, contrast.standard_error, contrast.observations
+            "Contrast with the main build: {:+.2} ± {:.2} log-odds (about {:+.1} percentage points, z = {:.1}) on {} held-out observations.",
+            contrast.coefficient,
+            contrast.standard_error,
+            log_odds_to_win_points(contrast.coefficient),
+            contrast.z(),
+            contrast.observations
         );
+        if contrast.is_better() {
+            text.push_str("The value of a build that tests better is biased high, because the test selects the build with it.\n");
+        }
     }
     if let Some(sentence) = win_rate(build) {
         let _ = writeln!(text, "{sentence}");
+        text.push_str("The difference compares players with all CORE items of the phase and players with none, in the held-out test. It is an association, not a cause.\n");
     }
     if let Some(focus) = &build.ability_focus {
         let _ = writeln!(text, "Ability focus: {}.", focus.name);

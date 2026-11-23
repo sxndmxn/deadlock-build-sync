@@ -89,15 +89,16 @@ Example description:
 
 ```text
 Play around: Alchemical Fire at about 15k net worth.
-BEST: tested better than the main build: about +6.4 percentage points (z=3.8).
-Win rate of players with this build against players without it, at equal net worth: about +6.0 percentage points.
+BEST: tested better than the main build.
+Win rate difference at equal net worth: about +6.1 points.
 Ability order: max Stone Form first.
 Item choices use 6306 player matches with Alchemical Fire at 20 or 30 minutes.
 Buy MAIN CORE from left to right. VS panels answer the enemy team. TIER items are situational choices.
 Evidence: strong (held-out test pooled with all heroes, n=62480). Ranked • Ritualist I–Eternus V • 2026-11-05 to 2026-11-23.
 ```
 
-The win rate difference compares players who own all CORE items of the phase with players who own none, at equal net worth.
+The win rate difference compares players who own all CORE items of the phase with players who own none, at equal net worth, in percentage points.
+The Markdown file states the numbers of the test against the main build.
 It is an approximation from the held-out test: 25 percentage points for each log-odds unit. It is an association, not a cause, and not the win rate of the players who follow the build.
 On a short run, almost every BEST mark is the default main build, because the test finds few clear differences.
 

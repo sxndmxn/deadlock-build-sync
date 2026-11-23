@@ -84,7 +84,8 @@ pub fn display_title(build: &HeroBuild, catalog: &HeroBuildCatalog) -> String {
 
 /// The sentence that states the result of the held-out test against the main build of the hero.
 ///
-/// A hero with one build has no sentence.
+/// The sentence states the result only. The Markdown export adds the numbers. A hero with one
+/// build has no sentence.
 #[must_use]
 pub fn main_comparison(build: &HeroBuild, catalog: &HeroBuildCatalog) -> Option<String> {
     let several = catalog
@@ -105,26 +106,17 @@ pub fn main_comparison(build: &HeroBuild, catalog: &HeroBuildCatalog) -> Option<
     let Some(contrast) = &build.main_contrast else {
         return Some("Not tested against the main build: too few test matches.".into());
     };
-    let points = log_odds_to_win_points(contrast.coefficient);
-    Some(if contrast.is_better() {
-        let result = format!(
-            "better than the main build: about {points:+.1} percentage points (z={:.1}).",
-            contrast.z()
-        );
-        if build.is_best(catalog) {
-            format!("BEST: tested {result}")
-        } else {
-            format!("Tested {result}")
-        }
+    Some(if !contrast.is_better() {
+        "Tested against the main build: no clear difference.".into()
+    } else if build.is_best(catalog) {
+        "BEST: tested better than the main build.".into()
     } else {
-        format!(
-            "Tested against the main build: no clear difference ({points:+.1} percentage points, z={:.1}).",
-            contrast.z()
-        )
+        "Tested better than the main build.".into()
     })
 }
 
-/// The sentence that states the approximate win rate difference of players with the build.
+/// The sentence that states the approximate win rate difference of players with the build,
+/// against players without it, at equal net worth.
 ///
 /// The value uses the label estimate of the held-out test. It is an association, not a cause.
 /// An untested build has no sentence.
@@ -132,7 +124,7 @@ pub fn main_comparison(build: &HeroBuild, catalog: &HeroBuildCatalog) -> Option<
 pub fn win_rate(build: &HeroBuild) -> Option<String> {
     (build.evaluation.standard_error > 0.0).then(|| {
         format!(
-            "Win rate of players with this build against players without it, at equal net worth: about {:+.1} percentage points.",
+            "Win rate difference at equal net worth: about {:+.1} points.",
             log_odds_to_win_points(build.evaluation.agreement_coefficient)
         )
     })
