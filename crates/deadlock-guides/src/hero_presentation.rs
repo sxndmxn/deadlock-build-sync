@@ -1,8 +1,7 @@
 use deadlock_data::Result;
 
 use crate::build_text::{
-    MAIN_CORE_PANEL, RATES_NOTE, ability_order, display_title, evidence, format_soul_window, guide,
-    main_comparison, phase_label, play_around, tier_panel_name, variant_note, win_rate,
+    MAIN_CORE_PANEL, build_stats, display_title, format_soul_window, phase_label, tier_panel_name,
 };
 use crate::build_title::format_build_name;
 use crate::hero_build::{BuildItem, HeroBuild, HeroBuildCatalog};
@@ -146,21 +145,16 @@ fn describe_item(item: &BuildItem) -> Result<String> {
 /// Catalog validation checks that each panel has tested run evidence.
 const COUNTER_PANEL_TEXT: &str = "From midgame";
 
-/// Rounds the soul window to whole thousands. The window always spans at least 1k.
+/// The stat lines, then the managed trailer that identifies the build to the installer.
+///
+/// The title states the ability focus, and the ability panel states the upgrade order.
 fn describe_build(
     build: &HeroBuild,
     catalog: &HeroBuildCatalog,
     snapshot_id: &str,
 ) -> Result<String> {
-    let mut lines = vec![play_around(build)?];
-    lines.extend(main_comparison(build, catalog));
-    lines.extend(win_rate(build));
-    lines.extend(ability_order(build));
-    lines.extend(variant_note(build)?);
+    let mut lines = build_stats(build, catalog)?;
     lines.extend([
-        guide(!build.counters.is_empty()).into(),
-        RATES_NOTE.into(),
-        evidence(build, catalog)?,
         String::new(),
         ManagedTrailer {
             path_id: build.path_id(),

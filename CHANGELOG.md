@@ -9,7 +9,8 @@ The project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 Test each additional build against the main build of its hero on held-out matches. Remove an additional build that tests worse, with a contrast z of −2 or less (E39, E41).
-Mark the BEST build of a hero with several builds. Its Steam title starts with `BEST`, and each description states the result against the main build.
+Mark the BEST build of a hero with several builds. Its Steam title starts with `BEST`.
+Show only stat lines in the Steam description: `WIN RATE VS NO CORE`, `WIN RATE VS MAIN BUILD` for an additional build, `POWER SPIKE`, `CONFIDENCE`, and `DATA`. The usage instructions, the item rate note, the ability order sentence, and the focus sentence are removed. The title states the focus, and the ability panel states the order. The Markdown file keeps the full sentences.
 State the approximate win rate difference of players with each build, at equal net worth, in its description and Markdown file. It is an association from the held-out test.
 Use one distinct expensive item as the default of `--variant-distinct-items` (E40), on one patch at the owner's request. On 18 days of matches, the builds increased from 54 to 76 for 42 heroes. The next patch must repeat E40.
 Use catalog schema 10 with method `item-effect-contrasts-v1`. It always records `rules` and adds `main_contrast` to tested additional builds. Schema 9 and earlier catalogs remain readable. Installed builds need a new `sync`.

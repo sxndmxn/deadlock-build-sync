@@ -1,7 +1,7 @@
 //! The sentences and number formats that describe a build.
 //!
-//! The Steam description and the Markdown export render the same build. Both take their
-//! sentences from here, so a change of wording lands in one place.
+//! The Steam description shows only the stat lines of `build_stats`. The Markdown export
+//! shows the full sentences. Both take their wording from here, so a change lands in one place.
 
 use deadlock_data::{Error, Rank, RankRange, Result};
 
@@ -16,9 +16,6 @@ pub const MAIN_CORE_PANEL: &str = "MAIN CORE";
 pub fn tier_panel_name(tier: u8) -> String {
     format!("TIER {tier}")
 }
-
-/// The note on the item rates. The rates count buyers, not the complete build.
-pub const RATES_NOTE: &str = "Item rates count each buyer once per match across this hero's ranked matches. They do not measure the complete build.";
 
 /// The sentence that names the ability focus, the key item, and the power spike.
 ///
@@ -84,8 +81,8 @@ pub fn display_title(build: &HeroBuild, catalog: &HeroBuildCatalog) -> String {
 
 /// The sentence that states the result of the held-out test against the main build of the hero.
 ///
-/// The sentence states the result only. The Markdown export adds the numbers. A hero with one
-/// build has no sentence.
+/// The Markdown export states this sentence before the numbers. A hero with one build has no
+/// sentence.
 #[must_use]
 pub fn main_comparison(build: &HeroBuild, catalog: &HeroBuildCatalog) -> Option<String> {
     let several = catalog
@@ -130,14 +127,52 @@ pub fn win_rate(build: &HeroBuild) -> Option<String> {
     })
 }
 
-/// The instruction that tells the player how to read the panels.
-#[must_use]
-pub const fn guide(has_counters: bool) -> &'static str {
-    if has_counters {
-        "Buy MAIN CORE from left to right. VS panels answer the enemy team. TIER items are situational choices."
-    } else {
-        "Buy MAIN CORE from left to right. TIER items are situational choices."
+/// The stat lines of the Steam description: labels and numbers, without sentences.
+///
+/// Each win rate label names its baseline. The values and their rounding equal the Markdown
+/// export, which explains them.
+///
+/// # Errors
+/// Returns an error when the key item is not in CORE, or the cohort has an invalid badge or
+/// timestamp.
+pub fn build_stats(build: &HeroBuild, catalog: &HeroBuildCatalog) -> Result<Vec<String>> {
+    let key_item = build
+        .key_item()
+        .ok_or_else(|| Error::new("Build key item is not in CORE"))?;
+    let [since, as_of] = catalog.cohort.dates()?;
+    let mut lines = Vec::new();
+    if build.evaluation.standard_error > 0.0 {
+        lines.push(format!(
+            "WIN RATE VS NO CORE: {:+.1} pts at equal net worth",
+            log_odds_to_win_points(build.evaluation.agreement_coefficient)
+        ));
     }
+    if build.variant_id.is_some() {
+        lines.push(build.main_contrast.as_ref().map_or_else(
+            || "WIN RATE VS MAIN BUILD: too few matches".into(),
+            |contrast| {
+                format!(
+                    "WIN RATE VS MAIN BUILD: {:+.1} pts, z={:.1}",
+                    log_odds_to_win_points(contrast.coefficient),
+                    contrast.z()
+                )
+            },
+        ));
+    }
+    lines.extend([
+        format!(
+            "POWER SPIKE: {} at {}",
+            key_item.name,
+            format_souls(build.power_spike_net_worth)
+        ),
+        format!(
+            "CONFIDENCE: {}, n={}",
+            build.evaluation.confidence.label(),
+            build.evaluation.observations
+        ),
+        format!("DATA: {}, {since} to {as_of}", rank_label(catalog)?),
+    ]);
+    Ok(lines)
 }
 
 /// The evidence sentence: the confidence label, the test, the rank range, and the match window.

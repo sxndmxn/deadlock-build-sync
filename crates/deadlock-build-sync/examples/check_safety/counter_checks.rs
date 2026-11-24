@@ -98,7 +98,6 @@ fn check_counter_presentation(catalog: &HeroBuildCatalog) -> Result<()> {
         || content.categories[1..=2]
             .iter()
             .any(|category| category.description != "From midgame")
-        || !content.description.contains("VS panels")
     {
         return Err(Error::new(
             "Presentation omitted the counter panel or has a long panel text",

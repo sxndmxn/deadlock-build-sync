@@ -73,7 +73,7 @@ Each build has these parts:
 2. **VS WEAPON, VS SPIRIT, and VS SUSTAIN**: counter items from the mid game, for the main damage type of the enemy team and for enemy healing. Each run repeats the counter test and removes a panel when the run contradicts it.
 3. **TIER 1 to TIER 4**: situational items for the matching shop tier. Buy one instead of a CORE item when the match makes it a better choice.
 4. **Ability order**: the most common complete ability order at this rank.
-5. **Description**: the inferred ability focus, when supported, the key item, its power spike, the result against the main build, an approximate win rate difference, and the build confidence.
+5. **Description**: stat lines only. They give the approximate win rate differences, the power spike of the key item, the build confidence, and the match data.
 
 A hero can have a main build and up to two additional builds. Each additional build is tested against the main build on held-out matches.
 A build that tests worse than the main build is removed. When a hero has several builds, the title of its BEST build starts with `BEST`.
@@ -83,23 +83,23 @@ Build titles use `Steam name | ability + key item` when CORE items support a cle
 Otherwise, titles name the first fully upgraded ability from the selected ability order.
 Titles use only the key item when no supported ability name is available.
 Titles omit hero names and stay within 50 characters.
-The description states the ability upgrade order separately from the inferred focus.
+The title states the inferred focus, and the ability panel states the upgrade order.
 
-Example description:
+Example description of an additional build:
 
 ```text
-Play around: Alchemical Fire at about 15k net worth.
-BEST: tested better than the main build.
-Win rate difference at equal net worth: about +6.1 points.
-Ability order: max Stone Form first.
-Item choices use 6306 player matches with Alchemical Fire at 20 or 30 minutes.
-Buy MAIN CORE from left to right. VS panels answer the enemy team. TIER items are situational choices.
-Evidence: strong (held-out test pooled with all heroes, n=62480). Ranked • Ritualist I–Eternus V • 2026-11-05 to 2026-11-23.
+WIN RATE VS NO CORE: +4.7 pts at equal net worth
+WIN RATE VS MAIN BUILD: +5.5 pts, z=3.8
+POWER SPIKE: Sharpshooter at 13k
+CONFIDENCE: strong, n=67802
+DATA: Ritualist I–Eternus V, 2026-11-05 to 2026-11-24
 ```
 
-The win rate difference compares players who own all CORE items of the phase with players who own none, at equal net worth, in percentage points.
-The Markdown file states the numbers of the test against the main build.
-It is an approximation from the held-out test: 25 percentage points for each log-odds unit. It is an association, not a cause, and not the win rate of the players who follow the build.
+A main build has no `VS MAIN BUILD` line. Four lines after the stat lines identify the build to the installer.
+`VS NO CORE` compares players who own all CORE items of the phase with players who own none, at equal net worth, in percentage points.
+`VS MAIN BUILD` is the contrast with the main build. A z of 2 or more tests better, and a z of −2 or less removes the build.
+Both values are approximations from the held-out test: 25 percentage points for each log-odds unit. They are associations, not causes, and not the win rate of the players who follow the build.
+The Markdown file explains each number in full sentences.
 On a short run, almost every BEST mark is the default main build, because the test finds few clear differences.
 
 Each item shows four lines:

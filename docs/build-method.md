@@ -166,7 +166,7 @@ The standard error treats each match as one cluster. A test with fewer than 200 
 | 2 or more | The build tests better than the main build. |
 
 The BEST build of a hero with several builds is the additional build with the largest contrast z of 2 or more. Without such a build, the main build is the BEST build.
-Its Steam title starts with `BEST`, and its description states the result. A hero with one build has no BEST mark.
+Its Steam title starts with `BEST`. The description of each additional build states the contrast in the line `WIN RATE VS MAIN BUILD`, in percentage points and z. A hero with one build has no BEST mark.
 A removed build does not get a replacement, because a replacement would need more candidates tested on the test fold.
 The confidence labels pool all tested additional builds before the removal, so the removal does not raise the pooled estimate of the other builds.
 On a short run, almost every BEST mark is the default main build. Few contrasts reach z = 2 there, and about as many as a placebo gives (E39, 6 days).
@@ -273,10 +273,10 @@ Conflicting targets leave the focus unset. Ability upgrade order alone does not 
 The catalog stores the focus identifier, name, and supporting CORE item identifiers.
 The title uses `ability + key item` when a focus exists.
 Without a focus, the title names the first fully upgraded ability from the selected complete ability order.
-This title fallback does not establish an inferred focus or change the description.
+This title fallback does not establish an inferred focus.
 The title uses only the key item when no supported ability name is available.
 The first icon shows the focus when available. Otherwise, it shows the first fully upgraded ability when the ability order exists.
-The description states the focus and ability upgrade order separately.
+The title states the focus, and the ability panel states the upgrade order. The Steam description names neither. The Markdown file states both.
 The focus is an inference from observed choices and item properties. The build confidence label does not evaluate this inference.
 
 Steam titles add the player name with `player name | title` and never add the hero name.
@@ -302,7 +302,7 @@ Thus, the label uses a hierarchical estimate. Each coefficient moves toward the 
 The size of the move depends on the variance between builds beyond their noise. A build keeps more of its own result when that variance is large or its own error is small.
 The catalog keeps the result of the build alone, and the Markdown file shows both values. See [Research log](research-log.md), entry E17.
 
-The description states the label estimate as an approximate win rate difference: the coefficient multiplied by 25 gives percentage points.
+The description states the label estimate as an approximate win rate difference in the line `WIN RATE VS NO CORE`: the coefficient multiplied by 25 gives percentage points.
 The slope of the logistic curve is at most one quarter, at a win probability of one half, and the mean win probability of all players is one half.
 The value compares full agreement with no agreement at equal net worth, team lead, and rank. It is an association, not a cause, and not the win rate of the players who follow the build.
 

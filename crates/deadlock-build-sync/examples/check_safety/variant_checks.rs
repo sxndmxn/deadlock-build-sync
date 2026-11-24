@@ -124,10 +124,14 @@ fn check_build_contrasts(catalog: &HeroBuildCatalog) -> Result<()> {
     }
     let presentation =
         build_hero_presentation(&catalog.heroes[0], catalog, "snapshot", "Reference")?;
+    // The title carries the BEST mark. A main build has no line against itself.
     if !presentation.content().name.contains(BEST_TITLE_PREFIX)
-        || !presentation.content().description.contains("BEST: ")
+        || presentation.content().description.contains("BEST")
+        || presentation.content().description.contains("VS MAIN BUILD")
     {
-        return Err(Error::new("The Steam build omitted the BEST mark"));
+        return Err(Error::new(
+            "The Steam build omitted the BEST title or repeated it",
+        ));
     }
     let contrast = |coefficient| {
         Some(BuildContrast {
@@ -142,6 +146,17 @@ fn check_build_contrasts(catalog: &HeroBuildCatalog) -> Result<()> {
     if better.heroes[0].is_best(&better) || !better.heroes[2].is_best(&better) {
         return Err(Error::new(
             "An additional build that tests better did not become the BEST build",
+        ));
+    }
+    let presentation =
+        build_hero_presentation(&better.heroes[2], &better, "snapshot", "Reference")?;
+    if !presentation
+        .content()
+        .description
+        .contains("WIN RATE VS MAIN BUILD: +7.5 pts, z=3.0\n")
+    {
+        return Err(Error::new(
+            "The Steam build omitted its win rate against the main build",
         ));
     }
     for (index, coefficient) in [(0, 0.3), (2, -0.3)] {
