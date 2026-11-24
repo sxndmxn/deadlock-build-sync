@@ -292,24 +292,36 @@ pub fn measure_counter_groups(
             phases: Vec::new(),
         })
         .collect::<Vec<_>>();
-    for phase_s in COUNTER_PHASES {
-        let phase_states = states
-            .iter()
-            .copied()
-            .filter(|state| state.landmark_s == phase_s)
+    // The phases are independent, so each one uses its own thread.
+    let phases = std::thread::scope(|scope| {
+        let fits = COUNTER_PHASES
+            .map(|phase_s| {
+                let item_groups = &item_groups;
+                scope.spawn(move || {
+                    measure_counter_phase(
+                        states,
+                        catalog,
+                        groups,
+                        item_groups,
+                        phase_s,
+                        spirit_mean,
+                        hero_terms,
+                    )
+                })
+            })
+            .into_iter()
             .collect::<Vec<_>>();
-        if phase_states.is_empty() {
+        fits.into_iter()
+            .map(|fit| {
+                fit.join()
+                    .map_err(|_| Error::new("The counter test stopped unexpectedly"))?
+            })
+            .collect::<Result<Vec<_>>>()
+    })?;
+    for (phase_s, phase) in COUNTER_PHASES.into_iter().zip(phases) {
+        let Some((observations, interactions)) = phase else {
             return Ok(Vec::new());
-        }
-        let spirit = spirit_conditions(&phase_states, spirit_mean);
-        let sustain = enemy_item_conditions(&phase_states, catalog, &groups.sustain_items)?;
-        let interactions = fit_group_interactions(
-            &phase_states,
-            catalog,
-            &item_groups,
-            &[&spirit, &sustain],
-            hero_terms,
-        )?;
+        };
         let (spirit_block, sustain_block) = interactions.split_at(item_groups.len());
         for (index, group) in evidence.iter_mut().enumerate() {
             let (direction, interaction) = match group.target {
@@ -321,11 +333,43 @@ pub fn measure_counter_groups(
                 phase_s,
                 coefficient: direction * interaction.coefficient,
                 standard_error: interaction.standard_error,
-                observations: u64::try_from(phase_states.len())?,
+                observations: u64::try_from(observations)?,
             });
         }
     }
     Ok(evidence)
+}
+
+/// Fits the counter model of one phase, and returns its state count and its interactions.
+///
+/// The result is missing when the phase has no states.
+fn measure_counter_phase(
+    states: &[&LandmarkState],
+    catalog: &ItemCatalog,
+    groups: &CounterGroups,
+    item_groups: &[&BTreeSet<u64>],
+    phase_s: u32,
+    spirit_mean: f64,
+    hero_terms: bool,
+) -> Result<Option<(usize, Vec<CoefficientEstimate>)>> {
+    let phase_states = states
+        .iter()
+        .copied()
+        .filter(|state| state.landmark_s == phase_s)
+        .collect::<Vec<_>>();
+    if phase_states.is_empty() {
+        return Ok(None);
+    }
+    let spirit = spirit_conditions(&phase_states, spirit_mean);
+    let sustain = enemy_item_conditions(&phase_states, catalog, &groups.sustain_items)?;
+    let interactions = fit_group_interactions(
+        &phase_states,
+        catalog,
+        item_groups,
+        &[&spirit, &sustain],
+        hero_terms,
+    )?;
+    Ok(Some((phase_states.len(), interactions)))
 }
 
 /// Returns the standardized share of enemy item cost in the condition items, for each state.

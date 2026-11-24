@@ -1,13 +1,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use deadlock_data::{Result, count_as_f64};
-use deadlock_guides::{BuildEvaluation, Confidence};
+use deadlock_guides::{BuildContrast, BuildEvaluation, Confidence};
 
 use crate::build_assembly::LATE_PHASES;
 use crate::build_assembly::{ItemScoring, PHASES, assemble_build, assemble_build_with_scoring};
 use crate::build_evaluation::{
-    EVALUATION_LANDMARKS, evaluate_agreements, evaluate_build, evaluate_pooled_builds,
-    measure_agreement,
+    ContrastSample, EVALUATION_LANDMARKS, evaluate_agreements, evaluate_build,
+    evaluate_pooled_builds, fit_contrast, measure_agreement, measure_contrast_samples,
 };
 use crate::build_variants::{VariantSelection, select_item_variants_with_rule};
 use crate::item_effects::{EffectTable, LandmarkState, covariate_features, estimate_item_effects};
@@ -129,6 +129,7 @@ pub struct AgreementPair {
 pub fn compare_variant_agreement(
     paths: &RunPaths,
     resources: ExtractionResources,
+    selection: VariantSelection,
 ) -> Result<AgreementPair> {
     let study = RunStudy::load(paths, resources)?;
     let catalog = study.catalog();
@@ -156,7 +157,7 @@ pub fn compare_variant_agreement(
             catalog,
             study.medians(),
             &main,
-            VariantSelection::default(),
+            selection,
         )?;
         if variants.is_empty() {
             continue;
@@ -748,4 +749,127 @@ pub fn compare_key_item_signal(
         }
     }
     fit_agreement_pair(&samples, heroes)
+}
+
+/// The held-out contrast of one additional build with the main build of its hero.
+///
+/// The contrast is the log-odds change when the player owns all items that only the additional
+/// build has, instead of all items that only the main build has. A positive contrast means that
+/// the additional build wins more in similar states.
+#[derive(Debug)]
+pub struct VariantContrast {
+    pub hero_id: u64,
+    pub key_item_id: u64,
+    /// The contrast on all test matches, on matches with an even identifier, and on matches with
+    /// an odd identifier. A value is missing when its states are too few for a test.
+    pub estimates: [Option<CoefficientEstimate>; 3],
+    /// The z values of the contrast after the differences move at random within each landmark.
+    pub placebo_z: Vec<f64>,
+    pub observations: usize,
+}
+
+/// Tests each additional build against the main build of its hero on the held-out test fold.
+///
+/// The builds come from development matches, as in production. At each test state, the items of
+/// the two phase sets are shared, main-only, or variant-only. The model uses the owned cost share
+/// of each part. It has the shared share, the mean of the two other shares, and half their
+/// difference, so the difference coefficient is the contrast. The standard errors treat each
+/// match as one cluster. Each seed gives one placebo z value for each additional build.
+///
+/// # Errors
+/// Returns an error when the run, the analysis database, or a model fails.
+pub fn compare_variant_contrasts(
+    paths: &RunPaths,
+    resources: ExtractionResources,
+    selection: VariantSelection,
+    seeds: &[u64],
+) -> Result<Vec<VariantContrast>> {
+    let study = RunStudy::load(paths, resources)?;
+    let catalog = study.catalog();
+    let (test, development) = study.folds();
+    let effects = study.development_effects()?;
+    let mut contrasts = Vec::new();
+    for hero_id in study.test_hero_ids() {
+        let Some(main) = assemble_build(hero_id, effects, catalog, study.medians()) else {
+            continue;
+        };
+        let hero_development = development
+            .iter()
+            .copied()
+            .filter(|state| state.hero_id == hero_id)
+            .collect::<Vec<_>>();
+        let variants = select_item_variants_with_rule(
+            hero_id,
+            &hero_development,
+            effects,
+            catalog,
+            study.medians(),
+            &main,
+            selection,
+        )?;
+        for variant in variants {
+            let hero_test = test
+                .iter()
+                .copied()
+                .filter(|state| state.hero_id == hero_id)
+                .collect::<Vec<_>>();
+            let samples = measure_contrast_samples(
+                &hero_test,
+                &main.phase_sets,
+                &variant.build.phase_sets,
+                catalog,
+            );
+            let half = |parity: u64| {
+                samples
+                    .iter()
+                    .filter(|(state, _)| state.match_id % 2 == parity)
+                    .copied()
+                    .collect::<Vec<_>>()
+            };
+            let placebo_z = seeds
+                .iter()
+                .map(|seed| move_contrasts(&samples, *seed))
+                .filter_map(|moved| fit_contrast(&moved).transpose())
+                .map(|contrast| contrast.map(|value| value.z()))
+                .collect::<Result<Vec<_>>>()?;
+            contrasts.push(VariantContrast {
+                hero_id,
+                key_item_id: variant.build.key_item_id,
+                estimates: [
+                    fit_contrast(&samples)?.as_ref().map(estimate_of),
+                    fit_contrast(&half(0))?.as_ref().map(estimate_of),
+                    fit_contrast(&half(1))?.as_ref().map(estimate_of),
+                ],
+                placebo_z,
+                observations: samples.len(),
+            });
+        }
+    }
+    Ok(contrasts)
+}
+
+const fn estimate_of(contrast: &BuildContrast) -> CoefficientEstimate {
+    CoefficientEstimate {
+        coefficient: contrast.coefficient,
+        standard_error: contrast.standard_error,
+    }
+}
+
+/// Moves the differences between states of the same landmark in a fixed pseudo-random order.
+fn move_contrasts<'a>(samples: &[ContrastSample<'a>], seed: u64) -> Vec<ContrastSample<'a>> {
+    let mut moved = samples.to_vec();
+    for landmark in EVALUATION_LANDMARKS {
+        let indices = (0..samples.len())
+            .filter(|index| samples[*index].0.landmark_s == landmark)
+            .collect::<Vec<_>>();
+        let mut order = indices.clone();
+        order.sort_by_key(|index| {
+            let state = samples[*index].0;
+            mix(seed ^ state.match_id ^ (u64::from(state.player_slot) << 48))
+        });
+        for (target, source) in indices.iter().zip(&order) {
+            moved[*target].1[2] = samples[*source].1[2];
+        }
+    }
+    moved
 }

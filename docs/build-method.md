@@ -10,6 +10,7 @@ The analysis makes the builds in these steps:
 4. Add situational TIER items and, for heroes with distinct item combinations, additional builds. See [Additional builds](#additional-builds).
 5. Test the counter item groups on the run and add the VS panels that the run does not contradict. See [Counter panels](#counter-panels).
 6. Test each build on held-out matches and set its confidence label with the evidence of all heroes. See [Evaluation](#evaluation).
+7. Test each additional build against the main build. Remove a build that tests worse, and mark the BEST build of each hero. See [Test against the main build](#test-against-the-main-build).
 
 The [Research log](research-log.md) records the tests behind each value and each rejected idea.
 
@@ -35,6 +36,9 @@ The identifier has 1 to 80 characters. It does not depend on the title or catalo
 Steam uses the hero ID and variant identifier to update each build separately.
 Validation rejects duplicate hero and build path pairs.
 The hero's Markdown file contains all its catalog builds.
+
+Catalog schema 10 uses method `item-effect-contrasts-v1`. It adds `main_contrast` to each tested additional build and always records the selection rules in `rules`.
+Schema 9 and earlier catalogs remain readable. A schema 9 catalog without `rules` used two distinct items and a separation of 0.30.
 
 A missing `variant_id` means `main`, which preserves existing Steam build identities.
 Schema 5 remains readable when builds omit `variant_id`. Schema 6 remains readable with its variant identifiers.
@@ -130,11 +134,13 @@ Each phase needs at least 100 owner states. The candidate must include its key i
 Purchase net worth windows and imbue selections still use the complete hero cohort for each item.
 
 The selector compares Tier 3 and Tier 4 CORE items to reject similar builds.
-Each build must have at least two items that the other build does not contain.
+Each build must have at least one item that the other build does not contain.
 Different items must account for at least 30% of the combined unique item cost.
-The options `--variant-distinct-items` and `--variant-separation` change these two values. The catalog records them in `rules` when they differ from the defaults.
+The options `--variant-distinct-items` and `--variant-separation` change these two values. The catalog records them in `rules`.
 On run `20261108T013049Z`, no candidate had a separation between 0 and 0.30, so the item count decided every rejection.
 With one distinct item, 31 heroes had an additional build instead of 12. `explain_variant_candidates` reports the gate of each candidate.
+Until E40, the default was two distinct items. With one item, the additional builds added a positive signal beyond the main build on two runs (z = 3.1 and 8.4), more than with two items (E40).
+The two runs are one patch. E37 required a second patch, and the owner asked for more build varieties. The next patch must repeat E40.
 Selection maximizes that cost difference multiplied by the square root of the distinct owner count.
 The selector repeats this comparison against the main build and each selected additional build.
 
@@ -142,6 +148,32 @@ Production rebuilds the selected item strategies with all source folds and check
 Each additional build gets its own held-out evaluation from its development purchase sets.
 Ability order selection uses matches that include the variant's key item.
 Insufficient ability evidence leaves the order unset.
+
+## Test against the main build
+
+The held-out test of a build measures the build alone. It cannot tell which build of a hero is better.
+Thus, each additional build also gets a contrast test against the main build of its hero, on the same test states.
+
+At each test state, the items of the two latest phase sets are shared, main-only, or variant-only.
+The model uses the owned cost share of each part, with the covariates and the landmark terms of the build test.
+The contrast is the log-odds change when the player owns the variant-only items instead of the main-only items.
+The standard error treats each match as one cluster. A test with fewer than 200 states gives no contrast.
+
+| Contrast z | Result |
+| --- | --- |
+| −2 or less | The build tests worse than the main build. Production removes it. |
+| −2 to 2 | No clear difference. The build stays. |
+| 2 or more | The build tests better than the main build. |
+
+The BEST build of a hero with several builds is the additional build with the largest contrast z of 2 or more. Without such a build, the main build is the BEST build.
+Its Steam title starts with `BEST`. The description of each additional build states the contrast in the line `WIN RATE VS MAIN BUILD`, in percentage points and z. A hero with one build has no BEST mark.
+A removed build does not get a replacement, because a replacement would need more candidates tested on the test fold.
+The confidence labels pool all tested additional builds before the removal, so the removal does not raise the pooled estimate of the other builds.
+On a short run, almost every BEST mark is the default main build. Few contrasts reach z = 2 there, and about as many as a placebo gives (E39, 6 days).
+
+A placebo moved the contrast values between test states. Its z values had a standard deviation of 0.97 to 1.02 on three runs, so about 2.3% of builds without a real difference are removed.
+The contrasts replicated between match halves on 18 days (correlation 0.41) and 12 days (0.33), but not on 6 days (0.08). A short run has large standard errors, so the gate removes few builds and marks few builds as better.
+See [Research log](research-log.md), entries E39 and E41.
 
 ## Counter panels
 
@@ -184,6 +216,13 @@ For defensive items, the difference between the 10th and 90th percentiles of ene
 The anti-heal effect is about one third of this size.
 The tests did not confirm a counter effect at 9 minutes.
 The data is observational. Players can buy these items because of the enemy team, so the tests cannot prove that an item causes a win.
+
+## Enemy heroes
+
+The builds do not change with the enemy heroes.
+E38 tested whether melee items win less against Vindicta, Grey Talon, Lash, and Celeste. They did not, also for Viscous alone.
+A screen of each enemy hero alone found no enemy hero against which melee items win less or more.
+The same screen found that anti-heal items win more against some heroes that heal themselves, such as Victor and Yamato. This result needs a test with a stated prediction. See [Research log](research-log.md), entry E38.
 
 ## Displayed item rates
 
@@ -234,10 +273,10 @@ Conflicting targets leave the focus unset. Ability upgrade order alone does not 
 The catalog stores the focus identifier, name, and supporting CORE item identifiers.
 The title uses `ability + key item` when a focus exists.
 Without a focus, the title names the first fully upgraded ability from the selected complete ability order.
-This title fallback does not establish an inferred focus or change the description.
+This title fallback does not establish an inferred focus.
 The title uses only the key item when no supported ability name is available.
 The first icon shows the focus when available. Otherwise, it shows the first fully upgraded ability when the ability order exists.
-The description states the focus and ability upgrade order separately.
+The title states the focus, and the ability panel states the upgrade order. The Steam description names neither. The Markdown file states both.
 The focus is an inference from observed choices and item properties. The build confidence label does not evaluate this inference.
 
 Steam titles add the player name with `player name | title` and never add the hero name.
@@ -262,6 +301,10 @@ The standard error treats each match as one cluster, because the landmarks of on
 Thus, the label uses a hierarchical estimate. Each coefficient moves toward the precision-weighted mean of comparable builds: main builds or additional builds.
 The size of the move depends on the variance between builds beyond their noise. A build keeps more of its own result when that variance is large or its own error is small.
 The catalog keeps the result of the build alone, and the Markdown file shows both values. See [Research log](research-log.md), entry E17.
+
+The description states the label estimate as an approximate win rate difference in the line `WIN RATE VS NO CORE`: the coefficient multiplied by 25 gives percentage points.
+The slope of the logistic curve is at most one quarter, at a win probability of one half, and the mean win probability of all players is one half.
+The value compares full agreement with no agreement at equal net worth, team lead, and rank. It is an association, not a cause, and not the win rate of the players who follow the build.
 
 The installed build uses all folds.
 
@@ -311,5 +354,6 @@ Net worth at the landmark is also partly a result of earlier items.
 Variant owners must survive long enough and acquire enough souls to own the key item.
 Their item combinations can reflect match conditions as well as different strategies.
 The selection thresholds are engineering rules. They do not prove an optimal number of builds.
+The BEST mark compares the builds of one hero on held-out matches. A build without a clear difference can be as good as the BEST build.
 A held-out test with hero and landmark indicators found that variant agreement adds a small positive signal beyond main build agreement on seven runs.
 The signal is weak on each run. See [Research log](research-log.md), entries E11 and E30.

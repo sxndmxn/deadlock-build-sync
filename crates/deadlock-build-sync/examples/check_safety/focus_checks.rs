@@ -1,5 +1,7 @@
 use deadlock_data::{Error, Result, sha256};
-use deadlock_guides::{HeroBuild, HeroBuildCatalog, assign_build_focus, build_hero_presentation};
+use deadlock_guides::{
+    HeroBuild, HeroBuildCatalog, PresentationContent, assign_build_focus, build_hero_presentation,
+};
 use serde_json::{Value, json};
 
 pub fn check_build_focus() -> Result<()> {
@@ -52,15 +54,15 @@ fn check_presentation(catalog: &HeroBuildCatalog) -> Result<()> {
     let presentation =
         build_hero_presentation(build, catalog, &sha256(b"focus reference"), "Player")?;
     let content = presentation.content();
+    // The title and the icon state the focus. The ability panel states the upgrade order.
     if content.name != "Player | Focus ability + Reference core item"
         || content.tag_ids[0] != 102
+        || !has_ability_order(content, build)
+        || build.key_ability_name.as_deref() != Some("Reference ability")
         || !content
             .description
-            .contains("Play around: Focus ability with Reference core item")
-        || !content
-            .description
-            .contains("Ability order: max Reference ability first.")
-        || content.description.contains("max Focus ability first")
+            .contains("POWER SPIKE: Reference core item at ")
+        || content.description.contains("ability")
         || content.name.contains(&build.hero_name)
     {
         return Err(Error::new(
@@ -68,6 +70,15 @@ fn check_presentation(catalog: &HeroBuildCatalog) -> Result<()> {
         ));
     }
     Ok(())
+}
+
+/// Returns true when the ability panel holds the upgrade order of the build.
+fn has_ability_order(content: &PresentationContent, build: &HeroBuild) -> bool {
+    !build.ability_ids.is_empty()
+        && content
+            .abilities
+            .as_ref()
+            .is_some_and(|abilities| abilities.ability_ids == build.ability_ids)
 }
 
 fn check_rejected_focus(build: &HeroBuild, assets: &[Value]) -> Result<()> {
@@ -115,12 +126,11 @@ fn check_upgrade_title(catalog: &HeroBuildCatalog, assets: &[Value]) -> Result<(
         build_hero_presentation(&build, catalog, &sha256(b"upgrade title"), "Player")?;
     let content = presentation.content();
     if content.name != "Player | Reference ability + Reference core item"
+        || !has_ability_order(content, &build)
         || !content
             .description
-            .contains("Play around: Reference core item")
-        || !content
-            .description
-            .contains("Ability order: max Reference ability first.")
+            .contains("POWER SPIKE: Reference core item at ")
+        || content.description.contains("ability")
         || content.name.contains(&build.hero_name)
     {
         return Err(Error::new("Upgrade title changed the inferred build focus"));

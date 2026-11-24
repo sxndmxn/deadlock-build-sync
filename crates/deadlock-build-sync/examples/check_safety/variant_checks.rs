@@ -4,8 +4,8 @@ use std::fs;
 use deadlock_build_sync::{CATALOG_FILE, write_build_artifacts};
 use deadlock_data::{Error, Result, fingerprint};
 use deadlock_guides::{
-    HERO_BUILD_METHOD, HERO_BUILD_SCHEMA_VERSION, HeroBuildCatalog, ItemStatistics,
-    build_hero_presentation,
+    BEST_TITLE_PREFIX, BuildContrast, BuildRules, HERO_BUILD_METHOD, HERO_BUILD_SCHEMA_VERSION,
+    HeroBuildCatalog, ItemStatistics, build_hero_presentation, display_title,
 };
 use deadlock_steam::{
     BuildIdentity, BuildKey, CacheLocation, CacheUpdate, CacheUpdateRequest, ManagedBuild,
@@ -26,6 +26,7 @@ impl ProcessInspection for StoppedProcesses {
 pub fn check_build_variants() -> Result<()> {
     let catalog = create_variant_catalog()?;
     check_duplicate_paths(&catalog)?;
+    check_build_contrasts(&catalog)?;
     check_variant_exports(&catalog)?;
     check_variant_installation(&catalog)
 }
@@ -43,6 +44,7 @@ fn create_variant_catalog() -> Result<HeroBuildCatalog> {
     }
     catalog.schema_version = HERO_BUILD_SCHEMA_VERSION;
     catalog.method = HERO_BUILD_METHOD.into();
+    catalog.rules = Some(BuildRules::default());
     for build in &mut catalog.heroes {
         for item in build.core.iter_mut().chain(&mut build.situational) {
             item.statistics = Some(ItemStatistics {
@@ -109,6 +111,73 @@ fn check_duplicate_paths(catalog: &HeroBuildCatalog) -> Result<()> {
     other_hero.validate()
 }
 
+/// Checks the BEST mark and the validation of the contrast with the main build (E41).
+fn check_build_contrasts(catalog: &HeroBuildCatalog) -> Result<()> {
+    if !catalog.heroes[0].is_best(catalog)
+        || catalog.heroes[1..]
+            .iter()
+            .any(|build| build.is_best(catalog))
+    {
+        return Err(Error::new(
+            "Without a better contrast, the main build is not the only BEST build",
+        ));
+    }
+    let presentation =
+        build_hero_presentation(&catalog.heroes[0], catalog, "snapshot", "Reference")?;
+    // The title carries the BEST mark. A main build has no line against itself.
+    if !presentation.content().name.contains(BEST_TITLE_PREFIX)
+        || presentation.content().description.contains("BEST")
+        || presentation.content().description.contains("VS MAIN BUILD")
+    {
+        return Err(Error::new(
+            "The Steam build omitted the BEST title or repeated it",
+        ));
+    }
+    let contrast = |coefficient| {
+        Some(BuildContrast {
+            coefficient,
+            standard_error: 0.1,
+            observations: 500,
+        })
+    };
+    let mut better = catalog.clone();
+    better.heroes[2].main_contrast = contrast(0.3);
+    better.validate()?;
+    if better.heroes[0].is_best(&better) || !better.heroes[2].is_best(&better) {
+        return Err(Error::new(
+            "An additional build that tests better did not become the BEST build",
+        ));
+    }
+    let presentation =
+        build_hero_presentation(&better.heroes[2], &better, "snapshot", "Reference")?;
+    if !presentation
+        .content()
+        .description
+        .contains("WIN RATE VS MAIN BUILD: +7.5 pts, z=3.0\n")
+    {
+        return Err(Error::new(
+            "The Steam build omitted its win rate against the main build",
+        ));
+    }
+    for (index, coefficient) in [(0, 0.3), (2, -0.3)] {
+        let mut invalid = catalog.clone();
+        invalid.heroes[index].main_contrast = contrast(coefficient);
+        if invalid.validate().is_ok() {
+            return Err(Error::new(
+                "Catalog accepted a main build contrast or a build that tests worse than the main build",
+            ));
+        }
+    }
+    let mut without_rules = catalog.clone();
+    without_rules.rules = None;
+    if without_rules.validate().is_ok() {
+        return Err(Error::new(
+            "A current catalog without selection rules passed validation",
+        ));
+    }
+    Ok(())
+}
+
 fn check_variant_exports(catalog: &HeroBuildCatalog) -> Result<()> {
     let root = tempfile::tempdir()?;
     let directory = root.path().join("artifacts");
@@ -130,7 +199,7 @@ fn check_variant_exports(catalog: &HeroBuildCatalog) -> Result<()> {
         != catalog
             .heroes
             .iter()
-            .map(|build| build.title.as_str())
+            .map(|build| display_title(build, catalog))
             .collect::<Vec<_>>()
     {
         return Err(Error::new("Markdown export lost a build variant"));

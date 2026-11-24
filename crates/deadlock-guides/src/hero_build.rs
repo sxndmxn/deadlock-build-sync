@@ -6,12 +6,18 @@ use serde::{Deserialize, Serialize};
 
 use crate::presentation::is_build_path;
 
-pub const HERO_BUILD_SCHEMA_VERSION: u32 = 9;
-pub const HERO_BUILD_METHOD: &str = "item-effect-counters-v1";
+pub const HERO_BUILD_SCHEMA_VERSION: u32 = 10;
+pub const HERO_BUILD_METHOD: &str = "item-effect-contrasts-v1";
 /// The largest number of items in one counter panel.
 pub const MAXIMUM_COUNTER_ITEMS: usize = 4;
 /// A counter phase with a z value below this limit contradicts the counter effect.
 pub const COUNTER_CONTRADICTION_Z: f64 = -2.0;
+/// An additional build with a contrast z value at or below this limit tests worse than the main
+/// build, and production removes it. See E41 in `docs/research-log.md`.
+pub const CONTRAST_REMOVAL_Z: f64 = -2.0;
+/// An additional build with a contrast z value at or above this limit tests better than the
+/// main build.
+pub const CONTRAST_BETTER_Z: f64 = 2.0;
 
 /// All hero builds from one source snapshot.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -19,9 +25,10 @@ pub const COUNTER_CONTRADICTION_Z: f64 = -2.0;
 pub struct HeroBuildCatalog {
     pub schema_version: u32,
     pub method: String,
-    /// The selection rules of this catalog, when they differ from the defaults.
-    #[serde(default, skip_serializing_if = "BuildRules::is_default")]
-    pub rules: BuildRules,
+    /// The selection rules of this catalog. Schema 10 always records them. Older catalogs
+    /// recorded only rules that differed from their defaults. See `HeroBuildCatalog::rules`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rules: Option<BuildRules>,
     pub client_version: u64,
     pub patch: Patch,
     pub cohort: BuildCohort,
@@ -34,7 +41,8 @@ pub struct HeroBuildCatalog {
 /// The selection rules that production can change from the command line.
 ///
 /// The defaults are the tested rules of `docs/build-method.md`. A change of a default needs a
-/// research-log entry on a second patch.
+/// research-log entry on a second patch. E40 changed the distinct item count from 2 to 1 on one
+/// patch, at the owner's request for more build varieties. The next patch must repeat E40.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BuildRules {
@@ -49,17 +57,20 @@ pub struct BuildRules {
 impl Default for BuildRules {
     fn default() -> Self {
         Self {
-            variant_distinct_items: 2,
+            variant_distinct_items: 1,
             variant_separation: 0.30,
         }
     }
 }
 
 impl BuildRules {
-    /// Returns true for the tested rules, which the catalog does not record.
+    /// The default rules before catalog schema 10. An older catalog without rules used them.
     #[must_use]
-    pub fn is_default(&self) -> bool {
-        *self == Self::default()
+    pub const fn legacy() -> Self {
+        Self {
+            variant_distinct_items: 2,
+            variant_separation: 0.30,
+        }
     }
 
     /// # Errors
@@ -245,6 +256,65 @@ pub struct HeroBuild {
     pub observations: u64,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub counters: Vec<CounterPanel>,
+    /// The held-out test of an additional build against the main build of its hero.
+    /// A main build has none. An additional build has none when its test has too few states.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub main_contrast: Option<BuildContrast>,
+}
+
+/// The held-out contrast of an additional build with the main build of its hero.
+///
+/// The coefficient is the log-odds change when the player owns the items that only the additional
+/// build has, instead of the items that only the main build has, in similar game states.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BuildContrast {
+    pub coefficient: f64,
+    pub standard_error: f64,
+    pub observations: u64,
+}
+
+impl BuildContrast {
+    /// Returns the coefficient divided by its standard error.
+    #[must_use]
+    pub fn z(&self) -> f64 {
+        self.coefficient / self.standard_error
+    }
+
+    /// Returns true when the additional build tests better than the main build.
+    #[must_use]
+    pub fn is_better(&self) -> bool {
+        self.z() >= CONTRAST_BETTER_Z
+    }
+
+    /// Returns true when the additional build tests worse than the main build.
+    #[must_use]
+    pub fn is_worse(&self) -> bool {
+        self.z() <= CONTRAST_REMOVAL_Z
+    }
+
+    fn validate(&self) -> Result<()> {
+        if !self.coefficient.is_finite()
+            || !self.standard_error.is_finite()
+            || self.standard_error <= 0.0
+            || self.observations == 0
+            || self.is_worse()
+        {
+            return Err(Error::new(
+                "Build contrast requires valid values and no worse result than the main build",
+            ));
+        }
+        Ok(())
+    }
+}
+
+/// Converts a log-odds change to an approximate win rate change in percentage points.
+///
+/// The slope of the logistic curve is at most one quarter, at a win probability of one half.
+/// Each match has six winners and six losers, so the mean win probability is one half.
+#[must_use]
+pub fn log_odds_to_win_points(log_odds: f64) -> f64 {
+    25.0 * log_odds
 }
 
 /// One item with the values that place it in the build.
@@ -474,9 +544,50 @@ impl HeroBuild {
             .chain(&mut self.situational)
             .chain(self.counters.iter_mut().flat_map(|panel| &mut panel.items))
     }
+
+    /// Returns true when this build is the BEST build of a hero with several builds.
+    ///
+    /// The BEST build is the additional build with the largest contrast z value of 2 or more.
+    /// Without such a build, the main build is the BEST build. A hero with one build has none.
+    #[must_use]
+    pub fn is_best(&self, catalog: &HeroBuildCatalog) -> bool {
+        let builds = catalog
+            .heroes
+            .iter()
+            .filter(|build| build.hero_id == self.hero_id)
+            .collect::<Vec<_>>();
+        if builds.len() < 2 {
+            return false;
+        }
+        let best = builds
+            .iter()
+            .filter_map(|build| {
+                build
+                    .main_contrast
+                    .as_ref()
+                    .filter(|contrast| contrast.is_better())
+                    .map(|contrast| (*build, contrast.z()))
+            })
+            .max_by(|first, second| first.1.total_cmp(&second.1))
+            .map(|(build, _)| build)
+            .or_else(|| {
+                builds
+                    .iter()
+                    .copied()
+                    .find(|build| build.variant_id.is_none())
+            });
+        best.is_some_and(|best| best.path_id() == self.path_id())
+    }
 }
 
 impl HeroBuildCatalog {
+    /// Returns the selection rules of the catalog. An older catalog without rules used the
+    /// legacy defaults.
+    #[must_use]
+    pub fn rules(&self) -> BuildRules {
+        self.rules.unwrap_or_else(BuildRules::legacy)
+    }
+
     /// # Errors
     /// Returns an error when the file is missing, malformed, or fails validation.
     pub fn read(path: &Path) -> Result<Self> {
@@ -503,10 +614,15 @@ impl HeroBuildCatalog {
             }
             (6, "item-effect-variants-v1")
             | (7, "item-effect-variants-v2")
-            | (8, "item-effect-counters-v1") => true,
+            | (8 | 9, "item-effect-counters-v1") => true,
             _ => false,
         };
-        self.rules.validate()?;
+        self.rules().validate()?;
+        if current && self.rules.is_none() {
+            return Err(Error::new(
+                "Current hero builds require their selection rules",
+            ));
+        }
         if self.heroes.is_empty() {
             return Err(Error::new("Hero build catalog has no builds"));
         }
@@ -578,6 +694,15 @@ fn validate_purchase_statistics(catalog: &HeroBuildCatalog, required: bool) -> R
 
 fn validate_hero(hero: &HeroBuild) -> Result<()> {
     validate_variant_id(hero.variant_id.as_deref())?;
+    if let Some(contrast) = &hero.main_contrast {
+        if hero.variant_id.is_none() {
+            return Err(Error::new(format!(
+                "The main build for {} cannot have a contrast with itself",
+                hero.hero_name
+            )));
+        }
+        contrast.validate()?;
+    }
     if let Some(focus) = &hero.ability_focus {
         focus.validate(hero)?;
     }

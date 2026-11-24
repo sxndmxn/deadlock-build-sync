@@ -1,8 +1,7 @@
 use deadlock_data::Result;
 
 use crate::build_text::{
-    MAIN_CORE_PANEL, RATES_NOTE, ability_order, evidence, format_soul_window, guide, phase_label,
-    play_around, tier_panel_name, variant_note,
+    MAIN_CORE_PANEL, build_stats, display_title, format_soul_window, phase_label, tier_panel_name,
 };
 use crate::build_title::format_build_name;
 use crate::hero_build::{BuildItem, HeroBuild, HeroBuildCatalog};
@@ -75,7 +74,7 @@ pub fn build_hero_presentation(
     });
     BuildPresentation::new(PresentationContent {
         hero_id: build.hero_id,
-        name: format_build_name(persona, &build.title)?,
+        name: format_build_name(persona, &display_title(build, catalog))?,
         tag_ids: build.tag_ids,
         description: describe_build(build, catalog, snapshot_id)?,
         categories,
@@ -146,19 +145,16 @@ fn describe_item(item: &BuildItem) -> Result<String> {
 /// Catalog validation checks that each panel has tested run evidence.
 const COUNTER_PANEL_TEXT: &str = "From midgame";
 
-/// Rounds the soul window to whole thousands. The window always spans at least 1k.
+/// The stat lines, then the managed trailer that identifies the build to the installer.
+///
+/// The title states the ability focus, and the ability panel states the upgrade order.
 fn describe_build(
     build: &HeroBuild,
     catalog: &HeroBuildCatalog,
     snapshot_id: &str,
 ) -> Result<String> {
-    let mut lines = vec![play_around(build)?];
-    lines.extend(ability_order(build));
-    lines.extend(variant_note(build)?);
+    let mut lines = build_stats(build, catalog)?;
     lines.extend([
-        guide(!build.counters.is_empty()).into(),
-        RATES_NOTE.into(),
-        evidence(build, catalog)?,
         String::new(),
         ManagedTrailer {
             path_id: build.path_id(),

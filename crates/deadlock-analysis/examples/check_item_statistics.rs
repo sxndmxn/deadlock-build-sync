@@ -19,7 +19,7 @@ mod sql_resources;
 
 use deadlock_data::{Error, Result};
 use deadlock_guides::{
-    HERO_BUILD_METHOD, HERO_BUILD_SCHEMA_VERSION, HeroBuildCatalog, ItemStatistics,
+    BuildRules, HERO_BUILD_METHOD, HERO_BUILD_SCHEMA_VERSION, HeroBuildCatalog, ItemStatistics,
     build_hero_presentation,
 };
 use duckdb::types::Value as SqlValue;
@@ -67,6 +67,7 @@ fn main() -> Result<()> {
     check_legacy_rates(&catalog)?;
     catalog.schema_version = HERO_BUILD_SCHEMA_VERSION;
     catalog.method = HERO_BUILD_METHOD.into();
+    catalog.rules = Some(BuildRules::default());
     if catalog.validate().is_ok() {
         return Err(Error::new(
             "Current catalog accepted missing item purchase counts",

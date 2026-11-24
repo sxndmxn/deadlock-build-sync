@@ -3,7 +3,7 @@ use std::fs;
 use deadlock_build_sync::write_build_artifacts;
 use deadlock_data::{Error, Result};
 use deadlock_guides::{
-    BuildPresentation, CounterEvidence, CounterPanel, CounterPhase, CounterTarget,
+    BuildPresentation, BuildRules, CounterEvidence, CounterPanel, CounterPhase, CounterTarget,
     HERO_BUILD_METHOD, HERO_BUILD_SCHEMA_VERSION, HeroBuildCatalog, ItemStatistics,
     MAXIMUM_COUNTER_ITEMS, build_hero_presentation,
 };
@@ -22,6 +22,7 @@ fn create_counter_catalog() -> Result<HeroBuildCatalog> {
     ))?;
     catalog.schema_version = HERO_BUILD_SCHEMA_VERSION;
     catalog.method = HERO_BUILD_METHOD.into();
+    catalog.rules = Some(BuildRules::default());
     let build = &mut catalog.heroes[0];
     for item in build.core.iter_mut().chain(&mut build.situational) {
         item.statistics = Some(ItemStatistics {
@@ -97,7 +98,6 @@ fn check_counter_presentation(catalog: &HeroBuildCatalog) -> Result<()> {
         || content.categories[1..=2]
             .iter()
             .any(|category| category.description != "From midgame")
-        || !content.description.contains("VS panels")
     {
         return Err(Error::new(
             "Presentation omitted the counter panel or has a long panel text",

@@ -168,6 +168,11 @@ fn attach_cache(database: &AnalysisDatabase, directory: &Path, cohort: &Cohort) 
 }
 
 /// Downloads the cohort rows of the files into the cache, on several connections at a time.
+///
+/// The largest files start first. Several large files at the same time can exceed the memory
+/// limit, so a file that stops at the memory limit is tried again alone after the other files.
+/// A failed copy does not change the cache, because each copy is one statement.
+/// Another error stops all connections at their next file, and a second failure stops the run.
 fn download_files(
     database: &AnalysisDatabase,
     files: &[RemoteFile],
@@ -177,7 +182,7 @@ fn download_files(
         .map(|_| database.try_clone())
         .collect::<Result<Vec<_>>>()?;
     let next = AtomicUsize::new(0);
-    std::thread::scope(|scope| {
+    let deferred = std::thread::scope(|scope| {
         let downloads = connections
             .into_iter()
             .map(|connection| {
@@ -185,37 +190,69 @@ fn download_files(
                 scope.spawn(move || download_next_files(&connection, files, parameters, next))
             })
             .collect::<Vec<_>>();
+        let mut deferred = Vec::new();
         for download in downloads {
-            download
-                .join()
-                .map_err(|_| Error::new("A remote download thread stopped unexpectedly"))??;
+            deferred.extend(
+                download
+                    .join()
+                    .map_err(|_| Error::new("A remote download thread stopped unexpectedly"))??,
+            );
         }
-        Ok(())
-    })
-}
-
-/// Downloads files until none remain. A failure stops the other threads at their next file.
-///
-/// The file row follows the rows of the file, so an interrupted copy does not count.
-fn download_next_files(
-    connection: &AnalysisDatabase,
-    files: &[RemoteFile],
-    parameters: &Parameters,
-    next: &AtomicUsize,
-) -> Result<()> {
-    let mut parameters = parameters.clone();
-    while let Some(file) = files.get(next.fetch_add(1, Ordering::Relaxed)) {
-        let name = Parameters::from([("data_file".into(), SqlValue::Text(file.data_file.clone()))]);
-        parameters.extend(name.clone());
-        let result = connection
-            .execute_remote(sql!("extract/insert_cache_players"), &parameters)
-            .and_then(|()| connection.execute(sql!("extract/insert_cache_file"), &name));
-        if let Err(error) = result {
-            next.store(files.len(), Ordering::Relaxed);
-            return Err(error);
-        }
+        Ok::<_, Error>(deferred)
+    })?;
+    if !deferred.is_empty() {
+        eprintln!(
+            "Retrying {} remote files one at a time after the memory limit stopped them",
+            deferred.len()
+        );
+    }
+    for file in deferred {
+        download_file(database, file, parameters)?;
     }
     Ok(())
+}
+
+/// Downloads files until none remain, and returns the files that stopped at the memory limit.
+///
+/// Another error stops the other connections at their next file.
+fn download_next_files<'a>(
+    connection: &AnalysisDatabase,
+    files: &'a [RemoteFile],
+    parameters: &Parameters,
+    next: &AtomicUsize,
+) -> Result<Vec<&'a RemoteFile>> {
+    let mut deferred = Vec::new();
+    while let Some(file) = files.get(next.fetch_add(1, Ordering::Relaxed)) {
+        match download_file(connection, file, parameters) {
+            Ok(()) => {}
+            Err(error) if is_memory_error(&error) => deferred.push(file),
+            Err(error) => {
+                next.store(files.len(), Ordering::Relaxed);
+                return Err(error);
+            }
+        }
+    }
+    Ok(deferred)
+}
+
+/// Returns true when the database stopped a statement at its memory limit.
+fn is_memory_error(error: &Error) -> bool {
+    error.to_string().contains("Out of Memory Error")
+}
+
+/// Copies the cohort rows of one file into the cache, and then records the file.
+///
+/// The file row follows the rows of the file, so an interrupted copy does not count.
+fn download_file(
+    connection: &AnalysisDatabase,
+    file: &RemoteFile,
+    parameters: &Parameters,
+) -> Result<()> {
+    let name = Parameters::from([("data_file".into(), SqlValue::Text(file.data_file.clone()))]);
+    let mut parameters = parameters.clone();
+    parameters.extend(name.clone());
+    connection.execute_remote(sql!("extract/insert_cache_players"), &parameters)?;
+    connection.execute(sql!("extract/insert_cache_file"), &name)
 }
 
 fn set_threads(database: &AnalysisDatabase, threads: u16) -> Result<()> {

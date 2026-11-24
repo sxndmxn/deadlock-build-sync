@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use deadlock_data::{
     Error, RankRange, Result, integer, parse_timestamp, read_json, text, trace_operation,
@@ -12,7 +13,7 @@ use deadlock_input::{ApiOptions, DeadlockApi, parse_patch_feed};
 
 use crate::api_inputs::{AbilityRequest, ApiInputs, request_inputs};
 use crate::build_assembly::{AssembledBuild, PHASES, PurchaseMedians};
-use crate::build_evaluation::{evaluate_build, shrink_evaluations};
+use crate::build_evaluation::{evaluate_build, evaluate_contrast, shrink_evaluations};
 use crate::build_variants::VariantSelection;
 use crate::counter_items::{CounterGroups, estimate_counter_evidence, select_counter_panels};
 use crate::hero_assembly::{AssemblyContext, HeroAssembly};
@@ -118,7 +119,7 @@ pub fn produce_hero_builds(
     let catalog = HeroBuildCatalog {
         schema_version: HERO_BUILD_SCHEMA_VERSION,
         method: HERO_BUILD_METHOD.into(),
-        rules: *rules,
+        rules: Some(*rules),
         client_version,
         patch,
         cohort: BuildCohort {
@@ -204,10 +205,7 @@ fn assemble_hero_builds(
         medians,
         selection,
     };
-    let mut builds = Vec::new();
-    for (hero_id, hero_name) in heroes {
-        builds.extend(assemble_hero(*hero_id, hero_name, states, &context)?);
-    }
+    let mut builds = assemble_all_heroes(heroes, states, &context)?;
     for variants in [false, true] {
         let mut pool = builds
             .iter_mut()
@@ -216,6 +214,21 @@ fn assemble_hero_builds(
             .collect::<Vec<_>>();
         shrink_evaluations(&mut pool);
     }
+    // The pool includes the builds that test worse, so their removal cannot raise the pooled
+    // estimate of the other additional builds.
+    builds.retain(|build| {
+        let Some(contrast) = build.main_contrast.as_ref().filter(|contrast| contrast.is_worse())
+        else {
+            return true;
+        };
+        eprintln!(
+            "Removed an additional build for {}: item {} (tests worse than the main build, z={:.1})",
+            build.hero_name,
+            build.key_item_id,
+            contrast.z()
+        );
+        false
+    });
     eprintln!("Testing counter item groups");
     let groups = CounterGroups::from_catalog(catalog);
     let evidence = estimate_counter_evidence(&all, catalog, &groups)?;
@@ -226,13 +239,71 @@ fn assemble_hero_builds(
     Ok((builds, evidence))
 }
 
+/// Assembles the builds of every hero on several threads, and returns them in hero order.
+///
+/// The heroes are independent, so each worker thread takes the next hero. The messages of each
+/// hero print after all heroes, in hero order.
+fn assemble_all_heroes(
+    heroes: &BTreeMap<u64, String>,
+    states: &[LandmarkState],
+    context: &AssemblyContext<'_>,
+) -> Result<Vec<HeroBuild>> {
+    let heroes = heroes.iter().collect::<Vec<_>>();
+    let workers = std::thread::available_parallelism()
+        .map_or(1, std::num::NonZeroUsize::get)
+        .min(heroes.len())
+        .max(1);
+    let next = AtomicUsize::new(0);
+    let mut results = std::thread::scope(|scope| {
+        let handles = (0..workers)
+            .map(|_| {
+                scope.spawn(|| {
+                    let mut done = Vec::new();
+                    loop {
+                        let index = next.fetch_add(1, Ordering::Relaxed);
+                        let Some((hero_id, hero_name)) = heroes.get(index) else {
+                            break;
+                        };
+                        done.push((index, assemble_hero(**hero_id, hero_name, states, context)));
+                    }
+                    done
+                })
+            })
+            .collect::<Vec<_>>();
+        handles
+            .into_iter()
+            .map(|handle| {
+                handle
+                    .join()
+                    .map_err(|_| Error::new("Hero build assembly stopped unexpectedly"))
+            })
+            .collect::<Result<Vec<_>>>()
+    })?
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>();
+    results.sort_by_key(|(index, _)| *index);
+    let mut builds = Vec::new();
+    for (_, result) in results {
+        let (hero_builds, messages) = result?;
+        for message in messages {
+            eprintln!("{message}");
+        }
+        builds.extend(hero_builds);
+    }
+    Ok(builds)
+}
+
 /// Assembles the builds of one hero and tests each one on the held-out fold.
+///
+/// Returns the builds and the messages to print.
 fn assemble_hero(
     hero_id: u64,
     hero_name: &str,
     states: &[LandmarkState],
     context: &AssemblyContext<'_>,
-) -> Result<Vec<HeroBuild>> {
+) -> Result<(Vec<HeroBuild>, Vec<String>)> {
+    let mut messages = Vec::new();
     let all = states
         .iter()
         .filter(|state| state.hero_id == hero_id)
@@ -245,15 +316,15 @@ fn assemble_hero(
     let assembly = HeroAssembly::assemble(hero_id, &all, context)
         .map_err(|error| error.context(format!("Cannot build {hero_name}")))?;
     if assembly.generic {
-        eprintln!(
+        messages.push(format!(
             "Warning: {hero_name} has too few matches in the run. Its build uses the item effects of all heroes"
-        );
+        ));
     }
     for (item_id, gate) in &assembly.dropped {
-        eprintln!(
+        messages.push(format!(
             "Dropped an additional build for {hero_name}: item {item_id} ({})",
             gate.name()
-        );
+        ));
     }
     let catalog = context.catalog;
     // The held-out test uses the development build, because the installed build saw the test fold.
@@ -277,18 +348,30 @@ fn assemble_hero(
     )?];
     for variant in assembly.variants {
         let item_id = variant.build.key_item_id;
+        // The development main build exists, because the selector needs it.
+        let contrast = match &assembly.development_main {
+            Some(main) => evaluate_contrast(
+                &test,
+                &main.phase_sets,
+                &variant.development_build.phase_sets,
+                catalog,
+            )?,
+            None => None,
+        };
         let evaluation = evaluate_build(&test, &variant.development_build.phase_sets, catalog)?;
-        builds.push(create_hero_build(
+        let mut build = create_hero_build(
             hero_id,
             hero_name,
             variant.build,
             evaluation,
             variant.owners,
             Some(format!("item-{item_id}")),
-        )?);
+        )?;
+        build.main_contrast = contrast;
+        builds.push(build);
     }
-    eprintln!("Selected {} builds for {hero_name}", builds.len());
-    Ok(builds)
+    messages.push(format!("Selected {} builds for {hero_name}", builds.len()));
+    Ok((builds, messages))
 }
 
 fn create_hero_build(
@@ -320,6 +403,7 @@ fn create_hero_build(
         evaluation,
         observations: u64::try_from(observations)?,
         counters: Vec::new(),
+        main_contrast: None,
     })
 }
 
